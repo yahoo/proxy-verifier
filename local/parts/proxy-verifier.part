@@ -1,0 +1,13 @@
+Import("*")
+PartVersion("1.0.0")
+PartName("proxy-verifier")
+
+DependsOn([
+    "proxy-verifier.core",
+    "proxy-verifier.verifier-client",
+    "proxy-verifier.verifier-server"
+])
+
+env.Part("../src/core/core.part")
+env.Part("../src/client/verifier-client.part")
+env.Part("../src/server/verifier-server.part")

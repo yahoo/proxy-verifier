@@ -1,0 +1,129 @@
+Import('*')
+PartName("libevent")
+PartVersion(GitVersionFromTag("2.1.8.dev"))
+
+DependsOn([
+    Component("openssl", requires=REQ.DEFAULT | REQ.SDK | REQ.PKGCONFIG),
+])
+
+files = Pattern(src_dir="${CHECK_OUT_DIR}", excludes=[".git/*"])
+# we copy everything over for autoconf to avoid messing with the source
+# when we autoreconf
+copyed = env.CCopy(
+    source=files,
+    target="$BUILD_DIR"
+)
+
+env.Command(
+    ["Makefile"],
+    copyed,
+    '''cd ${TARGET.dir} && autoreconf -if &&\
+    PKG_CONFIG_PATH=${DEPENDS.openssl.PKGCONFIG} ./configure\
+     CFLAGS="\
+      $CFLAGS $CCFLAGS $CPPFLAGS $_CPPDEFFLAGS\
+      -I${DEPENDS.openssl.SDK}/include\
+      "\
+     CXXFLAGS="\
+      $CXXFLAGS $CCFLAGS $CPPFLAGS $_CPPDEFFLAGS\
+      -I${DEPENDS.openssl.SDK}/include\
+      "\
+    LDFLAGS="\
+      -Wl,-rpath-link -Wl,${DEPENDS.openssl.SDK}/lib\
+      -L${DEPENDS.openssl.SDK}/lib\
+      "\
+     --prefix=${ABSPATH('#_makeinstall')}/${PART_NAME}\
+     CC=${CC} CXX=${CXX}\
+     ''',
+     source_scanner=Scanner(function = lambda *lst,**kw: [])
+)
+env.Command(
+    [
+        "#_makeinstall/${PART_NAME}/include/evdns.h",
+        "#_makeinstall/${PART_NAME}/include/event.h",
+        "#_makeinstall/${PART_NAME}/include/evhttp.h",
+        "#_makeinstall/${PART_NAME}/include/evrpc.h",
+        "#_makeinstall/${PART_NAME}/include/evutil.h",
+        "#_makeinstall/${PART_NAME}/include/event2/buffer_compat.h",
+        "#_makeinstall/${PART_NAME}/include/event2/bufferevent_compat.h",
+        "#_makeinstall/${PART_NAME}/include/event2/bufferevent.h",
+        "#_makeinstall/${PART_NAME}/include/event2/bufferevent_ssl.h",
+        "#_makeinstall/${PART_NAME}/include/event2/bufferevent_struct.h",
+        "#_makeinstall/${PART_NAME}/include/event2/buffer.h",
+        "#_makeinstall/${PART_NAME}/include/event2/dns_compat.h",
+        "#_makeinstall/${PART_NAME}/include/event2/dns.h",
+        "#_makeinstall/${PART_NAME}/include/event2/dns_struct.h",
+        "#_makeinstall/${PART_NAME}/include/event2/event_compat.h",
+        "#_makeinstall/${PART_NAME}/include/event2/event-config.h",
+        "#_makeinstall/${PART_NAME}/include/event2/event.h",
+        "#_makeinstall/${PART_NAME}/include/event2/event_struct.h",
+        "#_makeinstall/${PART_NAME}/include/event2/http_compat.h",
+        "#_makeinstall/${PART_NAME}/include/event2/http.h",
+        "#_makeinstall/${PART_NAME}/include/event2/http_struct.h",
+        "#_makeinstall/${PART_NAME}/include/event2/keyvalq_struct.h",
+        "#_makeinstall/${PART_NAME}/include/event2/listener.h",
+        "#_makeinstall/${PART_NAME}/include/event2/rpc_compat.h",
+        "#_makeinstall/${PART_NAME}/include/event2/rpc.h",
+        "#_makeinstall/${PART_NAME}/include/event2/rpc_struct.h",
+        "#_makeinstall/${PART_NAME}/include/event2/tag_compat.h",
+        "#_makeinstall/${PART_NAME}/include/event2/tag.h",
+        "#_makeinstall/${PART_NAME}/include/event2/thread.h",
+        "#_makeinstall/${PART_NAME}/include/event2/util.h",
+        "#_makeinstall/${PART_NAME}/include/event2/visibility.h",
+        "#_makeinstall/${PART_NAME}/lib/pkgconfig/libevent_core.pc",
+        "#_makeinstall/${PART_NAME}/lib/pkgconfig/libevent_extra.pc",
+        "#_makeinstall/${PART_NAME}/lib/pkgconfig/libevent_openssl.pc",
+        "#_makeinstall/${PART_NAME}/lib/pkgconfig/libevent.pc",
+        "#_makeinstall/${PART_NAME}/lib/pkgconfig/libevent_pthreads.pc",
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent.so"),
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent-${PART_SHORT_VERSION}.so.6"),
+        "#_makeinstall/${PART_NAME}/lib/libevent-${PART_SHORT_VERSION}.so.6.0.2",
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_core-${PART_SHORT_VERSION}.so.6"),
+        "#_makeinstall/${PART_NAME}/lib/libevent_core-${PART_SHORT_VERSION}.so.6.0.2",
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_core.so"),
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_extra-${PART_SHORT_VERSION}.so.6"),
+        "#_makeinstall/${PART_NAME}/lib/libevent_extra-${PART_SHORT_VERSION}.so.6.0.2",
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_extra.so"),
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_openssl-${PART_SHORT_VERSION}.so.6"),
+        "#_makeinstall/${PART_NAME}/lib/libevent_openssl-${PART_SHORT_VERSION}.so.6.0.2",
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_openssl.so"),
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_pthreads-${PART_SHORT_VERSION}.so.6"),
+        "#_makeinstall/${PART_NAME}/lib/libevent_pthreads-${PART_SHORT_VERSION}.so.6.0.2",
+        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_pthreads.so"),
+    ],
+    ["Makefile"],
+    # the -rpath-link is to get the correct paths for the binaries to link with the rpath usage of the makefile
+    [
+        'cd ${{SOURCE.dir}} ; make all V=1\
+         $(-j{jobs}$)'.format(jobs=env.GetOption('num_jobs')),
+        'cd ${SOURCE.dir} ; make install'
+    ]
+)
+
+env.InstallLib(
+    env.SetRPath(
+        env.Glob("#_makeinstall/${PART_NAME}/lib/*.so*")
+    )
+)
+
+env.InstallInclude(
+    env.SdkInclude(
+        env.Glob("#_makeinstall/${PART_NAME}/include/*"),
+    ),
+)
+
+env.InstallInclude(
+    env.SdkInclude(
+        env.Glob("#_makeinstall/${PART_NAME}/include/event2/*"),
+        sub_dir="event2",
+        add_to_path=False
+    ),
+    sub_dir="event2"
+)
+substdict = {env.subst("${ABSPATH('#_makeinstall/$PART_NAME')}"):env.subst("${PACKAGE_ROOT}")}
+pc_files = [
+    env.Substfile(target="${SOURCE.file}", source=f, SUBST_DICT=substdict) for f in env.Glob("#_makeinstall/${PART_NAME}/lib/pkgconfig/*.pc")
+    ]
+env.InstallLib(pc_files, auto_add_libs=False, sub_dir="pkgconfig", add_to_path=False)
+
+env.ExportItem("PKGCONFIG", env.Dir("#_makeinstall/${PART_NAME}/lib/pkgconfig").abspath)
+env.ExportItem("SDK", env.Dir("#_makeinstall/${PART_NAME}").abspath)

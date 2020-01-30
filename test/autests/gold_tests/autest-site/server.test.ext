@@ -1,0 +1,151 @@
+'''
+Implement the Proxy Verifier test server extension.
+'''
+# @file
+#
+# Copyright 2020, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+from __future__ import print_function
+from socket_util import create_address_argument
+import os
+
+
+def _configure_server(obj, process, name, replay_dir, use_ipv6=False,
+                      http_ports=[8080], https_ports=[4443],
+                      ssl_cert='', other_args=''):
+    """
+    Configure the provided process to run a verifier-server command.
+
+    Args
+        obj: An object that has a RunDirectory attribute.
+
+        process: (Process) The test process to configure for verifier-server.
+
+        For all other arguments, see MakeServerProcess.
+    """
+    #
+    # Create the directory we will setup for the replay binaries to run under.
+    server_dir = os.path.join(obj.RunDirectory, name)
+
+    # Create a link of the binary to the rundir and set up the PATH variable.
+    # This will be the verifier-server that gets run.
+    bin_dir = 'bin'
+    process.Env['SERVER_BIN_PATH'] = bin_dir
+    bin_path = os.path.join(server_dir, bin_dir)
+    process.Env['PATH'] = bin_path + os.pathsep + process.ComposeEnv()['PATH']
+    process.Setup.Copy(process.ComposeVariables().VERIFIER_BIN, bin_path, CopyLogic.SoftFiles)
+
+    # Configure the verifier-server command line arguments.
+    command = "verifier-server run "
+
+    if http_ports:
+        command += "--listen "
+        command += create_address_argument(http_ports, use_ipv6)
+        command += " "
+
+    if https_ports:
+        command += '--listen-https '
+        command += create_address_argument(https_ports, use_ipv6)
+        command += " "
+
+        if ssl_cert == '':
+            # Search for the root-level cert.
+            test_root = process.TestRoot
+            from os.path import dirname
+            git_root = dirname(dirname(dirname(test_root)))
+            ssl_cert = os.path.join(git_root, "server_test.pem")
+
+            if not os.path.isfile(ssl_cert):
+                raise ValueError("Tried to use '{}' for --cert, but it is not "
+                                 "a valid file.".format(ssl_cert))
+        if ssl_cert:
+            run_ssl_cert = ssl_cert
+            if os.path.isfile(ssl_cert):
+                run_ssl_cert = os.path.join(server_dir, os.path.basename(ssl_cert))
+                process.Setup.Copy(ssl_cert, run_ssl_cert, CopyLogic.SoftFiles)
+            command += ' --cert "{}" '.format(run_ssl_cert)
+
+    if replay_dir:
+        # Create a copy of the replay directory in the run directory.
+        run_replay_dir = os.path.join(server_dir, os.path.basename(replay_dir))
+        process.Setup.Copy(replay_dir, run_replay_dir, CopyLogic.SoftFiles)
+        command += "{} ".format(run_replay_dir)
+    if other_args:
+        command += "{} ".format(other_args)
+    process.Command = command
+
+    process.Ready = When.PortOpen(http_ports[0])
+    # The server is designed to be long-lived and thus will be interrupted by
+    # the test. Because of this, its return code will be non-zero.
+    process.ReturnCode = -2
+
+
+def MakeServerProcess(test, name, replay_dir, use_ipv6=False,
+                      http_ports=[8080], https_ports=[4443],
+                      ssl_cert='', other_args=''):
+    """
+    Create a verifier-server process.
+
+    Args:
+        test: (Test) The Test object being updated with the server process.
+
+        name: (str) The name to apply to this particular verifier-server instance.
+            Individual verifier-server processes must have unique names to
+            distinguish between them.
+
+        replay_dir: (path) The directory containing the replay files for the
+            server to run with.
+
+        http_ports: (list of ints) The set of HTTP ports to listen on.
+
+        https_ports: (list of ints) The set of HTTPS ports to listen on.
+
+        ssl_cert: (path) The location of the cert for HTTPS encryption. If this
+            is not provided and https_ports is non-empty, the root-level
+            server_test.pem will be searched for and used if it can be found.
+            To explicitly test verifier-server with no --cert argument, pass in
+            None for ssl_cert. Whitespace can be passed in to test --cert with
+            an empty argument.
+
+        other_args: (str) Any other arbitrary options to pass to verifier-server.
+
+    Raises:
+        ValueError if https_ports is non-empty and a valid ssl_cert could not
+            be derived.
+    """
+    server = test.Processes.Process(name)
+    _configure_server(test, server, name, replay_dir, use_ipv6,
+                      http_ports, https_ports, ssl_cert, other_args)
+    return server
+
+
+def AddServerProcess(run, name, replay_dir, use_ipv6=False,
+                     http_ports=[8080], https_ports=[4443],
+                     ssl_cert='', other_args=''):
+    """
+    Create a verifier-server process and configure it for the given TestRun.
+
+    Args:
+        run: (TestRun) The test run to which the server process is added.
+
+        For all other arguments, see MakeServerProcess.
+
+    Returns:
+        The newly created server process.
+    """
+
+    server = run.Processes.Process(name)
+    _configure_server(run, server, name, replay_dir, use_ipv6,
+                      http_ports, https_ports, ssl_cert, other_args)
+
+    client = run.Processes.Default
+    client.StartBefore(server)
+
+    return server
+
+
+##########################################################################
+ExtendTest(MakeServerProcess, name="MakeServerProcess")
+ExtendTestRun(AddServerProcess, name="AddServerProcess")

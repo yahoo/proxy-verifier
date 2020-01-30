@@ -1,0 +1,24 @@
+
+Import("*")
+PartName("tests")
+
+DependsOn([
+    Component("swoc++",requires=REQ.DEFAULT(internal=False)),
+    Component("nghttp2",requires=REQ.DEFAULT(internal=False)),
+    "proxy-verifier.core"
+    ])
+
+env.AppendUnique(
+    CCFLAGS=['-std=c++17', '-g'],
+)
+
+files = [
+    "unit_test_main.cc",
+    "test_ProxyVerifier.cc",
+]
+env.UnitTest(
+    "tests",
+    files,
+    # data file we need for the test to pass
+    data_src=[Pattern(src_dir="#",includes=['doc/conf.py'])]
+    )

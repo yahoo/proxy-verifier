@@ -1,0 +1,56 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+/include
+/bin
+/lib/cmake
+/lib/pkgconfig
+/lib64
+/cmake-build-release
+.vscode
+
+# Default parts directories
+\.parts\.cache
+\_*
+\.sconsign\.dblite
+
+.sconf_temp/
+activate_run.sh
+build-env/
+conanbuildinfo.txt
+config.log
+deactivate_run.sh
+
+dist/
+
+*.lock

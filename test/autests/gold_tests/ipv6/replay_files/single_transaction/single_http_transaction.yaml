@@ -1,0 +1,48 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ ipv4, tcp ]
+  transactions:
+  - client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ X-Test-Request, request ]
+        - [ uuid, 1 ]
+    proxy-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ X-Test-Request, request ]
+        - [ uuid, 1 ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ X-Test-Response, response ]
+        - [ uuid, 1 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ X-Test-Response, response ]
+        - [ uuid, 1 ]

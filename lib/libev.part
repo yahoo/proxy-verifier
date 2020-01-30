@@ -1,0 +1,54 @@
+Import('*')
+PartName("libev")
+PartVersion(GitVersionFromTag("4.25.0.dev"))
+DependsOn([
+])
+
+files = Pattern(src_dir="${CHECK_OUT_DIR}", excludes=[".git/*"])
+# we copy everything over for autoconf to avoid messing with the source
+# when we autoreconf
+copyed = env.CCopy(
+    source=files,
+    target="$BUILD_DIR"
+)
+
+# generate the build files
+env.Command(
+    ["Makefile"],
+    copyed,
+    "cd ${TARGET.dir} && autoreconf -if && ./configure\
+     --prefix=${ABSPATH('#_makeinstall')}/${PART_NAME}\
+     CC=${CC} CXX=${CXX}\
+     ",
+    source_scanner=Scanner(function=lambda *lst, **kw: [])
+)
+env.Command(
+    [
+        "#_makeinstall/${PART_NAME}/include/event.h",
+        "#_makeinstall/${PART_NAME}/include/ev.h",
+        "#_makeinstall/${PART_NAME}/include/ev++.h",
+        "#_makeinstall/${PART_NAME}/lib/libev.so",
+        "#_makeinstall/${PART_NAME}/lib/libev.so.4",
+        "#_makeinstall/${PART_NAME}/lib/libev.so.4.0.0",
+    ],
+    ["Makefile"],
+    # the -rpath-link is to get the correct paths for the binaries to link with the rpath usage of the makefile
+    [
+        'cd ${{SOURCE.dir}} ; make all V=1\
+         $(-j{jobs}$)'.format(jobs=env.GetOption('num_jobs')),
+        'cd ${SOURCE.dir} ; make install'
+    ]
+)
+
+env.InstallLib(
+    env.SetRPath(
+        env.Glob("#_makeinstall/${PART_NAME}/lib/*.so*")
+    )
+)
+env.InstallInclude(
+    env.Glob("#_makeinstall/${PART_NAME}/include/*"),
+    sub_dir="libev",
+    add_to_path=False
+)
+
+env.ExportItem("SDK", env.Dir("#_makeinstall/${PART_NAME}").abspath)

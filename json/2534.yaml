@@ -1,0 +1,156 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ ipv4, tcp ]
+  transactions:
+  - client-request:
+      version: "1.1"
+      scheme: "https"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ uuid, 1 ]
+    proxy-request:
+      version: "1.1"
+      scheme: "https"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ uuid, 1 ]
+        - [ Accept-Encoding, identity, equal ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 3072
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 3072 ]
+        - [ uuid, 1 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 3072
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+  - client-request:
+      version: "1.1"
+      scheme: "https"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ Accept-Encoding, "identity, gip" ]
+        - [ uuid, 2 ]
+    proxy-request:
+      version: "1.1"
+      scheme: "https"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ uuid, 2 ]
+        - [ Accept-Encoding, "identity, gip", "equal" ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 3072
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 3072 ]
+        - [ uuid, 2 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 3072
+      headers:
+        fields:
+        - [ uuid, 2 ]
+
+  - client-request:
+      version: "1.1"
+      scheme: "https"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ accept-encoding, "identity, gip" ]
+        - [ uuid, 3 ]
+    proxy-request:
+      version: "1.1"
+      scheme: "https"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ uuid, 3 ]
+        - [ accept-encoding, "identity, gip", "equal" ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 3072
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 3072 ]
+        - [ uuid, 3 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 3072
+      headers:
+        fields:
+        - [ uuid, 3 ]
+
+  - client-request:
+      version: "1.1"
+      scheme: "https"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ aCCEPT-eNCODING, "identity;q=1.0, gip;q=0.9" ]
+        - [ uuid, 4 ]
+    proxy-request:
+      version: "1.1"
+      scheme: "https"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ uuid, 4 ]
+        - [ aCCEPT-eNCODING, "identity;q=1.0, gip;q=0.9", "equal" ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 3072
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 3072 ]
+        - [ uuid, 4 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 3072
+      headers:
+        fields:
+        - [ uuid, 4 ]

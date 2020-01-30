@@ -1,0 +1,164 @@
+{
+    "meta": {
+        "version": "1.0"
+    },
+    "sessions": [
+        {
+            "protocol": [
+                "tcp",
+                "ipv4"
+            ],
+            "connection-time": 1552705896896003926,
+            "transactions": [
+                {
+                    "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119",
+                    "start-time": 1552705896896042340,
+                    "client-request": {
+                        "version": "1.1",
+                        "scheme": "http",
+                        "method": "POST",
+                        "url": "http://example.data.com/client.do",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 399
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Content-Length",
+                                    "399"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Host",
+                                    "example.com"
+                                ],
+                                [
+                                    "Connection",
+                                    "Keep-Alive"
+                                ],
+                                [
+                                    "uuid",
+                                    "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119"
+                                ]
+                            ]
+                        }
+                    },
+                    "proxy-request": {
+                        "version": "1.1",
+                        "scheme": "",
+                        "method": "POST",
+                        "url": "/proxy.do",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 399
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Content-Length",
+                                    "399"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Host",
+                                    "example.com"
+                                ],
+                                [
+                                    "Client-ip",
+                                    "10.10.10.1"
+                                ],
+                                [
+                                    "uuid",
+                                    "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119"
+                                ]
+                            ]
+                        }
+                    },
+                    "server-response": {
+                        "status": 200,
+                        "reason": "OK",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 0
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Date",
+                                    "Sat, 16 Mar 2019 03:11:36 GMT"
+                                ],
+                                [
+                                    "X-TestHeader",
+                                    "from_server_response"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "0"
+                                ],
+                                [
+                                    "Age",
+                                    "0"
+                                ],
+                                [
+                                    "Connection",
+                                    "keep-alive"
+                                ]
+                            ]
+                        }
+                    },
+                    "proxy-response": {
+                        "status": 200,
+                        "reason": "OK",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 0
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Date",
+                                    "Sat, 16 Mar 2019 03:11:36 GMT"
+                                ],
+                                [
+                                    "X-TestHeader",
+                                    "from_proxy_response"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "0"
+                                ],
+                                [
+                                    "Age",
+                                    "0"
+                                ],
+                                [
+                                    "Connection",
+                                    "keep-alive"
+                                ]
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

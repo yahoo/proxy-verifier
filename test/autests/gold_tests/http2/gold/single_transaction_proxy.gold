@@ -1,0 +1,30 @@
+``
+==== REQUEST HEADERS ====
+
+:method: GET
+:scheme: https
+:path: /path
+:authority: example.data.com
+uuid: cb9b4e94-5d42-43d4-8545-320033298ba2-211674043
+accept: */*
+accept-language: en-us
+host: example.com
+accept-encoding: gzip
+==== REQUEST BODY ====
+b''
+
+200 OK
+
+==== RESPONSE HEADERS ====
+age: 0
+date: Sat, 16 Mar 2019 01:13:21 GMT
+content-encoding: gzip
+cache-control: private
+content-length: 16
+content-type: application/json;charset=utf-8
+
+
+
+==== RESPONSE BODY ====
+b'0000000 0000001 '
+``

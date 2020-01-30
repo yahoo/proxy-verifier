@@ -1,0 +1,85 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ ipv4, tcp ]
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+    client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/path/1"
+      headers:
+        fields:
+        - [ Host, example.one ]
+    proxy-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/path/1"
+      headers:
+        fields:
+        - [ Host, example.one ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+
+  - all:
+      headers:
+        fields:
+        - [ uuid, 2 ]
+
+    client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/path/2"
+      headers:
+        fields:
+        - [ Host, example.one ]
+    proxy-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/path/2"
+      headers:
+        fields:
+        - [ Host, example.one ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 32
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 32 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 32
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 32 ]

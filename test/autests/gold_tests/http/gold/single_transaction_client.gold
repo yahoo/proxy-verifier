@@ -1,0 +1,20 @@
+``Configuring logging at level DIAG
+``
+``Headers:
+- "content-length": "0"
+- "content-type": "application/octet-stream"
+- "server": "ATS"
+- "via": "http/1.1 example.data1.com, http/1.1 example.data2.com"
+- "x-testheader": "from_server_response"
+- "age": "0"
+- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
+
+``Status: "200"
+``
+``Starting session "single_http_transaction.json":5 protocol=http.
+``1 transactions in 1 sessions``
+``Parsed 1 transactions.
+``
+``Loading 1 replay files.
+``Loading directory "``/single_transaction".
+``

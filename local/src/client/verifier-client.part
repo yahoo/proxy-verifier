@@ -1,0 +1,20 @@
+Import("*")
+PartName("verifier-client")
+
+env.DependsOn([
+    Component("openssl"),
+    Component("nghttp2"),
+    Component("swoc++"),
+    Component("yaml-cpp"),
+    Component("proxy-verifier.core"),
+])
+
+env.AppendUnique(
+    CCFLAGS=['-std=c++17', '-g'],
+)
+
+env.InstallBin(
+    env.SetRPath(  # allow fancy patchelf runpath setting it defined
+        env.Program("verifier-client", ["verifier-client.cc"])
+    )
+)

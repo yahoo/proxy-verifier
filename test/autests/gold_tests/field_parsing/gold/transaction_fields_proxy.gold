@@ -1,0 +1,30 @@
+``
+GET http://example.one/path/1 HTTP/1.1
+uuid: 1
+host: example.one
+
+
+HTTP/1.1 200 OK
+uuid: 1
+content-length: 16
+content-type: text/html
+
+
+==== RESPONSE BODY ====
+b'0000000 0000001 '
+
+Connecting to: 127.0.0.1:8083
+GET http://example.one/path/2 HTTP/1.1
+uuid: 2
+host: example.one
+
+
+HTTP/1.1 200 OK
+uuid: 2
+content-length: 32
+content-type: text/html
+
+
+==== RESPONSE BODY ====
+b'0000000 0000001 0000002 0000003 '
+``

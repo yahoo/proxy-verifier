@@ -1,0 +1,55 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ ipv4, tcp ]
+  transactions:
+
+  - client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ X-Test-Request, RequestData ]
+        - [ X-Test-Present, "It's there" ]
+        - [ Cookie, "V1=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; A3=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; GUC=AQEBAQFeK1JeM0If1wSb; A1S=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; uvts=24ce92ce-6bef-4940-5676-ccce503e26f6; APID=UP53275975-3e1e-11ea-b6a9-0e860b33a8b3; cmp=t=1579898053&j=0; apeaf=userintent%3D%257B%2522tooltipViews%2522%253A3%257D; APIDTS=1579898054; B=3vgt4fpf24ibu&b=3&s=o9" ]
+        - [ uuid, 5 ]
+    proxy-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ X-Test-Request, rEQUESTdATA, equal ]
+        - [ X-Test-Present, "It's there", absent ]
+        - [ Cookie, "V1=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; A3=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; GUC=AQEBAQFeK1JeM0If1wSb; A1S=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; uvts=24ce92ce-6bef-4940-5676-ccce503e26f6; APID=UP53275975-3e1e-11ea-b6a9-0e860b33a8b3; cmp=t=1579898053&j=0; apeaf=userintent%3D%257B%2522tooltipViews%2522%253A3%257D; APIDTS=1579898054; B=3vgt4fpf24ibu&b=3&s=o9", equal ]
+        - [ uuid, 5 ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Set-Cookie, ABCD, equal ]
+        - [ uuid, 5 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Set-Cookie, ABCD, equal ]
+        - [ X-Not-A-Header, Whatever, absent ]
+        - [ X-Does-Not-Exist, NotHere, present ]
+        - [ uuid, 5 ]

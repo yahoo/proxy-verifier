@@ -1,0 +1,23 @@
+Import('*')
+PartName("yaml-cpp")
+PartVersion(GitVersionFromTag("0.6.3"))
+
+env.AppendUnique(
+    CPPPATH=["${CHECK_OUT_DIR}/include"],
+    # add these to C++ compiler (CCFLAGS are for both c and C++, CFLAGS for C only)
+    CXXFLAGS=["-std=c++17", "-g"],
+)
+
+files = env.Pattern(src_dir="${CHECK_OUT_DIR}/src",includes=['*.cpp']).files()
+
+env.InstallLib(
+    env.StaticLibrary("yaml-cpp",files)
+    )
+
+# include headers
+env.SdkInclude(env.Pattern(src_dir="${CHECK_OUT_DIR}/include",includes=['*.h']))
+
+env.InstallInclude(
+    Pattern(src_dir="${CHECK_OUT_DIR}/include/",includes=["*.h"]),
+    )
+

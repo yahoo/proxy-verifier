@@ -1,0 +1,115 @@
+'''
+Implement the Proxy Verifier client extensions.
+'''
+# @file
+#
+# Copyright 2020, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+from __future__ import print_function
+from socket_util import create_address_argument
+import os
+
+
+def _configure_client(obj, process, name, replay_dir, use_ipv6=False,
+                      http_ports=[8080], https_ports=[4443], other_args=''):
+    """
+    Configure the process for running the verifier-client.
+
+    Args:
+        obj: An object that has a RunDirectory attribute.
+
+        process: (Process) The test process to configure for verifier-client.
+
+        See MakeClientProcess.
+    """
+
+    # Create the directory we will setup for the replay binaries to run under.
+    client_dir = os.path.join(obj.RunDirectory, name)
+
+    # Create a link of the binary to the rundir and set up the PATH variable.
+    # This will be the verifier-client that gets run.
+    bin_dir = 'bin'
+    process.Env['CLIENT_BIN_PATH'] = bin_dir
+    bin_path = os.path.join(client_dir, bin_dir)
+    process.Env['PATH'] = bin_path + os.pathsep + process.ComposeEnv()['PATH']
+    process.Setup.Copy(process.ComposeVariables().VERIFIER_BIN, bin_path, CopyLogic.SoftFiles)
+
+    # Configure the verifier-client command line arguments.
+    command = "verifier-client run "
+    if replay_dir:
+        # Create a copy of the replay directory in the run directory.
+        run_replay_dir = os.path.join(client_dir, os.path.basename(replay_dir))
+        process.Setup.Copy(replay_dir, run_replay_dir, CopyLogic.SoftFiles)
+        command += " {} ".format(run_replay_dir)
+
+    if http_ports:
+        command += create_address_argument(http_ports, use_ipv6)
+        command += " "
+
+    if https_ports:
+        command += create_address_argument(https_ports, use_ipv6)
+        command += " "
+
+    if other_args:
+        command += " {}".format(other_args)
+
+    process.Command = command
+    process.ReturnCode = 0
+
+
+def MakeClientProcess(test, name, replay_dir, use_ipv6=False,
+                      http_ports=[8080], https_ports=[4443], other_args=''):
+    """
+    Create a verifier-client process.
+
+    Args:
+        test: (Test) The Test object being updated with the client process.
+
+        name: (str) The name to apply to this particular verifier-client instance.
+            Individual verifier-client processes must have unique names to
+            distinguish between them.
+
+        replay_dir: (path) The directory containing the replay files for the
+            client to run with.
+
+        use_ipv6: (bool) True if IPv6 localhost should be used, IPv4 otherise.
+
+        http_ports: (list of ints) The set of HTTP ports to connect on.
+
+        https_ports: (list of ints) The set of HTTPS ports to connect on.
+
+        other_args: (str) Any other arbitrary options to pass to verifier-client.
+
+    Returns:
+        A verifier-client process.
+    """
+    client = test.Processes.Process(name)
+    _configure_client(test, client, name, replay_dir, use_ipv6, http_ports, https_ports, other_args)
+    return client
+
+
+def AddClientProcess(run, name, replay_dir, use_ipv6=False,
+                     http_ports=[8080], https_ports=[4443], other_args=''):
+    """
+    Set the Default process of the test run to a verifier-client Process.
+
+    Args:
+        run: (TestRun) The test run to which the client process is added.
+
+        For all other arguments, see MakeServerProcess.
+
+    Returns:
+        The newly constructed verifier-client for the test run, which is also the
+        Default Process of the test run.
+    """
+
+    p = run.Processes.Default
+    _configure_client(run, p, name, replay_dir, use_ipv6, http_ports, https_ports, other_args)
+    return p
+
+
+##########################################################################
+ExtendTest(MakeClientProcess, name="MakeClientProcess")
+ExtendTestRun(AddClientProcess, name="AddClientProcess")

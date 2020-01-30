@@ -1,0 +1,12 @@
+``
+``Headers:
+- "content-type": "multipart/form-data;snoopy=123456"
+- "date": "Sat, 16 Mar 2019 01:33:27 GMT"
+- "age": "1"
+
+``Status: "200"
+``
+``Connecting via TLS.
+``Starting session "single_http_transaction.json":5 protocol=https.
+``1 transactions in 1 sessions ``
+``

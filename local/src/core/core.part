@@ -1,0 +1,24 @@
+Import("*")
+PartName("core")
+
+env.DependsOn([
+    Component("nghttp2"),
+    Component("openssl"),
+    Component("swoc++"),
+    Component("yaml-cpp"),
+])
+
+env.AppendUnique(
+    CPPPATH=["${CHECK_OUT_DIR}/local/include"],
+    CCFLAGS=['-std=c++17', '-g'],
+)
+
+env.SdkInclude(
+    Pattern(src_dir="${CHECK_OUT_DIR}/local/include/core", includes=["*.h"]),
+    sub_dir="core",
+    add_to_path=False # don't add the sub_dir to path
+)
+
+env.SdkLib(
+    env.StaticLibrary("verifier-core",["ArgParser.cc", "ProxyVerifier.cc"])
+)

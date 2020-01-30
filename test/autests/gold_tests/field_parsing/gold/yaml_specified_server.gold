@@ -1,0 +1,23 @@
+``
+``Listening at 127.0.0.1:4443
+``Listening at 127.0.0.1:8083
+``Ready with 2 transactions.
+``Loading 1 replay files.
+``Absence Success: Key: "1", Name: "x-not-there"
+``Presence Success: Key: "1", Name: "x-test-header", Value: "something"
+``
+- "host": "example.one"
+- "uuid": "1"
+- "x-test-header": "something"
+- "Accept-Encoding": "identity"
+
+``Handling request with url: /config/settings.yaml
+``
+``Presence Violation: Absent. Key: "2", Name: "x-not-present"
+``Success: Key: "2", Name: "x-another-header", Value: "request"
+``
+- "host": "example.one"
+- "uuid": "2"
+- "x-another-header": "request"
+- "Accept-Encoding": "identity"
+``

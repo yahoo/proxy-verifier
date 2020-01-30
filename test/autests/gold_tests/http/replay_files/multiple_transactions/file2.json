@@ -1,0 +1,521 @@
+{
+    "meta": {
+        "version": "1.0"
+    },
+    "sessions": [
+        {
+            "protocol": [
+                "tcp",
+                "ipv4"
+            ],
+            "connection-time": 1552690251090759922,
+            "transactions": [
+                {
+                    "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-192916220",
+                    "start-time": 1552690251095476325,
+                    "client-request": {
+                        "version": "1.1",
+                        "scheme": "http",
+                        "method": "POST",
+                        "url": "http://something.real.com/d/log",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 1382
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Content-Length",
+                                    "1382"
+                                ],
+                                [
+                                    "origin",
+                                    "http://something.com"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/json"
+                                ],
+                                [
+                                    "Accept",
+                                    "*/*"
+                                ],
+                                [
+                                    "Accept-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Accept-Language",
+                                    "es-ES,es;q=0.9"
+                                ],
+                                [
+                                    "Host",
+                                    "something.com"
+                                ],
+                                [
+                                    "uuid",
+                                    "cb9b4e94-5d42-43d4-8545-320033298ba2-192916220"
+                                ]
+                            ]
+                        }
+                    },
+                    "proxy-request": {
+                        "version": "1.1",
+                        "scheme": "",
+                        "method": "POST",
+                        "url": "/d/log",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 1382
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Content-Length",
+                                    "1382"
+                                ],
+                                [
+                                    "origin",
+                                    "http://something.com"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/json"
+                                ],
+                                [
+                                    "Accept",
+                                    "*/*"
+                                ],
+                                [
+                                    "Accept-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Accept-Language",
+                                    "es-ES,es;q=0.9"
+                                ],
+                                [
+                                    "Host",
+                                    "something.com"
+                                ],
+                                [
+                                    "uuid",
+                                    "cb9b4e94-5d42-43d4-8545-320033298ba2-192916220"
+                                ]
+                            ]
+                        }
+                    },
+                    "server-response": {
+                        "status": 204,
+                        "reason": "No Content",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 0
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Cache-Control",
+                                    "no-store, no-cache, must-revalidate, private"
+                                ],
+                                [
+                                    "Pragma",
+                                    "no-cache"
+                                ],
+                                [
+                                    "Expires",
+                                    "0"
+                                ],
+                                [
+                                    "Date",
+                                    "Fri, 15 Mar 2019 22:50:51 GMT"
+                                ],
+                                [
+                                    "Age",
+                                    "0"
+                                ],
+                                [
+                                    "Connection",
+                                    "keep-alive"
+                                ]
+                            ]
+                        }
+                    },
+                    "proxy-response": {
+                        "status": 204,
+                        "reason": "No Content",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 0
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Cache-Control",
+                                    "no-store, no-cache, must-revalidate, private"
+                                ],
+                                [
+                                    "Pragma",
+                                    "no-cache"
+                                ],
+                                [
+                                    "Expires",
+                                    "0"
+                                ],
+                                [
+                                    "Date",
+                                    "Fri, 15 Mar 2019 22:50:51 GMT"
+                                ],
+                                [
+                                    "Age",
+                                    "0"
+                                ],
+                                [
+                                    "Server",
+                                    "ATS"
+                                ],
+                                [
+                                    "Connection",
+                                    "keep-alive"
+                                ]
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "protocol": [
+                "tcp",
+                "ipv4"
+            ],
+            "connection-time": 1552689662460056972,
+            "transactions": [
+                {
+                    "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-191528247",
+                    "start-time": 1552689662730140160,
+                    "client-request": {
+                        "version": "1.1",
+                        "scheme": "http",
+                        "method": "POST",
+                        "url": "http://example.real.com/aap.do",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 2196
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Host",
+                                    "example.com"
+                                ],
+                                [
+                                    "Connection",
+                                    "Keep-Alive"
+                                ],
+                                [
+                                    "Accept-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "2196"
+                                ],
+                                [
+                                    "uuid",
+                                    "cb9b4e94-5d42-43d4-8545-320033298ba2-191528247"
+                                ]
+                            ]
+                        }
+                    },
+                    "proxy-request": {
+                        "version": "1.1",
+                        "scheme": "",
+                        "method": "POST",
+                        "url": "/aap.do",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 2196
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Host",
+                                    "example.com"
+                                ],
+                                [
+                                    "Accept-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "2196"
+                                ],
+                                [
+                                    "uuid",
+                                    "cb9b4e94-5d42-43d4-8545-320033298ba2-191528247"
+                                ]
+                            ]
+                        }
+                    },
+                    "server-response": {
+                        "status": 200,
+                        "reason": "OK",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 20
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Date",
+                                    "Fri, 15 Mar 2019 22:41:02 GMT"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Age",
+                                    "0"
+                                ],
+                                [
+                                    "Content-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Vary",
+                                    "Accept-Encoding"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "20"
+                                ],
+                                [
+                                    "Connection",
+                                    "keep-alive"
+                                ]
+                            ]
+                        }
+                    },
+                    "proxy-response": {
+                        "status": 200,
+                        "reason": "OK",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 20
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Date",
+                                    "Fri, 15 Mar 2019 22:41:02 GMT"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Age",
+                                    "0"
+                                ],
+                                [
+                                    "Content-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Vary",
+                                    "Accept-Encoding"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "20"
+                                ],
+                                [
+                                    "Connection",
+                                    "keep-alive"
+                                ]
+                            ]
+                        }
+                    }
+                },
+                {
+                    "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-191675803",
+                    "start-time": 1552689726469594071,
+                    "client-request": {
+                        "version": "1.1",
+                        "scheme": "http",
+                        "method": "POST",
+                        "url": "http://example.real.com/aap.do",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 381
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Host",
+                                    "example.com"
+                                ],
+                                [
+                                    "Connection",
+                                    "Keep-Alive"
+                                ],
+                                [
+                                    "Accept-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "381"
+                                ],
+                                [
+                                    "uuid",
+                                    "cb9b4e94-5d42-43d4-8545-320033298ba2-191675803"
+                                ]
+                            ]
+                        }
+                    },
+                    "proxy-request": {
+                        "version": "1.1",
+                        "scheme": "",
+                        "method": "POST",
+                        "url": "/aap.do",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 381
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Host",
+                                    "example.com"
+                                ],
+                                [
+                                    "Accept-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "381"
+                                ],
+                                [
+                                    "uuid",
+                                    "cb9b4e94-5d42-43d4-8545-320033298ba2-191675803"
+                                ]
+                            ]
+                        }
+                    },
+                    "server-response": {
+                        "status": 200,
+                        "reason": "OK",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 20
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Date",
+                                    "Fri, 15 Mar 2019 22:42:06 GMT"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Age",
+                                    "0"
+                                ],
+                                [
+                                    "Content-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Vary",
+                                    "Accept-Encoding"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "20"
+                                ],
+                                [
+                                    "Connection",
+                                    "keep-alive"
+                                ]
+                            ]
+                        }
+                    },
+                    "proxy-response": {
+                        "status": 200,
+                        "reason": "OK",
+                        "content": {
+                            "encoding": "plain",
+                            "size": 20
+                        },
+                        "headers": {
+                            "encoding": "esc_json",
+                            "fields": [
+                                [
+                                    "Date",
+                                    "Fri, 15 Mar 2019 22:42:06 GMT"
+                                ],
+                                [
+                                    "Content-Type",
+                                    "application/octet-stream"
+                                ],
+                                [
+                                    "Age",
+                                    "0"
+                                ],
+                                [
+                                    "Content-Encoding",
+                                    "gzip"
+                                ],
+                                [
+                                    "Vary",
+                                    "Accept-Encoding"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "20"
+                                ],
+                                [
+                                    "Connection",
+                                    "keep-alive"
+                                ]
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

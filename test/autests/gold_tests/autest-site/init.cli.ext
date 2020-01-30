@@ -1,0 +1,25 @@
+'''
+Implement Proxy Verifier command line arguments.
+'''
+# @file
+#
+# Copyright 2020, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+import sys
+
+if sys.version_info < (3, 5, 0):
+    host.WriteError(
+        "You need python 3.5 or later to run these tests\n", show_stack=False)
+
+autest_version = "1.7.2"
+if AuTestVersion() < autest_version:
+    host.WriteError(
+        "Tests need AuTest version {ver} or better\n Please update AuTest:\n"
+        "pip install --upgrade autest\n".format(ver=autest_version), show_stack=False)
+
+
+Settings.path_argument(["--verifier-bin"],
+                       default="../../bin",
+                       help="The directory containing the client and server Proxy Verifier binaries")

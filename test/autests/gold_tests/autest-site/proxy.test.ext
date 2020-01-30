@@ -1,0 +1,125 @@
+'''
+Implement Proxy Verifier test proxy logic
+'''
+# @file
+#
+# Copyright 2020, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+from __future__ import print_function
+import os
+
+
+def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
+                     use_ssl=False, https_pem=None, use_http2_to_1=False):
+    """
+    Configure the provided process to run the proxy command.
+
+    Args
+        obj: An object that has a RunDirectory attribute.
+
+        process: (Process) The test process to configure for replay-server.
+
+        For all other arguments, see MakeProxyProcess
+    """
+
+    proxy_rundir = os.path.join(obj.RunDirectory, name)
+    process.Setup.MakeDir(proxy_rundir)
+    proxy_src = os.path.join(process.ComposeVariables().Autest.AutestSites[0], "test_proxy.py")
+    proxy_dest = os.path.join(proxy_rundir, os.path.basename(proxy_src))
+
+    command = "python {} --listen-port {} --server-port {}".format(
+            proxy_dest, listen_port, server_port)
+    if use_ssl:
+        test_root = process.TestRoot
+        pem_file = https_pem
+        if not pem_file:
+            from os.path import dirname
+            git_root = dirname(dirname(dirname(test_root)))
+            pem_file = os.path.join(git_root, "server_test.pem")
+
+            if not os.path.isfile(pem_file):
+                raise ValueError("Tried to use '{}' for --https-pem, but it is not "
+                                 "a valid file.".format(pem_file))
+
+        run_pem = os.path.join(proxy_rundir, os.path.basename(pem_file))
+        process.Setup.Copy(pem_file, run_pem, CopyLogic.SoftFiles)
+
+        command += " --https-pem {}".format(run_pem)
+
+    if use_http2_to_1:
+        command += " --http2_to_1"
+
+    process.Setup.Copy(proxy_src, proxy_dest, CopyLogic.SoftFiles)
+    process.Command = command
+
+    process.Ready = When.PortOpen(listen_port)
+    # The server is designed to be long-lived and thus will be interrupted by
+    # the test. Because of this, its return code may be non-zero, depending
+    # upon the server implementation.
+    if use_http2_to_1:
+        process.ReturnCode = 0
+    else:
+        process.ReturnCode = 1
+
+
+def MakeProxyProcess(test, name, listen_port=8080, server_port=8081,
+                     use_ssl=False, https_pem=None, use_http2=False):
+    """
+    Create a Process to run the proxy command.
+
+    Args:
+        test: (Test) The Test object to add the proxy process to.
+
+        name: (str) The identifying name for the proxy process.
+
+        listen_port: (int) The TCP port on which to listen for connections from
+        the client.
+
+        server_port: (int) The TCP port for server to which the proxy should
+        connect.
+
+        use_ssl: (bool) True if the proxy should listen for an HTTPS
+        connection, false otherwise.
+
+        https_pem: (str) The path to the pem file to use for the HTTPS
+        connections.
+
+        use_http2: (bool) True if the connection should expect HTTP/2 traffic,
+        false otherwise.
+
+    Returns:
+        The newly created proxy Process.
+    """
+    proxy = test.Processes.Process(name)
+    _configure_proxy(test, proxy, name, listen_port, server_port,
+                     use_ssl, https_pem)
+    return proxy
+
+
+def AddProxyProcess(run, name, listen_port=8080, server_port=8081,
+                    use_ssl=False, https_pem=None, use_http2_to_1=False):
+    """
+    Create a proxy Process and add it to the provided TestRun.
+
+    Args:
+        run: (TestRun) The test run to add the new proxy Process to.
+
+        For all other arguments, see MakeProxyProcess.
+
+    Returns:
+        The newly created proxy Process.
+    """
+    proxy = run.Processes.Process(name)
+    _configure_proxy(run, proxy, name, listen_port, server_port,
+                     use_ssl, https_pem, use_http2_to_1)
+
+    client = run.Processes.Default
+    client.StartBefore(proxy)
+
+    return proxy
+
+##########################################################################
+ExtendTest(MakeProxyProcess, name="MakeProxyProcess")
+ExtendTestRun(AddProxyProcess, name="AddProxyProcess")
