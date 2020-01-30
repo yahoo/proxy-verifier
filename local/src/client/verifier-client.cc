@@ -15,11 +15,11 @@
 #include <chrono>
 #include <list>
 #include <mutex>
-#include <sys/time.h>
-#include <unordered_set>
 #include <string>
+#include <sys/time.h>
 #include <thread>
 #include <unistd.h>
+#include <unordered_set>
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -134,8 +134,8 @@ swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
             if (auto client_sni_node{tls_node[YAML_SSN_TLS_CLIENT_SNI_KEY]};
                 client_sni_node) {
               if (client_sni_node.IsScalar()) {
-                _ssn->_client_sni =
-                    HttpHeader::localize_lower(client_sni_node.Scalar().c_str());
+                _ssn->_client_sni = HttpHeader::localize_lower(
+                    client_sni_node.Scalar().c_str());
               } else {
                 errata.error(
                     R"(Session at "{}":{} has a value for key "{}" that is not a scalar as required.)",
@@ -213,7 +213,8 @@ swoc::Errata ClientReplayFileHandler::proxy_response(YAML::Node const &node) {
   if (!Use_Proxy_Request_Directives) {
     // We only expect proxy responses when we are behaving according to the
     // client-request directives and there is a proxy.
-    _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+    _txn._rsp._fields_rules =
+        std::make_shared<HttpFields>(*global_config.txn_rules);
     return _txn._rsp.load(node);
   }
   return {};
@@ -223,21 +224,22 @@ swoc::Errata ClientReplayFileHandler::server_response(YAML::Node const &node) {
   if (Use_Proxy_Request_Directives) {
     // If we are behaving like the proxy, then replay-client is talking directly
     // with the server and should expect the server's responses.
-    _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+    _txn._rsp._fields_rules =
+        std::make_shared<HttpFields>(*global_config.txn_rules);
     return _txn._rsp.load(node);
   }
   return {};
 }
 
-swoc::Errata ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
-{
+swoc::Errata
+ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers) {
   _txn._req._fields_rules->merge(all_headers);
   _txn._rsp._fields_rules->merge(all_headers);
   return {};
 }
 
 swoc::Errata ClientReplayFileHandler::txn_close() {
-  const auto& key{_txn._req.make_key()};
+  const auto &key{_txn._req.make_key()};
   if (Keys_Whitelist.empty() || Keys_Whitelist.count(key) > 0) {
     _ssn->_transactions.emplace_back(std::move(_txn));
   }
@@ -385,7 +387,7 @@ void Engine::command_run() {
 
   auto keys_arg{arguments.get("keys")};
   if (!keys_arg.empty()) {
-    for (const auto& key: keys_arg) {
+    for (const auto &key : keys_arg) {
       Keys_Whitelist.insert(key);
     }
   }
@@ -539,8 +541,8 @@ int main(int argc, const char *argv[]) {
                   "Verify all proxy responses against the content in the yaml "
                   "file as opposed to "
                   "just those with verification elements.")
-      .add_option("--keys", "-k", "A whitelist of transactions to send.",
-                  "", MORE_THAN_ZERO_ARG_N, "");
+      .add_option("--keys", "-k", "A whitelist of transactions to send.", "",
+                  MORE_THAN_ZERO_ARG_N, "");
 
   // parse the arguments
   engine.arguments = engine.parser.parse(argv);

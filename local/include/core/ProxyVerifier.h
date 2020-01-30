@@ -140,16 +140,16 @@ BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec,
  *   3. Equality: an HTTP header with the given name and value should exist
  *   in the request or response being verified.
  *
- * Thus rules are the expectations that are provided to proxy-verifier concerning
- * transactions coming out of the proxy. In the absence of a rule, no
+ * Thus rules are the expectations that are provided to proxy-verifier
+ * concerning transactions coming out of the proxy. In the absence of a rule, no
  * verification is done.
  *
  * Rules are applied in one of three ways, presented here in order from broad
  * to specific:
  *
- *   1. Via the --strict command line argument. This tells proxy-verifier to treat
- *   each proxy request header field without a verification rule as if it had
- *   an equality verification value.
+ *   1. Via the --strict command line argument. This tells proxy-verifier to
+ * treat each proxy request header field without a verification rule as if it
+ * had an equality verification value.
  *
  *   2. Via the YAML_META_KEY:YAML_GLOBALS_KEY nodes. This specifies fields and
  *   rules expected across all transactions in the json file.
@@ -201,10 +201,12 @@ public:
 
   /** Generate @a RuleCheck with @a node with factory pattern.
    *
-   * @param name TextView holding the name of the field. This should be localized.
-   * @param value TextView holding the value of the field. This should be localized.
-   * @param rule_type TextView holding the verification rule value from the node. This
-   *   need not be localized.
+   * @param name TextView holding the name of the field. This should be
+   * localized.
+   * @param value TextView holding the value of the field. This should be
+   * localized.
+   * @param rule_type TextView holding the verification rule value from the
+   * node. This need not be localized.
    * @return A pointer to the RuleCheck instance generated, holding a key (and
    * potentially value) TextView for the rule to compare inputs to
    */
@@ -258,7 +260,8 @@ public:
    * found)
    * @return Whether the check was successful or not
    */
-  virtual bool test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const = 0;
+  virtual bool test(swoc::TextView key, swoc::TextView name,
+                    swoc::TextView value) const = 0;
 };
 
 class EqualityCheck : public RuleCheck {
@@ -287,7 +290,8 @@ public:
    * found)
    * @return Whether the check was successful or not
    */
-  bool test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const override;
+  bool test(swoc::TextView key, swoc::TextView name,
+            swoc::TextView value) const override;
 };
 
 class PresenceCheck : public RuleCheck {
@@ -308,7 +312,8 @@ public:
    * if not found)
    * @return Whether the check was successful or not
    */
-  bool test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const override;
+  bool test(swoc::TextView key, swoc::TextView name,
+            swoc::TextView value) const override;
 };
 
 class AbsenceCheck : public RuleCheck {
@@ -329,7 +334,8 @@ public:
    * if not found)
    * @return Whether the check was successful or not
    */
-  bool test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const override;
+  bool test(swoc::TextView key, swoc::TextView name,
+            swoc::TextView value) const override;
 };
 
 class HttpFields {
@@ -337,7 +343,8 @@ class HttpFields {
   /// std::unordered_map that returns RuleChecks for given field names
   using Rules = std::unordered_map<swoc::TextView, std::shared_ptr<RuleCheck>,
                                    Hash, Hash>;
-  using Fields = std::unordered_multimap<swoc::TextView, std::string, Hash, Hash>;
+  using Fields =
+      std::unordered_multimap<swoc::TextView, std::string, Hash, Hash>;
 
 public:
   Rules _rules;   ///< Maps field names to functors.
@@ -902,7 +909,9 @@ public:
   virtual swoc::Errata proxy_request(YAML::Node const &node) { return {}; }
   virtual swoc::Errata server_response(YAML::Node const &node) { return {}; }
   virtual swoc::Errata proxy_response(YAML::Node const &node) { return {}; }
-  virtual swoc::Errata apply_to_all_messages(HttpFields const &all_headers) { return {}; }
+  virtual swoc::Errata apply_to_all_messages(HttpFields const &all_headers) {
+    return {};
+  }
 
 protected:
   /** The replay file associated with this handler.

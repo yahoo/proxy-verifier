@@ -142,7 +142,8 @@ swoc::Errata ServerReplayFileHandler::txn_open(YAML::Node const &node) {
 }
 
 swoc::Errata ServerReplayFileHandler::proxy_request(YAML::Node const &node) {
-  _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+  _txn._req._fields_rules =
+      std::make_shared<HttpFields>(*global_config.txn_rules);
   swoc::Errata errata = _txn._req.load(node);
   return std::move(errata);
 }
@@ -172,8 +173,8 @@ swoc::Errata ServerReplayFileHandler::server_response(YAML::Node const &node) {
   return std::move(errata);
 }
 
-swoc::Errata ServerReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
-{
+swoc::Errata
+ServerReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers) {
   _txn._req._fields_rules->merge(all_headers);
   _txn._rsp._fields_rules->merge(all_headers);
   return {};

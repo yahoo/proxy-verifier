@@ -858,9 +858,7 @@ static int on_data_chunk_recv_cb(nghttp2_session *session, uint8_t flags,
   return 0;
 }
 
-H2Session::H2Session() {
-  callbacks = nullptr;
-}
+H2Session::H2Session() { callbacks = nullptr; }
 
 swoc::Rv<ssize_t> H2Session::read(swoc::MemSpan<char> span) {
   swoc::Rv<ssize_t> zret{1};
@@ -1230,8 +1228,7 @@ void RuleCheck::options_init() {
 
 std::shared_ptr<RuleCheck> RuleCheck::find(swoc::TextView localized_name,
                                            swoc::TextView localized_value,
-                                           swoc::TextView rule_type)
-{
+                                           swoc::TextView rule_type) {
   swoc::Errata errata;
   auto fn_iter = options.find(rule_type);
   if (fn_iter == options.end()) {
@@ -1266,39 +1263,44 @@ PresenceCheck::PresenceCheck(swoc::TextView name) { _name = name; }
 
 AbsenceCheck::AbsenceCheck(swoc::TextView name) { _name = name; }
 
-bool EqualityCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const {
+bool EqualityCheck::test(swoc::TextView key, swoc::TextView name,
+                         swoc::TextView value) const {
   swoc::Errata errata;
   if (name.empty())
-    errata.info(R"(Equals Violation: Absent. Key: "{}", Name: "{}", Correct Value: "{}")",
-                key, _name, _value);
+    errata.info(
+        R"(Equals Violation: Absent. Key: "{}", Name: "{}", Correct Value: "{}")",
+        key, _name, _value);
   else if (strcmp(value, _value))
     errata.info(
         R"(Equals Violation: Different. Key: "{}", Name: "{}", Correct Value: "{}", Actual Value: "{}")",
         key, _name, _value, value);
   else {
-    errata.info(R"(Equals Success: Key: "{}", Name: "{}", Value: "{}")",
-        key, _name, _value);
+    errata.info(R"(Equals Success: Key: "{}", Name: "{}", Value: "{}")", key,
+                _name, _value);
     return true;
   }
   return false;
 }
 
-bool PresenceCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const {
+bool PresenceCheck::test(swoc::TextView key, swoc::TextView name,
+                         swoc::TextView value) const {
   swoc::Errata errata;
   if (name.empty()) {
-    errata.info(R"(Presence Violation: Absent. Key: "{}", Name: "{}")",
-        key, _name);
+    errata.info(R"(Presence Violation: Absent. Key: "{}", Name: "{}")", key,
+                _name);
     return false;
   }
-  errata.info(R"(Presence Success: Key: "{}", Name: "{}", Value: "{}")",
-      key, _name, value);
+  errata.info(R"(Presence Success: Key: "{}", Name: "{}", Value: "{}")", key,
+              _name, value);
   return true;
 }
 
-bool AbsenceCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const {
+bool AbsenceCheck::test(swoc::TextView key, swoc::TextView name,
+                        swoc::TextView value) const {
   swoc::Errata errata;
   if (!name.empty()) {
-    errata.info(R"(Absence Violation: Present. Key: "{}", Name: "{}", Value: "{}")",
+    errata.info(
+        R"(Absence Violation: Present. Key: "{}", Name: "{}", Value: "{}")",
         key, _name, value);
     return false;
   }
@@ -1363,12 +1365,11 @@ swoc::Errata HttpHeader::serialize(swoc::BufferWriter &w) const {
   return std::move(errata);
 }
 
-void HttpFields::merge(HttpFields const &other)
-{
-  for (auto const &field: other._fields) {
+void HttpFields::merge(HttpFields const &other) {
+  for (auto const &field : other._fields) {
     _fields.emplace(field.first, field.second);
   }
-  for (auto const &rule: other._rules) {
+  for (auto const &rule : other._rules) {
     _rules.emplace(rule.first, rule.second);
   }
 }
@@ -1417,15 +1418,17 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node,
                    node.Mark());
       continue;
     }
-    TextView name{HttpHeader::localize_lower(node[YAML_RULE_NAME_KEY].Scalar())};
-    TextView value{HttpHeader::localize(node[YAML_RULE_DATA_KEY].Scalar()) };
+    TextView name{
+        HttpHeader::localize_lower(node[YAML_RULE_NAME_KEY].Scalar())};
+    TextView value{HttpHeader::localize(node[YAML_RULE_DATA_KEY].Scalar())};
     _fields.emplace(name, value);
     if (node_size == 2 && assume_equality_rule) {
       _rules.emplace(name, RuleCheck::make_equality(name, value));
     } else if (node_size == 3) {
       // Contans a verification rule.
       TextView rule_type{node[YAML_RULE_TYPE_KEY].Scalar()};
-      std::shared_ptr<RuleCheck> tester = RuleCheck::find(name, value, rule_type);
+      std::shared_ptr<RuleCheck> tester =
+          RuleCheck::find(name, value, rule_type);
       if (!tester) {
         errata.error("Field rule at {} does not have a valid flag ({})",
                      node.Mark(), rule_type);
@@ -1519,7 +1522,8 @@ swoc::Errata HttpHeader::load(YAML::Node const &node) {
             end_host = _url.length();
           }
         }
-        _authority = this->localize(_url.substr(auth_start, end_host - auth_start));
+        _authority =
+            this->localize(_url.substr(auth_start, end_host - auth_start));
       }
       std::size_t path_start = _url.find("/", end_host + 1);
       if (path_start != std::string::npos) {
@@ -1630,7 +1634,8 @@ std::string HttpHeader::make_key() const {
   return std::move(key);
 }
 
-bool HttpHeader::verify_headers(swoc::TextView key, const HttpFields &rules_) const {
+bool HttpHeader::verify_headers(swoc::TextView key,
+                                const HttpFields &rules_) const {
   // Remains false if no issue is observed
   // Setting true does not break loop because test() calls errata.diag()
   bool issue_exists = false;
@@ -1642,8 +1647,7 @@ bool HttpHeader::verify_headers(swoc::TextView key, const HttpFields &rules_) co
         issue_exists = true;
       }
     } else {
-      if (!rule.second->test(key,
-                             found_iter->first,
+      if (!rule.second->test(key, found_iter->first,
                              swoc::TextView(found_iter->second))) {
         issue_exists = true;
       }
@@ -1658,12 +1662,12 @@ HttpHeader::HttpHeader(bool verify_strictly)
 
 swoc::TextView HttpHeader::localize(char const *text) {
   return self_type::localize_helper(TextView{text, strlen(text) + 1},
-      !SHOULD_LOWER);
+                                    !SHOULD_LOWER);
 }
 
 swoc::TextView HttpHeader::localize_lower(char const *text) {
   return self_type::localize_helper(TextView{text, strlen(text) + 1},
-      SHOULD_LOWER);
+                                    SHOULD_LOWER);
 }
 
 swoc::TextView HttpHeader::localize(TextView text) {
@@ -1934,7 +1938,8 @@ swoc::Errata Load_Replay_File(swoc::file::path const &path,
                                 all_node) {
                               if (auto headers_node{all_node[YAML_HDR_KEY]};
                                   headers_node) {
-                                result.note(all_fields.parse_global_rules(headers_node));
+                                result.note(all_fields.parse_global_rules(
+                                    headers_node));
                               }
                             }
                             if (auto creq_node{txn_node[YAML_CLIENT_REQ_KEY]};
@@ -1955,7 +1960,8 @@ swoc::Errata Load_Replay_File(swoc::file::path const &path,
                               result.note(handler.proxy_response(prsp_node));
                             }
                             if (!all_fields._fields.empty()) {
-                              result.note(handler.apply_to_all_messages(all_fields));
+                              result.note(
+                                  handler.apply_to_all_messages(all_fields));
                             }
                             result.note(handler.txn_close());
                           }

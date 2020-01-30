@@ -23,10 +23,14 @@ TEST_CASE("RuleCheck and Child Classes", "[RCaCC]") {
       YAML::Load("[\"test\", \"test\", \"equals\"]");
   YAML::Node yaml_equals_blank = YAML::Load("[\"test\", \"\", \"equals\"]");
 
-  std::shared_ptr<RuleCheck> present_check = RuleCheck::find(test_name, test_value, "present");
-  std::shared_ptr<RuleCheck> absent_check = RuleCheck::find(test_name, test_value, "absent");
-  std::shared_ptr<RuleCheck> equal_check_not_blank = RuleCheck::find(test_name, test_value, "equal");
-  std::shared_ptr<RuleCheck> equal_check_blank = RuleCheck::find(test_name, "", "equal");
+  std::shared_ptr<RuleCheck> present_check =
+      RuleCheck::find(test_name, test_value, "present");
+  std::shared_ptr<RuleCheck> absent_check =
+      RuleCheck::find(test_name, test_value, "absent");
+  std::shared_ptr<RuleCheck> equal_check_not_blank =
+      RuleCheck::find(test_name, test_value, "equal");
+  std::shared_ptr<RuleCheck> equal_check_blank =
+      RuleCheck::find(test_name, "", "equal");
 
   REQUIRE(present_check);
   REQUIRE(absent_check);
