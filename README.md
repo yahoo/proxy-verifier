@@ -56,7 +56,7 @@ local machine for development and testing purposes.
 
 ### Prerequisites
 
-Building and running Proxy Verifier requires the following to be intsalled on the system:
+Building and running Proxy Verifier requires the following to be installed on the system:
 
 * SCons. Proxy Verifier is built using the [SCons](https://scons.org) build tool.
 * OpenSSL
