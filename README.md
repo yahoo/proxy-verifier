@@ -67,7 +67,9 @@ Building and running Proxy Verifier requires the following to be installed on th
 OpenSSL and Nghttp2 are linked against dynamically and have their own SCons arguments to point to their locations.
 
 ```
-scons -j8 --with-ssl=/path/to/openssl --with-nghttp2=/path/to/nghttp2 --use-env --cfg=release proxy-verifier
+pipenv shell
+pipenv install scons scons-parts
+scons -j8 --with-ssl=/path/to/openssl --with-nghttp2=/path/to/nghttp2 --cfg=release proxy-verifier
 ```
 
 This will build `verifier-client` `verifier-server` in the `bin/` directory at the root of the repository.
@@ -76,10 +78,11 @@ This will build `verifier-client` `verifier-server` in the `bin/` directory at t
 
 #### Unit Tests
 
-To build and run the unit tests, use the `run_utest` Scons target:
+To build and run the unit tests, use the `run_utest` Scons target (this assumes
+you are in the pipenv shell you used to build Proxy Verifier, see above):
 
 ```
-scons -j8 --with-ssl=/path/to/openssl --with-nghttp2=/path/to/nghttp2 --use-env --cfg=release run_utest::
+scons -j8 --with-ssl=/path/to/openssl --with-nghttp2=/path/to/nghttp2 --cfg=release run_utest::
 ```
 
 #### Gold Tests
