@@ -7,39 +7,6 @@ Implement HTTP/2 proxy behavior in Python.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-# The below was initially copied from:
-# https://github.com/python-hyper/hyper-h2/blob/e0a3e2eb5449b78ab811f32b7672bfd4e1033cf0/examples/eventlet/eventlet-server.py
-#
-# The license is the permissive MIT License
-# https://github.com/python-hyper/hyper-h2/blob/61ee6f5d588598e36f6d1a3302c8ce2a4ea75dec/LICENSE
-#
-# I copy the LICENSE file content here in case the above link fails in the future:
-#
-# -------------
-# The MIT License (MIT)
-#
-# Copyright (c) 2015-2016 Cory Benfield and contributors
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-#
-# -------------
-
 
 import sys
 import ssl
