@@ -43,6 +43,7 @@ swoc::TextView HttpHeader::_key_format{"{field.uuid}"};
 swoc::MemSpan<char> HttpHeader::_content;
 swoc::TextView HttpHeader::FIELD_CONTENT_LENGTH;
 swoc::TextView HttpHeader::FIELD_TRANSFER_ENCODING;
+swoc::TextView HttpHeader::FIELD_HOST;
 std::bitset<600> HttpHeader::STATUS_NO_CONTENT;
 
 RuleCheck::RuleOptions RuleCheck::options;
@@ -1208,6 +1209,7 @@ ChunkCodex::transmit(Session &session, swoc::TextView data, size_t chunk_size) {
 void HttpHeader::global_init() {
   FIELD_CONTENT_LENGTH = localize_lower("Content-Length"_tv);
   FIELD_TRANSFER_ENCODING = localize_lower("Transfer-Encoding"_tv);
+  FIELD_HOST = localize_lower("Host"_tv);
 
   STATUS_NO_CONTENT[100] = true;
   STATUS_NO_CONTENT[204] = true;
@@ -1451,6 +1453,39 @@ void HttpFields::add_fields_to_ngnva(nghttp2_nv *l) const {
   }
 }
 
+swoc::Errata
+HttpHeader::parse_url(TextView url)
+{
+  swoc::Errata errata;
+  // Split out the path and scheme for http/2 required headers
+  // See rfc3986 section-3.2.
+  // TODO: Break this out into a unit tested static function.
+  std::size_t end_scheme = _url.find("://");
+  if (end_scheme == std::string::npos) {
+    _path = url;
+    // Scheme, authority, and the like will have to come from the corresponding YAML nodes.
+    return errata;
+  }
+  std::size_t auth_start = end_scheme + 3; // "://" is 3 characters.
+  std::size_t end_host = auth_start;
+  _scheme = this->localize(_url.substr(0, end_scheme));
+  // Look for the ':' for the port.
+  end_host = _url.find(":", auth_start);
+  if (end_host == std::string::npos) {
+    // No ':': look for the next "/".
+    end_host = _url.find("/", auth_start);
+    if (end_host == std::string::npos) {
+      end_host = _url.length();
+    }
+  }
+  _authority = this->localize(_url.substr(auth_start, end_host - auth_start));
+  std::size_t path_start = _url.find("/", end_host + 1);
+  if (path_start != std::string::npos) {
+    _path = this->localize(_url.substr(path_start));
+  }
+  return errata;
+}
+
 swoc::Errata HttpHeader::load(YAML::Node const &node) {
   swoc::Errata errata;
 
@@ -1504,34 +1539,20 @@ swoc::Errata HttpHeader::load(YAML::Node const &node) {
     auto url_node{node[YAML_HTTP_URL_KEY]};
     if (url_node.IsScalar()) {
       _url = this->localize(url_node.Scalar());
-
-      // Split out the path and scheme for http/2 required headers
-      // See rfc3986 section-3.2.
-      // TODO: Break this out into a unit tested static function.
-      std::size_t end_scheme = _url.find("://");
-      std::size_t auth_start = end_scheme + 3; // "://" is 3 characters.
-      std::size_t end_host = auth_start;
-      if (end_scheme != std::string::npos) {
-        _scheme = this->localize(_url.substr(0, end_scheme));
-        // Look for the ':' for the port.
-        end_host = _url.find(":", auth_start);
-        if (end_host == std::string::npos) {
-          // No ':': look for the next "/".
-          end_host = _url.find("/", auth_start);
-          if (end_host == std::string::npos) {
-            end_host = _url.length();
-          }
-        }
-        _authority =
-            this->localize(_url.substr(auth_start, end_host - auth_start));
-      }
-      std::size_t path_start = _url.find("/", end_host + 1);
-      if (path_start != std::string::npos) {
-        _path = this->localize(_url.substr(path_start));
-      }
+      this->parse_url(_url);
     } else {
       errata.error(R"("{}" value at {} must be a string.)", YAML_HTTP_URL_KEY,
                    url_node.Mark());
+    }
+  }
+
+  if (node[YAML_HTTP_SCHEME_KEY]) {
+    auto scheme_node{node[YAML_HTTP_SCHEME_KEY]};
+    if (scheme_node.IsScalar()) {
+      _scheme = this->localize(scheme_node.Scalar());
+    } else {
+      errata.error(R"("{}" value at {} must be a string.)", YAML_HTTP_SCHEME_KEY,
+                   scheme_node.Mark());
     }
   }
 
@@ -1548,6 +1569,14 @@ swoc::Errata HttpHeader::load(YAML::Node const &node) {
         errata.error("Failed to parse response at {}", node.Mark());
         errata.note(result);
       }
+    }
+  }
+
+  if (!_method.empty() && _authority.empty()) {
+    // The URL didn't have the authority. Get it from the Host header if it exists.
+    const auto it = _fields_rules->_fields.find(FIELD_HOST);
+    if (it != _fields_rules->_fields.end()) {
+      _authority = it->second;
     }
   }
 

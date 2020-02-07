@@ -53,6 +53,7 @@ static const std::string YAML_HTTP_VERSION_KEY{"version"};
 static const std::string YAML_HTTP_STATUS_KEY{"status"};
 static const std::string YAML_HTTP_REASON_KEY{"reason"};
 static const std::string YAML_HTTP_METHOD_KEY{"method"};
+static const std::string YAML_HTTP_SCHEME_KEY{"scheme"};
 static const std::string YAML_HTTP_URL_KEY{"url"};
 static const std::string YAML_CONTENT_KEY{"content"};
 static const std::string YAML_CONTENT_LENGTH_KEY{"size"};
@@ -423,6 +424,7 @@ public:
   /// @{
   static TextView FIELD_CONTENT_LENGTH;
   static TextView FIELD_TRANSFER_ENCODING;
+  static TextView FIELD_HOST;
   /// @}
 
   /// Mark which status codes have no content by default.
@@ -435,6 +437,7 @@ public:
   self_type &operator=(self_type &&that) = default;
 
   swoc::Errata load(YAML::Node const &node);
+  swoc::Errata parse_url(TextView url);
 
   swoc::Rv<ParseResult> parse_request(TextView data);
   swoc::Rv<ParseResult> parse_response(TextView data);
