@@ -22,30 +22,20 @@ Each header field specification can verify one of the following:
 
 Thus the following JSON field specification requests no field verification:
 
-```json
-  [
-      "X-Forwarded-For",
-      "10.10.10.2"
-  ],
+```YAML
+  - [ X-Forwarded-For, 10.10.10.2 ]
 ```
 
 The following specifies that the HTTP field `X-Forwarded-For` _with any value_ should not have been sent by the proxy:
 
-```json
-  [
-      "X-Forwarded-For",
-      "10.10.10.2",
-      "absent"
-  ],
+```YAML
+  - [ X-Forwarded-For, 10.10.10.2, absent ]
 ```
 
 The following specifies that `X-Forwarded-For` should have been received from the proxy with the exact value "10.10.10.2":
-```json
-  [
-      "X-Forwarded-For",
-      "10.10.10.1",
-      "equal"
-  ],
+
+```YAML
+  - [ X-Forwarded-For, 10.10.10.2, equal ]
 ```
 
 ## Install

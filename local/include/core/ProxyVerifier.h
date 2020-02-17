@@ -179,18 +179,28 @@ struct Hash {
 
 class RuleCheck {
   /// References the make_* functions below.
-  using RuleFunction =
+  using MakeRuleFunction =
       std::function<std::shared_ptr<RuleCheck>(swoc::TextView, swoc::TextView)>;
   using RuleOptions =
-      std::unordered_map<swoc::TextView, RuleFunction, Hash, Hash>;
-
+      std::unordered_map<swoc::TextView, MakeRuleFunction, Hash, Hash>;
   static RuleOptions
       options; ///< Returns function to construct a RuleCheck child class for a
                ///< given rule type ("equals", "presence", or "absence")
 
+  using MakeDuplicateFieldRuleFunction =
+      std::function<std::shared_ptr<RuleCheck>(swoc::TextView, std::list<swoc::TextView>&&)>;
+  using DuplicateFieldRuleOptions =
+      std::unordered_map<swoc::TextView, MakeDuplicateFieldRuleFunction, Hash, Hash>;
+  static DuplicateFieldRuleOptions
+      duplicate_field_options; ///< Returns function to construct a RuleCheck child class for a
+               ///< given duplicate field rule type ("equals", "presence", or "absence")
+
 protected:
-  swoc::TextView
-      _name; ///< All rules have a name of the field that needs to be checked
+  /// Name the expects_duplicate_fields parameter to the Rule constructors.
+  static constexpr bool EXPECTS_DUPLICATE_FIELDS = true;
+
+  /// All rules have a name of the field that needs to be checked.
+  swoc::TextView _name;
 
 public:
   virtual ~RuleCheck() {}
@@ -202,148 +212,252 @@ public:
 
   /** Generate @a RuleCheck with @a node with factory pattern.
    *
-   * @param name TextView holding the name of the field. This should be
-   * localized.
-   * @param value TextView holding the value of the field. This should be
-   * localized.
-   * @param rule_type TextView holding the verification rule value from the
-   * node. This need not be localized.
+   * @param name The name of the field. This should be localized.
+   * @param value The value of the field. This should be localized.
+   * @param rule_type The verification rule value from the node. This need not
+   * be localized.
    * @return A pointer to the RuleCheck instance generated, holding a key (and
    * potentially value) TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> find(swoc::TextView localized_name,
-                                         swoc::TextView localized_value,
-                                         swoc::TextView rule_type);
+  static std::shared_ptr<RuleCheck> make_rule_check(
+      swoc::TextView localized_name,
+      swoc::TextView localized_value,
+      swoc::TextView rule_type);
+
+  /**
+   * @param values The values of the field. This should be localized.
+   */
+  static std::shared_ptr<RuleCheck> make_rule_check(
+      swoc::TextView localized_name,
+      std::list<swoc::TextView> &&localized_values,
+      swoc::TextView rule_type);
 
   /** Generate @a EqualityCheck, invoked by the factory function when the
    * "equals" flag is present.
    *
-   * @param node TextView holding the name of the target field
-   * @param name TextView holding the associated value with the target field,
+   * @param node The name of the target field
+   * @param name The associated value with the target field,
    * that is used with strcasecmp comparisons
    * @return A pointer to the EqualityCheck instance generated, holding key and
    * value TextViews for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_equality(swoc::TextView name,
-                                                  swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_equality(
+      swoc::TextView name,
+      swoc::TextView value);
+
+  /**
+   * @param values The list of values to expect in the response.
+   */
+  static std::shared_ptr<RuleCheck> make_equality(
+      swoc::TextView name,
+      std::list<swoc::TextView> &&values);
 
   /** Generate @a PresenceCheck, invoked by the factory function when the
    * "absence" flag is present.
    *
-   * @param name TextView holding the name of the target field
-   * @param value TextView (unused) in order to have the same signature as
+   * @param name The name of the target field
+   * @param value (unused) Used in order to have the same signature as
    * make_equality
    * @return A pointer to the Presence instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_presence(swoc::TextView name,
-                                                  swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_presence(
+      swoc::TextView name,
+      swoc::TextView value);
+
+  /**
+   * @param values (unused) The list of values specified in the YAML node.
+   */
+  static std::shared_ptr<RuleCheck> make_presence(
+      swoc::TextView name,
+      std::list<swoc::TextView> &&values);
 
   /** Generate @a AbsenceCheck, invoked by the factory function when the
    * "absence" flag is present.
    *
-   * @param name TextView holding the name of the target field
-   * @param value TextView (unused) in order to have the same signature as
+   * @param name The name of the target field
+   * @param value (unused) Used in order to have the same signature as
    * make_equality
    * @return A pointer to the AbsenceCheck instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_absence(swoc::TextView name,
-                                                 swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_absence(
+      swoc::TextView name,
+      swoc::TextView value);
+
+  /**
+   * @param values (unused) The list of values specified in the YAML node.
+   */
+  static std::shared_ptr<RuleCheck> make_absence(
+      swoc::TextView name,
+      std::list<swoc::TextView> &&values);
 
   /** Pure virtual function to test whether the input name and value fulfill the
    * rules for the test
    *
-   * @param key TextView The identifying transaction key.
-   * @param name TextView holding the name of the target field (null if not
-   * found)
-   * @param value TextView holding the value of the target field (null if not
-   * found)
-   * @return Whether the check was successful or not
+   * @param transaction_key The key identifying the transaction.
+   * @param name The name of the target field (null if not found).
+   * @param value The value of the target field (null if not found).
+   * @return Whether the check was successful.
    */
-  virtual bool test(swoc::TextView key, swoc::TextView name,
+  virtual bool test(swoc::TextView transaction_key, swoc::TextView name,
                     swoc::TextView value) const = 0;
+
+  virtual bool test(swoc::TextView transaction_key, swoc::TextView name,
+                    const std::list<swoc::TextView> &values) const = 0;
+
+  /** Indicate whether this RuleCheck needs to inspect field values.
+   *
+   * @return True if field values are relevant to this rule, false otherwise.
+   */
+  virtual bool expects_duplicate_fields() const = 0;
 };
 
 class EqualityCheck : public RuleCheck {
-  swoc::TextView _value; ///< Only EqualityChecks require value comparisons.
-
 public:
   ~EqualityCheck() {}
 
   /** Construct @a EqualityCheck with a given name and value.
    *
-   * @param name TextView holding the name of the target field
-   * @param value TextView holding the associated value with the target field,
+   * @param name The name of the target field
+   * @param value The associated value with the target field,
    * that is used with strcasecmp comparisons
    */
   EqualityCheck(swoc::TextView name, swoc::TextView value);
+
+  /** Construct @a EqualityCheck with a given name and set of expected values.
+   *
+   * @param name The name of the target field
+   * @param value The associated values with the target field,
+   * that is used with strcasecmp comparisons
+   */
+  EqualityCheck(swoc::TextView name, std::list<swoc::TextView> &&values);
 
   /** Test whether the name and value both match the expected name and value
    * per the values instantiated in construction.
    *
    * Reports errors in verbose mode.
    *
-   * @param key TextView The identifying transaction key.
-   * @param name TextView holding the name of the target field (null if not
-   * found)
-   * @param value TextView holding the value of the target field (null if not
-   * found)
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not found)
+   * @param value The value of the target field (null if not found)
    * @return Whether the check was successful or not
    */
   bool test(swoc::TextView key, swoc::TextView name,
             swoc::TextView value) const override;
+
+  /** Test whether the name and values both match the expected name and values
+   * per the values instantiated in construction.
+   *
+   * Reports errors in verbose mode.
+   *
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not found)
+   * @param values The values of the target field (null if not found)
+   * @return Whether the check was successful or not
+   */
+  bool test(swoc::TextView key, swoc::TextView name,
+            const std::list<swoc::TextView> &values) const override;
+
+  /** Whether this Rule is configured for duplicate fields.
+   *
+   * @return True of the Rule is configured for duplicate fields, false
+   * otherwise.
+   */
+  bool expects_duplicate_fields() const override { return _expects_duplicate_fields; }
+
+private:
+  swoc::TextView _value; ///< Only EqualityChecks require value comparisons.
+  std::list<swoc::TextView> _values; ///< Only EqualityChecks require value comparisons.
+  bool _expects_duplicate_fields = false; ///< Whether the Rule is configured for duplicate fields.
 };
 
 class PresenceCheck : public RuleCheck {
 public:
   /** Construct @a PresenceCheck with a given name.
    *
-   * @param name TextView holding the name of the target field
+   * @param name The name of the target field
+   * @param expects_duplicate_fields Whether the rule should be configured for duplicate fields.
    */
-  PresenceCheck(swoc::TextView name);
+  PresenceCheck(swoc::TextView name, bool expects_duplicate_fields);
 
   /** Test whether the name matches the expected name. Reports errors in verbose
    * mode.
    *
-   * @param key TextView The identifying transaction key.
-   * @param name TextView holding the name of the target field (null if not
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not
    * found)
-   * @param value TextView (unused) holding the value of the target field (null
-   * if not found)
+   * @param value (unused) The value of the target field (null if not found)
    * @return Whether the check was successful or not
    */
   bool test(swoc::TextView key, swoc::TextView name,
             swoc::TextView value) const override;
+
+  /**
+   * @param values (unused) The valuas of the target field (null
+   * if not found)
+   */
+  bool test(swoc::TextView key, swoc::TextView name,
+            const std::list<swoc::TextView> &values) const override;
+
+  /** Whether this Rule is configured for duplicate fields.
+   *
+   * @return True of the Rule is configured for duplicate fields, false
+   * otherwise.
+   */
+  bool expects_duplicate_fields() const override { return _expects_duplicate_fields; }
+
+private:
+  /** Whether this Rule is configured for duplicate fields. */
+  bool _expects_duplicate_fields = false;
 };
 
 class AbsenceCheck : public RuleCheck {
 public:
   /** Construct @a AbsenceCheck with a given name.
    *
-   * @param name TextView holding the name of the target field
+   * @param name The name of the target field
+   * @param expects_duplicate_fields Whether the rule should be configured for duplicate fields.
    */
-  AbsenceCheck(swoc::TextView name);
+  AbsenceCheck(swoc::TextView name, bool expects_duplicate_fields);
 
   /** Test whether the name is null (does not match the expected name). Reports
    * errors in verbose mode.
    *
-   * @param key TextView The identifying transaction key.
-   * @param name TextView holding the name of the target field (null if not
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not
    * found)
-   * @param value TextView (unused) holding the value of the target field (null
+   * @param value (unused) The value of the target field (null
    * if not found)
    * @return Whether the check was successful or not
    */
   bool test(swoc::TextView key, swoc::TextView name,
             swoc::TextView value) const override;
+
+  /**
+   * @param values (unused) The value of the target field (null
+   * if not found)
+   */
+  bool test(swoc::TextView key, swoc::TextView name,
+            const std::list<swoc::TextView> &values) const override;
+
+  /** Whether this Rule is configured for duplicate fields.
+   *
+   * @return True of the Rule is configured for duplicate fields, false
+   * otherwise.
+   */
+  bool expects_duplicate_fields() const override { return _expects_duplicate_fields; }
+
+private:
+  /** Whether this Rule is configured for duplicate fields. */
+  bool _expects_duplicate_fields = false;
 };
 
 class HttpFields {
   using self_type = HttpFields;
-  /// std::unordered_map that returns RuleChecks for given field names
-  using Rules = std::unordered_map<swoc::TextView, std::shared_ptr<RuleCheck>,
-                                   Hash, Hash>;
+  /// Contains the RuleChecks for given field names.
+  using Rules = std::unordered_multimap<swoc::TextView, std::shared_ptr<RuleCheck>,
+                                        Hash, Hash>;
   using Fields =
       std::unordered_multimap<swoc::TextView, std::string, Hash, Hash>;
 
@@ -449,8 +563,7 @@ public:
 
   std::string make_key() const;
 
-  /** Iterate over the rules and check that the fields are in line using the
-   * stored RuleChecks, and report any errors.
+  /** Verify that the fields in 'this' correspond to the provided rules.
    *
    * @param rules_ HeaderRules to iterate over, contains RuleCheck objects
    * @return Whether any rules were violated
@@ -543,6 +656,10 @@ public:
   static TextView localize(char const *text);
 
   /** Convert @a name to a localized view converted to lower case characters.
+   *
+   * These should be used to case-insensitive common strings, such as HTTP
+   * headers. In addition to storing case-insensitively, this also stores the
+   * values in a cache to save space.
    *
    * @see localize documentation for parameter descriptions.
    */

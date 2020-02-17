@@ -1,13 +1,18 @@
 ``
 GET http://example.one/config/settings.yaml HTTP/1.1
 uuid: 1
+host: example.one
+x-request-sequence: second
+x-request-sequence: first
 x-test-request: second
 x-test-request: first
-host: example.one
 
 
 HTTP/1.1 200 OK
 uuid: 1
+x-response-sequence: third
+x-response-sequence: second
+x-response-sequence: first
 content-type: text/html
 content-length: 16
 x-test-response: third

@@ -36,6 +36,8 @@ using namespace std::literals;
 
 bool Verbose = false;
 
+using MSG_BUFF = swoc::LocalBufferWriter<1024>;
+
 bool HttpHeader::_frozen = false;
 swoc::MemArena HttpHeader::_arena{8000};
 HttpHeader::NameSet HttpHeader::_names;
@@ -47,6 +49,7 @@ swoc::TextView HttpHeader::FIELD_HOST;
 std::bitset<600> HttpHeader::STATUS_NO_CONTENT;
 
 RuleCheck::RuleOptions RuleCheck::options;
+RuleCheck::DuplicateFieldRuleOptions RuleCheck::duplicate_field_options;
 
 static ssize_t send_callback(nghttp2_session *session, const uint8_t *inputdata,
                              size_t length, int flags, void *user_data);
@@ -1223,15 +1226,28 @@ void HttpHeader::global_init() {
 
 void RuleCheck::options_init() {
   options = RuleOptions();
-  options[swoc::TextView(YAML_RULE_EQUALS)] = make_equality;
-  options[swoc::TextView(YAML_RULE_PRESENCE)] = make_presence;
-  options[swoc::TextView(YAML_RULE_ABSENCE)] = make_absence;
+
+  // Overloaded resolution works with function pointers, but not with
+  // std::functions. We have to help out the compiler, therefore, via casting
+  // to the correct function type.
+  using single_field_function_type = std::shared_ptr<RuleCheck> (*)(swoc::TextView, swoc::TextView);
+  options[swoc::TextView(YAML_RULE_EQUALS)] = static_cast<single_field_function_type>(make_equality);
+  options[swoc::TextView(YAML_RULE_PRESENCE)] = static_cast<single_field_function_type>(make_presence);
+  options[swoc::TextView(YAML_RULE_ABSENCE)] = static_cast<single_field_function_type>(make_absence);
+
+  duplicate_field_options = DuplicateFieldRuleOptions();
+  using duplicate_field_function_type = std::shared_ptr<RuleCheck> (*)(swoc::TextView, std::list<swoc::TextView>&&);
+  duplicate_field_options[swoc::TextView(YAML_RULE_EQUALS)] = static_cast<duplicate_field_function_type>(make_equality);
+  duplicate_field_options[swoc::TextView(YAML_RULE_PRESENCE)] = static_cast<duplicate_field_function_type>(make_presence);
+  duplicate_field_options[swoc::TextView(YAML_RULE_ABSENCE)] = static_cast<duplicate_field_function_type>(make_absence);
 }
 
-std::shared_ptr<RuleCheck> RuleCheck::find(swoc::TextView localized_name,
-                                           swoc::TextView localized_value,
-                                           swoc::TextView rule_type) {
+std::shared_ptr<RuleCheck> RuleCheck::make_rule_check(
+    swoc::TextView localized_name,
+    swoc::TextView localized_value,
+    swoc::TextView rule_type) {
   swoc::Errata errata;
+
   auto fn_iter = options.find(rule_type);
   if (fn_iter == options.end()) {
     errata.info(R"(Invalid Test: Key: "{}")", rule_type);
@@ -1240,30 +1256,80 @@ std::shared_ptr<RuleCheck> RuleCheck::find(swoc::TextView localized_name,
   return fn_iter->second(localized_name, localized_value);
 }
 
-std::shared_ptr<RuleCheck> RuleCheck::make_equality(swoc::TextView name,
-                                                    swoc::TextView value) {
-  // Issue: Cannot use make_unique with polymorphism?
+std::shared_ptr<RuleCheck> RuleCheck::make_rule_check(
+    swoc::TextView localized_name,
+    std::list<swoc::TextView> &&localized_values,
+    swoc::TextView rule_type) {
+  swoc::Errata errata;
+
+  auto fn_iter = duplicate_field_options.find(rule_type);
+  if (fn_iter == duplicate_field_options.end()) {
+    errata.info(R"(Invalid Test: Key: "{}")", rule_type);
+    return nullptr;
+  }
+  return fn_iter->second(localized_name, std::move(localized_values));
+}
+
+std::shared_ptr<RuleCheck> RuleCheck::make_equality(
+    swoc::TextView name,
+    swoc::TextView value) {
   return std::shared_ptr<RuleCheck>(new EqualityCheck(name, value));
 }
 
-std::shared_ptr<RuleCheck> RuleCheck::make_presence(swoc::TextView name,
-                                                    swoc::TextView value) {
-  return std::shared_ptr<RuleCheck>(new PresenceCheck(name));
+std::shared_ptr<RuleCheck> RuleCheck::make_equality(
+    swoc::TextView name,
+    std::list<swoc::TextView> &&values) {
+  return std::shared_ptr<RuleCheck>(new EqualityCheck(name, std::move(values)));
 }
 
-std::shared_ptr<RuleCheck> RuleCheck::make_absence(swoc::TextView name,
-                                                   swoc::TextView value) {
-  return std::shared_ptr<RuleCheck>(new AbsenceCheck(name));
+std::shared_ptr<RuleCheck> RuleCheck::make_presence(
+    swoc::TextView name,
+    swoc::TextView value) {
+  return std::shared_ptr<RuleCheck>(new PresenceCheck(name, !EXPECTS_DUPLICATE_FIELDS));
 }
 
-EqualityCheck::EqualityCheck(swoc::TextView name, swoc::TextView value) {
+std::shared_ptr<RuleCheck> RuleCheck::make_presence(
+    swoc::TextView name,
+    std::list<swoc::TextView> &&values) {
+  return std::shared_ptr<RuleCheck>(new PresenceCheck(name, EXPECTS_DUPLICATE_FIELDS));
+}
+
+std::shared_ptr<RuleCheck> RuleCheck::make_absence(
+    swoc::TextView name,
+    swoc::TextView value) {
+  return std::shared_ptr<RuleCheck>(new AbsenceCheck(name, !EXPECTS_DUPLICATE_FIELDS));
+}
+
+std::shared_ptr<RuleCheck> RuleCheck::make_absence(
+    swoc::TextView name,
+    std::list<swoc::TextView> &&values) {
+  return std::shared_ptr<RuleCheck>(new AbsenceCheck(name, EXPECTS_DUPLICATE_FIELDS));
+}
+
+EqualityCheck::EqualityCheck(swoc::TextView name, swoc::TextView value)
+{
   _name = name;
   _value = value;
 }
 
-PresenceCheck::PresenceCheck(swoc::TextView name) { _name = name; }
+EqualityCheck::EqualityCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
+{
+  _name = name;
+  _values = std::move(values);
+  _expects_duplicate_fields = true;
+}
 
-AbsenceCheck::AbsenceCheck(swoc::TextView name) { _name = name; }
+PresenceCheck::PresenceCheck(swoc::TextView name, bool expects_duplicate_fields)
+{
+  _name = name;
+  _expects_duplicate_fields = expects_duplicate_fields;
+}
+
+AbsenceCheck::AbsenceCheck(swoc::TextView name, bool expects_duplicate_fields)
+{
+  _name = name;
+  _expects_duplicate_fields = expects_duplicate_fields;
+}
 
 bool EqualityCheck::test(swoc::TextView key, swoc::TextView name,
                          swoc::TextView value) const {
@@ -1284,6 +1350,38 @@ bool EqualityCheck::test(swoc::TextView key, swoc::TextView name,
   return false;
 }
 
+bool EqualityCheck::test(swoc::TextView key, swoc::TextView name,
+                         const std::list<swoc::TextView> &values) const {
+  swoc::Errata errata;
+  if (name.empty()) {
+    errata.info(
+        R"(Equals Violation: Absent. Key: "{}", Name: "{}", Correct Value: "{}")",
+        key, _name, _value);
+  } else if (_values != values) {
+    MSG_BUFF message;
+    message.print(R"(Equals Violation: Different. Key: "{}", Name: "{}", )", key, _name);
+
+    message.print(R"(Correct Values:)");
+    for (auto const& value: _values) {
+      message.print(R"( "{}")", value);
+    }
+    message.print(R"(, Received Values:)");
+    for (auto const& value: values) {
+      message.print(R"( "{}")", value);
+    }
+    errata.info(message.view());
+  } else {
+    MSG_BUFF message;
+    message.print(R"(Equals Success: Key: "{}", Name: "{}", Values:)", key, _name);
+    for (auto const& value: values) {
+      message.print(R"( "{}")", value);
+    }
+    errata.info(message.view());
+    return true;
+  }
+  return false;
+}
+
 bool PresenceCheck::test(swoc::TextView key, swoc::TextView name,
                          swoc::TextView value) const {
   swoc::Errata errata;
@@ -1297,6 +1395,23 @@ bool PresenceCheck::test(swoc::TextView key, swoc::TextView name,
   return true;
 }
 
+bool PresenceCheck::test(swoc::TextView key, swoc::TextView name,
+                         const std::list<swoc::TextView> &values) const {
+  swoc::Errata errata;
+  if (name.empty()) {
+    errata.info(R"(Presence Violation: Absent. Key: "{}", Name: "{}")", key,
+                _name);
+    return false;
+  }
+  MSG_BUFF message;
+  message.print(R"(Presence Success: Key: "{}", Name: "{}", Values:)", key, _name);
+  for (auto const& value: values) {
+    message.print(R"( "{}")", value);
+  }
+  errata.info(message.view());
+  return true;
+}
+
 bool AbsenceCheck::test(swoc::TextView key, swoc::TextView name,
                         swoc::TextView value) const {
   swoc::Errata errata;
@@ -1304,6 +1419,22 @@ bool AbsenceCheck::test(swoc::TextView key, swoc::TextView name,
     errata.info(
         R"(Absence Violation: Present. Key: "{}", Name: "{}", Value: "{}")",
         key, _name, value);
+    return false;
+  }
+  errata.info(R"(Absence Success: Key: "{}", Name: "{}")", key, _name);
+  return true;
+}
+
+bool AbsenceCheck::test(swoc::TextView key, swoc::TextView name,
+                        const std::list<swoc::TextView> &values) const {
+  swoc::Errata errata;
+  if (!name.empty()) {
+    MSG_BUFF message;
+    message.print(R"(Absence Violation: Present. Key: "{}", Name: "{}", Values:)", key, _name);
+    for (auto const& value: values) {
+      message.print(R"( "{}")", value);
+    }
+    errata.info(message.view());
     return false;
   }
   errata.info(R"(Absence Success: Key: "{}", Name: "{}")", key, _name);
@@ -1420,23 +1551,52 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node,
                    node.Mark());
       continue;
     }
+
     TextView name{
         HttpHeader::localize_lower(node[YAML_RULE_NAME_KEY].Scalar())};
-    TextView value{HttpHeader::localize(node[YAML_RULE_DATA_KEY].Scalar())};
-    _fields.emplace(name, value);
-    if (node_size == 2 && assume_equality_rule) {
-      _rules.emplace(name, RuleCheck::make_equality(name, value));
-    } else if (node_size == 3) {
-      // Contans a verification rule.
-      TextView rule_type{node[YAML_RULE_TYPE_KEY].Scalar()};
-      std::shared_ptr<RuleCheck> tester =
-          RuleCheck::find(name, value, rule_type);
-      if (!tester) {
-        errata.error("Field rule at {} does not have a valid flag ({})",
-                     node.Mark(), rule_type);
-        continue;
-      } else {
-        _rules[name] = tester;
+    const YAML::Node ValueNode{node[YAML_RULE_DATA_KEY]};
+    if (ValueNode.IsScalar()) {
+      // There's only a single value associated with this field name.
+      TextView value{HttpHeader::localize(node[YAML_RULE_DATA_KEY].Scalar())};
+      _fields.emplace(name, value);
+      if (node_size == 2 && assume_equality_rule) {
+        _rules.emplace(name, RuleCheck::make_equality(name, value));
+      } else if (node_size == 3) {
+        // Contans a verification rule.
+        TextView rule_type{node[YAML_RULE_TYPE_KEY].Scalar()};
+        std::shared_ptr<RuleCheck> tester =
+            RuleCheck::make_rule_check(name, value, rule_type);
+        if (!tester) {
+          errata.error("Field rule at {} does not have a valid flag ({})",
+                       node.Mark(), rule_type);
+          continue;
+        } else {
+          _rules.emplace(name, tester);
+        }
+      }
+    } else if (ValueNode.IsSequence()) {
+      // There's a list of values associated with this field. This
+      // indicates duplicate fields for the same field name.
+      std::list<TextView> values;
+      for (auto const &value: ValueNode) {
+        TextView localized_value{HttpHeader::localize(value.Scalar())};
+        values.emplace_back(localized_value);
+        _fields.emplace(name, localized_value);
+      }
+      if (node_size == 2 && assume_equality_rule) {
+        _rules.emplace(name, RuleCheck::make_equality(name, std::move(values)));
+      } else if (node_size == 3) {
+        // Contans a verification rule.
+        TextView rule_type{node[YAML_RULE_TYPE_KEY].Scalar()};
+        std::shared_ptr<RuleCheck> tester =
+            RuleCheck::make_rule_check(name, std::move(values), rule_type);
+        if (!tester) {
+          errata.error("Field rule at {} does not have a valid flag ({})",
+                       node.Mark(), rule_type);
+          continue;
+        } else {
+          _rules.emplace(name, tester);
+        }
       }
     }
   }
@@ -1663,22 +1823,46 @@ std::string HttpHeader::make_key() const {
   return std::move(key);
 }
 
-bool HttpHeader::verify_headers(swoc::TextView key,
+// Verify that the fields in 'this' correspond to the provided rules.
+bool HttpHeader::verify_headers(swoc::TextView transaction_key,
                                 const HttpFields &rules_) const {
   // Remains false if no issue is observed
   // Setting true does not break loop because test() calls errata.diag()
   bool issue_exists = false;
-  for (const auto &rule : rules_._rules) {
-    // Hashing uses strcasecmp internally
-    auto found_iter = _fields_rules->_fields.find(rule.first);
-    if (found_iter == _fields_rules->_fields.cend()) {
-      if (!rule.second->test(key, swoc::TextView(), swoc::TextView())) {
-        issue_exists = true;
+  auto const& rules = rules_._rules;
+  auto const& fields = _fields_rules->_fields;
+  for (auto const &[name, rule_check] : rules) {
+    auto name_range = fields.equal_range(name);
+    auto field_iter = name_range.first;
+    if (rule_check->expects_duplicate_fields()) {
+      if (field_iter == name_range.second) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), std::list<TextView>{})) {
+          // We supply the empty name and value for the absence check which
+          // expects this to indicate an absent field.
+          issue_exists = true;
+        }
+      } else {
+        std::list<TextView> values;
+        while (field_iter != name_range.second) {
+          values.push_back(field_iter->second);
+          ++field_iter;
+        }
+        if (!rule_check->test(transaction_key, name, values)) {
+          issue_exists = true;
+        }
       }
     } else {
-      if (!rule.second->test(key, found_iter->first,
-                             swoc::TextView(found_iter->second))) {
-        issue_exists = true;
+      if (field_iter == name_range.second) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), swoc::TextView())) {
+          // We supply the empty name and value for the absence check which
+          // expects this to indicate an absent field.
+          issue_exists = true;
+        }
+      } else {
+        if (!rule_check->test(transaction_key, field_iter->first,
+                               swoc::TextView(field_iter->second))) {
+          issue_exists = true;
+        }
       }
     }
   }
@@ -1695,23 +1879,27 @@ swoc::TextView HttpHeader::localize(char const *text) {
 }
 
 swoc::TextView HttpHeader::localize_lower(char const *text) {
-  return self_type::localize_helper(TextView{text, strlen(text) + 1},
-                                    SHOULD_LOWER);
+  return self_type::localize_lower(TextView{text, strlen(text) + 1});
 }
 
 swoc::TextView HttpHeader::localize(TextView text) {
+
   return HttpHeader::localize_helper(text, !SHOULD_LOWER);
 }
 
 swoc::TextView HttpHeader::localize_lower(TextView text) {
+  // _names.find() does a case insensitive lookup, so cache lookup via _names
+  // only should be used for case-insensitive localization. It's value applies
+  // to well-known, common strings such as HTTP headers.
+  auto spot = _names.find(text);
+  if (spot != _names.end()) {
+    return *spot;
+  }
   return HttpHeader::localize_helper(text, SHOULD_LOWER);
 }
 
 swoc::TextView HttpHeader::localize_helper(TextView text, bool should_lower) {
-  auto spot = _names.find(text);
-  if (spot != _names.end()) {
-    return *spot;
-  } else if (!_frozen) {
+  if (!_frozen) {
     auto span{_arena.alloc(text.size()).rebind<char>()};
     if (should_lower) {
       std::transform(text.begin(), text.end(), span.begin(), &tolower);
@@ -1719,7 +1907,9 @@ swoc::TextView HttpHeader::localize_helper(TextView text, bool should_lower) {
       std::copy(text.begin(), text.end(), span.begin());
     }
     TextView local{span.data(), text.size()};
-    _names.insert(local);
+    if (should_lower) {
+      _names.insert(local);
+    }
     return local;
   }
   return text;
