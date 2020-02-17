@@ -104,4 +104,40 @@ server.Streams.stdout += Testers.ContainsExpression(
 
 server.Streams.stdout += Testers.ContainsExpression(
         'Equals Success: Key: "5", Name: "cookie", Value: "',
-        'Validation should complainthat "X-Does-Not-Exist" is not present.')
+        'Validation should be happy with the cookie value.')
+
+#
+# Test 3: Verify duplicate field verification in a YAML replay file.
+#
+r = Test.AddTestRun("Verify field verification works for HTTP transaction with duplicate fields")
+client = r.AddClientProcess("client3", "http_replay_files/duplicate_fields", http_ports=[8080], other_args="--verbose diag")
+server = r.AddServerProcess("server3", "http_replay_files/duplicate_fields", http_ports=[8081], other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy3", listen_port=8080, server_port=8081)
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Absence Success: Key: "1", Name: "x-not-a-header',
+        'Validation should be happy that "X-Not-A-Header" is missing.')
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Equals Violation: Different. Key: "1", Name: "set-cookie", Correct Values: "ABCD", Received Values: "ABCD" "EFG"',
+        'Validation should be complain that "Set-Cookie" had too many values.')
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Presence Violation: Absent. Key: "1", Name: "x-does-not-exist',
+        'Validation should complain that "X-Does-Not-Exist" is not present.')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Equals Success: Key: "1", Name: "x-test-equal", Values: "theSe" "thE" "values"',
+        'Validation should be happy that "X-Test-Equal" has the expected values.')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Presence Success: Key: "1", Name: "x-test-another", Values: "sOme" "valuEs"',
+        'Validation should be happy that "X-Test-Another" is present.')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Absence Violation: Present. Key: "1", Name: "x-test-present", Values: "also" "here"',
+        'Validation should complain that "X-Test-Pressent" is present.')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Equals Violation: Different. Key: "1", Name: "x-test-request", Correct Values: "second_data" "first_data", Received Values: "first_data" "second_data"',
+        'Validation should complain that "X-Test-Request" values are out of order.')

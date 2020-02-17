@@ -8,57 +8,132 @@
 #include "catch.hpp"
 #include "core/ProxyVerifier.h"
 
+const std::string key = "1";
+
 // Other parts of new code involve Info calls and reliance on these functions,
 // so instead are tested by the test cases in the json folder
-TEST_CASE("RuleCheck and Child Classes", "[RCaCC]") {
+TEST_CASE("RuleChecks of non-duplicate fields", "[RuleCheck]") {
   swoc::TextView test_name("testName");
-  swoc::TextView test_value("testValue");
+  swoc::TextView expected_value("testValue");
   RuleCheck::options_init();
 
-  // empty names are not defined, so not tested
-  // data field in present and absent is supported but not noted
-  YAML::Node yaml_present = YAML::Load("[\"test\", \"e\", \"present\"]");
-  YAML::Node yaml_absent = YAML::Load("[\"test\", null, \"absent\"]");
-  YAML::Node yaml_equals_not_blank =
-      YAML::Load("[\"test\", \"test\", \"equals\"]");
-  YAML::Node yaml_equals_blank = YAML::Load("[\"test\", \"\", \"equals\"]");
-
-  std::shared_ptr<RuleCheck> present_check =
-      RuleCheck::find(test_name, test_value, "present");
-  std::shared_ptr<RuleCheck> absent_check =
-      RuleCheck::find(test_name, test_value, "absent");
-  std::shared_ptr<RuleCheck> equal_check_not_blank =
-      RuleCheck::find(test_name, test_value, "equal");
-  std::shared_ptr<RuleCheck> equal_check_blank =
-      RuleCheck::find(test_name, "", "equal");
-
-  REQUIRE(present_check);
-  REQUIRE(absent_check);
-  REQUIRE(equal_check_not_blank);
-  REQUIRE(equal_check_blank);
-
-  swoc::TextView key = "1";
   swoc::TextView empty_name;
   swoc::TextView empty_value;
 
-  CHECK_FALSE(present_check->test(key, empty_name, empty_value));
-  CHECK_FALSE(present_check->test(key, empty_name, test_value));
-  CHECK(present_check->test(key, test_name, empty_value));
-  CHECK(present_check->test(key, test_name, test_value));
-  CHECK(present_check->test(key, test_name, "some non-test value"));
+  SECTION("presence checks") {
+    std::shared_ptr<RuleCheck> present_check =
+        RuleCheck::make_rule_check(test_name, expected_value, "present");
+    REQUIRE(present_check);
 
-  CHECK(absent_check->test(key, empty_name, empty_value));
-  CHECK(absent_check->test(key, empty_name, test_value));
-  CHECK_FALSE(absent_check->test(key, test_name, empty_value));
-  CHECK_FALSE(absent_check->test(key, test_name, test_value));
+    CHECK_FALSE(present_check->test(key, empty_name, empty_value));
+    CHECK_FALSE(present_check->test(key, empty_name, expected_value));
+    CHECK(present_check->test(key, test_name, empty_value));
+    CHECK(present_check->test(key, test_name, expected_value));
+    CHECK(present_check->test(key, test_name, "some non-test value"));
+  }
 
-  CHECK_FALSE(equal_check_not_blank->test(key, empty_name, empty_value));
-  CHECK_FALSE(equal_check_not_blank->test(key, empty_name, test_value));
-  CHECK_FALSE(equal_check_not_blank->test(key, test_name, empty_value));
-  CHECK(equal_check_not_blank->test(key, test_name, test_value));
+  SECTION("absence checks") {
+    std::shared_ptr<RuleCheck> absent_check =
+        RuleCheck::make_rule_check(test_name, expected_value, "absent");
+    REQUIRE(absent_check);
 
-  CHECK_FALSE(equal_check_blank->test(key, empty_name, empty_value));
-  CHECK_FALSE(equal_check_blank->test(key, empty_name, test_value));
-  CHECK(equal_check_blank->test(key, test_name, empty_value));
-  CHECK_FALSE(equal_check_blank->test(key, test_name, test_value));
+    CHECK(absent_check->test(key, empty_name, empty_value));
+    CHECK(absent_check->test(key, empty_name, expected_value));
+    CHECK_FALSE(absent_check->test(key, test_name, empty_value));
+    CHECK_FALSE(absent_check->test(key, test_name, expected_value));
+  }
+
+  SECTION("equal checks") {
+    std::shared_ptr<RuleCheck> equal_check_not_blank =
+        RuleCheck::make_rule_check(test_name, expected_value, "equal");
+    REQUIRE(equal_check_not_blank);
+
+    CHECK_FALSE(equal_check_not_blank->test(key, empty_name, empty_value));
+    CHECK_FALSE(equal_check_not_blank->test(key, empty_name, expected_value));
+    CHECK_FALSE(equal_check_not_blank->test(key, test_name, empty_value));
+    CHECK(equal_check_not_blank->test(key, test_name, expected_value));
+  }
+
+  SECTION("equal checks with a blank value in the rule") {
+    swoc::TextView non_empty_value = "some_value";
+    std::shared_ptr<RuleCheck> equal_check_blank =
+        RuleCheck::make_rule_check(test_name, "", "equal");
+    REQUIRE(equal_check_blank);
+
+    CHECK_FALSE(equal_check_blank->test(key, empty_name, empty_value));
+    CHECK_FALSE(equal_check_blank->test(key, empty_name, non_empty_value));
+    CHECK(equal_check_blank->test(key, test_name, empty_value));
+    CHECK_FALSE(equal_check_blank->test(key, test_name, non_empty_value));
+  }
+}
+
+TEST_CASE("RuleChecks of duplicate fields", "[RuleCheck]") {
+  swoc::TextView test_name("testName");
+  std::list<swoc::TextView> expected_values{
+    "first_value",
+    "second_value",
+  };
+  swoc::TextView empty_name;
+  std::list<swoc::TextView> empty_values;
+
+  RuleCheck::options_init();
+
+  SECTION("presence checks") {
+    std::shared_ptr<RuleCheck> present_check =
+        RuleCheck::make_rule_check(test_name, expected_values, "present");
+    REQUIRE(present_check);
+
+    CHECK_FALSE(present_check->test(key, empty_name, empty_values));
+    CHECK_FALSE(present_check->test(key, empty_name, expected_values));
+    CHECK(present_check->test(key, test_name, empty_values));
+    CHECK(present_check->test(key, test_name, expected_values));
+    CHECK(present_check->test(key, test_name, {"some", "non-test",  "values"}));
+  }
+
+  SECTION("absence checks") {
+    std::shared_ptr<RuleCheck> absent_check =
+        RuleCheck::make_rule_check(test_name, expected_values, "absent");
+    REQUIRE(absent_check);
+
+    CHECK(absent_check->test(key, empty_name, empty_values));
+    CHECK(absent_check->test(key, empty_name, expected_values));
+    CHECK_FALSE(absent_check->test(key, test_name, empty_values));
+    CHECK_FALSE(absent_check->test(key, test_name, expected_values));
+  }
+
+  SECTION("equal checks") {
+    std::shared_ptr<RuleCheck> equal_check_not_blank =
+        RuleCheck::make_rule_check(test_name, expected_values, "equal");
+    REQUIRE(equal_check_not_blank);
+
+    CHECK_FALSE(equal_check_not_blank->test(key, empty_name, empty_values));
+    CHECK_FALSE(equal_check_not_blank->test(key, empty_name, expected_values));
+    CHECK_FALSE(equal_check_not_blank->test(key, test_name, empty_values));
+    CHECK(equal_check_not_blank->test(key, test_name, expected_values));
+
+    // Subsets of the expected values are not enough.
+    std::list<swoc::TextView> subset_values{
+      "first_value",
+    };
+    CHECK_FALSE(equal_check_not_blank->test(key, test_name, subset_values));
+
+    // Order matters.
+    std::list<swoc::TextView> re_arranged_values{
+      "second_value",
+      "first_value",
+    };
+    CHECK_FALSE(equal_check_not_blank->test(key, test_name, re_arranged_values));
+  }
+
+  SECTION("equal checks with no values in the rule") {
+    std::shared_ptr<RuleCheck> equal_check_blank =
+        RuleCheck::make_rule_check(test_name, empty_values, "equal");
+    REQUIRE(equal_check_blank);
+
+    swoc::TextView non_empty_values = {"some", "values"};
+    CHECK_FALSE(equal_check_blank->test(key, empty_name, empty_values));
+    CHECK_FALSE(equal_check_blank->test(key, empty_name, non_empty_values));
+    CHECK(equal_check_blank->test(key, test_name, empty_values));
+    CHECK_FALSE(equal_check_blank->test(key, test_name, non_empty_values));
+  }
 }

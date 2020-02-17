@@ -4,7 +4,12 @@ meta:
 sessions:
 - protocol: [ ipv4, tcp ]
   transactions:
-  - client-request:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+    client-request:
       version: "1.1"
       scheme: "http"
       method: "GET"
@@ -12,10 +17,10 @@ sessions:
       headers:
         fields:
         - [ Host, example.one ]
-        - [ x-test-request, first ]
-        - [ x-test-request, second ]
-        - [ x-request-sequence, [ first, second] ]
-        - [ uuid, 1 ]
+        - [ X-Test-Request, [ first_data, second_data ] ]
+        - [ X-Test-Present, [ also, here ] ]
+        - [ X-Test-Equal, [ theSe, thE, values ] ]
+        - [ X-Test-Another, [ sOme, valuEs ] ]
     proxy-request:
       version: "1.1"
       scheme: "http"
@@ -24,10 +29,10 @@ sessions:
       headers:
         fields:
         - [ Host, example.one ]
-        - [ x-test-request, first ]
-        - [ x-test-request, second ]
-        - [ x-request-sequence, [ first, second] ]
-        - [ uuid, 1 ]
+        - [ X-Test-Request, [ second_data, first_data ], equal ]
+        - [ X-Test-Present, [ alsohere ], absent ]
+        - [ X-Test-Equal, [ theSe, thE, values ], equal ]
+        - [ X-Test-Another, [ who, cares ], present ]
     server-response:
       status: 200
       reason: OK
@@ -37,11 +42,7 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-        - [ x-test-response, first ]
-        - [ x-test-response, second ]
-        - [ x-test-response, third ]
-        - [ x-response-sequence, [ first, second, third] ]
-        - [ uuid, 1 ]
+        - [ Set-Cookie, [ ABCD, EFG ] ]
     proxy-response:
       status: 200
       reason: OK
@@ -51,8 +52,6 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-        - [ x-test-response, first ]
-        - [ x-test-response, second ]
-        - [ x-test-response, third ]
-        - [ x-response-sequence, [ first, second, third] ]
-        - [ uuid, 1 ]
+        - [ Set-Cookie, [ ABCD ], equal ]
+        - [ X-Not-A-Header, [ not, here ], absent ]
+        - [ X-Does-Not-Exist, [ also, not, here ], present ]
