@@ -1,0 +1,9 @@
+``Responding to request /config/settings.yaml with status 200.
+``Headers:
+- "host": "example.one"
+- "uuid": "1"
+- "x-request": "testRequest"
+- "Accept-Encoding": "identity"
+
+``Validating request with url: /config/settings.yaml
+``
