@@ -397,7 +397,7 @@ swoc::Errata Session::run_transaction(const Txn &txn) {
         }
         errata.diag(R"(Status: "{}")", rsp_hdr._status);
         errata.diag("{}", rsp_hdr);
-        if (rsp_hdr._status != txn._rsp._status &&
+        if (txn._rsp._status != 0 && rsp_hdr._status != txn._rsp._status &&
             (rsp_hdr._status != 200 || txn._rsp._status != 304) &&
             (rsp_hdr._status != 304 || txn._rsp._status != 200)) {
           errata.error(R"(Invalid status expected {} got {}. url={}.)",
@@ -1802,12 +1802,6 @@ swoc::Errata HttpHeader::load(YAML::Node const &node) {
       errata.error(R"("{}" node at {} is not a map.)", YAML_CONTENT_KEY,
                    content_node.Mark());
     }
-  }
-
-  if (0 == _status && !_method) {
-    errata.error(
-        R"(HTTP header at {} has neither a status as a response nor a method as a request.)",
-        node.Mark());
   }
 
   return std::move(errata);
