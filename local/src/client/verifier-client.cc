@@ -534,7 +534,7 @@ int main(int argc, const char *argv[]) {
       .add_option("--repeat", "", "Repeatedly replay data set", "", 1, "")
       .add_option(
           "--sleep-limit", "",
-          "Limit the amount of time spent sleeping between replays (ms)", "", 1,
+          "Limit the amount of time spent sleeping between replays (microseconds)", "", 1,
           "")
       .add_option("--rate", "", "Specify desired transacton rate", "", 1, "")
       .add_option("--strict", "-s",
