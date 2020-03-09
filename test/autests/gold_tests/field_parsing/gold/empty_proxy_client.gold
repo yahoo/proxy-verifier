@@ -1,10 +1,10 @@
 ``
-``Reading response body offset=0000000 0000001 .
+``Status: "200"
 ``Headers:
 - "content-type": "text/html"
 - "content-length": "16"
 - "x-response": "testResponse"
 - "uuid": "1"
 
-``Status: "200"
+``Reading response body offset=0000000 0000001 .
 ``

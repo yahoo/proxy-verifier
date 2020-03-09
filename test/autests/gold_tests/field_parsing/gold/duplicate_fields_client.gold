@@ -1,4 +1,5 @@
 ``
+``Status: "200"
 ``Headers:
 - "x-test-response": "first"
 - "x-test-response": "second"
@@ -10,5 +11,4 @@
 - "x-response-sequence": "second"
 - "x-response-sequence": "third"
 
-   [0]: Status: "200"
 ``
