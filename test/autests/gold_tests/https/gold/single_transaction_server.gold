@@ -13,5 +13,5 @@
 - "accept-encoding": "gzip"
 - "content-type": "application/json; charset=utf-8"
 ``
-``Validating request with url: /a/path
+``Handling request with url: /a/path
 ``

@@ -2,23 +2,23 @@
 ``Absence Success: Key: "1", Name: "x-test-different"
 ``Presence Success: Key: "1", Name: "x-test-header", Value: "backAtYou"
 ``
-``Absence Violation: Present. Key: "2", Name: "x-another-response", Value: "response"
-``
-``Reading response body offset=0000000 0000001 .
+``Status: "200"
 ``Headers:
 - "content-type": "text/html"
 - "content-length": "16"
 - "uuid": "1"
 - "x-test-header": "backAtYou"
 
-``Status: "200"
+``Reading response body offset=0000000 0000001 .
 ``
-``Reading response body offset=0000000 0000001 0000002 0000003 .
+``Absence Violation: Present. Key: "2", Name: "x-another-response", Value: "response"
 ``
 - "content-type": "text/html"
 - "content-length": "32"
 - "uuid": "2"
 - "x-another-response": "response"
+``
+``Reading response body offset=0000000 0000001 0000002 0000003 .
 ``
 ``2 transactions in 1 sessions``
 ``

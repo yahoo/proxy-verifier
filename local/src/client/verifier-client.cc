@@ -263,7 +263,7 @@ swoc::Errata Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target,
                          swoc::IPEndpoint const &target_https) {
   swoc::Errata errata;
   std::unique_ptr<Session> session;
-  const swoc::IPEndpoint *real_target;
+  const swoc::IPEndpoint *real_target = nullptr;
 
   errata.diag(R"(Starting session "{}":{} protocol={}.)", ssn._path,
               ssn._line_no, ssn.is_h2 ? "h2" : (ssn.is_tls ? "https" : "http"));

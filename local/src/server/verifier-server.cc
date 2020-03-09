@@ -225,6 +225,7 @@ void TF_Serve(std::thread *t) {
         break;
       }
       thread_errata.diag("Handling request with url: {}", req_hdr._url);
+      thread_errata.diag("{}", req_hdr);
       auto key{req_hdr.make_key()};
       auto specified_response{Transactions.find(key)};
 
@@ -257,7 +258,6 @@ void TF_Serve(std::thread *t) {
         }
       }
       thread_errata.diag("Validating request with url: {}", req_hdr._url);
-      thread_errata.diag("{}", req_hdr);
       if (req_hdr.verify_headers(key, *txn._req._fields_rules)) {
         thread_errata.error(
             R"(Request headers did not match expected request headers.)");
@@ -291,7 +291,7 @@ void TF_Accept(int socket_fd, bool do_tls) {
   while (!Shutdown_Flag) {
     swoc::Errata errata;
     swoc::IPEndpoint remote_addr;
-    socklen_t remote_addr_size;
+    socklen_t remote_addr_size = sizeof(remote_addr);
     int fd = accept4(socket_fd, &remote_addr.sa, &remote_addr_size, 0);
     if (fd < 0) {
       errata.error("Failed to create a socket via accept4: {}",
@@ -330,7 +330,7 @@ swoc::Errata do_listen(swoc::IPEndpoint &server_addr, bool do_tls) {
   int socket_fd = socket(server_addr.family(), SOCK_STREAM, 0);
   if (socket_fd >= 0) {
     // Be agressive in reusing the port
-    int ONE = 1;
+    static constexpr int ONE = 1;
     if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) <
         0) {
       errata.error(R"(Could not set reuseaddr on socket {}: {}.)", socket_fd,

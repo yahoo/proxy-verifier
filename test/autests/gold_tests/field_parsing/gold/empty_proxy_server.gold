@@ -5,5 +5,5 @@
 - "x-request": "testRequest"
 - "Accept-Encoding": "identity"
 
-``Validating request with url: /config/settings.yaml
+``Handling request with url: /config/settings.yaml
 ``

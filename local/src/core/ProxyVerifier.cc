@@ -28,11 +28,16 @@
 
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_std.h"
+#include "swoc/bwf_ip.h"
 
 using swoc::Errata;
 using swoc::TextView;
 using namespace swoc::literals;
 using namespace std::literals;
+namespace chrono = std::chrono;
+using clock_type = chrono::system_clock;
+
+constexpr auto Transaction_Delay_Cutoff = 500ms;
 
 bool Verbose = false;
 
@@ -74,7 +79,7 @@ swoc::Rv<int> block_sigpipe() {
     zret = -1;
     zret.errata().error(R"(Could not add SIGPIPE to the signal set: {})",
                         swoc::bwf::Errno{});
-  } else if (pthread_sigmask(SIG_BLOCK, &set, NULL)) {
+  } else if (pthread_sigmask(SIG_BLOCK, &set, nullptr)) {
     zret = -1;
     zret.errata().error(R"(Could not block SIGPIPE: {})", swoc::bwf::Errno{});
   }
@@ -302,7 +307,7 @@ swoc::Rv<size_t> Session::drain_body(HttpHeader const &hdr,
 }
 
 swoc::Rv<ssize_t> Session::write_body(HttpHeader const &hdr) {
-  swoc::Rv<ssize_t> bytes_written;
+  swoc::Rv<ssize_t> bytes_written{0};
   std::error_code ec;
 
   bytes_written.errata().diag("Transmit {} byte body {}{}.", hdr._content_size,
@@ -355,8 +360,6 @@ swoc::Rv<ssize_t> Session::write_body(HttpHeader const &hdr) {
   return std::move(bytes_written);
 }
 
-static void do_error() { printf("Errors:\n"); }
-
 swoc::Errata Session::run_transaction(const Txn &txn) {
   swoc::Errata errata;
   errata.diag("Running transaction.");
@@ -364,6 +367,7 @@ swoc::Errata Session::run_transaction(const Txn &txn) {
   errata.note(this->write(txn._req).errata());
 
   if (errata.is_ok()) {
+    const auto key{txn._req.make_key()};
     HttpHeader rsp_hdr;
     swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
     errata.diag("Reading response header.");
@@ -400,12 +404,10 @@ swoc::Errata Session::run_transaction(const Txn &txn) {
         if (txn._rsp._status != 0 && rsp_hdr._status != txn._rsp._status &&
             (rsp_hdr._status != 200 || txn._rsp._status != 304) &&
             (rsp_hdr._status != 304 || txn._rsp._status != 200)) {
-          errata.error(R"(Invalid status expected {} got {}. url={}.)",
-                       txn._rsp._status, rsp_hdr._status, txn._req._url);
-          do_error();
+          errata.error(R"(Invalid status expected {} got {}. key={}.)",
+                       txn._rsp._status, rsp_hdr._status, key);
           return errata;
         }
-        auto key{txn._req.make_key()};
         if (rsp_hdr.verify_headers(key, *txn._rsp._fields_rules)) {
           errata.error(
               R"(Response headers did not match expected response headers.)");
@@ -433,18 +435,15 @@ swoc::Errata Session::run_transaction(const Txn &txn) {
             this->drain_body(rsp_hdr, w.view().substr(body_offset)).errata());
 
         if (!errata.is_ok()) {
-          do_error();
         }
       } else {
-        errata.error(R"(Invalid response. url={})", txn._req._url);
+        errata.error(R"(Invalid response. key={})", key);
         errata.note(result);
-        do_error();
       }
     } else {
-      errata.error(R"(Invalid response read url={}.)", txn._req._url);
+      errata.error(R"(Invalid response read key={}.)", key);
       errata.note(read_result);
       std::cerr << errata;
-      do_error();
     }
   }
   return errata;
@@ -452,18 +451,31 @@ swoc::Errata Session::run_transaction(const Txn &txn) {
 
 swoc::Errata Session::run_transactions(const std::list<Txn> &txn_list,
                                        const swoc::IPEndpoint *real_target) {
-  swoc::Errata errata;
+  swoc::Errata session_errata;
 
   for (auto const &txn : txn_list) {
+    swoc::Errata txn_errata;
     if (this->is_closed()) {
-      this->do_connect(real_target);
+      txn_errata.note(this->do_connect(real_target));
+      if (!txn_errata.is_ok()) {
+        txn_errata.error(R"(Failed to reconnect HTTP/1 key={}.)", txn._req.make_key());
+      }
     }
-    errata.note(this->run_transaction(txn));
-    if (!errata.is_ok()) {
-      errata.error(R"(Failed url={}.)", txn._req._url);
+    const auto before = clock_type::now();
+    txn_errata.note(this->run_transaction(txn));
+    const auto after = clock_type::now();
+    if (!txn_errata.is_ok()) {
+      txn_errata.error(R"(Failed HTTP/1 transaction with key={}.)", txn._req.make_key());
     }
+
+    const auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(after - before);
+    if (elapsed_ms > Transaction_Delay_Cutoff) {
+      txn_errata.error(R"(Transaction for key={} took {} milliseconds.)",
+          txn._req.make_key(), elapsed_ms.count());
+    }
+    session_errata.note(txn_errata);
   }
-  return std::move(errata);
+  return std::move(session_errata);
 }
 
 swoc::Rv<ssize_t> TLSSession::write(swoc::TextView view) {
@@ -532,7 +544,7 @@ swoc::Errata Session::do_connect(const swoc::IPEndpoint *real_target) {
           setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
           errata = this->connect();
         } else {
-          errata.error(R"(Failed to connect socket - {})", swoc::bwf::Errno{});
+          errata.error(R"(Failed to connect socket {}: - {})", *real_target, swoc::bwf::Errno{});
         }
       } else {
         errata.error(R"(Failed to open session - {})", swoc::bwf::Errno{});
@@ -578,7 +590,7 @@ swoc::Errata H2Session::connect() {
   // Complete the TLS handshake
   swoc::Errata errata = super_type::connect(h2_client_ctx);
   if (errata.is_ok()) {
-    const unsigned char *alpn = NULL;
+    const unsigned char *alpn = nullptr;
     unsigned int alpnlen = 0;
 
     // Make sure we negotiated a H2 session
@@ -586,12 +598,12 @@ swoc::Errata H2Session::connect() {
     SSL_get0_next_proto_negotiated(this->_ssl, &alpn, &alpnlen);
 #endif /* !OPENSSL_NO_NEXTPROTONEG */
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
-    if (alpn == NULL) {
+    if (alpn == nullptr) {
       SSL_get0_alpn_selected(this->_ssl, &alpn, &alpnlen);
     }
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10002000L */
 
-    if (alpn == NULL || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
+    if (alpn == nullptr || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
       errata.error(R"(h2 is not negotiated)");
       return errata;
     }
@@ -610,12 +622,16 @@ swoc::Errata H2Session::run_transactions(const std::list<Txn> &txn_list,
   swoc::Errata errata;
 
   for (auto const &txn : txn_list) {
+    const auto key{txn._req.make_key()};
     if (this->is_closed()) {
-      this->do_connect(real_target);
+      errata.note(this->do_connect(real_target));
+      if (!errata.is_ok()) {
+        errata.error(R"(Failed to reconnect HTTP/2 key={}.)", key);
+      }
     }
     errata.note(this->run_transaction(txn));
     if (!errata.is_ok()) {
-      errata.error(R"(Failed url={}.)", txn._req._url);
+      errata.error(R"(Failed HTTP/2 transaction with key={}.)", key);
     }
   }
   recv_callback(this->get_session(), nullptr, 0, 0, this);
@@ -756,7 +772,7 @@ static ssize_t send_callback(nghttp2_session *session, const uint8_t *inputdata,
   errata.diag("Need to write {} bytes", length);
   int total_amount_sent = 0;
   for (;;) {
-    const uint8_t *data;
+    const uint8_t *data = nullptr;
     ssize_t datalen = nghttp2_session_mem_send(session, &data);
     size_t total_data_len = datalen;
     if (datalen <= 0) {
@@ -904,7 +920,7 @@ swoc::Rv<ssize_t> H2Session::write(HttpHeader const &hdr) {
   nghttp2_nv *hdrs = nullptr;
   pack_headers(hdr, hdrs, hdr_count);
 
-  int32_t stream_id;
+  int32_t stream_id = 0;
   H2StreamState *stream_state = new H2StreamState();
   // Content, need to set up the post body too
   if (hdr._content_size > 0 ||
@@ -1005,7 +1021,7 @@ swoc::Errata H2Session::send_client_connection_header() {
   swoc::Errata errata;
   nghttp2_settings_entry iv[1] = {
       {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}};
-  int rv;
+  int rv = 0;
 
   /* client 24 bytes magic string will be sent by nghttp2 library */
   rv = nghttp2_submit_settings(this->_session, NGHTTP2_FLAG_NONE, iv, 1);
@@ -1058,14 +1074,14 @@ swoc::Errata H2Session::init(SSL_CTX *&svr_ctx, SSL_CTX *&clt_ctx) {
   }
 
   // Initialize the protocol selection to include H2
-  SSL_CTX_set_next_proto_select_cb(clt_ctx, select_next_proto_cb, NULL);
+  SSL_CTX_set_next_proto_select_cb(clt_ctx, select_next_proto_cb, nullptr);
   SSL_CTX_set_next_protos_advertised_cb(svr_ctx, advertise_next_protocol_cb,
                                         nullptr);
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
   // Set the protocols the client will advertise
   SSL_CTX_set_alpn_protos(clt_ctx, npn_str, npn_len);
-  SSL_CTX_set_alpn_select_cb(svr_ctx, alpn_select_next_proto_cb, NULL);
+  SSL_CTX_set_alpn_select_cb(svr_ctx, alpn_select_next_proto_cb, nullptr);
 #else
   Error must be at least openssl 1.0.2
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
@@ -1177,7 +1193,7 @@ ChunkCodex::transmit(Session &session, swoc::TextView data, size_t chunk_size) {
   static constexpr swoc::TextView ZERO_CHUNK{"0\r\n\r\n"};
 
   swoc::LocalBufferWriter<10> w; // 8 bytes of size (32 bits) CR LF
-  ssize_t n;
+  ssize_t n = 0;
   ssize_t total = 0;
   while (data) {
     if (data.size() < chunk_size) {
@@ -2253,7 +2269,7 @@ Load_Replay_Directory(swoc::file::path const &path,
 
       // Lambda suitable to spawn in a thread to load files.
       auto load_wrapper = [&]() -> void {
-        int k;
+        int k = 0;
         while ((k = idx++) < entries.count()) {
           auto result = (*loader)(swoc::file::path{entries[k]->d_name});
           std::lock_guard<std::mutex> lock(local_mutex);
@@ -2320,7 +2336,7 @@ swoc::Errata resolve_ips(std::string arg,
 swoc::Rv<swoc::IPEndpoint> Resolve_FQDN(swoc::TextView fqdn) {
   swoc::Rv<swoc::IPEndpoint> zret;
   swoc::TextView host_str, port_str;
-  in_port_t port;
+  in_port_t port = 0;
   static constexpr in_port_t MAX_PORT{std::numeric_limits<in_port_t>::max()};
 
   if (swoc::IPEndpoint::tokenize(fqdn, &host_str, &port_str)) {
@@ -2333,7 +2349,7 @@ swoc::Rv<swoc::IPEndpoint> Resolve_FQDN(swoc::TextView fqdn) {
         if (addr.load(host_str)) {
           zret.result().assign(addr, port);
         } else {
-          addrinfo *addrs;
+          addrinfo *addrs = nullptr;
           addrinfo hints;
           char buff[host_str.size() + 1];
           memcpy(buff, host_str.data(), host_str.size());
