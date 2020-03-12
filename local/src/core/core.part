@@ -4,7 +4,7 @@ PartName("core")
 env.DependsOn([
     Component("nghttp2"),
     Component("openssl"),
-    Component("swoc++"),
+    Component("libswoc.static"),
     Component("yaml-cpp"),
 ])
 

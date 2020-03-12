@@ -36,8 +36,9 @@
 /lib/cmake
 /lib/pkgconfig
 /lib64
-/cmake-build-release
+/cmake*
 .vscode
+.idea
 
 # Default parts directories
 \.parts\.cache

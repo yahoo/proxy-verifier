@@ -2,9 +2,7 @@ from parts import *
 
 #enable smart linking
 SetOptionDefault("LINKFLAGS", ['-Wl,--copy-dt-needed-entries', '-Wl,--as-needed'])
-SetOptionDefault("INSTALL_LIB",  "#lib")
-SetOptionDefault("INSTALL_BIN",  "#bin")
-SetOptionDefault("INSTALL_INCLUDE",  "#include")
+SetOptionDefault("INSTALL_ROOT",  "#")
 
 AddOption("--with-ssl",
           dest='with_ssl',
@@ -30,7 +28,7 @@ path_ssl = GetOption("with_ssl")
 Part("#lib/openssl.part", CUSTOM_PATH=path_ssl)
 path_nghttp2 = GetOption("with_nghttp2")
 Part("#lib/nghttp2.part", CUSTOM_PATH=path_nghttp2)
-Part("#lib/libyaml.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="yaml-cpp-0.6.2"), package_group="proxy-verifier")
+Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="yaml-cpp-0.6.2"), package_group="proxy-verifier")
 
 custom_rpath=[]
 if path_ssl is not None:
@@ -39,7 +37,7 @@ if path_nghttp2 is not None:
   custom_rpath.append(path_nghttp2 + "/lib")
 SetOptionDefault("RPATH",  custom_rpath)
 
-Part("swoc++/swoc++.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc", tag="1.0.10"), package_group="proxy-verifier")
+Part("swoc++/swoc++.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc", tag="1.1.0"), package_group="proxy-verifier")
 
 
 Part("local/parts/proxy-verifier.part", package_group="proxy-verifier")

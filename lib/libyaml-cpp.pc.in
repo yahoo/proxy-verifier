@@ -1,0 +1,11 @@
+prefix=pkg_prefix
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${exec_prefix}/lib
+
+Name: yaml-cpp
+Description: A YAML parser and emitter for C++
+Version: 0.6.3
+Requires:
+Libs: ${libdir}/libyaml-cpp.a
+Cflags: -I${includedir}
