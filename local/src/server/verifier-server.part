@@ -3,7 +3,7 @@ PartName("verifier-server")
 
 env.DependsOn([
     Component("openssl"),
-    Component("swoc++"),
+    Component("libswoc.static"),
     Component("yaml-cpp"),
     Component("proxy-verifier.core"),
 ])
