@@ -436,6 +436,11 @@ Engine::command_run()
     return;
   }
 
+  auto key_format_arg{arguments.get("format")};
+  if (key_format_arg) {
+    HttpHeader::_key_format = key_format_arg[0];
+  }
+
   auto keys_arg{arguments.get("keys")};
   if (!keys_arg.empty()) {
     for (auto const &key : keys_arg) {
@@ -603,6 +608,7 @@ main(int /* argc */, char const *argv[])
           1,
           "")
       .add_option("--rate", "", "Specify desired transacton rate", "", 1, "")
+      .add_option("--format", "-f", "Transaction key format", "", 1, "")
       .add_option(
           "--strict",
           "-s",
