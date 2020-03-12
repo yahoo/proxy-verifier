@@ -46,7 +46,7 @@ using MSG_BUFF = swoc::LocalBufferWriter<1024>;
 bool HttpHeader::_frozen = false;
 swoc::MemArena HttpHeader::_arena{8000};
 HttpHeader::NameSet HttpHeader::_names;
-swoc::TextView HttpHeader::_key_format{"{field.uuid}"};
+std::string HttpHeader::_key_format{"{field.uuid}"};
 swoc::MemSpan<char> HttpHeader::_content;
 swoc::TextView HttpHeader::FIELD_CONTENT_LENGTH;
 swoc::TextView HttpHeader::FIELD_TRANSFER_ENCODING;

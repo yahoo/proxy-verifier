@@ -597,7 +597,7 @@ public:
   unsigned _content_length_p : 1;
 
   /// Format string to generate a key from a transaction.
-  static TextView _key_format;
+  static std::string _key_format;
 
   /// String localization frozen?
   static bool _frozen;
