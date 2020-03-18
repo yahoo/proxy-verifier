@@ -197,7 +197,7 @@ swoc::Errata ClientReplayFileHandler::txn_open(YAML::Node const &node) {
 
 swoc::Errata ClientReplayFileHandler::client_request(YAML::Node const &node) {
   if (!Use_Proxy_Request_Directives) {
-    _txn._req.load(node);
+    return _txn._req.load(node);
   }
   return {};
 }
