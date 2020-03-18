@@ -11,6 +11,7 @@
 #include <unordered_set>
 
 #include <condition_variable>
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <nghttp2/nghttp2.h>
@@ -29,6 +30,8 @@
 #include "swoc/ext/HashFNV.h"
 #include "swoc/swoc_file.h"
 #include "swoc/swoc_ip.h"
+
+using clock_type = std::chrono::system_clock;
 
 // Definitions of keys in the CONFIG files.
 // These need to be @c std::string or the node look up will construct a @c
@@ -877,11 +880,10 @@ protected:
 
 class H2StreamState {
 public:
-  H2StreamState() {}
-  H2StreamState(int32_t stream_id) : _stream_id(stream_id) {}
-  H2StreamState(int32_t stream_id, char *send_body, int send_body_length)
-      : _stream_id(stream_id), _send_body(send_body),
-        _send_body_length(send_body_length) {}
+  H2StreamState();
+  H2StreamState(int32_t stream_id);
+  H2StreamState(int32_t stream_id, char *send_body, int send_body_length);
+
   int32_t _stream_id = 0;
   int _data_to_recv = 0;
   size_t _send_body_offset = 0;
@@ -890,6 +892,8 @@ public:
   const HttpHeader *_req = nullptr;
   const HttpHeader *_resp = nullptr;
   bool _wait_for_continue = false;
+  std::string _key;
+  std::chrono::time_point<std::chrono::system_clock> _stream_start;
 };
 
 class H2Session : public TLSSession {
@@ -914,7 +918,7 @@ public:
 
   nghttp2_session *get_session() { return _session; }
 
-  std::map<int32_t, H2StreamState *> _stream_map;
+  std::map<int32_t, std::unique_ptr<H2StreamState>> _stream_map;
 
 protected:
   nghttp2_session *_session;

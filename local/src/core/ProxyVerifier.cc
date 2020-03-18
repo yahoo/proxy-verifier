@@ -35,7 +35,6 @@ using swoc::TextView;
 using namespace swoc::literals;
 using namespace std::literals;
 namespace chrono = std::chrono;
-using clock_type = chrono::system_clock;
 
 constexpr auto Transaction_Delay_Cutoff = 500ms;
 
@@ -470,7 +469,7 @@ swoc::Errata Session::run_transactions(const std::list<Txn> &txn_list,
 
     const auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(after - before);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
-      txn_errata.error(R"(Transaction for key={} took {} milliseconds.)",
+      txn_errata.error(R"(HTTP/1 transaction for key={} took {} milliseconds.)",
           txn._req.make_key(), elapsed_ms.count());
     }
     session_errata.note(txn_errata);
@@ -622,6 +621,7 @@ swoc::Errata H2Session::run_transactions(const std::list<Txn> &txn_list,
   swoc::Errata errata;
 
   for (auto const &txn : txn_list) {
+    swoc::Errata txn_errata;
     const auto key{txn._req.make_key()};
     if (this->is_closed()) {
       errata.note(this->do_connect(real_target));
@@ -633,6 +633,7 @@ swoc::Errata H2Session::run_transactions(const std::list<Txn> &txn_list,
     if (!errata.is_ok()) {
       errata.error(R"(Failed HTTP/2 transaction with key={}.)", key);
     }
+    errata.note(txn_errata);
   }
   recv_callback(this->get_session(), nullptr, 0, 0, this);
   return std::move(errata);
@@ -865,6 +866,15 @@ static int on_stream_close_cb(nghttp2_session *session, int32_t stream_id,
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
   auto iter = session_data->_stream_map.find(stream_id);
   if (iter != session_data->_stream_map.end()) {
+    H2StreamState& stream_state = *iter->second;
+    const auto& message_start = stream_state._stream_start;
+    const auto message_end = clock_type::now();
+    const auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(
+        message_end - message_start);
+    if (elapsed_ms > Transaction_Delay_Cutoff) {
+      errata.error(R"(HTTP/2 transaction for key={} took {} milliseconds.)",
+          stream_state._key, elapsed_ms.count());
+    }
     session_data->_stream_map.erase(iter);
   }
   return 0;
@@ -876,6 +886,24 @@ static int on_data_chunk_recv_cb(nghttp2_session *session, uint8_t flags,
   swoc::Errata errata;
   errata.diag("on_data_chunk_recv_cb {} bytes", len);
   return 0;
+}
+
+H2StreamState::H2StreamState()
+  : _stream_start{clock_type::now()}
+{
+}
+
+H2StreamState::H2StreamState(int32_t stream_id)
+  : _stream_id{stream_id}
+  , _stream_start{clock_type::now()}
+{
+}
+
+H2StreamState::H2StreamState(int32_t stream_id, char *send_body, int send_body_length)
+  : _stream_id(stream_id), _send_body(send_body)
+  , _send_body_length(send_body_length)
+  , _stream_start{clock_type::now()}
+{
 }
 
 H2Session::H2Session() { callbacks = nullptr; }
@@ -921,7 +949,7 @@ swoc::Rv<ssize_t> H2Session::write(HttpHeader const &hdr) {
   pack_headers(hdr, hdrs, hdr_count);
 
   int32_t stream_id = 0;
-  H2StreamState *stream_state = new H2StreamState();
+  auto stream_state = std::make_unique<H2StreamState>();
   // Content, need to set up the post body too
   if (hdr._content_size > 0 ||
       (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status])) {
@@ -942,11 +970,12 @@ swoc::Rv<ssize_t> H2Session::write(HttpHeader const &hdr) {
     stream_state->_send_body_length = content.size();
     stream_state->_req = &hdr;
     stream_state->_wait_for_continue = hdr._send_continue;
+    stream_state->_key = hdr.make_key();
     stream_id = nghttp2_submit_request(this->_session, nullptr, hdrs, hdr_count,
-                                       &data_prd, stream_state);
+                                       &data_prd, stream_state.get());
   } else {
     stream_id = nghttp2_submit_request(this->_session, nullptr, hdrs, hdr_count,
-                                       nullptr, stream_state);
+                                       nullptr, stream_state.get());
     stream_state->_stream_id = stream_id;
   }
   zret.errata().diag(R"(Sent stream "{}" with {} headers)", stream_id,
@@ -956,7 +985,7 @@ swoc::Rv<ssize_t> H2Session::write(HttpHeader const &hdr) {
   send_callback(_session, nullptr, 0, 0, this);
   free(hdrs);
 
-  _stream_map.insert(std::make_pair(stream_id, stream_state));
+  _stream_map.insert(std::make_pair(stream_id, std::move(stream_state)));
 
   return 1;
 }
@@ -2114,118 +2143,153 @@ BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec,
 }
 } // namespace swoc
 
+/** RAII for managing the handler's file. */
+struct HandlerOpener
+{
+public:
+  swoc::Errata errata;
+
+public:
+  HandlerOpener(ReplayFileHandler &handler, swoc::file::path const &path)
+    :_handler(handler)
+  {
+    errata = _handler.file_open(path);
+  }
+  ~HandlerOpener()
+  {
+    errata = _handler.file_close();
+  }
+
+private:
+  ReplayFileHandler &_handler;
+};
+
+
 swoc::Errata Load_Replay_File(swoc::file::path const &path,
                               ReplayFileHandler &handler) {
-  auto errata = handler.file_open(path);
-  if (errata.is_ok()) {
-    std::error_code ec;
-    std::string content{swoc::file::load(path, ec)};
-    if (ec.value()) {
-      errata.error(R"(Error loading "{}": {})", path, ec);
-    } else {
-      YAML::Node root;
-      auto global_fields_rules = std::make_shared<HttpFields>();
-      try {
-        root = YAML::Load(content);
-        yaml_merge(root);
-      } catch (std::exception const &ex) {
-        errata.warn(R"(Exception: {} in "{}".)", ex.what(), path);
-      }
-      if (errata.is_ok()) {
-        if (root[YAML_META_KEY]) {
-          auto meta_node{root[YAML_META_KEY]};
-          if (meta_node[YAML_GLOBALS_KEY]) {
-            auto globals_node{meta_node[YAML_GLOBALS_KEY]};
-            // Path not passed to later calls than Load_Replay_File.
-            errata.note(global_fields_rules->parse_global_rules(globals_node));
-          }
-        } else {
-          errata.info(R"(No meta node ("{}") at "{}":{}.)", YAML_META_KEY, path,
-                      root.Mark().line);
-        }
-        handler.global_config = VerificationConfig{global_fields_rules};
-        if (root[YAML_SSN_KEY]) {
-          auto ssn_list_node{root[YAML_SSN_KEY]};
-          if (ssn_list_node.IsSequence()) {
-            if (ssn_list_node.size() > 0) {
-              for (auto const &ssn_node : ssn_list_node) {
-                // HeaderRules ssn_rules = global_rules;
-                auto result{handler.ssn_open(ssn_node)};
-                if (result.is_ok()) {
-                  if (ssn_node[YAML_TXN_KEY]) {
-                    auto txn_list_node{ssn_node[YAML_TXN_KEY]};
-                    if (txn_list_node.IsSequence()) {
-                      if (txn_list_node.size() > 0) {
-                        for (auto const &txn_node : txn_list_node) {
-                          // HeaderRules txn_rules = ssn_rules;
-                          result = handler.txn_open(txn_node);
-                          if (result.is_ok()) {
-                            HttpFields all_fields;
-                            if (auto all_node{txn_node[YAML_ALL_MESSAGES_KEY]};
-                                all_node) {
-                              if (auto headers_node{all_node[YAML_HDR_KEY]};
-                                  headers_node) {
-                                result.note(all_fields.parse_global_rules(
-                                    headers_node));
-                              }
-                            }
-                            if (auto creq_node{txn_node[YAML_CLIENT_REQ_KEY]};
-                                creq_node) {
-                              result.note(handler.client_request(creq_node));
-                            }
-                            if (auto preq_node{txn_node[YAML_PROXY_REQ_KEY]};
-                                preq_node) { // global_rules appears to be being
-                                             // copied
-                              result.note(handler.proxy_request(preq_node));
-                            }
-                            if (auto ursp_node{txn_node[YAML_SERVER_RSP_KEY]};
-                                ursp_node) {
-                              result.note(handler.server_response(ursp_node));
-                            }
-                            if (auto prsp_node{txn_node[YAML_PROXY_RSP_KEY]};
-                                prsp_node) {
-                              result.note(handler.proxy_response(prsp_node));
-                            }
-                            if (!all_fields._fields.empty()) {
-                              result.note(
-                                  handler.apply_to_all_messages(all_fields));
-                            }
-                            result.note(handler.txn_close());
-                          }
-                        }
-                      } else {
-                        result.info(
-                            R"(Transaction list at {} in session at {} in "{}" is an empty list.)",
-                            txn_list_node.Mark(), ssn_node.Mark(), path);
-                      }
-                    } else {
-                      result.error(
-                          R"(Transaction list at {} in session at {} in "{}" is not a list.)",
-                          txn_list_node.Mark(), ssn_node.Mark(), path);
-                    }
-                  } else {
-                    result.error(R"(Session at "{}":{} has no "{}" key.)", path,
-                                 ssn_node.Mark().line, YAML_TXN_KEY);
-                  }
-                  result.note(handler.ssn_close());
-                }
-                errata.note(result);
-              }
-            } else {
-              errata.diag(R"(Session list at "{}":{} is an empty list.)", path,
-                          ssn_list_node.Mark().line);
-            }
-          } else {
-            errata.error(R"("{}" value at "{}":{} is not a sequence.)",
-                         YAML_SSN_KEY, path, ssn_list_node.Mark());
-          }
-        } else {
-          errata.error(R"(No sessions list ("{}") at "{}":{}.)", YAML_META_KEY,
-                       path, root.Mark().line);
-        }
-      }
+  HandlerOpener opener(handler, path);
+  auto errata = opener.errata;
+  if (!errata.is_ok()) {
+    return std::move(errata);
+  }
+  std::error_code ec;
+  std::string content{swoc::file::load(path, ec)};
+  if (ec.value()) {
+    errata.error(R"(Error loading "{}": {})", path, ec);
+    return std::move(errata);
+  }
+  YAML::Node root;
+  auto global_fields_rules = std::make_shared<HttpFields>();
+  try {
+    root = YAML::Load(content);
+    yaml_merge(root);
+  } catch (std::exception const &ex) {
+    errata.warn(R"(Exception: {} in "{}".)", ex.what(), path);
+  }
+  if (!errata.is_ok()) {
+    return std::move(errata);
+  }
+  if (root[YAML_META_KEY]) {
+    auto meta_node{root[YAML_META_KEY]};
+    if (meta_node[YAML_GLOBALS_KEY]) {
+      auto globals_node{meta_node[YAML_GLOBALS_KEY]};
+      // Path not passed to later calls than Load_Replay_File.
+      errata.note(global_fields_rules->parse_global_rules(globals_node));
     }
-    handler.file_close();
+  } else {
+    errata.info(R"(No meta node ("{}") at "{}":{}.)", YAML_META_KEY, path,
+                root.Mark().line);
+  }
+  handler.global_config = VerificationConfig{global_fields_rules};
+  if (!root[YAML_SSN_KEY]) {
+    errata.error(R"(No sessions list ("{}") at "{}":{}.)", YAML_META_KEY,
+                 path, root.Mark().line);
+    return std::move(errata);
+  }
+  auto ssn_list_node{root[YAML_SSN_KEY]};
+  if (!ssn_list_node.IsSequence()) {
+    errata.error(R"("{}" value at "{}":{} is not a sequence.)",
+                 YAML_SSN_KEY, path, ssn_list_node.Mark());
+    return std::move(errata);
+  }
+  if (ssn_list_node.size() == 0) {
+    errata.diag(R"(Session list at "{}":{} is an empty list.)", path,
+                ssn_list_node.Mark().line);
+    return std::move(errata);
+  }
+  for (auto const &ssn_node : ssn_list_node) {
+    // HeaderRules ssn_rules = global_rules;
+    auto session_errata{handler.ssn_open(ssn_node)};
+    if (!session_errata.is_ok()) {
+      errata.note(session_errata);
+      errata.error(R"(Failure opening session at "{}":{}.)", path,
+                   ssn_node.Mark().line);
+      continue;
+    }
+    if (!ssn_node[YAML_TXN_KEY]) {
+      errata.error(R"(Session at "{}":{} has no "{}" key.)", path,
+                   ssn_node.Mark().line, YAML_TXN_KEY);
+      continue;
+    }
+    auto txn_list_node{ssn_node[YAML_TXN_KEY]};
+    if (!txn_list_node.IsSequence()) {
+      session_errata.error(
+          R"(Transaction list at {} in session at {} in "{}" is not a list.)",
+          txn_list_node.Mark(), ssn_node.Mark(), path);
+    }
+    if (txn_list_node.size() == 0) {
+      session_errata.info(
+          R"(Transaction list at {} in session at {} in "{}" is an empty list.)",
+          txn_list_node.Mark(), ssn_node.Mark(), path);
+    }
+    for (auto const &txn_node : txn_list_node) {
+      // HeaderRules txn_rules = ssn_rules;
+      auto txn_errata = handler.txn_open(txn_node);
+      if (!txn_errata.is_ok()) {
+        session_errata.error(
+          R"(Could not open transaction at {} in "{}".)",
+          txn_node.Mark(), path);
+      }
+      HttpFields all_fields;
+      if (auto all_node{txn_node[YAML_ALL_MESSAGES_KEY]};
+          all_node) {
+        if (auto headers_node{all_node[YAML_HDR_KEY]};
+            headers_node) {
+          txn_errata.note(all_fields.parse_global_rules(
+              headers_node));
+        }
+      }
+      if (auto creq_node{txn_node[YAML_CLIENT_REQ_KEY]};
+          creq_node) {
+        txn_errata.note(handler.client_request(creq_node));
+      }
+      if (auto preq_node{txn_node[YAML_PROXY_REQ_KEY]};
+          preq_node) { // global_rules appears to be being
+                       // copied
+        txn_errata.note(handler.proxy_request(preq_node));
+      }
+      if (auto ursp_node{txn_node[YAML_SERVER_RSP_KEY]};
+          ursp_node) {
+        txn_errata.note(handler.server_response(ursp_node));
+      }
+      if (auto prsp_node{txn_node[YAML_PROXY_RSP_KEY]};
+          prsp_node) {
+        txn_errata.note(handler.proxy_response(prsp_node));
+      }
+      if (!all_fields._fields.empty()) {
+        txn_errata.note(
+            handler.apply_to_all_messages(all_fields));
+      }
+      txn_errata.note(handler.txn_close());
+      if (!txn_errata.is_ok()) {
+        txn_errata.error(
+          R"(Failure with transaction at {} in "{}".)",
+          txn_node.Mark(), path);
+      }
+      session_errata.note(txn_errata);
+    }
+    session_errata.note(handler.ssn_close());
+    errata.note(session_errata);
   }
   return std::move(errata);
 }
