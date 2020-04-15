@@ -1,0 +1,120 @@
+This directory contains test client and server SSL certificate files containing
+both the private and public keys. It also contains the CA used to sign them.
+
+In case it is helpful in the future, these are the openssl commands and input I
+provided to generate these files.
+
+
+-----
+
+$ mkdir newcerts && cd newcerts
+
+
+
+$ openssl genrsa 2048 > ca-key.pem
+Generating RSA private key, 2048 bit long modulus
+........................................................................+++
+....+++
+e is 65537 (0x10001)
+
+
+
+$ openssl req -new -x509 -nodes -days 36000         -key ca-key.pem -out ca.pem
+You are about to be asked to enter information that will be incorporated
+into your certificate request.
+What you are about to enter is what is called a Distinguished Name or a DN.
+There are quite a few fields but you can leave some blank
+For some fields there will be a default value,
+If you enter '.', the field will be left blank.
+-----
+Country Name (2 letter code) [XX]:US
+State or Province Name (full name) []:IL
+Locality Name (eg, city) [Default City]:Savoy
+Organization Name (eg, company) [Default Company Ltd]:Yahoo!
+Organizational Unit Name (eg, section) []:TrafficServer
+Common Name (eg, your name or your server's hostname) []:cert_cn
+Email Address []:brian.neradt@verizonmedia.com
+
+
+
+$ openssl req -newkey rsa:2048 -days 36000  \
+>         -nodes -keyout server-key.pem -out server-req.pem
+Generating a 2048 bit RSA private key
+.....+++
+.+++
+writing new private key to 'server-key.pem'
+-----
+You are about to be asked to enter information that will be incorporated
+into your certificate request.
+What you are about to enter is what is called a Distinguished Name or a DN.
+There are quite a few fields but you can leave some blank
+For some fields there will be a default value,
+If you enter '.', the field will be left blank.
+-----
+Country Name (2 letter code) [XX]:US
+State or Province Name (full name) []:IL
+Locality Name (eg, city) [Default City]:Savoy
+Organization Name (eg, company) [Default Company Ltd]:Yahoo!
+Organizational Unit Name (eg, section) []:TrafficServer
+Common Name (eg, your name or your server's hostname) []:server_cn
+Email Address []:brian.neradt@verizonmedia.com
+
+Please enter the following 'extra' attributes
+to be sent with your certificate request
+A challenge password []:
+An optional company name []:Yahoo!
+
+
+
+$ openssl rsa -in server-key.pem -out server-key.pem
+writing RSA key
+
+
+
+$ openssl x509 -req -in server-req.pem -days 36000 \
+>         -CA ca.pem -CAkey ca-key.pem -set_serial 01 -out server-cert.pem
+Signature ok
+subject=/C=US/ST=IL/L=Savoy/O=Yahoo!/OU=TrafficServer/CN=server_cn/emailAddress=brian.neradt@verizonmedia.com
+Getting CA Private Key
+
+
+
+$ openssl req -newkey rsa:2048 -days 36000  \
+>         -nodes -keyout client-key.pem -out client-req.pem
+Generating a 2048 bit RSA private key
+..........................+++
+...............+++
+writing new private key to 'client-key.pem'
+-----
+You are about to be asked to enter information that will be incorporated
+into your certificate request.
+What you are about to enter is what is called a Distinguished Name or a DN.
+There are quite a few fields but you can leave some blank
+For some fields there will be a default value,
+If you enter '.', the field will be left blank.
+-----
+Country Name (2 letter code) [XX]:US
+State or Province Name (full name) []:IL
+Locality Name (eg, city) [Default City]:Savoy
+Organization Name (eg, company) [Default Company Ltd]:Yahoo!
+Organizational Unit Name (eg, section) []:TrafficServer
+Common Name (eg, your name or your server's hostname) []:client_cn
+Email Address []:brian.neradt@verizonmedia.com
+
+Please enter the following 'extra' attributes
+to be sent with your certificate request
+A challenge password []:
+An optional company name []:Yahoo!
+
+
+
+$ openssl rsa -in client-key.pem -out client-key.pem
+writing RSA key
+
+
+
+$ openssl x509 -req -in client-req.pem -days 36000  \
+>         -CA ca.pem -CAkey ca-key.pem -set_serial 01 -out client-cert.pem
+Signature ok
+subject=/C=US/ST=IL/L=Savoy/O=Yahoo!/OU=TrafficServer/CN=client_cn/emailAddress=brian.neradt@verizonmedia.com
+Getting CA Private Key

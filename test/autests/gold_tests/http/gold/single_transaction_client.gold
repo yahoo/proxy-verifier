@@ -1,5 +1,6 @@
 ``Configuring logging at level DIAG
 ``
+``Status: "200"
 ``Headers:
 - "content-length": "0"
 - "content-type": "application/octet-stream"
@@ -9,7 +10,6 @@
 - "age": "0"
 - "date": "Sat, 16 Mar 2019 03:11:36 GMT"
 
-``Status: "200"
 ``
 ``Starting session "single_http_transaction.json":5 protocol=http.
 ``1 transactions in 1 sessions``

@@ -4,7 +4,7 @@ meta:
 
 sessions:
 - protocol: [ tls/1.2, tcp, ipv4 ]
-  tls: { sni: test_sni }
+  tls: { client: { sni: test_sni } }
   transactions:
   - all:
       headers:

@@ -37,7 +37,7 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
         if not pem_file:
             from os.path import dirname
             git_root = dirname(dirname(dirname(test_root)))
-            pem_file = os.path.join(git_root, "server_test.pem")
+            pem_file = os.path.join(git_root, "test", "keys", "client.pem")
 
             if not os.path.isfile(pem_file):
                 raise ValueError("Tried to use '{}' for --https-pem, but it is not "

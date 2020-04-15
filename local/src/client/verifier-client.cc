@@ -10,6 +10,7 @@
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
+#include "swoc/swoc_file.h"
 
 #include <assert.h>
 #include <chrono>
@@ -41,6 +42,10 @@ using swoc::TextView;
  * in the yaml file.
  */
 bool Use_Strict_Checking = false;
+
+/// Path to the parent directory of the executable, used for relative paths.
+swoc::file::path ROOT_PATH;
+
 std::unordered_set<std::string> Keys_Whitelist;
 
 std::mutex LoadMutex;
@@ -86,6 +91,30 @@ private:
 };
 
 bool Shutdown_Flag = false;
+
+/** Parse a node for the given tls:client:verify-mode node value.
+ *
+ * @return The value of tls:client:verify-mode, or -1 if it doesn't exist.
+ */
+static swoc::Rv<int>
+parse_client_verify_mode(YAML::Node const &node)
+{
+  swoc::Rv<int> verify_mode{-1};
+  if (auto tls_node{node[YAML_SSN_TLS_KEY]}; tls_node) {
+    if (auto server_node{tls_node[YAML_SSN_TLS_CLIENT_KEY]}; server_node) {
+      if (auto tls_verify_mode{server_node[YAML_SSN_TLS_VERIFY_MODE_KEY]}; tls_verify_mode) {
+        if (tls_verify_mode.IsScalar()) {
+          verify_mode = std::stoi(tls_verify_mode.Scalar());
+        } else {
+          verify_mode.errata().error(
+              R"(Session has a value for key "{}" that is not a scalar as required.)",
+              YAML_SSN_TLS_SNI_KEY);
+        }
+      }
+    }
+  }
+  return std::move(verify_mode);
+}
 
 class ClientThreadInfo : public ThreadInfo
 {
@@ -197,6 +226,14 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
     }
   }
 
+  auto verify_mode = parse_client_verify_mode(node);
+  if (!verify_mode.is_ok()) {
+    errata.note(std::move(verify_mode.errata()));
+    return std::move(errata);
+  } else if (verify_mode >= 0) {
+    _ssn->_client_verify_mode = verify_mode;
+  }
+
   return std::move(errata);
 }
 
@@ -300,7 +337,7 @@ ClientReplayFileHandler::ssn_close()
   return {};
 }
 
-swoc::Errata
+void
 Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint const &target_https)
 {
   swoc::Errata errata;
@@ -320,12 +357,12 @@ Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint con
       // the server side. If there is no TrafficServer proxy, ignore the HTTP/2
       // traffic therefore.
       errata.diag(R"(Ignoring HTTP/2 traffic in proxy mode, "{}":{})", ssn._path, ssn._line_no);
-      return errata;
+      return;
     }
     session = std::make_unique<H2Session>();
     real_target = &target_https;
   } else if (ssn.is_tls) {
-    session = std::make_unique<TLSSession>(ssn._client_sni);
+    session = std::make_unique<TLSSession>(ssn._client_sni, ssn._client_verify_mode);
     real_target = &target_https;
     errata.diag("Connecting via TLS.");
   } else {
@@ -334,11 +371,11 @@ Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint con
     errata.diag("Connecting via HTTP.");
   }
 
-  errata.note(session->do_connect(real_target));
+  errata.note(std::move(session->do_connect(real_target)));
   if (errata.is_ok()) {
-    errata.note(session->run_transactions(ssn._transactions, real_target));
+    errata.note(std::move(session->run_transactions(ssn._transactions, real_target)));
   }
-  return std::move(errata);
+  return;
 }
 
 void
@@ -350,13 +387,11 @@ TF_Client(std::thread *t)
   size_t target_https_index = 0;
 
   while (!Shutdown_Flag) {
-    swoc::Errata errata;
     thread_info._ssn = nullptr;
     Client_Thread_Pool.wait_for_work(&thread_info);
 
     if (thread_info._ssn != nullptr) {
-      swoc::Errata result =
-          Run_Session(*thread_info._ssn, Target[target_index], Target_Https[target_https_index]);
+      Run_Session(*thread_info._ssn, Target[target_index], Target_Https[target_https_index]);
       if (++target_index >= Target.size())
         target_index = 0;
       if (++target_https_index >= Target_Https.size())
@@ -439,6 +474,52 @@ Engine::command_run()
   auto key_format_arg{arguments.get("format")};
   if (key_format_arg) {
     HttpHeader::_key_format = key_format_arg[0];
+  }
+
+  auto cert_arg{arguments.get("client-cert")};
+  if (cert_arg.size() >= 1) {
+    swoc::file::path cert_path{cert_arg[0]};
+    if (!cert_path.is_absolute()) {
+      cert_path = ROOT_PATH / cert_path;
+    }
+    std::error_code ec;
+    auto stat{swoc::file::status(cert_path, ec)};
+    if (ec.value() == 0) {
+      if (is_dir(stat)) {
+        TLSSession::certificate_file = cert_path / "client.pem";
+        TLSSession::privatekey_file = cert_path / "client.key";
+      } else {
+        TLSSession::certificate_file = cert_path;
+      }
+    } else {
+      errata.error(R"(Invalid certificate path "{}": {}.)", cert_arg[0], ec);
+      status_code = 1;
+      return;
+    }
+  } else {
+    TLSSession::certificate_file = ROOT_PATH / "client.pem";
+    TLSSession::privatekey_file = ROOT_PATH / "client.key";
+  }
+
+  auto ca_certs_arg{arguments.get("ca-certs")};
+  if (ca_certs_arg.size() >= 1) {
+    swoc::file::path cert_path{ca_certs_arg[0]};
+    if (!cert_path.is_absolute()) {
+      cert_path = ROOT_PATH / cert_path;
+    }
+    std::error_code ec;
+    auto stat{swoc::file::status(cert_path, ec)};
+    if (ec.value() == 0) {
+      if (is_dir(stat)) {
+        TLSSession::ca_certificate_dir = cert_path;
+      } else {
+        TLSSession::ca_certificate_file = cert_path;
+      }
+    } else {
+      errata.error(R"(Invalid ca certificate path "{}": {}.)", ca_certs_arg[0], ec);
+      status_code = 1;
+      return;
+    }
   }
 
   auto keys_arg{arguments.get("keys")};
@@ -616,6 +697,24 @@ main(int /* argc */, char const *argv[])
           "file as opposed to "
           "just those with verification elements.")
       .add_option(
+          "--client-cert",
+          "",
+          "Specify a TLS client certificate file containing both the public and "
+          "private keys. Alternatively a directory containing client.pem and "
+          "client.key files can be provided.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--ca-certs",
+          "",
+          "Specify TLS CA certificate file containing one or more certificates. "
+          "Alternatively, a directory containing separate certificate files can "
+          "be provided.",
+          "",
+          1,
+          "")
+      .add_option(
           "--keys",
           "-k",
           "A whitelist of transactions to send.",
@@ -625,6 +724,9 @@ main(int /* argc */, char const *argv[])
 
   // parse the arguments
   engine.arguments = engine.parser.parse(argv);
+
+  ROOT_PATH = argv[0];
+  ROOT_PATH = ROOT_PATH.parent_path().parent_path();
 
   std::string verbosity = "info";
   if (const auto verbose_argument{engine.arguments.get("verbose")}; verbose_argument) {

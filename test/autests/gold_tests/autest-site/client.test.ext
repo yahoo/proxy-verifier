@@ -13,7 +13,8 @@ import os
 
 
 def _configure_client(obj, process, name, replay_dir, use_ipv6=False,
-                      http_ports=[8080], https_ports=[4443], other_args=''):
+                      http_ports=[8080], https_ports=[4443],
+                      ssl_cert='', ca_certs='', other_args=''):
     """
     Configure the process for running the verifier-client.
 
@@ -52,6 +53,40 @@ def _configure_client(obj, process, name, replay_dir, use_ipv6=False,
         command += create_address_argument(https_ports, use_ipv6)
         command += " "
 
+        if ssl_cert == '':
+            # Search for the root-level cert.
+            test_root = process.TestRoot
+            from os.path import dirname
+            git_root = dirname(dirname(dirname(test_root)))
+            ssl_cert = os.path.join(git_root, "test", "keys", "client.pem")
+
+            if not os.path.isfile(ssl_cert):
+                raise ValueError("Tried to use '{}' for --client-cert, but it is not "
+                                 "a valid file.".format(ssl_cert))
+        if ssl_cert:
+            run_ssl_cert = ssl_cert
+            if os.path.isfile(ssl_cert):
+                run_ssl_cert = os.path.join(client_dir, os.path.basename(ssl_cert))
+                process.Setup.Copy(ssl_cert, run_ssl_cert, CopyLogic.SoftFiles)
+            command += ' --client-cert "{}" '.format(run_ssl_cert)
+
+        if ca_certs == '':
+            # Search for the root-level cert.
+            test_root = process.TestRoot
+            from os.path import dirname
+            git_root = dirname(dirname(dirname(test_root)))
+            ca_certs = os.path.join(git_root, "test", "keys", "ca.pem")
+
+            if not os.path.exists(ca_certs):
+                raise ValueError("Tried to use '{}' for --ca-certs, but it is not "
+                                 "a valid path.".format(ca_certs))
+        if ca_certs:
+            run_ca_certs = ca_certs
+            if os.path.isfile(ca_certs):
+                run_ca_certs = os.path.join(client_dir, os.path.basename(ca_certs))
+                process.Setup.Copy(ca_certs, run_ca_certs, CopyLogic.SoftFiles)
+            command += ' --ca-certs "{}" '.format(run_ca_certs)
+
     if other_args:
         command += " {}".format(other_args)
 
@@ -60,7 +95,8 @@ def _configure_client(obj, process, name, replay_dir, use_ipv6=False,
 
 
 def MakeClientProcess(test, name, replay_dir, use_ipv6=False,
-                      http_ports=[8080], https_ports=[4443], other_args=''):
+                      http_ports=[8080], https_ports=[4443],
+                      ssl_cert='', ca_certs='', other_args=''):
     """
     Create a verifier-client process.
 
@@ -80,18 +116,36 @@ def MakeClientProcess(test, name, replay_dir, use_ipv6=False,
 
         https_ports: (list of ints) The set of HTTPS ports to connect on.
 
+        ssl_cert: (path) The location of the cert for HTTPS encryption. If this
+            is not provided and https_ports is non-empty, the root-level
+            test/keys/client.pem will be searched for and used if it can be found.
+            To explicitly test verifier-server with no --client-cert argument, pass in
+            None for ssl_cert. Whitespace can be passed in to test --client-cert with
+            an empty argument.
+
+        ca_certs: (path) The location of the CA certificate(s) for HTTPS
+            encryption. This can be either a single file with multiple
+            certificate sections or a directory of certificate files.  If this
+            is not provided and https_ports is non-empty, the root-level
+            test/keys/ca.pem will be searched for and used if it can be found.
+            To explicitly test verifier-server with no --ca-certs argument,
+            pass in None for ca_certs.  Whitespace can be passed in to test
+            --ca-certs with an empty argument.
+
         other_args: (str) Any other arbitrary options to pass to verifier-client.
 
     Returns:
         A verifier-client process.
     """
     client = test.Processes.Process(name)
-    _configure_client(test, client, name, replay_dir, use_ipv6, http_ports, https_ports, other_args)
+    _configure_client(test, client, name, replay_dir, use_ipv6, http_ports,
+                      https_ports, ssl_cert, ca_certs, other_args)
     return client
 
 
 def AddClientProcess(run, name, replay_dir, use_ipv6=False,
-                     http_ports=[8080], https_ports=[4443], other_args=''):
+                     http_ports=[8080], https_ports=[4443],
+                     ssl_cert='', ca_certs='', other_args=''):
     """
     Set the Default process of the test run to a verifier-client Process.
 
@@ -106,7 +160,8 @@ def AddClientProcess(run, name, replay_dir, use_ipv6=False,
     """
 
     p = run.Processes.Default
-    _configure_client(run, p, name, replay_dir, use_ipv6, http_ports, https_ports, other_args)
+    _configure_client(run, p, name, replay_dir, use_ipv6, http_ports,
+                      https_ports, ssl_cert, ca_certs, other_args)
     return p
 
 
