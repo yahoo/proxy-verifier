@@ -14,7 +14,7 @@ import os
 
 def _configure_server(obj, process, name, replay_dir, use_ipv6=False,
                       http_ports=[8080], https_ports=[4443],
-                      ssl_cert='', other_args=''):
+                      ssl_cert='', ca_certs='', other_args=''):
     """
     Configure the provided process to run a verifier-server command.
 
@@ -55,17 +55,34 @@ def _configure_server(obj, process, name, replay_dir, use_ipv6=False,
             test_root = process.TestRoot
             from os.path import dirname
             git_root = dirname(dirname(dirname(test_root)))
-            ssl_cert = os.path.join(git_root, "server_test.pem")
+            ssl_cert = os.path.join(git_root, "test", "keys", "server.pem")
 
             if not os.path.isfile(ssl_cert):
-                raise ValueError("Tried to use '{}' for --cert, but it is not "
+                raise ValueError("Tried to use '{}' for --server-cert, but it is not "
                                  "a valid file.".format(ssl_cert))
         if ssl_cert:
             run_ssl_cert = ssl_cert
             if os.path.isfile(ssl_cert):
                 run_ssl_cert = os.path.join(server_dir, os.path.basename(ssl_cert))
                 process.Setup.Copy(ssl_cert, run_ssl_cert, CopyLogic.SoftFiles)
-            command += ' --cert "{}" '.format(run_ssl_cert)
+            command += ' --server-cert "{}" '.format(run_ssl_cert)
+
+        if ca_certs == '':
+            # Search for the root-level cert.
+            test_root = process.TestRoot
+            from os.path import dirname
+            git_root = dirname(dirname(dirname(test_root)))
+            ca_certs = os.path.join(git_root, "test", "keys", "ca.pem")
+
+            if not os.path.exists(ca_certs):
+                raise ValueError("Tried to use '{}' for --ca-certs, but it is not "
+                                 "a valid path.".format(ca_certs))
+        if ca_certs:
+            run_ca_certs = ca_certs
+            if os.path.isfile(ca_certs):
+                run_ca_certs = os.path.join(server_dir, os.path.basename(ca_certs))
+                process.Setup.Copy(ca_certs, run_ca_certs, CopyLogic.SoftFiles)
+            command += ' --ca-certs "{}" '.format(run_ca_certs)
 
     if replay_dir:
         # Create a copy of the replay directory in the run directory.
@@ -84,7 +101,7 @@ def _configure_server(obj, process, name, replay_dir, use_ipv6=False,
 
 def MakeServerProcess(test, name, replay_dir, use_ipv6=False,
                       http_ports=[8080], https_ports=[4443],
-                      ssl_cert='', other_args=''):
+                      ssl_cert='', ca_certs='', other_args=''):
     """
     Create a verifier-server process.
 
@@ -104,26 +121,36 @@ def MakeServerProcess(test, name, replay_dir, use_ipv6=False,
 
         ssl_cert: (path) The location of the cert for HTTPS encryption. If this
             is not provided and https_ports is non-empty, the root-level
-            server_test.pem will be searched for and used if it can be found.
-            To explicitly test verifier-server with no --cert argument, pass in
-            None for ssl_cert. Whitespace can be passed in to test --cert with
+            test/keys/server.pem will be searched for and used if it can be found.
+            To explicitly test verifier-server with no --server-cert argument, pass in
+            None for ssl_cert. Whitespace can be passed in to test --server-cert with
             an empty argument.
+
+        ca_certs: (path) The location of the CA certificate(s) for HTTPS
+            encryption. This can be either a single file with multiple
+            certificate sections or a directory of certificate files.  If this
+            is not provided and https_ports is non-empty, the root-level
+            test/keys/ca.pem will be searched for and used if it can be found.
+            To explicitly test verifier-server with no --ca-certs argument,
+            pass in None for ca_certs.  Whitespace can be passed in to test
+            --ca-certs with an empty argument.
 
         other_args: (str) Any other arbitrary options to pass to verifier-server.
 
     Raises:
-        ValueError if https_ports is non-empty and a valid ssl_cert could not
-            be derived.
+        ValueError if https_ports is non-empty and a valid ssl_cert or ca_certs
+            value could not be derived.
     """
     server = test.Processes.Process(name)
     _configure_server(test, server, name, replay_dir, use_ipv6,
-                      http_ports, https_ports, ssl_cert, other_args)
+                      http_ports, https_ports, ssl_cert,
+                      ca_certs, other_args)
     return server
 
 
 def AddServerProcess(run, name, replay_dir, use_ipv6=False,
                      http_ports=[8080], https_ports=[4443],
-                     ssl_cert='', other_args=''):
+                     ssl_cert='', ca_certs='', other_args=''):
     """
     Create a verifier-server process and configure it for the given TestRun.
 
@@ -138,7 +165,8 @@ def AddServerProcess(run, name, replay_dir, use_ipv6=False,
 
     server = run.Processes.Process(name)
     _configure_server(run, server, name, replay_dir, use_ipv6,
-                      http_ports, https_ports, ssl_cert, other_args)
+                      http_ports, https_ports, ssl_cert,
+                      ca_certs, other_args)
 
     client = run.Processes.Default
     client.StartBefore(server)

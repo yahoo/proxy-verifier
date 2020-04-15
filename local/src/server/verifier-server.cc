@@ -50,10 +50,10 @@ void TF_Serve(std::thread *t);
  */
 bool Use_Strict_Checking = false;
 
-// Path to the parent directory of the executable, used for relative paths.
+/// Path to the parent directory of the executable, used for relative paths.
 swoc::file::path ROOT_PATH;
 
-// This must be a list so that iterators / pointers to elements do not go stale.
+/// This must be a list so that iterators / pointers to elements do not go stale.
 std::list<std::thread *> Listen_threads;
 
 class ServerThreadInfo : public ThreadInfo
@@ -102,6 +102,30 @@ bool Shutdown_Flag = false;
 
 std::mutex LoadMutex;
 
+/** Parse for the given tls:server:verify-mode node value.
+ *
+ * @return The value of tls:server:verify-mode, or -1 if it doesn't exist.
+ */
+static swoc::Rv<int>
+parse_server_verify_mode(YAML::Node const &node)
+{
+  swoc::Rv<int> verify_mode{-1};
+  if (auto tls_node{node[YAML_SSN_TLS_KEY]}; tls_node) {
+    if (auto server_node{tls_node[YAML_SSN_TLS_SERVER_KEY]}; server_node) {
+      if (auto tls_verify_mode{server_node[YAML_SSN_TLS_VERIFY_MODE_KEY]}; tls_verify_mode) {
+        if (tls_verify_mode.IsScalar()) {
+          verify_mode = std::stoi(tls_verify_mode.Scalar());
+        } else {
+          verify_mode.errata().error(
+              R"(Session has a value for key "{}" that is not a scalar as required.)",
+              YAML_SSN_TLS_SNI_KEY);
+        }
+      }
+    }
+  }
+  return std::move(verify_mode);
+}
+
 std::unordered_map<std::string, Txn, std::hash<std::string_view>> Transactions;
 
 class ServerReplayFileHandler : public ReplayFileHandler
@@ -109,6 +133,7 @@ class ServerReplayFileHandler : public ReplayFileHandler
 public:
   ServerReplayFileHandler();
 
+  swoc::Errata ssn_open(YAML::Node const &node) override;
   swoc::Errata txn_open(YAML::Node const &node) override;
   swoc::Errata proxy_request(YAML::Node const &node) override;
   swoc::Errata server_response(YAML::Node const &node) override;
@@ -129,6 +154,41 @@ ServerReplayFileHandler::reset()
 {
   _txn.~Txn();
   new (&_txn) Txn{Use_Strict_Checking};
+}
+
+swoc::Errata
+ServerReplayFileHandler::ssn_open(YAML::Node const &node)
+{
+  Errata errata;
+
+  const auto sni_rv = parse_sni(node);
+  if (!sni_rv.is_ok()) {
+    errata.error(
+        R"(proxy-request node at "{}":{} does not have a proper TLS node [{}].)",
+        _path,
+        node.Mark().line,
+        YAML_SSN_TLS_KEY);
+    return std::move(errata);
+  }
+  const auto sni = sni_rv.result();
+  if (sni.empty()) {
+    return std::move(errata);
+  }
+  auto verify_mode = parse_server_verify_mode(node);
+  if (!verify_mode.is_ok()) {
+    errata.note(verify_mode.errata());
+    return std::move(errata);
+  }
+  if (verify_mode >= 0) {
+    TLSSession::register_sni_for_client_verification(sni, verify_mode);
+    errata.diag(
+        R"(Registered an SNI for client certification "{}":{}. SNI: {}, Verify mode: {}.)",
+        _path,
+        node.Mark().line,
+        sni,
+        verify_mode.result());
+  }
+  return std::move(errata);
 }
 
 swoc::Errata
@@ -373,8 +433,6 @@ Engine::command_run()
     std::deque<swoc::IPEndpoint> server_addrs, server_addrs_https;
     auto server_addr_arg{arguments.get("listen")};
     auto server_addr_https_arg{arguments.get("listen-https")};
-    auto cert_arg{arguments.get("cert")};
-    auto key_format_arg{arguments.get("format")};
 
     swoc::LocalBufferWriter<1024> w;
 
@@ -388,6 +446,7 @@ Engine::command_run()
       Use_Strict_Checking = true;
     }
 
+    auto key_format_arg{arguments.get("format")};
     if (key_format_arg) {
       HttpHeader::_key_format = key_format_arg[0];
     }
@@ -413,6 +472,7 @@ Engine::command_run()
         }
         std::error_code ec;
 
+        auto cert_arg{arguments.get("server-cert")};
         if (cert_arg.size() >= 1) {
           swoc::file::path cert_path{cert_arg[0]};
           if (!cert_path.is_absolute()) {
@@ -434,6 +494,28 @@ Engine::command_run()
         } else {
           TLSSession::certificate_file = ROOT_PATH / "server.pem";
           TLSSession::privatekey_file = ROOT_PATH / "server.key";
+        }
+        if (errata.is_ok()) {
+          errata = TLSSession::init();
+        }
+        auto ca_certs_arg{arguments.get("ca-certs")};
+        if (ca_certs_arg.size() >= 1) {
+          swoc::file::path cert_path{ca_certs_arg[0]};
+          if (!cert_path.is_absolute()) {
+            cert_path = ROOT_PATH / cert_path;
+          }
+          auto stat{swoc::file::status(cert_path, ec)};
+          if (ec.value() == 0) {
+            if (is_dir(stat)) {
+              TLSSession::ca_certificate_dir = cert_path;
+            } else {
+              TLSSession::ca_certificate_file = cert_path;
+            }
+          } else {
+            errata.error(R"(Invalid ca certificate path "{}": {}.)", ca_certs_arg[0], ec);
+            status_code = 1;
+            return;
+          }
         }
         if (errata.is_ok()) {
           errata = TLSSession::init();
@@ -553,7 +635,24 @@ main(int /* argc */, char const *argv[])
           1,
           "")
       .add_option("--format", "-f", "Transaction key format", "", 1, "")
-      .add_option("--cert", "", "Specify TLS certificate file", "", 1, "")
+      .add_option(
+          "--server-cert",
+          "",
+          "Specify a TLS server certificate file containing both the public and "
+          "private keys. Alternatively a directory containing server.pem and "
+          "server.key files can be provided.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--ca-certs",
+          "",
+          "Specify TLS CA certificate file containing one or more certificates. "
+          "Alternatively, a directory containing separate certificate files can "
+          "be provided.",
+          "",
+          1,
+          "")
       .add_option(
           "--strict",
           "-s",

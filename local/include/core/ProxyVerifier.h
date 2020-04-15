@@ -7,9 +7,6 @@
 
 #pragma once
 
-#include <string>
-#include <unordered_set>
-
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -17,8 +14,11 @@
 #include <nghttp2/nghttp2.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <string>
 #include <thread>
 #include <unistd.h>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "yaml-cpp/yaml.h"
 
@@ -44,6 +44,8 @@ static const std::string YAML_SSN_KEY{"sessions"};
 static const std::string YAML_SSN_PROTOCOL_KEY{"protocol"};
 static const std::string YAML_SSN_START_KEY{"connection-time"};
 static const std::string YAML_SSN_TLS_KEY{"tls"};
+static const std::string YAML_SSN_TLS_CLIENT_KEY{"client"};
+static const std::string YAML_SSN_TLS_SERVER_KEY{"server"};
 static const std::string YAML_SSN_TLS_SNI_KEY{"sni"};
 static const std::string YAML_SSN_TLS_VERIFY_MODE_KEY{"verify-mode"};
 static const std::string YAML_TXN_KEY{"transactions"};
@@ -744,7 +746,10 @@ struct Ssn
   swoc::file::path _path;
   unsigned _line_no = 0;
   uint64_t _start; ///< Start time in HR ticks.
+  /// The SNI to send from the client to the proxy.
   std::string _client_sni;
+  /// The TLS verify mode for the client against the proxy.
+  int _client_verify_mode = SSL_VERIFY_NONE;
   bool is_tls = false;
   bool is_h2 = false;
 };
@@ -864,6 +869,8 @@ public:
 private:
   virtual swoc::Rv<size_t>
   drain_body_internal(HttpHeader &hdr, Txn const &json_txn, swoc::TextView initial);
+
+private:
   int _fd = -1; ///< Socket.
 };
 
@@ -884,7 +891,7 @@ public:
   using super_type = Session;
 
   TLSSession() = default;
-  TLSSession(swoc::TextView const &client_sni);
+  TLSSession(swoc::TextView const &client_sni, int client_verify_mode = SSL_VERIFY_NONE);
   ~TLSSession() override;
 
   /** @see Session::read */
@@ -899,14 +906,6 @@ public:
   /** @see Session::connect */
   swoc::Errata connect() override;
   swoc::Errata connect(SSL_CTX *ctx);
-  static swoc::Errata init(SSL_CTX *&srv_ctx, SSL_CTX *&clt_ctx);
-  static swoc::Errata
-  init()
-  {
-    return TLSSession::init(server_ctx, client_ctx);
-  }
-  static swoc::file::path certificate_file;
-  static swoc::file::path privatekey_file;
 
   SSL *
   get_ssl()
@@ -914,11 +913,78 @@ public:
     return _ssl;
   }
 
+  // static members
+  static swoc::Errata init();
+  static swoc::Errata init(SSL_CTX *&server_context, SSL_CTX *&client_context);
+
+  /** Register the TLS handshake verification mode of the server per the SNI.
+   *
+   * This function is only relevant to the server.
+   *
+   * This specifies what verification mode should be done against the client in
+   * the TLS handshake if the client uses the given SNI in the client hello.
+   *
+   * @param[in] sni The SNI which is the key for the mode value.
+   *
+   * @param[in] mode The verification mode to use in TLS handshakes in which
+   * the sni is the servername in the client hello.
+   */
+  static void register_sni_for_client_verification(std::string_view sni, int mode);
+
+  /** A lookup function for the registered verification mode given the SNI.
+   *
+   * This function is only relevant to the server.
+   *
+   * @param[in] sni The SNI key from which the mode value is queried.
+   *
+   * @return The verification mode for the given SNI previously registered via
+   * register_sni_for_client_verification. If no such SNI has been registered,
+   * then SSL_VERIFY_NONE will be returned as a default.
+   */
+  static int get_verify_mode_for_sni(std::string_view sni);
+
+public:
+  /// The client or server public key file. This may also contain the private
+  /// key.
+  static swoc::file::path certificate_file;
+
+  /// The client or server private key file if not in the certificate_file.
+  static swoc::file::path privatekey_file;
+
+  /// The CA file which may contain mutiple CA certs.
+  static swoc::file::path ca_certificate_file;
+
+  /// The CA directory containing one or more CA cert files.
+  static swoc::file::path ca_certificate_dir;
+
+protected:
+  /** Configure the context to use any provided certificates.
+   *
+   * @param[in] context The context upon which to configure the host and CA certificates.
+   *
+   * @return An errata indicating the status of the configuration.
+   */
+  static swoc::Errata configure_certificates(SSL_CTX *&context);
+
 protected:
   SSL *_ssl = nullptr;
+  /** The SNI to be sent by the client (as opposed to the one expected by the
+   * server from the proxy). This only applies to the client.
+   */
   std::string _client_sni;
-  static SSL_CTX *server_ctx;
-  static SSL_CTX *client_ctx;
+
+  /** The verify mode for the client in the TLS handshake with the proxy.
+   * This only applies to the client.
+   */
+  int _client_verify_mode = SSL_VERIFY_NONE;
+
+  static SSL_CTX *server_context;
+  static SSL_CTX *client_context;
+
+  /** The verification mode of the verifier server against the proxy in the TLS
+   * handshake as specified per the SNI received from the proxy.
+   */
+  static std::unordered_map<std::string, int> _verify_mode_per_sni;
 };
 
 class H2StreamState
@@ -951,11 +1017,11 @@ public:
   virtual swoc::Rv<ssize_t> write(HttpHeader const &hdr);
 
   swoc::Errata connect() override;
-  static swoc::Errata init(SSL_CTX *&srv_ctx, SSL_CTX *&clt_ctx);
+  static swoc::Errata init(SSL_CTX *&server_context, SSL_CTX *&client_context);
   static swoc::Errata
   init()
   {
-    return H2Session::init(h2_server_ctx, h2_client_ctx);
+    return H2Session::init(h2_server_context, h2_client_context);
   }
   swoc::Errata session_init();
   swoc::Errata send_client_connection_header();
@@ -976,8 +1042,8 @@ protected:
   nghttp2_session_callbacks *_callbacks;
   nghttp2_option *_options;
 
-  static SSL_CTX *h2_server_ctx;
-  static SSL_CTX *h2_client_ctx;
+  static SSL_CTX *h2_server_context;
+  static SSL_CTX *h2_client_context;
 
 private:
   swoc::Errata pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_count);

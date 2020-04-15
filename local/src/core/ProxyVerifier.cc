@@ -59,6 +59,7 @@ std::bitset<600> HttpHeader::STATUS_NO_CONTENT;
 
 RuleCheck::RuleOptions RuleCheck::options;
 RuleCheck::DuplicateFieldRuleOptions RuleCheck::duplicate_field_options;
+std::unordered_map<std::string, int> TLSSession::_verify_mode_per_sni;
 
 static ssize_t send_callback(
     nghttp2_session *session,
@@ -139,13 +140,15 @@ ReplayFileHandler::parse_sni(YAML::Node const &node)
 {
   swoc::Rv<std::string> sni;
   if (auto tls_node{node[YAML_SSN_TLS_KEY]}; tls_node) {
-    if (auto sni_node{tls_node[YAML_SSN_TLS_SNI_KEY]}; sni_node) {
-      if (sni_node.IsScalar()) {
-        sni.result() = sni_node.Scalar();
-      } else {
-        sni.errata().error(
-            R"(Session has a value for key "{}" that is not a scalar as required.)",
-            YAML_SSN_TLS_SNI_KEY);
+    if (auto client_node{tls_node[YAML_SSN_TLS_CLIENT_KEY]}; client_node) {
+      if (auto sni_node{client_node[YAML_SSN_TLS_SNI_KEY]}; sni_node) {
+        if (sni_node.IsScalar()) {
+          sni.result() = sni_node.Scalar();
+        } else {
+          sni.errata().error(
+              R"(Session has a value for key "{}" that is not a scalar as required.)",
+              YAML_SSN_TLS_SNI_KEY);
+        }
       }
     }
   }
@@ -169,8 +172,9 @@ Session::read(swoc::MemSpan<char> span)
   return std::move(zret);
 }
 
-TLSSession::TLSSession(swoc::TextView const &client_sni)
-  : _client_sni(client_sni)
+TLSSession::TLSSession(swoc::TextView const &client_sni, int client_verify_mode)
+  : _client_sni{client_sni}
+  , _client_verify_mode{client_verify_mode}
 {
 }
 
@@ -304,7 +308,7 @@ Session::drain_body_internal(
   auto &&[bytes_drained, drain_errata] =
       this->drain_body(rsp_hdr_from_wire, expected_content_size, initial);
   num_drained_bytes.result() = bytes_drained;
-  num_drained_bytes.errata().note(drain_errata);
+  num_drained_bytes.errata().note(std::move(drain_errata));
   return std::move(num_drained_bytes);
 }
 
@@ -520,7 +524,7 @@ Session::run_transaction(Txn const &json_txn)
           errata.error(
               R"(Failed to find a well-formed, completed HTTP response: {})",
               (result == HttpHeader::PARSE_INCOMPLETE ? "PARSE_INCOMPLETE" : "PARSE_ERROR"));
-          return errata;
+          return std::move(errata);
         }
         if (rsp_hdr_from_wire._status == 100) {
           errata.diag("100-Continue response. Read another header.");
@@ -534,11 +538,11 @@ Session::run_transaction(Txn const &json_txn)
 
             if (!result.is_ok()) {
               errata.error(R"(Failed to parse post 100 header.)");
-              return errata;
+              return std::move(errata);
             }
           } else {
             errata.error(R"(Failed to read post 100 header.)");
-            return errata;
+            return std::move(errata);
           }
         }
         errata.diag(R"(Status: "{}")", rsp_hdr_from_wire._status);
@@ -556,16 +560,16 @@ Session::run_transaction(Txn const &json_txn)
           // next transaction.
           auto &&[bytes_drained, drain_errata] =
               this->drain_body_internal(rsp_hdr_from_wire, json_txn, w.view().substr(body_offset));
-          errata.note(drain_errata);
+          errata.note(std::move(drain_errata));
 
-          return errata;
+          return std::move(errata);
         }
         if (rsp_hdr_from_wire.verify_headers(key, *json_txn._rsp._fields_rules)) {
           errata.error(R"(Response headers did not match expected response headers.)");
         }
         auto &&[bytes_drained, drain_errata] =
             this->drain_body_internal(rsp_hdr_from_wire, json_txn, w.view().substr(body_offset));
-        errata.note(drain_errata);
+        errata.note(std::move(drain_errata));
 
         if (!errata.is_ok()) {
         }
@@ -574,10 +578,9 @@ Session::run_transaction(Txn const &json_txn)
       }
     } else {
       errata.error(R"(Invalid response read key={}.)", key);
-      std::cerr << errata;
     }
   }
-  return errata;
+  return std::move(errata);
 }
 
 swoc::Errata
@@ -594,7 +597,7 @@ Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint const
       txn_errata.note(this->do_connect(real_target));
       if (!txn_errata.is_ok()) {
         txn_errata.error(R"(Failed to reconnect HTTP/1 key={}.)", txn._req.make_key());
-        session_errata.note(txn_errata);
+        session_errata.note(std::move(txn_errata));
         // If we don't have a valid connection, there's no point in continuing.
         break;
       }
@@ -613,7 +616,7 @@ Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint const
           txn._req.make_key(),
           elapsed_ms.count());
     }
-    session_errata.note(txn_errata);
+    session_errata.note(std::move(txn_errata));
   }
   return std::move(session_errata);
 }
@@ -656,18 +659,19 @@ swoc::Errata
 TLSSession::accept()
 {
   swoc::Errata errata;
-  _ssl = SSL_new(server_ctx);
+  _ssl = SSL_new(server_context);
   if (_ssl == nullptr) {
     errata.error(
-        R"(Failed to create SSL server object fd={} server_ctx={} err={}.)",
+        R"(Failed to create SSL server object fd={} server_context={} err={}.)",
         get_fd(),
-        server_ctx,
+        server_context,
         swoc::bwf::SSLError{});
   } else {
     SSL_set_fd(_ssl, get_fd());
     int retval = SSL_accept(_ssl);
     if (retval <= 0) {
       errata.error(R"(Failed SSL_accept {}, {}.)", swoc::bwf::SSLError{}, swoc::bwf::Errno{});
+      return std::move(errata);
     }
   }
   return std::move(errata);
@@ -716,31 +720,42 @@ Session::connect()
 swoc::Errata
 TLSSession::connect()
 {
-  return this->connect(client_ctx);
+  return this->connect(client_context);
 }
 
 // Complete the TLS handshake (client-side).
 swoc::Errata
-TLSSession::connect(SSL_CTX *clt_ctx)
+TLSSession::connect(SSL_CTX *client_context)
 {
   swoc::Errata errata;
-  _ssl = SSL_new(clt_ctx);
+  _ssl = SSL_new(client_context);
   if (_ssl == nullptr) {
     errata.error(
-        R"(Failed to create SSL client object fd={} client_ctx={} err={}.)",
+        R"(Failed to create SSL client object fd={} client_context={} err={}.)",
         get_fd(),
-        client_ctx,
+        client_context,
         swoc::bwf::SSLError{});
-  } else {
-    SSL_set_fd(_ssl, get_fd());
-    if (!_client_sni.empty()) {
-      SSL_set_tlsext_host_name(_ssl, _client_sni.c_str());
-    }
-    int retval = SSL_connect(_ssl);
-    if (retval <= 0) {
-      errata.error(R"(Failed SSL_connect {}, {}.)", swoc::bwf::SSLError{}, swoc::bwf::Errno{});
-    }
+    return std::move(errata);
   }
+  SSL_set_fd(_ssl, get_fd());
+  if (!_client_sni.empty()) {
+    SSL_set_tlsext_host_name(_ssl, _client_sni.c_str());
+  }
+  if (_client_verify_mode != SSL_VERIFY_NONE) {
+    errata.diag(
+        R"(Setting client TLS verification mode against the proxy to: {}.)",
+        _client_verify_mode);
+    SSL_set_verify(_ssl, _client_verify_mode, nullptr /* No verify_callback is passed */);
+  }
+  int retval = SSL_connect(_ssl);
+  if (retval <= 0) {
+    errata.error(R"(Failed SSL_connect {}, {}.)", swoc::bwf::SSLError{}, swoc::bwf::Errno{});
+    return std::move(errata);
+  }
+  const auto verify_result = SSL_get_verify_result(_ssl);
+  errata.diag(
+      R"(Proxy TLS verification result: {}.)",
+      (verify_result == X509_V_OK ? "passed" : "failed"));
   return std::move(errata);
 }
 
@@ -748,7 +763,7 @@ swoc::Errata
 H2Session::connect()
 {
   // Complete the TLS handshake
-  swoc::Errata errata = super_type::connect(h2_client_ctx);
+  swoc::Errata errata = super_type::connect(h2_client_context);
   if (errata.is_ok()) {
     unsigned char const *alpn = nullptr;
     unsigned int alpnlen = 0;
@@ -786,18 +801,18 @@ H2Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint con
     swoc::Errata txn_errata;
     const auto key{txn._req.make_key()};
     if (this->is_closed()) {
-      errata.note(this->do_connect(real_target));
-      if (!errata.is_ok()) {
-        errata.error(R"(Failed to reconnect HTTP/2 key={}.)", key);
+      txn_errata.note(this->do_connect(real_target));
+      if (!txn_errata.is_ok()) {
+        txn_errata.error(R"(Failed to reconnect HTTP/2 key={}.)", key);
         // If we don't have a valid connection, there's no point in continuing.
         break;
       }
     }
-    errata.note(this->run_transaction(txn));
-    if (!errata.is_ok()) {
-      errata.error(R"(Failed HTTP/2 transaction with key={}.)", key);
+    txn_errata.note(this->run_transaction(txn));
+    if (!txn_errata.is_ok()) {
+      txn_errata.error(R"(Failed HTTP/2 transaction with key={}.)", key);
     }
-    errata.note(txn_errata);
+    errata.note(std::move(txn_errata));
   }
   recv_callback(this->get_session(), nullptr, 0, 0, this);
   return std::move(errata);
@@ -840,8 +855,10 @@ TLSSession::close()
 
 swoc::file::path TLSSession::certificate_file;
 swoc::file::path TLSSession::privatekey_file;
-SSL_CTX *TLSSession::server_ctx = nullptr;
-SSL_CTX *TLSSession::client_ctx = nullptr;
+swoc::file::path TLSSession::ca_certificate_file;
+swoc::file::path TLSSession::ca_certificate_dir;
+SSL_CTX *TLSSession::server_context = nullptr;
+SSL_CTX *TLSSession::client_context = nullptr;
 
 const int MAX_NOFILE = 300000;
 
@@ -863,52 +880,191 @@ Session::init()
   return std::move(errata);
 }
 
+// static
 swoc::Errata
-TLSSession::init(SSL_CTX *&svr_ctx, SSL_CTX *&clt_ctx)
+TLSSession::init()
+{
+  return TLSSession::init(server_context, client_context);
+}
+
+static int
+client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */)
+{
+  int ret = SSL_CLIENT_HELLO_SUCCESS;
+  swoc::Errata errata;
+
+  /*
+   * Retrieve the SNI from the client hello, if provided.
+   *
+   * I'm surprised by how complicated this is. SSL_get_servername does not work
+   * in the context of the client hello callback, yet documentation encourages
+   * using this rather than the server name callback. I borrowed the below code
+   * from OpenSSL here:
+   *
+   * https://codesearch.isocpp.org/actcd19/main/o/openssl/openssl_1.1.1a-1/test/handshake_helper.c
+   *
+   * Licensed under the permissive OpenSSL license.
+   */
+
+  unsigned char const *p = nullptr;
+  size_t len = 0, remaining = 0;
+
+  /*
+   * The server_name extension was given too much extensibility when it
+   * was written, so parsing the normal case is a bit complex.
+   */
+  if (!SSL_client_hello_get0_ext(ssl, TLSEXT_TYPE_server_name, &p, &remaining) || remaining <= 2) {
+    return ret;
+  }
+  /* Extract the length of the supplied list of names. */
+  len = (*(p++) << 8);
+  len += *(p++);
+  if (len + 2 != remaining) {
+    return ret;
+  }
+  remaining = len;
+  /*
+   * The list in practice only has a single element, so we only consider
+   * the first one.
+   */
+  if (remaining == 0 || *p++ != TLSEXT_NAMETYPE_host_name) {
+    return 0;
+  }
+  remaining--;
+  /* Now we can finally pull out the byte array with the actual hostname. */
+  if (remaining <= 2) {
+    return ret;
+  }
+  len = (*(p++) << 8);
+  len += *(p++);
+  if (len + 2 > remaining) {
+    return 0;
+  }
+  remaining = len;
+  char const *client_sni = (const char *)p;
+
+  /* End: code borrowed from OpenSSL. */
+
+  if (client_sni == nullptr) {
+    return ret;
+  }
+  errata.diag(R"(Accepted a TLS connection with an SNI of: {}.)", client_sni);
+
+  const auto verify_mode = TLSSession::get_verify_mode_for_sni(client_sni);
+  if (verify_mode == SSL_VERIFY_NONE) {
+    return ret;
+  }
+  errata.diag(R"(Sending a certificate request to client with SNI: {}.)", client_sni);
+
+  SSL_set_verify(ssl, verify_mode, nullptr /* no callback specified */);
+
+  const auto verify_result = SSL_get_verify_result(ssl);
+  errata.diag(
+      R"(Client TLS verification result for client with SNI {}: {}.)",
+      client_sni,
+      (verify_result == X509_V_OK ? "passed" : "failed"));
+  return ret;
+}
+
+// static
+swoc::Errata
+TLSSession::configure_certificates(SSL_CTX *&context)
 {
   swoc::Errata errata;
-  SSL_load_error_strings();
-  SSL_library_init();
-
-  svr_ctx = SSL_CTX_new(TLS_server_method());
-  if (!TLSSession::certificate_file.empty()) {
-    if (!SSL_CTX_use_certificate_file(
-            svr_ctx,
-            TLSSession::certificate_file.c_str(),
-            SSL_FILETYPE_PEM)) {
+  if (!certificate_file.empty()) {
+    // A host certificate was provided.
+    if (!SSL_CTX_use_certificate_file(context, certificate_file.c_str(), SSL_FILETYPE_PEM)) {
       errata.error(
-          R"(Failed to load cert from "{}": {}.)",
-          TLSSession::certificate_file,
+          R"(Failed to load server cert from "{}": {}.)",
+          certificate_file,
           swoc::bwf::SSLError{});
     } else {
-      if (!TLSSession::privatekey_file.empty()) {
-        if (!SSL_CTX_use_PrivateKey_file(
-                svr_ctx,
-                TLSSession::privatekey_file.c_str(),
-                SSL_FILETYPE_PEM)) {
+      // Loading the public key succeeded. The private key may have been
+      // provided as a separate file or it may be included in the previous
+      // file.
+      if (!privatekey_file.empty()) {
+        // The private key is in a separate file.
+        if (!SSL_CTX_use_PrivateKey_file(context, privatekey_file.c_str(), SSL_FILETYPE_PEM)) {
           errata.error(
-              R"(Failed to load private key from "{}": {}.)",
-              TLSSession::privatekey_file,
+              R"(Failed to load server private key from "{}": {}.)",
+              privatekey_file,
               swoc::bwf::SSLError{});
         }
       } else {
-        if (!SSL_CTX_use_PrivateKey_file(
-                svr_ctx,
-                TLSSession::certificate_file.c_str(),
-                SSL_FILETYPE_PEM)) {
+        // The private key is (well, at least should) be included in the same
+        // cert file.
+        if (!SSL_CTX_use_PrivateKey_file(context, certificate_file.c_str(), SSL_FILETYPE_PEM)) {
           errata.error(
-              R"(Failed to load private key from "{}": {}.)",
-              TLSSession::certificate_file,
+              R"(Failed to load server private key from certificate "{}": {}.)",
+              certificate_file,
               swoc::bwf::SSLError{});
         }
       }
     }
   }
-  clt_ctx = SSL_CTX_new(TLS_client_method());
-  if (!clt_ctx) {
-    errata.error(R"(Failed to create client_ctx: {}.)", swoc::bwf::SSLError{});
+
+  if (!ca_certificate_file.empty() || !ca_certificate_dir.empty()) {
+    // A CA for peer verification was provided.
+
+    // SSL_CTX_load_verify_locations expects nullptr, not empty string, for
+    // the unprovided path parameters.
+    char const *cert_file = ca_certificate_file.empty() ? nullptr : ca_certificate_file.c_str();
+    char const *cert_dir = ca_certificate_dir.empty() ? nullptr : ca_certificate_dir.c_str();
+    if (!SSL_CTX_load_verify_locations(context, cert_file, cert_dir)) {
+      errata.error(
+          R"(Failed to load ca certificates from "{}" and "{}": {}.)",
+          ca_certificate_file,
+          ca_certificate_dir,
+          swoc::bwf::SSLError{});
+    }
   }
   return std::move(errata);
+}
+
+// static
+swoc::Errata
+TLSSession::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
+{
+  swoc::Errata errata;
+  SSL_load_error_strings();
+  SSL_library_init();
+
+  server_context = SSL_CTX_new(TLS_server_method());
+  if (!server_context) {
+    errata.error(R"(Failed to create server_context: {}.)", swoc::bwf::SSLError{});
+    return std::move(errata);
+  }
+  errata.note(configure_certificates(server_context));
+
+  /* Register for the client hello callback so we can inspect the SNI
+   * for dynamic server behavior (such as requesting a client cert). */
+  SSL_CTX_set_client_hello_cb(server_context, client_hello_callback, nullptr);
+
+  client_context = SSL_CTX_new(TLS_client_method());
+  if (!client_context) {
+    errata.error(R"(Failed to create client_context: {}.)", swoc::bwf::SSLError{});
+    return std::move(errata);
+  }
+  errata.note(configure_certificates(client_context));
+  return std::move(errata);
+}
+
+// static
+void
+TLSSession::register_sni_for_client_verification(std::string_view sni, int mode)
+{
+  _verify_mode_per_sni.emplace(sni, mode);
+}
+
+// static
+int
+TLSSession::get_verify_mode_for_sni(std::string_view sni)
+{
+  const auto it = _verify_mode_per_sni.find(std::string(sni));
+  if (it == _verify_mode_per_sni.end()) {
+    return SSL_VERIFY_NONE;
+  }
+  return it->second;
 }
 
 static int
@@ -1296,8 +1452,8 @@ H2Session::tv_to_nv(char const *name, swoc::TextView v)
   return res;
 }
 
-SSL_CTX *H2Session::h2_server_ctx = nullptr;
-SSL_CTX *H2Session::h2_client_ctx = nullptr;
+SSL_CTX *H2Session::h2_server_context = nullptr;
+SSL_CTX *H2Session::h2_client_context = nullptr;
 
 swoc::Errata
 H2Session::send_client_connection_header()
@@ -1371,22 +1527,22 @@ advertise_next_protocol_cb(
 }
 
 swoc::Errata
-H2Session::init(SSL_CTX *&svr_ctx, SSL_CTX *&clt_ctx)
+H2Session::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
 {
-  swoc::Errata errata = super_type::init(svr_ctx, clt_ctx);
+  swoc::Errata errata = super_type::init(server_context, client_context);
 
   if (!errata.is_ok()) {
     return errata;
   }
 
   // Initialize the protocol selection to include H2
-  SSL_CTX_set_next_proto_select_cb(clt_ctx, select_next_proto_cb, nullptr);
-  SSL_CTX_set_next_protos_advertised_cb(svr_ctx, advertise_next_protocol_cb, nullptr);
+  SSL_CTX_set_next_proto_select_cb(client_context, select_next_proto_cb, nullptr);
+  SSL_CTX_set_next_protos_advertised_cb(server_context, advertise_next_protocol_cb, nullptr);
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
   // Set the protocols the client will advertise
-  SSL_CTX_set_alpn_protos(clt_ctx, npn_str, npn_len);
-  SSL_CTX_set_alpn_select_cb(svr_ctx, alpn_select_next_proto_cb, nullptr);
+  SSL_CTX_set_alpn_protos(client_context, npn_str, npn_len);
+  SSL_CTX_set_alpn_select_cb(server_context, alpn_select_next_proto_cb, nullptr);
 #else
   Error must be at least openssl 1.0.2
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
@@ -1897,7 +2053,7 @@ HttpFields::parse_global_rules(YAML::Node const &node)
         auto result{this->parse_fields_and_rules(rules_node, !ASSUME_EQUALITY_RULE)};
         if (!result.is_ok()) {
           errata.error("Failed to parse fields and rules at {}", node.Mark());
-          errata.note(result);
+          errata.note(std::move(result));
         }
       } else {
         errata.info(R"(Fields and rules node at {} is an empty list.)", rules_node.Mark());
@@ -2114,7 +2270,7 @@ HttpHeader::load(YAML::Node const &node)
         errata.note(this->update_transfer_encoding());
       } else {
         errata.error("Failed to parse response at {}", node.Mark());
-        errata.note(result);
+        errata.note(std::move(result));
       }
     }
   }
@@ -2524,11 +2680,11 @@ public:
 public:
   HandlerOpener(ReplayFileHandler &handler, swoc::file::path const &path) : _handler(handler)
   {
-    errata = _handler.file_open(path);
+    errata.note(_handler.file_open(path));
   }
   ~HandlerOpener()
   {
-    errata = _handler.file_close();
+    errata.note(_handler.file_close());
   }
 
 private:
@@ -2592,7 +2748,7 @@ Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
     // HeaderRules ssn_rules = global_rules;
     auto session_errata{handler.ssn_open(ssn_node)};
     if (!session_errata.is_ok()) {
-      errata.note(session_errata);
+      errata.note(std::move(session_errata));
       errata.error(R"(Failure opening session at "{}":{}.)", path, ssn_node.Mark().line);
       continue;
     }
@@ -2651,10 +2807,10 @@ Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
       if (!txn_errata.is_ok()) {
         txn_errata.error(R"(Failure with transaction at {} in "{}".)", txn_node.Mark(), path);
       }
-      session_errata.note(txn_errata);
+      session_errata.note(std::move(txn_errata));
     }
     session_errata.note(handler.ssn_close());
-    errata.note(session_errata);
+    errata.note(std::move(session_errata));
   }
   return std::move(errata);
 }
