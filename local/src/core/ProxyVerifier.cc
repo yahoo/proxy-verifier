@@ -1655,7 +1655,7 @@ HttpHeader::parse_url(TextView url)
     }
   }
   _authority = this->localize(_url.substr(auth_start, end_host - auth_start));
-  std::size_t path_start = _url.find("/", end_host + 1);
+  std::size_t path_start = _url.find("/", end_host);
   if (path_start != std::string::npos) {
     _path = this->localize(_url.substr(path_start));
   }
