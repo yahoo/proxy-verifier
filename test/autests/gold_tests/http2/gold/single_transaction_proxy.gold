@@ -3,7 +3,7 @@
 
 :method: GET
 :scheme: https
-:path: /path
+:path: /a/path
 :authority: example.data.com
 uuid: cb9b4e94-5d42-43d4-8545-320033298ba2-211674043
 accept: */*
