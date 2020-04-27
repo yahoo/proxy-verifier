@@ -1635,8 +1635,7 @@ HttpHeader::parse_url(TextView url)
   swoc::Errata errata;
   // Split out the path and scheme for http/2 required headers
   // See rfc3986 section-3.2.
-  // TODO: Break this out into a unit tested static function.
-  std::size_t end_scheme = _url.find("://");
+  std::size_t end_scheme = url.find("://");
   if (end_scheme == std::string::npos) {
     _path = url;
     // Scheme, authority, and the like will have to come from the corresponding YAML nodes.
@@ -1644,20 +1643,19 @@ HttpHeader::parse_url(TextView url)
   }
   std::size_t auth_start = end_scheme + 3; // "://" is 3 characters.
   std::size_t end_host = auth_start;
-  _scheme = this->localize(_url.substr(0, end_scheme));
+  _scheme = this->localize(url.substr(0, end_scheme));
   // Look for the ':' for the port.
-  end_host = _url.find(":", auth_start);
+  std::size_t next_colon = url.find(":", auth_start);
+  std::size_t next_slash = url.find("/", auth_start);
+  end_host = std::min(next_colon, next_slash);
   if (end_host == std::string::npos) {
-    // No ':': look for the next "/".
-    end_host = _url.find("/", auth_start);
-    if (end_host == std::string::npos) {
-      end_host = _url.length();
-    }
+    // No ':' nor '/'. Assume the rest of the string is the host.
+    end_host = url.length();
   }
-  _authority = this->localize(_url.substr(auth_start, end_host - auth_start));
-  std::size_t path_start = _url.find("/", end_host);
+  _authority = this->localize(url.substr(auth_start, end_host - auth_start));
+  std::size_t path_start = url.find("/", end_host);
   if (path_start != std::string::npos) {
-    _path = this->localize(_url.substr(path_start));
+    _path = this->localize(url.substr(path_start));
   }
   return errata;
 }
