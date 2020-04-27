@@ -3,7 +3,7 @@ Import("*")
 PartName("tests")
 
 DependsOn([
-    Component("swoc++",requires=REQ.DEFAULT(internal=False)),
+    Component("libswoc.static"),
     Component("nghttp2",requires=REQ.DEFAULT(internal=False)),
     "proxy-verifier.core"
     ])
