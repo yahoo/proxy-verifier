@@ -37,13 +37,15 @@ using clock_type = std::chrono::system_clock;
 // These need to be @c std::string or the node look up will construct a @c
 // std::string.
 static const std::string YAML_META_KEY{"meta"};
+static const std::string YAML_TLS_PREFIX{"tls"};
+static const std::string YAML_H2_PREFIX{"h2"};
 static const std::string YAML_GLOBALS_KEY{"global-field-rules"};
 static const std::string YAML_SSN_KEY{"sessions"};
 static const std::string YAML_SSN_PROTOCOL_KEY{"protocol"};
 static const std::string YAML_SSN_START_KEY{"connection-time"};
 static const std::string YAML_SSN_TLS_KEY{"tls"};
-static const std::string YAML_SSN_TLS_CLIENT_SNI_KEY{"client-sni"};
-static const std::string YAML_SSN_TLS_PROXY_SNI_KEY{"proxy-sni"};
+static const std::string YAML_SSN_TLS_SNI_KEY{"sni"};
+static const std::string YAML_SSN_TLS_VERIFY_MODE_KEY{"verify-mode"};
 static const std::string YAML_TXN_KEY{"transactions"};
 static const std::string YAML_CLIENT_REQ_KEY{"client-request"};
 static const std::string YAML_PROXY_REQ_KEY{"proxy-request"};
@@ -725,7 +727,7 @@ struct Ssn {
   swoc::file::path _path;
   unsigned _line_no = 0;
   uint64_t _start; ///< Start time in HR ticks.
-  swoc::TextView _client_sni;
+  std::string _client_sni;
   bool is_tls = false;
   bool is_h2 = false;
 };
@@ -873,7 +875,7 @@ public:
 
 protected:
   SSL *_ssl = nullptr;
-  swoc::TextView _client_sni;
+  std::string _client_sni;
   static SSL_CTX *server_ctx;
   static SSL_CTX *client_ctx;
 };
@@ -1036,6 +1038,9 @@ public:
   virtual swoc::Errata apply_to_all_messages(HttpFields const &all_headers) {
     return {};
   }
+
+protected:
+  swoc::Rv<std::string> parse_sni(YAML::Node const &node);
 
 protected:
   /** The replay file associated with this handler.

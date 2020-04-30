@@ -70,6 +70,10 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             else:
                 req.path = "http://%s%s" % (req.headers['Host'], req.path)
 
+        client_sni = None
+        if hasattr(socket, 'client_sni'):
+            client_sni = socket.client_sni
+            print("Client SNI: {}".format(client_sni))
         req_body_modified = self.request_handler(req, req_body)
         if req_body_modified is False:
             self.send_error(403)
@@ -90,9 +94,34 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             origin = (scheme, replay_server)
             if origin not in self.tls.conns:
                 if scheme == 'https':
-                    gcontext = ssl.SSLContext()
+                    if client_sni:
+
+                        class WrapSSSLContext(ssl.SSLContext):
+                            '''
+                            HTTPSConnection provides no way to specify the
+                            server_hostname in the underlying socket. We
+                            accomplish this by wrapping the context to
+                            overrride the wrap_socket behavior (called later
+                            by HTTPSConnection) to specify the
+                            server_hostname that we want.
+                            '''
+                            def __new__(cls, server_hostname, *args, **kwargs):
+                                return super().__new__(cls, *args, *kwargs)
+
+                            def __init__(self, server_hostname, *args, **kwargs):
+                                super().__init__(*args, **kwargs)
+                                self._server_hostname = server_hostname
+
+                            def wrap_socket(self, sock, *args, **kwargs):
+                                kwargs['server_hostname'] = self._server_hostname
+                                return super().wrap_socket(sock, *args, **kwargs)
+
+                        proxy_to_server_context = WrapSSSLContext(client_sni)
+                    else:
+                        proxy_to_server_context = ssl.SSLContext()
                     self.tls.conns[origin] = http.client.HTTPSConnection(
-                            replay_server, timeout=self.timeout, context=gcontext, cert_file=self.cert_file)
+                            replay_server, timeout=self.timeout,
+                            context=proxy_to_server_context, cert_file=self.cert_file)
                 else:
                     self.tls.conns[origin] = http.client.HTTPConnection(replay_server, timeout=self.timeout)
             conn = self.tls.conns[origin]
@@ -209,6 +238,10 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         self.print_info(req, req_body, res, res_body)
 
 
+def servername_callback(sock, req_hostname, cb_context, as_callback=True):
+    socket.client_sni = req_hostname
+
+
 def configure_http1_server(HandlerClass, ServerClass, protocol,
                            listen_port, server_port, https_pem):
 
@@ -219,7 +252,11 @@ def configure_http1_server(HandlerClass, ServerClass, protocol,
     HandlerClass.cert_file = https_pem
     httpd = ServerClass(listen_address, HandlerClass)
     if https_pem:
-        httpd.socket = ssl.wrap_socket(httpd.socket, certfile=https_pem, server_side=True)
+        client_to_proxy_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        client_to_proxy_context.load_cert_chain(certfile=https_pem)
+        client_to_proxy_context.set_servername_callback(servername_callback)
+        httpd.socket = client_to_proxy_context.wrap_socket(
+                httpd.socket, server_side=True)
 
     sa = httpd.socket.getsockname()
     print("Serving HTTP Proxy on {}:{}, forwarding to {}:{}".format(sa[0], sa[1], "127.0.0.1", server_port))

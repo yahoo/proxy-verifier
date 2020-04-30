@@ -39,6 +39,7 @@
 /cmake*
 .vscode
 .idea
+Pipfile
 
 # Default parts directories
 \.parts\.cache

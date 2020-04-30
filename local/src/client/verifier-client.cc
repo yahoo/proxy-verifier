@@ -114,8 +114,6 @@ void ClientReplayFileHandler::txn_reset() {
 }
 
 swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
-  static constexpr TextView TLS_PREFIX{"tls"};
-  static constexpr TextView H2_PREFIX{"h2"};
   swoc::Errata errata;
   _ssn = new Ssn();
   _ssn->_path = _path;
@@ -125,23 +123,18 @@ swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
     auto proto_node{node[YAML_SSN_PROTOCOL_KEY]};
     if (proto_node.IsSequence()) {
       for (auto const &n : proto_node) {
-        if (TextView{n.Scalar()}.starts_with_nocase(H2_PREFIX)) {
+        if (TextView{n.Scalar()}.starts_with_nocase(YAML_H2_PREFIX)) {
           _ssn->is_h2 = true;
         }
-        if (TextView{n.Scalar()}.starts_with_nocase(TLS_PREFIX)) {
+        if (TextView{n.Scalar()}.starts_with_nocase(YAML_TLS_PREFIX)) {
           _ssn->is_tls = true;
-          if (auto tls_node{node[YAML_SSN_TLS_KEY]}; tls_node) {
-            if (auto client_sni_node{tls_node[YAML_SSN_TLS_CLIENT_SNI_KEY]};
-                client_sni_node) {
-              if (client_sni_node.IsScalar()) {
-                _ssn->_client_sni = HttpHeader::localize_lower(
-                    client_sni_node.Scalar().c_str());
-              } else {
-                errata.error(
-                    R"(Session at "{}":{} has a value for key "{}" that is not a scalar as required.)",
-                    _path, _ssn->_line_no, YAML_SSN_TLS_CLIENT_SNI_KEY);
-              }
-            }
+          const auto sni = parse_sni(node);
+          if (sni.is_ok()) {
+            _ssn->_client_sni = sni.result();
+          } else {
+            errata.error(
+              R"(Session at "{}":{} has a value for key "{}" that is not a scalar as required.)", 
+              _path, _ssn->_line_no, YAML_SSN_TLS_SNI_KEY);
           }
           break;
         }

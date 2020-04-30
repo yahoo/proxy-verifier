@@ -121,6 +121,21 @@ swoc::Errata configure_logging(const std::string_view verbose_argument) {
   return std::move(errata);
 }
 
+swoc::Rv<std::string> ReplayFileHandler::parse_sni(YAML::Node const &node) {
+  swoc::Rv<std::string> sni;
+  if (auto tls_node{node[YAML_SSN_TLS_KEY]}; tls_node) {
+    if (auto sni_node{tls_node[YAML_SSN_TLS_SNI_KEY]}; sni_node) {
+      if (sni_node.IsScalar()) {
+        sni.result() = sni_node.Scalar();
+      } else {
+        sni.errata().error(
+            R"(Session has a value for key "{}" that is not a scalar as required.)", YAML_SSN_TLS_SNI_KEY);
+      }
+    }
+  }
+  return std::move(sni);
+}
+
 Session::Session() {}
 
 Session::~Session() { this->close(); }
@@ -573,7 +588,7 @@ swoc::Errata TLSSession::connect(SSL_CTX *clt_ctx) {
   } else {
     SSL_set_fd(_ssl, get_fd());
     if (!_client_sni.empty()) {
-      SSL_set_tlsext_host_name(_ssl, _client_sni.data());
+      SSL_set_tlsext_host_name(_ssl, _client_sni.c_str());
     }
     int retval = SSL_connect(_ssl);
     if (retval <= 0) {
@@ -2458,8 +2473,7 @@ void ThreadPool::wait_for_work(ThreadInfo *thread_info) {
   // wait for a notification there's a session to process.
   {
     std::unique_lock<std::mutex> lock(thread_info->_mutex);
-    bool condition_awoke = false;
-    while (!thread_info->data_ready() && !condition_awoke) {
+    while (!thread_info->data_ready()) {
       thread_info->_cvar.wait_for(lock, 100ms);
     }
   }
