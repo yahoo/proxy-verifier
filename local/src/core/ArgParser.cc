@@ -150,7 +150,7 @@ Arguments ArgParser::parse(const char **argv) {
   // if there is anything left, then output usage
   if (!args.empty()) {
     std::string msg = "Unknown command, option or args:";
-    for (const auto &it : args) {
+    for (auto const &it : args) {
       msg = msg + " '" + it + "'";
     }
     // find the correct level to output help message
@@ -190,7 +190,7 @@ ArgParser::Command::Command(std::string const &name,
 // check if this is a valid option before adding
 void ArgParser::Command::check_option(std::string const &long_option,
                                       std::string const &short_option,
-                                      std::string const &key) const {
+                                      std::string const & /* key */) const {
   if (long_option.size() < 3 || long_option[0] != '-' ||
       long_option[1] != '-') {
     // invalid name
@@ -219,7 +219,7 @@ void ArgParser::Command::check_option(std::string const &long_option,
 
 // check if this is a valid command before adding
 void ArgParser::Command::check_command(std::string const &name,
-                                       std::string const &key) const {
+                                       std::string const & /* key */) const {
   if (name.empty()) {
     // invalid name
     std::cerr << "Error: empty command cannot be added" << std::endl;
@@ -299,14 +299,14 @@ void ArgParser::Command::output_command(std::ostream &out,
     }
   }
   // recursive call
-  for (const auto &it : _subcommand_list) {
+  for (auto const &it : _subcommand_list) {
     it.second.output_command(out, "  " + prefix);
   }
 }
 
 // a nicely formatted way to output option message for help.
 void ArgParser::Command::output_option() const {
-  for (const auto &it : _option_list) {
+  for (auto const &it : _option_list) {
     std::string msg;
     if (!it.second.short_option.empty()) {
       msg = it.second.short_option + ", ";
@@ -455,7 +455,7 @@ void ArgParser::Command::append_option_data(Arguments &ret, AP_StrVec &args,
     }
   }
   // check for wrong number of arguments for --arg=...
-  for (const auto &it : check_map) {
+  for (auto const &it : check_map) {
     unsigned num = _option_list.at(it.first).arg_num;
     if (num != it.second && num < MORE_THAN_ONE_ARG_N) {
       help_message(std::to_string(_option_list.at(it.first).arg_num) +
@@ -463,7 +463,7 @@ void ArgParser::Command::append_option_data(Arguments &ret, AP_StrVec &args,
     }
   }
   // put in the default value of options
-  for (const auto &it : _option_list) {
+  for (auto const &it : _option_list) {
     if (!it.second.default_value.empty() && ret.get(it.second.key).empty()) {
       std::istringstream ss(it.second.default_value);
       std::string token;
@@ -558,11 +558,11 @@ void Arguments::set_env(std::string const &key, std::string const &value) {
 }
 
 void Arguments::show_all_configuration() const {
-  for (const auto &it : _data_map) {
+  for (auto const &it : _data_map) {
     std::cout << "name: " + it.first << std::endl;
     std::string msg;
     msg = "args value:";
-    for (const auto &it_data : it.second._values) {
+    for (auto const &it_data : it.second._values) {
       msg += " " + it_data;
     }
     std::cout << msg << std::endl;

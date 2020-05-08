@@ -230,7 +230,7 @@ public:
   /** Main parsing function
       @return The Arguments object available for program using
   */
-  Arguments parse(const char **argv);
+  Arguments parse(char const **argv);
   // Add the usage to global_usage for help_message(). Something like:
   // traffic_blabla [--SWITCH [ARG]]
   void add_global_usage(std::string const &usage);

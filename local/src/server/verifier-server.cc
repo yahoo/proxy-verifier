@@ -15,7 +15,6 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
-#include <unordered_set>
 
 #include <bits/signum.h>
 #include <dirent.h>
@@ -149,28 +148,7 @@ swoc::Errata ServerReplayFileHandler::proxy_request(YAML::Node const &node) {
 }
 
 swoc::Errata ServerReplayFileHandler::server_response(YAML::Node const &node) {
-  auto errata{_txn._rsp.load(node)};
-  if (errata.is_ok()) {
-    if (auto spot{_txn._rsp._fields_rules->_fields.find(
-            HttpHeader::FIELD_CONTENT_LENGTH)};
-        spot != _txn._rsp._fields_rules->_fields.end()) {
-      TextView src{spot->second}, parsed;
-      auto content_length = swoc::svtou(src, &parsed);
-      if (parsed.size() == src.size()) {
-        if (_txn._rsp._content_size != content_length) {
-          errata.diag(
-              R"(Overriding node's content size {} with "{}"'s header value {} at "{}":{}.)",
-              _txn._rsp._content_size, HttpHeader::FIELD_CONTENT_LENGTH,
-              content_length, _path, node.Mark().line);
-          _txn._rsp._content_size = content_length;
-        }
-      } else {
-        errata.warn(R"(Invalid "{}" field at "{}":{}: not a positive integer.)",
-                    HttpHeader::FIELD_CONTENT_LENGTH, _path, node.Mark().line);
-      }
-    }
-  }
-  return std::move(errata);
+  return _txn._rsp.load(node);
 }
 
 swoc::Errata
@@ -249,7 +227,7 @@ void TF_Serve(std::thread *t) {
       if (req_hdr._content_length_p || req_hdr._chunked_p) {
         thread_errata.diag("Draining request body.");
         auto &&[bytes_drained, drain_errata] = thread_info._session->drain_body(
-            req_hdr, w.view().substr(body_offset));
+            req_hdr, req_hdr._content_size, w.view().substr(body_offset));
         thread_errata.note(drain_errata);
 
         if (!thread_errata.is_ok()) {
@@ -501,7 +479,7 @@ void Engine::command_run() {
   }
 }
 
-int main(int argc, const char *argv[]) {
+int main(int /* argc */, char const *argv[]) {
   swoc::Errata errata;
   if (block_sigpipe()) {
     errata.warn("Could not block SIGPIPE. Continuing anyway, but be aware that "
