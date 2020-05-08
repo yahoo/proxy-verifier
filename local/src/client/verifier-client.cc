@@ -43,7 +43,7 @@ std::unordered_set<std::string> Keys_Whitelist;
 
 std::mutex LoadMutex;
 
-std::list<Ssn *> Session_List;
+std::list<std::shared_ptr<Ssn>> Session_List;
 
 std::deque<swoc::IPEndpoint> Target, Target_Https;
 
@@ -62,6 +62,7 @@ bool Use_Proxy_Request_Directives = false;
 class ClientReplayFileHandler : public ReplayFileHandler {
 public:
   ClientReplayFileHandler();
+  ~ClientReplayFileHandler() = default;
 
   swoc::Errata ssn_open(YAML::Node const &node) override;
   swoc::Errata txn_open(YAML::Node const &node) override;
@@ -77,7 +78,7 @@ public:
   void ssn_reset();
 
 private:
-  Ssn *_ssn = nullptr;
+  std::shared_ptr<Ssn> _ssn;
   Txn _txn;
 };
 
@@ -106,7 +107,7 @@ std::thread ClientThreadPool::make_thread(std::thread *t) {
 ClientReplayFileHandler::ClientReplayFileHandler()
     : _txn{Use_Strict_Checking} {}
 
-void ClientReplayFileHandler::ssn_reset() { _ssn = nullptr; }
+void ClientReplayFileHandler::ssn_reset() { _ssn.reset(); }
 
 void ClientReplayFileHandler::txn_reset() {
   _txn.~Txn();
@@ -115,7 +116,7 @@ void ClientReplayFileHandler::txn_reset() {
 
 swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
   swoc::Errata errata;
-  _ssn = new Ssn();
+  _ssn = std::make_shared<Ssn>();
   _ssn->_path = _path;
   _ssn->_line_no = node.Mark().line;
 
@@ -133,8 +134,8 @@ swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
             _ssn->_client_sni = sni.result();
           } else {
             errata.error(
-              R"(Session at "{}":{} has a value for key "{}" that is not a scalar as required.)", 
-              _path, _ssn->_line_no, YAML_SSN_TLS_SNI_KEY);
+                R"(Session at "{}":{} has a value for key "{}" that is not a scalar as required.)",
+                _path, _ssn->_line_no, YAML_SSN_TLS_SNI_KEY);
           }
           break;
         }
@@ -256,7 +257,7 @@ swoc::Errata Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target,
                          swoc::IPEndpoint const &target_https) {
   swoc::Errata errata;
   std::unique_ptr<Session> session;
-  const swoc::IPEndpoint *real_target = nullptr;
+  swoc::IPEndpoint const *real_target = nullptr;
 
   errata.diag(R"(Starting session "{}":{} protocol={}.)", ssn._path,
               ssn._line_no, ssn.is_h2 ? "h2" : (ssn.is_tls ? "https" : "http"));
@@ -293,8 +294,8 @@ swoc::Errata Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target,
 void TF_Client(std::thread *t) {
   ClientThreadInfo thread_info;
   thread_info._thread = t;
-  int target_index = 0;
-  int target_https_index = 0;
+  size_t target_index = 0;
+  size_t target_https_index = 0;
 
   while (!Shutdown_Flag) {
     swoc::Errata errata;
@@ -312,7 +313,8 @@ void TF_Client(std::thread *t) {
   }
 }
 
-bool session_start_compare(const Ssn *ssn1, const Ssn *ssn2) {
+bool session_start_compare(const std::shared_ptr<Ssn> ssn1,
+                           const std::shared_ptr<Ssn> ssn2) {
   return ssn1->_start < ssn2->_start;
 }
 
@@ -346,7 +348,6 @@ uint64_t GetUTimestamp() {
 
 void Engine::command_run() {
   auto args{arguments.get("run")};
-  dirent **elements = nullptr;
   swoc::Errata errata;
 
   if (args.size() < 3) {
@@ -380,7 +381,7 @@ void Engine::command_run() {
 
   auto keys_arg{arguments.get("keys")};
   if (!keys_arg.empty()) {
-    for (const auto &key : keys_arg) {
+    for (auto const &key : keys_arg) {
       Keys_Whitelist.insert(key);
     }
   }
@@ -417,7 +418,7 @@ void Engine::command_run() {
   if (!Session_List.empty()) {
     offset_time = Session_List.front()->_start;
   }
-  for (auto *ssn : Session_List) {
+  for (auto ssn : Session_List) {
     ssn->_start -= offset_time;
     transaction_count += ssn->_transactions.size();
     for (auto const &txn : ssn->_transactions) {
@@ -463,15 +464,13 @@ void Engine::command_run() {
   unsigned n_txn = 0;
   for (int i = 0; i < repeat_count; i++) {
     uint64_t firsttime = GetUTimestamp();
-    uint64_t lasttime = GetUTimestamp();
     uint64_t nexttime = 0;
-    for (auto *ssn : Session_List) {
+    for (auto ssn : Session_List) {
       uint64_t curtime = GetUTimestamp();
       nexttime = (uint64_t)(rate_multiplier * ssn->_start) + firsttime;
       if (nexttime > curtime) {
         usleep(std::min(sleep_limit, nexttime - curtime));
       }
-      lasttime = GetUTimestamp();
       ClientThreadInfo *thread_info =
           dynamic_cast<ClientThreadInfo *>(Client_Thread_Pool.get_worker());
       if (nullptr == thread_info) {
@@ -480,7 +479,7 @@ void Engine::command_run() {
         // Only pointer to worker thread info.
         {
           std::unique_lock<std::mutex> lock(thread_info->_mutex);
-          thread_info->_ssn = ssn;
+          thread_info->_ssn = ssn.get();
           thread_info->_cvar.notify_one();
         }
       }
@@ -500,7 +499,7 @@ void Engine::command_run() {
               n_txn / static_cast<double>(delta.count()));
 };
 
-int main(int argc, const char *argv[]) {
+int main(int /* argc */, char const *argv[]) {
 
   block_sigpipe();
 
@@ -525,10 +524,10 @@ int main(int argc, const char *argv[]) {
                    [&]() -> void { engine.command_run(); })
       .add_option("--no-proxy", "", "Use proxy data instead of client data.")
       .add_option("--repeat", "", "Repeatedly replay data set", "", 1, "")
-      .add_option(
-          "--sleep-limit", "",
-          "Limit the amount of time spent sleeping between replays (microseconds)", "", 1,
-          "")
+      .add_option("--sleep-limit", "",
+                  "Limit the amount of time spent sleeping between replays "
+                  "(microseconds)",
+                  "", 1, "")
       .add_option("--rate", "", "Specify desired transacton rate", "", 1, "")
       .add_option("--strict", "-s",
                   "Verify all proxy responses against the content in the yaml "

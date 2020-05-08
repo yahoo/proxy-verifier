@@ -6,5 +6,5 @@
 - "x-response": "testResponse"
 - "uuid": "1"
 
-``Reading response body offset=0000000 0000001 .
+``Reading response body: 0000000 0000001 .
 ``

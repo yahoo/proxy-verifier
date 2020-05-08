@@ -10,8 +10,8 @@
 #include <string>
 #include <unordered_set>
 
-#include <condition_variable>
 #include <chrono>
+#include <condition_variable>
 #include <deque>
 #include <memory>
 #include <nghttp2/nghttp2.h>
@@ -61,7 +61,7 @@ static const std::string YAML_HTTP_METHOD_KEY{"method"};
 static const std::string YAML_HTTP_SCHEME_KEY{"scheme"};
 static const std::string YAML_HTTP_URL_KEY{"url"};
 static const std::string YAML_CONTENT_KEY{"content"};
-static const std::string YAML_CONTENT_LENGTH_KEY{"size"};
+static const std::string YAML_CONTENT_SIZE_KEY{"size"};
 static const std::string YAML_CONTENT_DATA_KEY{"data"};
 static const std::string YAML_CONTENT_ENCODING_KEY{"encoding"};
 static const std::string YAML_CONTENT_TRANSFER_KEY{"transfer"};
@@ -193,12 +193,15 @@ class RuleCheck {
                ///< given rule type ("equals", "presence", or "absence")
 
   using MakeDuplicateFieldRuleFunction =
-      std::function<std::shared_ptr<RuleCheck>(swoc::TextView, std::list<swoc::TextView>&&)>;
+      std::function<std::shared_ptr<RuleCheck>(swoc::TextView,
+                                               std::list<swoc::TextView> &&)>;
   using DuplicateFieldRuleOptions =
-      std::unordered_map<swoc::TextView, MakeDuplicateFieldRuleFunction, Hash, Hash>;
+      std::unordered_map<swoc::TextView, MakeDuplicateFieldRuleFunction, Hash,
+                         Hash>;
   static DuplicateFieldRuleOptions
-      duplicate_field_options; ///< Returns function to construct a RuleCheck child class for a
-               ///< given duplicate field rule type ("equals", "presence", or "absence")
+      duplicate_field_options; ///< Returns function to construct a RuleCheck
+                               ///< child class for a given duplicate field rule
+                               ///< type ("equals", "presence", or "absence")
 
 protected:
   /// Name the expects_duplicate_fields parameter to the Rule constructors.
@@ -224,18 +227,17 @@ public:
    * @return A pointer to the RuleCheck instance generated, holding a key (and
    * potentially value) TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_rule_check(
-      swoc::TextView localized_name,
-      swoc::TextView localized_value,
-      swoc::TextView rule_type);
+  static std::shared_ptr<RuleCheck>
+  make_rule_check(swoc::TextView localized_name, swoc::TextView localized_value,
+                  swoc::TextView rule_type);
 
   /**
    * @param values The values of the field. This should be localized.
    */
-  static std::shared_ptr<RuleCheck> make_rule_check(
-      swoc::TextView localized_name,
-      std::list<swoc::TextView> &&localized_values,
-      swoc::TextView rule_type);
+  static std::shared_ptr<RuleCheck>
+  make_rule_check(swoc::TextView localized_name,
+                  std::list<swoc::TextView> &&localized_values,
+                  swoc::TextView rule_type);
 
   /** Generate @a EqualityCheck, invoked by the factory function when the
    * "equals" flag is present.
@@ -246,16 +248,14 @@ public:
    * @return A pointer to the EqualityCheck instance generated, holding key and
    * value TextViews for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_equality(
-      swoc::TextView name,
-      swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_equality(swoc::TextView name,
+                                                  swoc::TextView value);
 
   /**
    * @param values The list of values to expect in the response.
    */
-  static std::shared_ptr<RuleCheck> make_equality(
-      swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+  static std::shared_ptr<RuleCheck>
+  make_equality(swoc::TextView name, std::list<swoc::TextView> &&values);
 
   /** Generate @a PresenceCheck, invoked by the factory function when the
    * "absence" flag is present.
@@ -266,16 +266,14 @@ public:
    * @return A pointer to the Presence instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_presence(
-      swoc::TextView name,
-      swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_presence(swoc::TextView name,
+                                                  swoc::TextView value);
 
   /**
    * @param values (unused) The list of values specified in the YAML node.
    */
-  static std::shared_ptr<RuleCheck> make_presence(
-      swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+  static std::shared_ptr<RuleCheck>
+  make_presence(swoc::TextView name, std::list<swoc::TextView> &&values);
 
   /** Generate @a AbsenceCheck, invoked by the factory function when the
    * "absence" flag is present.
@@ -286,16 +284,14 @@ public:
    * @return A pointer to the AbsenceCheck instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_absence(
-      swoc::TextView name,
-      swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_absence(swoc::TextView name,
+                                                 swoc::TextView value);
 
   /**
    * @param values (unused) The list of values specified in the YAML node.
    */
-  static std::shared_ptr<RuleCheck> make_absence(
-      swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+  static std::shared_ptr<RuleCheck>
+  make_absence(swoc::TextView name, std::list<swoc::TextView> &&values);
 
   /** Pure virtual function to test whether the input name and value fulfill the
    * rules for the test
@@ -362,19 +358,23 @@ public:
    * @return Whether the check was successful or not
    */
   bool test(swoc::TextView key, swoc::TextView name,
-            const std::list<swoc::TextView> &values) const override;
+            std::list<swoc::TextView> const &values) const override;
 
   /** Whether this Rule is configured for duplicate fields.
    *
    * @return True of the Rule is configured for duplicate fields, false
    * otherwise.
    */
-  bool expects_duplicate_fields() const override { return _expects_duplicate_fields; }
+  bool expects_duplicate_fields() const override {
+    return _expects_duplicate_fields;
+  }
 
 private:
   swoc::TextView _value; ///< Only EqualityChecks require value comparisons.
-  std::list<swoc::TextView> _values; ///< Only EqualityChecks require value comparisons.
-  bool _expects_duplicate_fields = false; ///< Whether the Rule is configured for duplicate fields.
+  std::list<swoc::TextView>
+      _values; ///< Only EqualityChecks require value comparisons.
+  bool _expects_duplicate_fields =
+      false; ///< Whether the Rule is configured for duplicate fields.
 };
 
 class PresenceCheck : public RuleCheck {
@@ -382,7 +382,8 @@ public:
   /** Construct @a PresenceCheck with a given name.
    *
    * @param name The name of the target field
-   * @param expects_duplicate_fields Whether the rule should be configured for duplicate fields.
+   * @param expects_duplicate_fields Whether the rule should be configured for
+   * duplicate fields.
    */
   PresenceCheck(swoc::TextView name, bool expects_duplicate_fields);
 
@@ -403,14 +404,16 @@ public:
    * if not found)
    */
   bool test(swoc::TextView key, swoc::TextView name,
-            const std::list<swoc::TextView> &values) const override;
+            std::list<swoc::TextView> const &values) const override;
 
   /** Whether this Rule is configured for duplicate fields.
    *
    * @return True of the Rule is configured for duplicate fields, false
    * otherwise.
    */
-  bool expects_duplicate_fields() const override { return _expects_duplicate_fields; }
+  bool expects_duplicate_fields() const override {
+    return _expects_duplicate_fields;
+  }
 
 private:
   /** Whether this Rule is configured for duplicate fields. */
@@ -422,7 +425,8 @@ public:
   /** Construct @a AbsenceCheck with a given name.
    *
    * @param name The name of the target field
-   * @param expects_duplicate_fields Whether the rule should be configured for duplicate fields.
+   * @param expects_duplicate_fields Whether the rule should be configured for
+   * duplicate fields.
    */
   AbsenceCheck(swoc::TextView name, bool expects_duplicate_fields);
 
@@ -444,14 +448,16 @@ public:
    * if not found)
    */
   bool test(swoc::TextView key, swoc::TextView name,
-            const std::list<swoc::TextView> &values) const override;
+            std::list<swoc::TextView> const &values) const override;
 
   /** Whether this Rule is configured for duplicate fields.
    *
    * @return True of the Rule is configured for duplicate fields, false
    * otherwise.
    */
-  bool expects_duplicate_fields() const override { return _expects_duplicate_fields; }
+  bool expects_duplicate_fields() const override {
+    return _expects_duplicate_fields;
+  }
 
 private:
   /** Whether this Rule is configured for duplicate fields. */
@@ -461,8 +467,8 @@ private:
 class HttpFields {
   using self_type = HttpFields;
   /// Contains the RuleChecks for given field names.
-  using Rules = std::unordered_multimap<swoc::TextView, std::shared_ptr<RuleCheck>,
-                                        Hash, Hash>;
+  using Rules = std::unordered_multimap<swoc::TextView,
+                                        std::shared_ptr<RuleCheck>, Hash, Hash>;
   using Fields =
       std::unordered_multimap<swoc::TextView, std::string, Hash, Hash>;
 
@@ -573,7 +579,7 @@ public:
    * @param rules_ HeaderRules to iterate over, contains RuleCheck objects
    * @return Whether any rules were violated
    */
-  bool verify_headers(swoc::TextView key, const HttpFields &rules_) const;
+  bool verify_headers(swoc::TextView key, HttpFields const &rules_) const;
 
   unsigned _status = 0;
   TextView _reason;
@@ -597,9 +603,9 @@ public:
   std::shared_ptr<HttpFields> _fields_rules = nullptr;
 
   /// Body is chunked.
-  unsigned _chunked_p : 1;
+  bool _chunked_p = false;
   /// No Content-Length - close after sending body.
-  unsigned _content_length_p : 1;
+  bool _content_length_p = false;
 
   /// Format string to generate a key from a transaction.
   static std::string _key_format;
@@ -631,7 +637,7 @@ protected:
      * only override this method.
      */
     BufferWriter &operator()(BufferWriter &w,
-                             const swoc::bwf::Spec &spec) const override;
+                             swoc::bwf::Spec const &spec) const override;
 
   protected:
     HttpHeader const &_hdr;
@@ -789,14 +795,18 @@ public:
    *
    * @param[in] hdr The headers which specify how many body bytes to read.
    *
+   * @param[in] expected_content_size The response's content-length value
+   * or, failing that, the content:size value from the dumped response.
+   *
    * @param[in] initial The body already read from the socket.
    *
    * @return The number of bytes drained and an errata with messaging.
    */
   virtual swoc::Rv<size_t> drain_body(HttpHeader const &hdr,
+                                      size_t expected_content_size,
                                       swoc::TextView initial);
 
-  virtual swoc::Errata do_connect(const swoc::IPEndpoint *real_target);
+  virtual swoc::Errata do_connect(swoc::IPEndpoint const *real_target);
 
   /** Write the content in data to the socket.
    *
@@ -831,11 +841,14 @@ public:
 
   static swoc::Errata init();
 
-  virtual swoc::Errata run_transactions(const std::list<Txn> &txn,
-                                        const swoc::IPEndpoint *real_target);
-  virtual swoc::Errata run_transaction(const Txn &txn);
+  virtual swoc::Errata run_transactions(std::list<Txn> const &txn,
+                                        swoc::IPEndpoint const *real_target);
+  virtual swoc::Errata run_transaction(Txn const &json_txn);
 
 private:
+  virtual swoc::Rv<size_t> drain_body_internal(HttpHeader &hdr,
+                                               Txn const &json_txn,
+                                               swoc::TextView initial);
   int _fd = -1; ///< Socket.
 };
 
@@ -889,10 +902,10 @@ public:
   int32_t _stream_id = 0;
   int _data_to_recv = 0;
   size_t _send_body_offset = 0;
-  const char *_send_body = nullptr;
+  char const *_send_body = nullptr;
   size_t _send_body_length = 0;
-  const HttpHeader *_req = nullptr;
-  const HttpHeader *_resp = nullptr;
+  HttpHeader const *_req = nullptr;
+  HttpHeader const *_resp = nullptr;
   bool _wait_for_continue = false;
   std::string _key;
   std::chrono::time_point<std::chrono::system_clock> _stream_start;
@@ -902,10 +915,10 @@ class H2Session : public TLSSession {
 public:
   using super_type = TLSSession;
   H2Session();
+  ~H2Session();
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
   virtual swoc::Rv<ssize_t> write(HttpHeader const &hdr);
-  ~H2Session() override = default;
 
   swoc::Errata connect() override;
   static swoc::Errata init(SSL_CTX *&srv_ctx, SSL_CTX *&clt_ctx);
@@ -914,9 +927,9 @@ public:
   }
   swoc::Errata session_init();
   swoc::Errata send_client_connection_header();
-  swoc::Errata run_transactions(const std::list<Txn> &txn,
-                                const swoc::IPEndpoint *real_target) override;
-  swoc::Errata run_transaction(const Txn &txn) override;
+  swoc::Errata run_transactions(std::list<Txn> const &txn,
+                                swoc::IPEndpoint const *real_target) override;
+  swoc::Errata run_transaction(Txn const &txn) override;
 
   nghttp2_session *get_session() { return _session; }
 
@@ -924,7 +937,8 @@ public:
 
 protected:
   nghttp2_session *_session;
-  nghttp2_session_callbacks *callbacks;
+  nghttp2_session_callbacks *_callbacks;
+  nghttp2_option *_options;
 
   static SSL_CTX *h2_server_ctx;
   static SSL_CTX *h2_client_ctx;
@@ -932,7 +946,7 @@ protected:
 private:
   swoc::Errata pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr,
                             int &hdr_count);
-  nghttp2_nv tv_to_nv(const char *name, swoc::TextView v);
+  nghttp2_nv tv_to_nv(char const *name, swoc::TextView v);
 };
 
 class ChunkCodex {
@@ -946,7 +960,11 @@ public:
   /// where in the actual chunk the particular piece in @a chunk is placed.
   using ChunkCallback =
       std::function<bool(swoc::TextView chunk, size_t offset, size_t size)>;
-  enum Result { CONTINUE, DONE, ERROR };
+  enum Result {
+    CONTINUE, ///< The parser expects more bytes.
+    DONE,     ///< The final done chunk is completed.
+    ERROR     ///< A parsing error has ocurred.
+  };
 
   /** Parse @a data as chunked encoded.
    *
@@ -994,7 +1012,7 @@ protected:
 
 // YAML support utilities.
 namespace swoc {
-inline BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec,
+inline BufferWriter &bwformat(BufferWriter &w, bwf::Spec const & /* spec */,
                               YAML::Mark const &mark) {
   return w.print("line {}", mark.line);
 }
@@ -1017,7 +1035,7 @@ public:
     return {};
   }
   virtual swoc::Errata file_close() { return {}; }
-  virtual swoc::Errata ssn_open(YAML::Node const &node) { return {}; }
+  virtual swoc::Errata ssn_open(YAML::Node const & /* node */) { return {}; }
   virtual swoc::Errata ssn_close() { return {}; }
 
   /** Open the transaction node.
@@ -1028,14 +1046,23 @@ public:
    * This is required to do any base validation of the transaction such as
    * verifying required keys.
    */
-  virtual swoc::Errata txn_open(YAML::Node const &node) { return {}; }
+  virtual swoc::Errata txn_open(YAML::Node const & /* node */) { return {}; }
 
   virtual swoc::Errata txn_close() { return {}; }
-  virtual swoc::Errata client_request(YAML::Node const &node) { return {}; }
-  virtual swoc::Errata proxy_request(YAML::Node const &node) { return {}; }
-  virtual swoc::Errata server_response(YAML::Node const &node) { return {}; }
-  virtual swoc::Errata proxy_response(YAML::Node const &node) { return {}; }
-  virtual swoc::Errata apply_to_all_messages(HttpFields const &all_headers) {
+  virtual swoc::Errata client_request(YAML::Node const & /* node */) {
+    return {};
+  }
+  virtual swoc::Errata proxy_request(YAML::Node const & /* node */) {
+    return {};
+  }
+  virtual swoc::Errata server_response(YAML::Node const & /* node */) {
+    return {};
+  }
+  virtual swoc::Errata proxy_response(YAML::Node const & /* node */) {
+    return {};
+  }
+  virtual swoc::Errata
+  apply_to_all_messages(HttpFields const & /* all_headers */) {
     return {};
   }
 
@@ -1060,13 +1087,6 @@ swoc::Errata parse_ips(std::string arg, std::deque<swoc::IPEndpoint> &target);
 swoc::Errata resolve_ips(std::string arg, std::deque<swoc::IPEndpoint> &target);
 swoc::Rv<swoc::IPEndpoint> Resolve_FQDN(swoc::TextView host);
 
-namespace swoc {
-inline BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec,
-                              swoc::file::path const &path) {
-  return bwformat(w, spec, path.string());
-}
-} // namespace swoc
-
 class ThreadInfo {
 public:
   std::thread *_thread = nullptr;
@@ -1089,5 +1109,5 @@ protected:
   std::deque<ThreadInfo *> _threadPool;
   std::condition_variable _threadPoolCvar;
   std::mutex _threadPoolMutex;
-  const int max_threads = 2000;
+  const size_t max_threads = 2000;
 };

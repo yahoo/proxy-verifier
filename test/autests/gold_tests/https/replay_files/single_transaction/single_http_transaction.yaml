@@ -57,6 +57,7 @@ sessions:
         - [ Date, "Sat, 16 Mar 2019 01:33:27 GMT" ]
         - [ Age, '1' ]
         - [ Connection, keep-alive ]
+        - [ Content-Length, '12' ]
 
     proxy-response:
       status: 200
@@ -72,5 +73,4 @@ sessions:
         - [ Age, '2' ]
         - [ Transfer-Encoding, chunked ]
         - [ Connection, keep-alive ]
-
-
+        - [ Content-Length, '12' ]

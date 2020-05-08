@@ -10,7 +10,7 @@ env.DependsOn([
 ])
 
 env.AppendUnique(
-    CCFLAGS=['-std=c++17', '-g'],
+    CCFLAGS=['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror'],
 )
 
 env.InstallBin(
