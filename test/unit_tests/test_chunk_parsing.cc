@@ -10,13 +10,13 @@
 
 using swoc::TextView;
 
-TEST_CASE("Check parsing of a chunked body", "[RuleCheck]") {
+TEST_CASE("Check parsing of a chunked body", "[RuleCheck]")
+{
   size_t num_body_bytes = 0;
   ChunkCodex codex;
   std::string accumulated_body;
   ChunkCodex::ChunkCallback cb{
-      [&num_body_bytes, &accumulated_body](TextView block, size_t offset,
-                                           size_t size) -> bool {
+      [&num_body_bytes, &accumulated_body](TextView block, size_t offset, size_t size) -> bool {
         num_body_bytes += block.size();
         accumulated_body += block;
         return true;
