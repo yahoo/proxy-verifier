@@ -56,13 +56,19 @@ swoc::file::path ROOT_PATH;
 // This must be a list so that iterators / pointers to elements do not go stale.
 std::list<std::thread *> Listen_threads;
 
-class ServerThreadInfo : public ThreadInfo {
+class ServerThreadInfo : public ThreadInfo
+{
 public:
   Session *_session = nullptr;
-  bool data_ready() override { return this->_session; }
+  bool
+  data_ready() override
+  {
+    return this->_session;
+  }
 };
 
-class ServerThreadPool : public ThreadPool {
+class ServerThreadPool : public ThreadPool
+{
 public:
   std::thread make_thread(std::thread *t) override;
 };
@@ -71,16 +77,18 @@ ServerThreadPool Server_Thread_Pool;
 
 HttpHeader Continue_resp;
 
-std::thread ServerThreadPool::make_thread(std::thread *t) {
-  return std::thread(
-      TF_Serve, t); // move the temporary into the list element for permanence.
+std::thread
+ServerThreadPool::make_thread(std::thread *t)
+{
+  return std::thread(TF_Serve, t); // move the temporary into the list element for permanence.
 }
 
 /** Command execution.
  *
  * This handles parsing and acting on the command line arguments.
  */
-struct Engine {
+struct Engine
+{
   ts::ArgParser parser;    ///< Command line argument parser.
   ts::Arguments arguments; ///< Results from argument parsing.
 
@@ -96,7 +104,8 @@ std::mutex LoadMutex;
 
 std::unordered_map<std::string, Txn, std::hash<std::string_view>> Transactions;
 
-class ServerReplayFileHandler : public ReplayFileHandler {
+class ServerReplayFileHandler : public ReplayFileHandler
+{
 public:
   ServerReplayFileHandler();
 
@@ -113,25 +122,32 @@ private:
   Txn _txn;
 };
 
-ServerReplayFileHandler::ServerReplayFileHandler()
-    : _txn{Use_Strict_Checking} {}
+ServerReplayFileHandler::ServerReplayFileHandler() : _txn{Use_Strict_Checking} { }
 
-void ServerReplayFileHandler::reset() {
+void
+ServerReplayFileHandler::reset()
+{
   _txn.~Txn();
   new (&_txn) Txn{Use_Strict_Checking};
 }
 
-swoc::Errata ServerReplayFileHandler::txn_open(YAML::Node const &node) {
+swoc::Errata
+ServerReplayFileHandler::txn_open(YAML::Node const &node)
+{
   Errata errata;
   if (!node[YAML_PROXY_REQ_KEY]) {
     errata.error(
         R"(Transaction node at "{}":{} does not have a proxy request [{}].)",
-        _path, node.Mark().line, YAML_PROXY_REQ_KEY);
+        _path,
+        node.Mark().line,
+        YAML_PROXY_REQ_KEY);
   }
   if (!node[YAML_SERVER_RSP_KEY]) {
     errata.error(
         R"(Transaction node at "{}":{} does not have a server response [{}].)",
-        _path, node.Mark().line, YAML_SERVER_RSP_KEY);
+        _path,
+        node.Mark().line,
+        YAML_SERVER_RSP_KEY);
   }
   if (!errata.is_ok()) {
     return std::move(errata);
@@ -140,25 +156,31 @@ swoc::Errata ServerReplayFileHandler::txn_open(YAML::Node const &node) {
   return {};
 }
 
-swoc::Errata ServerReplayFileHandler::proxy_request(YAML::Node const &node) {
-  _txn._req._fields_rules =
-      std::make_shared<HttpFields>(*global_config.txn_rules);
+swoc::Errata
+ServerReplayFileHandler::proxy_request(YAML::Node const &node)
+{
+  _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
   swoc::Errata errata = _txn._req.load(node);
   return std::move(errata);
 }
 
-swoc::Errata ServerReplayFileHandler::server_response(YAML::Node const &node) {
+swoc::Errata
+ServerReplayFileHandler::server_response(YAML::Node const &node)
+{
   return _txn._rsp.load(node);
 }
 
 swoc::Errata
-ServerReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers) {
+ServerReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
+{
   _txn._req._fields_rules->merge(all_headers);
   _txn._rsp._fields_rules->merge(all_headers);
   return {};
 }
 
-swoc::Errata ServerReplayFileHandler::txn_close() {
+swoc::Errata
+ServerReplayFileHandler::txn_close()
+{
   _key = _txn._req.make_key();
   Transactions.emplace(_key, std::move(_txn));
   LoadMutex.unlock();
@@ -166,7 +188,9 @@ swoc::Errata ServerReplayFileHandler::txn_close() {
   return {};
 }
 
-void TF_Serve(std::thread *t) {
+void
+TF_Serve(std::thread *t)
+{
   ServerThreadInfo thread_info;
   thread_info._thread = t;
   while (!Shutdown_Flag) {
@@ -179,8 +203,7 @@ void TF_Serve(std::thread *t) {
       HttpHeader req_hdr;
       swoc::Errata thread_errata;
       swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
-      auto &&[header_bytes_read, read_header_errata] =
-          thread_info._session->read_header(w);
+      auto &&[header_bytes_read, read_header_errata] = thread_info._session->read_header(w);
       thread_errata.note(read_header_errata);
       if (!read_header_errata.is_ok()) {
         thread_errata.error("Could not read the header.");
@@ -193,8 +216,7 @@ void TF_Serve(std::thread *t) {
       }
 
       const auto received_data = swoc::TextView(w.data(), body_offset);
-      auto &&[parse_result, parse_errata] =
-          req_hdr.parse_request(received_data);
+      auto &&[parse_result, parse_errata] = req_hdr.parse_request(received_data);
       thread_errata.note(parse_errata);
 
       if (parse_result != HttpHeader::PARSE_OK || !thread_errata.is_ok()) {
@@ -220,14 +242,15 @@ void TF_Serve(std::thread *t) {
       // If there is an Expect header with the value of 100-continue, send the
       // 100-continue response before Reading request body.
       if (req_hdr._send_continue) {
-        auto &&[bytes_written, write_errata] =
-            thread_info._session->write(Continue_resp);
+        auto &&[bytes_written, write_errata] = thread_info._session->write(Continue_resp);
       }
 
       if (req_hdr._content_length_p || req_hdr._chunked_p) {
         thread_errata.diag("Draining request body.");
         auto &&[bytes_drained, drain_errata] = thread_info._session->drain_body(
-            req_hdr, req_hdr._content_size, w.view().substr(body_offset));
+            req_hdr,
+            req_hdr._content_size,
+            w.view().substr(body_offset));
         thread_errata.note(drain_errata);
 
         if (!thread_errata.is_ok()) {
@@ -237,22 +260,25 @@ void TF_Serve(std::thread *t) {
       }
       thread_errata.diag("Validating request with url: {}", req_hdr._url);
       if (req_hdr.verify_headers(key, *txn._req._fields_rules)) {
-        thread_errata.error(
-            R"(Request headers did not match expected request headers.)");
+        thread_errata.error(R"(Request headers did not match expected request headers.)");
       }
       // Responses to HEAD requests may have a non-zero Content-Length
       // but will never have a body. update_content_length adjusts
       // expectations so the body is not written for responses to such
       // requests.
       txn._rsp.update_content_length(req_hdr._method);
-      thread_errata.diag("Responding to request {} with status {}.",
-                         req_hdr._url, txn._rsp._status);
-      auto &&[bytes_written, write_errata] =
-          thread_info._session->write(txn._rsp);
+      thread_errata.diag(
+          "Responding to request {} with status {}.",
+          req_hdr._url,
+          txn._rsp._status);
+      auto &&[bytes_written, write_errata] = thread_info._session->write(txn._rsp);
       thread_errata.note(write_errata);
-      thread_errata.diag("Wrote {} bytes in response to request with url {} "
-                         "with response status {}",
-                         bytes_written, req_hdr._url, txn._rsp._status);
+      thread_errata.diag(
+          "Wrote {} bytes in response to request with url {} "
+          "with response status {}",
+          bytes_written,
+          req_hdr._url,
+          txn._rsp._status);
     }
 
     // cleanup and get ready for another session.
@@ -264,7 +290,9 @@ void TF_Serve(std::thread *t) {
   }
 }
 
-void TF_Accept(int socket_fd, bool do_tls) {
+void
+TF_Accept(int socket_fd, bool do_tls)
+{
   std::unique_ptr<Session> session;
   while (!Shutdown_Flag) {
     swoc::Errata errata;
@@ -272,8 +300,7 @@ void TF_Accept(int socket_fd, bool do_tls) {
     socklen_t remote_addr_size = sizeof(remote_addr);
     int fd = accept4(socket_fd, &remote_addr.sa, &remote_addr_size, 0);
     if (fd < 0) {
-      errata.error("Failed to create a socket via accept4: {}",
-                   swoc::bwf::Errno{});
+      errata.error("Failed to create a socket via accept4: {}", swoc::bwf::Errno{});
       continue;
     }
     if (do_tls) {
@@ -303,16 +330,16 @@ void TF_Accept(int socket_fd, bool do_tls) {
   }
 }
 
-swoc::Errata do_listen(swoc::IPEndpoint &server_addr, bool do_tls) {
+swoc::Errata
+do_listen(swoc::IPEndpoint &server_addr, bool do_tls)
+{
   swoc::Errata errata;
   int socket_fd = socket(server_addr.family(), SOCK_STREAM, 0);
   if (socket_fd >= 0) {
     // Be agressive in reusing the port
     static constexpr int ONE = 1;
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) <
-        0) {
-      errata.error(R"(Could not set reuseaddr on socket {}: {}.)", socket_fd,
-                   swoc::bwf::Errno{});
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
+      errata.error(R"(Could not set reuseaddr on socket {}: {}.)", socket_fd, swoc::bwf::Errno{});
     } else {
       int bind_result = bind(socket_fd, &server_addr.sa, server_addr.size());
       if (bind_result == 0) {
@@ -322,12 +349,10 @@ swoc::Errata do_listen(swoc::IPEndpoint &server_addr, bool do_tls) {
           std::thread *runner = new std::thread{TF_Accept, socket_fd, do_tls};
           Listen_threads.push_back(runner);
         } else {
-          errata.error(R"(Could not isten to {}: {}.)", server_addr,
-                       swoc::bwf::Errno{});
+          errata.error(R"(Could not isten to {}: {}.)", server_addr, swoc::bwf::Errno{});
         }
       } else {
-        errata.error(R"(Could not bind to {}: {}.)", server_addr,
-                     swoc::bwf::Errno{});
+        errata.error(R"(Could not bind to {}: {}.)", server_addr, swoc::bwf::Errno{});
       }
     }
   } else {
@@ -339,7 +364,9 @@ swoc::Errata do_listen(swoc::IPEndpoint &server_addr, bool do_tls) {
   return std::move(errata);
 }
 
-void Engine::command_run() {
+void
+Engine::command_run()
+{
   { // Scope errata before the long-lived server loop.
     Errata errata;
     auto args{arguments.get("run")};
@@ -352,8 +379,7 @@ void Engine::command_run() {
     swoc::LocalBufferWriter<1024> w;
 
     if (args.size() < 1) {
-      errata.error(
-          R"("run" command requires a directory path as an argument.)");
+      errata.error(R"("run" command requires a directory path as an argument.)");
       status_code = 1;
       return;
     }
@@ -370,8 +396,7 @@ void Engine::command_run() {
       if (server_addr_arg.size() == 1) {
         errata = parse_ips(server_addr_arg[0], server_addrs);
       } else {
-        errata.error(
-            R"(--listen option must have a single value, the listen address and port.)");
+        errata.error(R"(--listen option must have a single value, the listen address and port.)");
         status_code = 1;
         return;
       }
@@ -402,8 +427,7 @@ void Engine::command_run() {
               TLSSession::certificate_file = cert_path;
             }
           } else {
-            errata.error(R"(Invalid certificate path "{}": {}.)", cert_arg[0],
-                         ec);
+            errata.error(R"(Invalid certificate path "{}": {}.)", cert_arg[0], ec);
             status_code = 1;
             return;
           }
@@ -422,13 +446,13 @@ void Engine::command_run() {
       }
     }
 
-    errata =
-        Load_Replay_Directory(swoc::file::path{args[0]},
-                              [](swoc::file::path const &file) -> swoc::Errata {
-                                ServerReplayFileHandler handler;
-                                return Load_Replay_File(file, handler);
-                              },
-                              10);
+    errata = Load_Replay_Directory(
+        swoc::file::path{args[0]},
+        [](swoc::file::path const &file) -> swoc::Errata {
+          ServerReplayFileHandler handler;
+          return Load_Replay_File(file, handler);
+        },
+        10);
 
     if (!errata.is_ok() && errata.severity() != swoc::Severity::ERROR) {
       status_code = 1;
@@ -441,10 +465,8 @@ void Engine::command_run() {
     HttpHeader::_frozen = true;
     size_t max_content_length = 0;
     for (auto const &[key, txn] : Transactions) {
-      if (txn._rsp._content_data ==
-          nullptr) { // don't check responses with literal content.
-        max_content_length =
-            std::max<size_t>(max_content_length, txn._rsp._content_size);
+      if (txn._rsp._content_data == nullptr) { // don't check responses with literal content.
+        max_content_length = std::max<size_t>(max_content_length, txn._rsp._content_size);
       }
     }
     HttpHeader::set_max_content_length(max_content_length);
@@ -479,7 +501,9 @@ void Engine::command_run() {
   }
 }
 
-int main(int /* argc */, char const *argv[]) {
+int
+main(int /* argc */, char const *argv[])
+{
   swoc::Errata errata;
   if (block_sigpipe()) {
     errata.warn("Could not block SIGPIPE. Continuing anyway, but be aware that "
@@ -491,31 +515,48 @@ int main(int /* argc */, char const *argv[]) {
   Engine engine;
 
   engine.parser
-      .add_option("--verbose", "",
-                  "Enable verbose output:"
-                  "\n\terror: Only print errors."
-                  "\n\twarn: Print warnings and errors."
-                  "\n\tinfo: Print info messages in addition to warnings and "
-                  "errors. This is the default verbosity level."
-                  "\n\tdiag: Print debug messages in addition to info, "
-                  "warnings, and errors,",
-                  "", 1, "info")
+      .add_option(
+          "--verbose",
+          "",
+          "Enable verbose output:"
+          "\n\terror: Only print errors."
+          "\n\twarn: Print warnings and errors."
+          "\n\tinfo: Print info messages in addition to warnings and "
+          "errors. This is the default verbosity level."
+          "\n\tdiag: Print debug messages in addition to info, "
+          "warnings, and errors,",
+          "",
+          1,
+          "info")
       .add_option("--version", "-V", "Print version string")
       .add_option("--help", "-h", "Print usage information");
 
   engine.parser
-      .add_command("run", "run <dir>: the replay server using data in <dir>",
-                   "", 1, [&]() -> void { engine.command_run(); })
-      .add_option("--listen", "",
-                  "Listen address and port. Can be a comma separated list.", "",
-                  1, "")
-      .add_option("--listen-https", "",
-                  "Listen TLS address and port. Can be a comma separated list.",
-                  "", 1, "")
+      .add_command(
+          "run",
+          "run <dir>: the replay server using data in <dir>",
+          "",
+          1,
+          [&]() -> void { engine.command_run(); })
+      .add_option(
+          "--listen",
+          "",
+          "Listen address and port. Can be a comma separated list.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--listen-https",
+          "",
+          "Listen TLS address and port. Can be a comma separated list.",
+          "",
+          1,
+          "")
       .add_option("--format", "-f", "Transaction key format", "", 1, "")
       .add_option("--cert", "", "Specify TLS certificate file", "", 1, "")
       .add_option(
-          "--strict", "-s",
+          "--strict",
+          "-s",
           "Verify all proxy requests against the proxy-request fields as if "
           "they had equality verification rules in them if no other "
           "verification "
@@ -524,8 +565,7 @@ int main(int /* argc */, char const *argv[]) {
   // parse the arguments
   engine.arguments = engine.parser.parse(argv);
   std::string verbosity = "info";
-  if (const auto verbose_argument{engine.arguments.get("verbose")};
-      verbose_argument) {
+  if (const auto verbose_argument{engine.arguments.get("verbose")}; verbose_argument) {
     verbosity = verbose_argument.value();
   }
   if (!configure_logging(verbosity)) {

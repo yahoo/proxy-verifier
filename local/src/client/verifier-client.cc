@@ -26,9 +26,11 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
-namespace swoc {
-inline BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec,
-                              std::chrono::milliseconds ms) {
+namespace swoc
+{
+inline BufferWriter &
+bwformat(BufferWriter &w, bwf::Spec const &spec, std::chrono::milliseconds ms)
+{
   return bwformat(w, spec, ms.count()).write("ms");
 }
 } // namespace swoc
@@ -59,7 +61,8 @@ std::deque<swoc::IPEndpoint> Target, Target_Https;
  */
 bool Use_Proxy_Request_Directives = false;
 
-class ClientReplayFileHandler : public ReplayFileHandler {
+class ClientReplayFileHandler : public ReplayFileHandler
+{
 public:
   ClientReplayFileHandler();
   ~ClientReplayFileHandler() = default;
@@ -84,13 +87,19 @@ private:
 
 bool Shutdown_Flag = false;
 
-class ClientThreadInfo : public ThreadInfo {
+class ClientThreadInfo : public ThreadInfo
+{
 public:
   Ssn *_ssn = nullptr;
-  bool data_ready() override { return Shutdown_Flag || this->_ssn != nullptr; }
+  bool
+  data_ready() override
+  {
+    return Shutdown_Flag || this->_ssn != nullptr;
+  }
 };
 
-class ClientThreadPool : public ThreadPool {
+class ClientThreadPool : public ThreadPool
+{
 public:
   std::thread make_thread(std::thread *t) override;
 };
@@ -99,22 +108,30 @@ ClientThreadPool Client_Thread_Pool;
 
 void TF_Client(std::thread *t);
 
-std::thread ClientThreadPool::make_thread(std::thread *t) {
-  return std::thread(
-      TF_Client, t); // move the temporary into the list element for permanence.
+std::thread
+ClientThreadPool::make_thread(std::thread *t)
+{
+  return std::thread(TF_Client, t); // move the temporary into the list element for permanence.
 }
 
-ClientReplayFileHandler::ClientReplayFileHandler()
-    : _txn{Use_Strict_Checking} {}
+ClientReplayFileHandler::ClientReplayFileHandler() : _txn{Use_Strict_Checking} { }
 
-void ClientReplayFileHandler::ssn_reset() { _ssn.reset(); }
+void
+ClientReplayFileHandler::ssn_reset()
+{
+  _ssn.reset();
+}
 
-void ClientReplayFileHandler::txn_reset() {
+void
+ClientReplayFileHandler::txn_reset()
+{
   _txn.~Txn();
   new (&_txn) Txn{Use_Strict_Checking};
 }
 
-swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
+swoc::Errata
+ClientReplayFileHandler::ssn_open(YAML::Node const &node)
+{
   swoc::Errata errata;
   _ssn = std::make_shared<Ssn>();
   _ssn->_path = _path;
@@ -135,7 +152,9 @@ swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
           } else {
             errata.error(
                 R"(Session at "{}":{} has a value for key "{}" that is not a scalar as required.)",
-                _path, _ssn->_line_no, YAML_SSN_TLS_SNI_KEY);
+                _path,
+                _ssn->_line_no,
+                YAML_SSN_TLS_SNI_KEY);
           }
           break;
         }
@@ -143,11 +162,16 @@ swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
     } else {
       errata.warn(
           R"(Session at "{}":{} has a value for "{}" that is not a sequence..)",
-          _path, _ssn->_line_no, YAML_SSN_PROTOCOL_KEY);
+          _path,
+          _ssn->_line_no,
+          YAML_SSN_PROTOCOL_KEY);
     }
   } else {
-    errata.info(R"(Session at "{}":{} has no "{}" key.)", _path, _ssn->_line_no,
-                YAML_SSN_PROTOCOL_KEY);
+    errata.info(
+        R"(Session at "{}":{} has no "{}" key.)",
+        _path,
+        _ssn->_line_no,
+        YAML_SSN_PROTOCOL_KEY);
   }
 
   if (node[YAML_SSN_START_KEY]) {
@@ -159,28 +183,40 @@ swoc::Errata ClientReplayFileHandler::ssn_open(YAML::Node const &node) {
       } else {
         errata.warn(
             R"(Session at "{}":{} has a "{}" value "{}" that is not a positive integer.)",
-            _path, _ssn->_line_no, YAML_SSN_START_KEY, start_node.Scalar());
+            _path,
+            _ssn->_line_no,
+            YAML_SSN_START_KEY,
+            start_node.Scalar());
       }
     } else {
-      errata.warn(R"(Session at "{}":{} has a "{}" key that is not a scalar.)",
-                  _path, _ssn->_line_no, YAML_SSN_START_KEY);
+      errata.warn(
+          R"(Session at "{}":{} has a "{}" key that is not a scalar.)",
+          _path,
+          _ssn->_line_no,
+          YAML_SSN_START_KEY);
     }
   }
 
   return std::move(errata);
 }
 
-swoc::Errata ClientReplayFileHandler::txn_open(YAML::Node const &node) {
+swoc::Errata
+ClientReplayFileHandler::txn_open(YAML::Node const &node)
+{
   swoc::Errata errata;
   if (!node[YAML_CLIENT_REQ_KEY]) {
     errata.error(
         R"(Transaction node at "{}":{} does not have a client request [{}].)",
-        _path, node.Mark().line, YAML_CLIENT_REQ_KEY);
+        _path,
+        node.Mark().line,
+        YAML_CLIENT_REQ_KEY);
   }
   if (!node[YAML_PROXY_RSP_KEY]) {
     errata.error(
         R"(Transaction node at "{}":{} does not have a proxy response [{}].)",
-        _path, node.Mark().line, YAML_PROXY_RSP_KEY);
+        _path,
+        node.Mark().line,
+        YAML_PROXY_RSP_KEY);
   }
   if (!errata.is_ok()) {
     return std::move(errata);
@@ -189,50 +225,59 @@ swoc::Errata ClientReplayFileHandler::txn_open(YAML::Node const &node) {
   return {};
 }
 
-swoc::Errata ClientReplayFileHandler::client_request(YAML::Node const &node) {
+swoc::Errata
+ClientReplayFileHandler::client_request(YAML::Node const &node)
+{
   if (!Use_Proxy_Request_Directives) {
     return _txn._req.load(node);
   }
   return {};
 }
 
-swoc::Errata ClientReplayFileHandler::proxy_request(YAML::Node const &node) {
+swoc::Errata
+ClientReplayFileHandler::proxy_request(YAML::Node const &node)
+{
   if (Use_Proxy_Request_Directives) {
     return _txn._req.load(node);
   }
   return {};
 }
 
-swoc::Errata ClientReplayFileHandler::proxy_response(YAML::Node const &node) {
+swoc::Errata
+ClientReplayFileHandler::proxy_response(YAML::Node const &node)
+{
   if (!Use_Proxy_Request_Directives) {
     // We only expect proxy responses when we are behaving according to the
     // client-request directives and there is a proxy.
-    _txn._rsp._fields_rules =
-        std::make_shared<HttpFields>(*global_config.txn_rules);
-    return _txn._rsp.load(node);
-  }
-  return {};
-}
-
-swoc::Errata ClientReplayFileHandler::server_response(YAML::Node const &node) {
-  if (Use_Proxy_Request_Directives) {
-    // If we are behaving like the proxy, then replay-client is talking directly
-    // with the server and should expect the server's responses.
-    _txn._rsp._fields_rules =
-        std::make_shared<HttpFields>(*global_config.txn_rules);
+    _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
     return _txn._rsp.load(node);
   }
   return {};
 }
 
 swoc::Errata
-ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers) {
+ClientReplayFileHandler::server_response(YAML::Node const &node)
+{
+  if (Use_Proxy_Request_Directives) {
+    // If we are behaving like the proxy, then replay-client is talking directly
+    // with the server and should expect the server's responses.
+    _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+    return _txn._rsp.load(node);
+  }
+  return {};
+}
+
+swoc::Errata
+ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
+{
   _txn._req._fields_rules->merge(all_headers);
   _txn._rsp._fields_rules->merge(all_headers);
   return {};
 }
 
-swoc::Errata ClientReplayFileHandler::txn_close() {
+swoc::Errata
+ClientReplayFileHandler::txn_close()
+{
   const auto &key{_txn._req.make_key()};
   if (Keys_Whitelist.empty() || Keys_Whitelist.count(key) > 0) {
     _ssn->_transactions.emplace_back(std::move(_txn));
@@ -242,7 +287,9 @@ swoc::Errata ClientReplayFileHandler::txn_close() {
   return {};
 }
 
-swoc::Errata ClientReplayFileHandler::ssn_close() {
+swoc::Errata
+ClientReplayFileHandler::ssn_close()
+{
   {
     std::lock_guard<std::mutex> lock(LoadMutex);
     if (!_ssn->_transactions.empty()) {
@@ -253,14 +300,18 @@ swoc::Errata ClientReplayFileHandler::ssn_close() {
   return {};
 }
 
-swoc::Errata Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target,
-                         swoc::IPEndpoint const &target_https) {
+swoc::Errata
+Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint const &target_https)
+{
   swoc::Errata errata;
   std::unique_ptr<Session> session;
   swoc::IPEndpoint const *real_target = nullptr;
 
-  errata.diag(R"(Starting session "{}":{} protocol={}.)", ssn._path,
-              ssn._line_no, ssn.is_h2 ? "h2" : (ssn.is_tls ? "https" : "http"));
+  errata.diag(
+      R"(Starting session "{}":{} protocol={}.)",
+      ssn._path,
+      ssn._line_no,
+      ssn.is_h2 ? "h2" : (ssn.is_tls ? "https" : "http"));
 
   if (ssn.is_h2) {
     if (Use_Proxy_Request_Directives) {
@@ -268,8 +319,7 @@ swoc::Errata Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target,
       // TrafficServer to handle HTTP/2 on the client-side and talk HTTP/1 on
       // the server side. If there is no TrafficServer proxy, ignore the HTTP/2
       // traffic therefore.
-      errata.diag(R"(Ignoring HTTP/2 traffic in proxy mode, "{}":{})",
-                  ssn._path, ssn._line_no);
+      errata.diag(R"(Ignoring HTTP/2 traffic in proxy mode, "{}":{})", ssn._path, ssn._line_no);
       return errata;
     }
     session = std::make_unique<H2Session>();
@@ -291,7 +341,9 @@ swoc::Errata Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target,
   return std::move(errata);
 }
 
-void TF_Client(std::thread *t) {
+void
+TF_Client(std::thread *t)
+{
   ClientThreadInfo thread_info;
   thread_info._thread = t;
   size_t target_index = 0;
@@ -303,8 +355,8 @@ void TF_Client(std::thread *t) {
     Client_Thread_Pool.wait_for_work(&thread_info);
 
     if (thread_info._ssn != nullptr) {
-      swoc::Errata result = Run_Session(*thread_info._ssn, Target[target_index],
-                                        Target_Https[target_https_index]);
+      swoc::Errata result =
+          Run_Session(*thread_info._ssn, Target[target_index], Target_Https[target_https_index]);
       if (++target_index >= Target.size())
         target_index = 0;
       if (++target_https_index >= Target_Https.size())
@@ -313,8 +365,9 @@ void TF_Client(std::thread *t) {
   }
 }
 
-bool session_start_compare(const std::shared_ptr<Ssn> ssn1,
-                           const std::shared_ptr<Ssn> ssn2) {
+bool
+session_start_compare(const std::shared_ptr<Ssn> ssn1, const std::shared_ptr<Ssn> ssn2)
+{
   return ssn1->_start < ssn2->_start;
 }
 
@@ -322,7 +375,8 @@ bool session_start_compare(const std::shared_ptr<Ssn> ssn1,
  *
  * This handles parsing and acting on the command line arguments.
  */
-struct Engine {
+struct Engine
+{
   ts::ArgParser parser;    ///< Command line argument parser.
   ts::Arguments arguments; ///< Results from argument parsing.
 
@@ -340,19 +394,22 @@ struct Engine {
   int status_code = 0;
 };
 
-uint64_t GetUTimestamp() {
+uint64_t
+GetUTimestamp()
+{
   auto retval = std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::system_clock::now().time_since_epoch());
   return retval.count();
 }
 
-void Engine::command_run() {
+void
+Engine::command_run()
+{
   auto args{arguments.get("run")};
   swoc::Errata errata;
 
   if (args.size() < 3) {
-    errata.error(R"(Not enough arguments for "{}" command.\n{})", COMMAND_RUN,
-                 COMMAND_RUN_ARGS);
+    errata.error(R"(Not enough arguments for "{}" command.\n{})", COMMAND_RUN, COMMAND_RUN_ARGS);
     status_code = 1;
     return;
   }
@@ -387,13 +444,13 @@ void Engine::command_run() {
   }
 
   errata.info(R"(Loading directory "{}".)", args[0]);
-  errata.note(
-      Load_Replay_Directory(swoc::file::path{args[0]},
-                            [](swoc::file::path const &file) -> swoc::Errata {
-                              ClientReplayFileHandler handler;
-                              return Load_Replay_File(file, handler);
-                            },
-                            10));
+  errata.note(Load_Replay_Directory(
+      swoc::file::path{args[0]},
+      [](swoc::file::path const &file) -> swoc::Errata {
+        ClientReplayFileHandler handler;
+        return Load_Replay_File(file, handler);
+      },
+      10));
   if (!errata.is_ok()) {
     status_code = 1;
     return;
@@ -422,8 +479,7 @@ void Engine::command_run() {
     ssn->_start -= offset_time;
     transaction_count += ssn->_transactions.size();
     for (auto const &txn : ssn->_transactions) {
-      max_content_length =
-          std::max<size_t>(max_content_length, txn._req._content_size);
+      max_content_length = std::max<size_t>(max_content_length, txn._req._content_size);
     }
   }
   errata.info("Parsed {} transactions.", transaction_count);
@@ -440,13 +496,15 @@ void Engine::command_run() {
     if (target == 0.0) {
       rate_multiplier = 0.0;
     } else {
-      rate_multiplier = (transaction_count * 1000000.0) /
-                        (target * Session_List.back()->_start);
+      rate_multiplier = (transaction_count * 1000000.0) / (target * Session_List.back()->_start);
     }
-    errata.info("Rate multiplier: {}, transaction count: {}, time delta: {}, "
-                "first time {}",
-                rate_multiplier, transaction_count, Session_List.back()->_start,
-                offset_time);
+    errata.info(
+        "Rate multiplier: {}, transaction count: {}, time delta: {}, "
+        "first time {}",
+        rate_multiplier,
+        transaction_count,
+        Session_List.back()->_start,
+        offset_time);
   }
 
   if (repeat_arg.size() == 1) {
@@ -493,55 +551,77 @@ void Engine::command_run() {
 
   auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::high_resolution_clock::now() - start);
-  errata.info("{} transactions in {} sessions (reuse {:.2f}) in {} ({:.3f} / "
-              "millisecond).",
-              n_txn, n_ssn, n_txn / static_cast<double>(n_ssn), delta,
-              n_txn / static_cast<double>(delta.count()));
+  errata.info(
+      "{} transactions in {} sessions (reuse {:.2f}) in {} ({:.3f} / "
+      "millisecond).",
+      n_txn,
+      n_ssn,
+      n_txn / static_cast<double>(n_ssn),
+      delta,
+      n_txn / static_cast<double>(delta.count()));
 };
 
-int main(int /* argc */, char const *argv[]) {
-
+int
+main(int /* argc */, char const *argv[])
+{
   block_sigpipe();
 
   Engine engine;
 
   engine.parser
-      .add_option("--verbose", "",
-                  "Enable verbose output:"
-                  "\n\terror: Only print errors."
-                  "\n\twarn: Print warnings and errors."
-                  "\n\tinfo: Print info messages in addition to warnings and "
-                  "errors. This is the default verbosity level."
-                  "\n\tdiag: Print debug messages in addition to info, "
-                  "warnings, and errors,",
-                  "", 1, "info")
+      .add_option(
+          "--verbose",
+          "",
+          "Enable verbose output:"
+          "\n\terror: Only print errors."
+          "\n\twarn: Print warnings and errors."
+          "\n\tinfo: Print info messages in addition to warnings and "
+          "errors. This is the default verbosity level."
+          "\n\tdiag: Print debug messages in addition to info, "
+          "warnings, and errors,",
+          "",
+          1,
+          "info")
       .add_option("--version", "-V", "Print version string")
       .add_option("--help", "-h", "Print usage information");
 
   engine.parser
-      .add_command(Engine::COMMAND_RUN.data(), Engine::COMMAND_RUN_ARGS.data(),
-                   "", MORE_THAN_ONE_ARG_N,
-                   [&]() -> void { engine.command_run(); })
+      .add_command(
+          Engine::COMMAND_RUN.data(),
+          Engine::COMMAND_RUN_ARGS.data(),
+          "",
+          MORE_THAN_ONE_ARG_N,
+          [&]() -> void { engine.command_run(); })
       .add_option("--no-proxy", "", "Use proxy data instead of client data.")
       .add_option("--repeat", "", "Repeatedly replay data set", "", 1, "")
-      .add_option("--sleep-limit", "",
-                  "Limit the amount of time spent sleeping between replays "
-                  "(microseconds)",
-                  "", 1, "")
+      .add_option(
+          "--sleep-limit",
+          "",
+          "Limit the amount of time spent sleeping between replays "
+          "(microseconds)",
+          "",
+          1,
+          "")
       .add_option("--rate", "", "Specify desired transacton rate", "", 1, "")
-      .add_option("--strict", "-s",
-                  "Verify all proxy responses against the content in the yaml "
-                  "file as opposed to "
-                  "just those with verification elements.")
-      .add_option("--keys", "-k", "A whitelist of transactions to send.", "",
-                  MORE_THAN_ZERO_ARG_N, "");
+      .add_option(
+          "--strict",
+          "-s",
+          "Verify all proxy responses against the content in the yaml "
+          "file as opposed to "
+          "just those with verification elements.")
+      .add_option(
+          "--keys",
+          "-k",
+          "A whitelist of transactions to send.",
+          "",
+          MORE_THAN_ZERO_ARG_N,
+          "");
 
   // parse the arguments
   engine.arguments = engine.parser.parse(argv);
 
   std::string verbosity = "info";
-  if (const auto verbose_argument{engine.arguments.get("verbose")};
-      verbose_argument) {
+  if (const auto verbose_argument{engine.arguments.get("verbose")}; verbose_argument) {
     verbosity = verbose_argument.value();
   }
   if (!configure_logging(verbosity)) {
