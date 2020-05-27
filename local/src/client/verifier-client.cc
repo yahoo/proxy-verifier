@@ -160,8 +160,8 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
         }
       }
     } else {
-      errata.warn(
-          R"(Session at "{}":{} has a value for "{}" that is not a sequence..)",
+      errata.error(
+          R"(Session at "{}":{} has a value for "{}" that is not a sequence.)",
           _path,
           _ssn->_line_no,
           YAML_SSN_PROTOCOL_KEY);
@@ -181,7 +181,7 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
       if (t != 0) {
         _ssn->_start = t / 1000; // Convert to usec from nsec
       } else {
-        errata.warn(
+        errata.error(
             R"(Session at "{}":{} has a "{}" value "{}" that is not a positive integer.)",
             _path,
             _ssn->_line_no,
@@ -189,7 +189,7 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
             start_node.Scalar());
       }
     } else {
-      errata.warn(
+      errata.error(
           R"(Session at "{}":{} has a "{}" key that is not a scalar.)",
           _path,
           _ssn->_line_no,

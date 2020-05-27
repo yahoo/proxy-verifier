@@ -2537,7 +2537,7 @@ Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
     root = YAML::Load(content);
     yaml_merge(root);
   } catch (std::exception const &ex) {
-    errata.warn(R"(Exception: {} in "{}".)", ex.what(), path);
+    errata.error(R"(Exception: {} in "{}".)", ex.what(), path);
   }
   if (!errata.is_ok()) {
     return std::move(errata);
