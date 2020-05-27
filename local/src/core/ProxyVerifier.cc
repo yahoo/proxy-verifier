@@ -298,7 +298,9 @@ Session::drain_body_internal(
 swoc::Rv<size_t>
 Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView initial)
 {
-  swoc::Rv<size_t> num_drained_bytes = 0; // bytes drained for the content body.
+  // The number of content body bytes drained. initial contains the body bytes
+  // already drained, so we initialize it to that size.
+  swoc::Rv<size_t> num_drained_bytes = initial.size();
   std::string buff;
   if (expected_content_size < initial.size() && !hdr._chunked_p) {
     // We do not emit this error for chunked responses as a concession. If the
@@ -368,7 +370,6 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::T
     }
     num_drained_bytes.errata().diag("Drained {} chunked bytes.", num_drained_bytes.result());
   } else { // Content-Length instead of chunked.
-    num_drained_bytes = initial.size();
     while (num_drained_bytes < expected_content_size) {
       ssize_t n = read(
           {buff.data(),
@@ -671,12 +672,12 @@ Session::do_connect(swoc::IPEndpoint const *real_target)
     if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
       errata.error(R"(Could not set reuseaddr on socket {} - {}.)", socket_fd, swoc::bwf::Errno{});
     } else {
-      errata = this->set_fd(socket_fd);
+      errata.note(this->set_fd(socket_fd));
       if (errata.is_ok()) {
         if (0 == ::connect(socket_fd, &real_target->sa, real_target->size())) {
           static const int ONE = 1;
           setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
-          errata = this->connect();
+          errata.note(this->connect());
         } else {
           errata.error(R"(Failed to connect socket {}: - {})", *real_target, swoc::bwf::Errno{});
         }
@@ -687,7 +688,7 @@ Session::do_connect(swoc::IPEndpoint const *real_target)
   } else {
     errata.error(R"(Failed to open socket - {})", swoc::bwf::Errno{});
   }
-  return errata;
+  return std::move(errata);
 }
 
 swoc::Errata
