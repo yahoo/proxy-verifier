@@ -143,6 +143,88 @@ With these two invocations, the verifier-client and verifier-server will replay 
 sessions and transactions in `<replay_file_directory>`  and perform any field
 verification described therein.
 
+### Optional Arguments
+
+#### --keys
+
+`--keys` can be passed to the verifier-client to specify a subset of keys from
+the replay file to run. Only the transactions from the space-separated list of
+keys will be replayed. For example, the following invocation will only run the
+transactions with keys whose values are 3 and 5:
+
+```
+verifier-client \
+    run \
+    <replay_file_diretory> \
+    127.0.0.1:8082 \
+    127.0.0.1:4443 \
+    --keys 3 5
+```
+
+This is a client-side only option.
+
+#### --verbose
+
+Proxy Verifier has four levels of verbosity that it can run with:
+
+| Verbosity | Description |
+| --------- | ----------- |
+| error     | Transactions either failed to run or failed verification. |
+| warning   | A non-failing problem occurred but something is likely to go wrong in the future. |
+| info      | High level test execution information. |
+| diag      | Low level debug information. |
+
+
+Each level implies the ones above it. Thus, if a user specifies a verbosity
+level of `warning`, then both warning and error messages are reported.
+
+By default, Proxy Verifier runs at `info` verbosity, only producing summary
+output by both the client and the server along with any warnings and errors it
+found. This can be tweaked via the `--verbose` flag. Here's an example of requesting
+the most verbose level of logging (`diag`):
+
+```
+verifier-client \
+    run \
+    <replay_file_diretory> \
+    127.0.0.1:8082 \
+    127.0.0.1:4443 \
+    --verbose diag
+```
+
+#### --no-proxy
+
+As explained above, replay files contain traffic information for both client to
+proxy traffic and proxy to server traffic.  Under certain circumstances it may
+be helpful to run the Verifier client directly against the Verifier server.
+This can be useful while developing Proxy Verifier itself, for example,
+allowing the developer to do some limited testing without requiring the setup
+of a test proxy.
+
+To support this, the Verifier client has the `--no-proxy` option. If this
+option is used, then the client has its expectations configured such that it
+assumes it is run against the Verifier server rather than a proxy. Effectively
+this means that instead of trying to run the client to proxy traffic, it will
+instead act as the proxy host for the Verifier server and will run the proxy to
+server traffic. Concretely, this means that the Verifier client will replay the
+`proxy-request` and `proxy-response` nodes rather than the `client-request` and
+`client-response` nodes.
+
+This is a client-side only option.
+
+
+#### --strict
+
+Generally, very little about the replayed traffic is verified except what is
+explicitly specified via field verification (see above). This is by design,
+allowing the user to replay traffic with only the requested content being
+verified. In high-volume cases, such as situations where Proxy Verifier is
+being used to scale test the proxy, traffic verification may be considered
+unimportant or even unnecessarily noisy. If, however, the user wants every
+field to be verified regardless of specification, then the `--strict` option
+can be passed to either or both the Proxy Verifier client and server to report
+any verification issues against every field specified in the replay file.
+
 ## Contribute
 
 Please refer to [CONTRIBUTING](CONTRIBUTING.md) for information about how to get involved. We welcome issues, questions, and pull requests.
