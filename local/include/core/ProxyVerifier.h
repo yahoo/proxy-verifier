@@ -883,17 +883,14 @@ class TLSSession : public Session
 public:
   using super_type = Session;
 
+  TLSSession() = default;
+  TLSSession(swoc::TextView const &client_sni);
+  ~TLSSession() override;
+
   /** @see Session::read */
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   /** @see Session::write */
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
-  TLSSession() = default;
-  TLSSession(swoc::TextView const &client_sni) : _client_sni(client_sni) { }
-  ~TLSSession() override
-  {
-    if (_ssl)
-      SSL_free(_ssl);
-  }
 
   /** @see Session::close */
   void close() override;
