@@ -9,7 +9,7 @@
 - "uuid": "1"
 - "x-test-header": "backAtYou"
 
-``Reading response body: 0000000 0000001 .
+``Drained 16 bytes.
 ``
 ``Absence Violation: Present. Key: "2", Name: "x-another-response", Value: "response"
 ``
@@ -18,7 +18,7 @@
 - "uuid": "2"
 - "x-another-response": "response"
 ``
-``Reading response body: 0000000 0000001 0000002 0000003 .
+``Drained 32 bytes.
 ``
 ``2 transactions in 1 sessions``
 ``
