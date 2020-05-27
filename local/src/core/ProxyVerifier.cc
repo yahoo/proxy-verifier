@@ -169,6 +169,19 @@ Session::read(swoc::MemSpan<char> span)
   return std::move(zret);
 }
 
+TLSSession::TLSSession(swoc::TextView const &client_sni)
+  : _client_sni(client_sni)
+{
+}
+
+TLSSession::~TLSSession()
+{
+  if (_ssl != nullptr) {
+    SSL_free(_ssl);
+    _ssl = nullptr;
+  }
+}
+
 swoc::Rv<ssize_t>
 TLSSession::read(swoc::MemSpan<char> span)
 {
@@ -581,6 +594,9 @@ Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint const
       txn_errata.note(this->do_connect(real_target));
       if (!txn_errata.is_ok()) {
         txn_errata.error(R"(Failed to reconnect HTTP/1 key={}.)", txn._req.make_key());
+        session_errata.note(txn_errata);
+        // If we don't have a valid connection, there's no point in continuing.
+        break;
       }
     }
     const auto before = clock_type::now();
@@ -631,12 +647,11 @@ swoc::Errata
 Session::set_fd(int fd)
 {
   swoc::Errata errata;
-  this->close();
   _fd = fd;
   return std::move(errata);
 }
 
-// Complete the TLS handshake
+// Complete the TLS handshake (server-side).
 swoc::Errata
 TLSSession::accept()
 {
@@ -704,7 +719,7 @@ TLSSession::connect()
   return this->connect(client_ctx);
 }
 
-// Complete the TLS handshake
+// Complete the TLS handshake (client-side).
 swoc::Errata
 TLSSession::connect(SSL_CTX *clt_ctx)
 {
@@ -774,6 +789,8 @@ H2Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint con
       errata.note(this->do_connect(real_target));
       if (!errata.is_ok()) {
         errata.error(R"(Failed to reconnect HTTP/2 key={}.)", key);
+        // If we don't have a valid connection, there's no point in continuing.
+        break;
       }
     }
     errata.note(this->run_transaction(txn));
