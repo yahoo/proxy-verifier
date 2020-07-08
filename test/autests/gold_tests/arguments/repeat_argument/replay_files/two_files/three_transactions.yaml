@@ -1,0 +1,91 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ { name: tcp }, {name: ip, version: 4} ]
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 11 ]
+    client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/path/11"
+      headers:
+        fields:
+        - [ Host, example.one ]
+
+    proxy-request:
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+
+    proxy-response:
+
+
+- protocol: [ { name: tcp }, {name: ip, version: 4} ]
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 12 ]
+    client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.two/path/12"
+      headers:
+        fields:
+        - [ Host, example.one ]
+
+    proxy-request:
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+
+    proxy-response:
+
+- protocol: [ { name: tcp }, {name: ip, version: 4} ]
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 13 ]
+    client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.two/path/13"
+      headers:
+        fields:
+        - [ Host, example.one ]
+
+    proxy-request:
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+
+    proxy-response:
