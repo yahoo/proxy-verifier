@@ -2,13 +2,7 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ tls/1.2, ipv4, tcp ]
-  tls:
-    client:
-      sni: "bob"
-      verify-mode: 7
-    server:
-      verify-mode: 7
+- protocol: [ {name: tls, version: 1.2, sni: bob}, { name: tcp }, {name: ip, version: 4} ]
   transactions:
   - all: { headers: { fields: [[ uuid, 1 ]]}}
     client-request:
@@ -20,9 +14,7 @@ sessions:
         fields:
         - [ Host, example.one ]
     proxy-request:
-      protocol: [ tls/1.2, ipv4, tcp ]
-      tls:
-        verify_mode: 1
+      protocol: [ {name: tls, version: 1.2, sni: bob, proxy-provided-certificate: true}, { name: tcp }, {name: ip, version: 4} ]
       version: "1.1"
       scheme: "https"
       method: "GET"

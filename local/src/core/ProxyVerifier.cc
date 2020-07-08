@@ -135,24 +135,65 @@ configure_logging(const std::string_view verbose_argument)
   return std::move(errata);
 }
 
+swoc::Rv<YAML::Node const>
+ReplayFileHandler::parse_for_protocol_node(
+    YAML::Node const &protocol_node,
+    std::string_view protocol_name)
+{
+  swoc::Rv<YAML::Node const> desired_node = YAML::Node{YAML::NodeType::Undefined};
+  if (!protocol_node.IsSequence()) {
+    desired_node.errata().error(
+        "Protocol node at {} is not a sequence as required.",
+        protocol_node.Mark());
+    return std::move(desired_node);
+  }
+  if (protocol_node.size() == 0) {
+    desired_node.errata().error("Protocol node at {} is an empty sequence.", protocol_node.Mark());
+    return std::move(desired_node);
+  }
+  for (auto const &protocol_element : protocol_node) {
+    if (!protocol_element.IsMap()) {
+      desired_node.errata().error("Protocol element at {} is not a map.", protocol_element.Mark());
+      return std::move(desired_node);
+    }
+    if (protocol_element[YAML_SSN_PROTOCOL_NAME].Scalar() != protocol_name) {
+      continue;
+    }
+    return swoc::Rv<YAML::Node const>{protocol_element};
+  }
+  return std::move(desired_node);
+}
+
 swoc::Rv<std::string>
-ReplayFileHandler::parse_sni(YAML::Node const &node)
+ReplayFileHandler::parse_sni(YAML::Node const &tls_node)
 {
   swoc::Rv<std::string> sni;
-  if (auto tls_node{node[YAML_SSN_TLS_KEY]}; tls_node) {
-    if (auto client_node{tls_node[YAML_SSN_TLS_CLIENT_KEY]}; client_node) {
-      if (auto sni_node{client_node[YAML_SSN_TLS_SNI_KEY]}; sni_node) {
-        if (sni_node.IsScalar()) {
-          sni.result() = sni_node.Scalar();
-        } else {
-          sni.errata().error(
-              R"(Session has a value for key "{}" that is not a scalar as required.)",
-              YAML_SSN_TLS_SNI_KEY);
-        }
-      }
+  if (auto sni_node{tls_node[YAML_SSN_TLS_SNI_KEY]}; sni_node) {
+    if (sni_node.IsScalar()) {
+      sni.result() = sni_node.Scalar();
+    } else {
+      sni.errata().error(
+          R"(Session has a value for key "{}" that is not a scalar as required.)",
+          YAML_SSN_TLS_SNI_KEY);
     }
   }
   return std::move(sni);
+}
+
+swoc::Rv<int>
+ReplayFileHandler::parse_verify_mode(YAML::Node const &tls_node)
+{
+  swoc::Rv<int> verify_mode{-1};
+  if (auto tls_verify_mode{tls_node[YAML_SSN_TLS_VERIFY_MODE_KEY]}; tls_verify_mode) {
+    if (tls_verify_mode.IsScalar()) {
+      verify_mode = std::stoi(tls_verify_mode.Scalar());
+    } else {
+      verify_mode.errata().error(
+          R"(Session has a value for key "{}" that is not a scalar as required.)",
+          YAML_SSN_TLS_SNI_KEY);
+    }
+  }
+  return std::move(verify_mode);
 }
 
 Session::Session() { }

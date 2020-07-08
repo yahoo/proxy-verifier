@@ -2,7 +2,7 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ ipv4, tcp ]
+- protocol: [ { name: tcp }, {name: ip, version: 4} ]
   transactions:
   - all: { headers: { fields: [[ uuid, 1 ]]}}
     client-request:

@@ -92,30 +92,6 @@ private:
 
 bool Shutdown_Flag = false;
 
-/** Parse a node for the given tls:client:verify-mode node value.
- *
- * @return The value of tls:client:verify-mode, or -1 if it doesn't exist.
- */
-static swoc::Rv<int>
-parse_client_verify_mode(YAML::Node const &node)
-{
-  swoc::Rv<int> verify_mode{-1};
-  if (auto tls_node{node[YAML_SSN_TLS_KEY]}; tls_node) {
-    if (auto server_node{tls_node[YAML_SSN_TLS_CLIENT_KEY]}; server_node) {
-      if (auto tls_verify_mode{server_node[YAML_SSN_TLS_VERIFY_MODE_KEY]}; tls_verify_mode) {
-        if (tls_verify_mode.IsScalar()) {
-          verify_mode = std::stoi(tls_verify_mode.Scalar());
-        } else {
-          verify_mode.errata().error(
-              R"(Session has a value for key "{}" that is not a scalar as required.)",
-              YAML_SSN_TLS_SNI_KEY);
-        }
-      }
-    }
-  }
-  return std::move(verify_mode);
-}
-
 class ClientThreadInfo : public ThreadInfo
 {
 public:
@@ -166,41 +142,43 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
   _ssn->_path = _path;
   _ssn->_line_no = node.Mark().line;
 
-  if (node[YAML_SSN_PROTOCOL_KEY]) {
-    auto proto_node{node[YAML_SSN_PROTOCOL_KEY]};
-    if (proto_node.IsSequence()) {
-      for (auto const &n : proto_node) {
-        if (TextView{n.Scalar()}.starts_with_nocase(YAML_H2_PREFIX)) {
-          _ssn->is_h2 = true;
-        }
-        if (TextView{n.Scalar()}.starts_with_nocase(YAML_TLS_PREFIX)) {
-          _ssn->is_tls = true;
-          const auto sni = parse_sni(node);
-          if (sni.is_ok()) {
-            _ssn->_client_sni = sni.result();
-          } else {
-            errata.error(
-                R"(Session at "{}":{} has a value for key "{}" that is not a scalar as required.)",
-                _path,
-                _ssn->_line_no,
-                YAML_SSN_TLS_SNI_KEY);
-          }
-          break;
-        }
-      }
-    } else {
-      errata.error(
-          R"(Session at "{}":{} has a value for "{}" that is not a sequence.)",
-          _path,
-          _ssn->_line_no,
-          YAML_SSN_PROTOCOL_KEY);
+  if (auto protocol_sequence_node{node[YAML_SSN_PROTOCOL_KEY]}; protocol_sequence_node) {
+    auto const tls_node =
+        parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
+    if (!tls_node.is_ok()) {
+      errata.note(std::move(tls_node.errata()));
+      return std::move(errata);
     }
-  } else {
-    errata.info(
-        R"(Session at "{}":{} has no "{}" key.)",
-        _path,
-        _ssn->_line_no,
-        YAML_SSN_PROTOCOL_KEY);
+    if (tls_node.result().IsDefined()) {
+      _ssn->is_tls = true;
+      auto const sni = parse_sni(tls_node);
+      if (!sni.is_ok()) {
+        errata.note(std::move(sni.errata()));
+        return errata;
+      }
+      if (!sni.result().empty()) {
+        _ssn->_client_sni = sni.result();
+      }
+      auto const verify_mode = parse_verify_mode(tls_node);
+      if (!verify_mode.is_ok()) {
+        errata.note(std::move(verify_mode.errata()));
+        return std::move(errata);
+      }
+      if (verify_mode > 0) {
+        _ssn->_client_verify_mode = verify_mode;
+      }
+    }
+
+    auto const http_node =
+        parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_HTTP_NAME);
+    if (!http_node.is_ok()) {
+      errata.note(std::move(http_node.errata()));
+      return std::move(errata);
+    }
+    if (http_node.result().IsDefined() &&
+        http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
+      _ssn->is_h2 = true;
+    }
   }
 
   if (node[YAML_SSN_START_KEY]) {
@@ -224,14 +202,6 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
           _ssn->_line_no,
           YAML_SSN_START_KEY);
     }
-  }
-
-  auto verify_mode = parse_client_verify_mode(node);
-  if (!verify_mode.is_ok()) {
-    errata.note(std::move(verify_mode.errata()));
-    return std::move(errata);
-  } else if (verify_mode >= 0) {
-    _ssn->_client_verify_mode = verify_mode;
   }
 
   return std::move(errata);

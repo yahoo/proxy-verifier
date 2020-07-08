@@ -37,17 +37,18 @@ using clock_type = std::chrono::system_clock;
 // These need to be @c std::string or the node look up will construct a @c
 // std::string.
 static const std::string YAML_META_KEY{"meta"};
-static const std::string YAML_TLS_PREFIX{"tls"};
-static const std::string YAML_H2_PREFIX{"h2"};
 static const std::string YAML_GLOBALS_KEY{"global-field-rules"};
 static const std::string YAML_SSN_KEY{"sessions"};
-static const std::string YAML_SSN_PROTOCOL_KEY{"protocol"};
 static const std::string YAML_SSN_START_KEY{"connection-time"};
-static const std::string YAML_SSN_TLS_KEY{"tls"};
-static const std::string YAML_SSN_TLS_CLIENT_KEY{"client"};
-static const std::string YAML_SSN_TLS_SERVER_KEY{"server"};
+static const std::string YAML_SSN_PROTOCOL_KEY{"protocol"};
+static const std::string YAML_SSN_PROTOCOL_NAME{"name"};
+static const std::string YAML_SSN_PROTOCOL_VERSION{"version"};
+static const std::string YAML_SSN_PROTOCOL_TLS_NAME{"tls"};
+static const std::string YAML_SSN_PROTOCOL_HTTP_NAME{"http"};
 static const std::string YAML_SSN_TLS_SNI_KEY{"sni"};
 static const std::string YAML_SSN_TLS_VERIFY_MODE_KEY{"verify-mode"};
+static const std::string YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY{"request-certificate"};
+static const std::string YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY{"proxy-provided-certificate"};
 static const std::string YAML_TXN_KEY{"transactions"};
 static const std::string YAML_CLIENT_REQ_KEY{"client-request"};
 static const std::string YAML_PROXY_REQ_KEY{"proxy-request"};
@@ -1201,7 +1202,38 @@ public:
   }
 
 protected:
-  swoc::Rv<std::string> parse_sni(YAML::Node const &node);
+  /** Parse the "protocol" node for the requested protocol.
+   *
+   * Keep in mind that the "protocol" node is the protocol stack containing a
+   * set of protocol descriptions, such as "tcp", "tls", etc.
+   *
+   * @param[in] protocol_node The "protocol" node from which to search for a
+   * specified protocol node.
+   *
+   * @para[in] protocol_name The key for the protocol node to return.
+   *
+   * @return The protocol node or a node whose type is "YAML::NodeType::Undefined"
+   * if the node did not exist in the protocol map.
+   */
+  static swoc::Rv<YAML::Node const> parse_for_protocol_node(
+      YAML::Node const &protocol_node,
+      std::string_view protocol_name);
+
+  /** Parse a "tls" node for an "sni" key and return the value.
+   *
+   * @param[in] tls_node The tls node from which to parse the SNI.
+   *
+   * @return The SNI from the "tls" node or empty string if it doesn't exist.
+   */
+  static swoc::Rv<std::string> parse_sni(YAML::Node const &tls_node);
+
+  /** Parse a "tls" node for the given verify-mode node value.
+   *
+   * @param[in] tls_node The tls node from which to parse the verify-mode.
+   *
+   * @return The value of verify-mode, or -1 if it doesn't exist.
+   */
+  static swoc::Rv<int> parse_verify_mode(YAML::Node const &tls_node);
 
 protected:
   /** The replay file associated with this handler.
