@@ -25,9 +25,6 @@ proxy = r.AddProxyProcess("proxy1", listen_port=4443, server_port=4444,
                           use_ssl=True)
 
 client.Streams.stdout += Testers.ContainsExpression(
-        "Setting client TLS verification mode against the proxy to: 7.",
-        "Verify that the verify-mode of the client is 7 as set in tls:client:verify-mode.")
-client.Streams.stdout += Testers.ContainsExpression(
         "Proxy TLS verification result: passed",
         "Verify that the client verified the proxy's cert.")
 

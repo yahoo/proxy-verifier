@@ -5,8 +5,13 @@
     "sessions": [
         {
             "protocol": [
-                "tcp",
-                "ipv4"
+                {
+                    "name": "tcp"
+                },
+                {
+                    "name": "ip",
+                    "version": 4
+                }
             ],
             "connection-time": 1552705896896003926,
             "transactions": [
