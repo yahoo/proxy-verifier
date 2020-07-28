@@ -126,7 +126,7 @@ parse_proxy_provided_certificate(YAML::Node const &tls_node)
           YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY);
     }
   }
-  return std::move(proxy_provided_certificate);
+  return proxy_provided_certificate;
 }
 
 /** Parse the "tls" node for whether the server is directed to request a
@@ -154,7 +154,7 @@ parse_request_certificate(YAML::Node const &tls_node)
           YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY);
     }
   }
-  return std::move(should_request_certificate);
+  return should_request_certificate;
 }
 
 std::unordered_map<std::string, Txn, std::hash<std::string_view>> Transactions;
@@ -215,7 +215,7 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
         YAML_SERVER_RSP_KEY);
   }
   if (!errata.is_ok()) {
-    return std::move(errata);
+    return errata;
   }
   LoadMutex.lock();
   return {};
@@ -228,19 +228,19 @@ ServerReplayFileHandler::handle_verify_mode(YAML::Node const &tls_node, std::str
   auto should_request_certificate = parse_request_certificate(tls_node);
   if (!should_request_certificate.is_ok()) {
     verify_mode.errata().note(std::move(should_request_certificate.errata()));
-    return std::move(verify_mode);
+    return verify_mode;
   }
 
   auto proxy_provided_certificate = parse_proxy_provided_certificate(tls_node);
   if (!proxy_provided_certificate.is_ok()) {
     verify_mode.errata().note(std::move(proxy_provided_certificate.errata()));
-    return std::move(verify_mode);
+    return verify_mode;
   }
 
   auto const verify_mode_node_value = parse_verify_mode(tls_node);
   if (!verify_mode_node_value.is_ok()) {
     verify_mode.errata().note(std::move(verify_mode_node_value.errata()));
-    return std::move(verify_mode);
+    return verify_mode;
   }
 
   /* And all of these can exist concurrently but they must all agree. */
@@ -260,7 +260,7 @@ ServerReplayFileHandler::handle_verify_mode(YAML::Node const &tls_node, std::str
         YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY,
         YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY,
         YAML_SSN_TLS_VERIFY_MODE_KEY);
-    return std::move(verify_mode);
+    return verify_mode;
   }
 
   if (verify_mode_node_value > 0) {
@@ -279,7 +279,7 @@ ServerReplayFileHandler::handle_verify_mode(YAML::Node const &tls_node, std::str
         tls_node.Mark().line,
         sni);
   }
-  return std::move(verify_mode);
+  return verify_mode;
 }
 
 swoc::Errata
@@ -288,40 +288,40 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
   _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
   swoc::Errata errata = _txn._req.load(node);
   if (!errata.is_ok()) {
-    return std::move(errata);
+    return errata;
   }
   if (!node[YAML_SSN_PROTOCOL_KEY]) {
-    return std::move(errata);
+    return errata;
   }
   auto const protocol_sequence_node{node[YAML_SSN_PROTOCOL_KEY]};
   if (!protocol_sequence_node) {
     // A protocol sequence description on the response side is optional.
-    return std::move(errata);
+    return errata;
   }
   auto const tls_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
   if (!tls_node.is_ok()) {
     errata.note(std::move(tls_node.errata()));
-    return std::move(errata);
+    return errata;
   }
   if (!tls_node.result()) {
-    return std::move(errata);
+    return errata;
   }
   auto const &sni_rv = parse_sni(tls_node);
   if (!sni_rv.is_ok()) {
     errata.note(std::move(sni_rv.errata()));
-    return std::move(errata);
+    return errata;
   }
   auto const sni = sni_rv.result();
   if (sni.empty()) {
-    return std::move(errata);
+    return errata;
   }
 
   auto const verify_mode = handle_verify_mode(tls_node, sni);
   if (!verify_mode.is_ok()) {
     errata.note(std::move(verify_mode.errata()));
-    return std::move(errata);
+    return errata;
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -521,7 +521,7 @@ do_listen(swoc::IPEndpoint &server_addr, bool do_tls)
   if (!errata.is_ok() && socket_fd >= 0) {
     close(socket_fd);
   }
-  return std::move(errata);
+  return errata;
 }
 
 void
