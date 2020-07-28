@@ -41,7 +41,7 @@ using namespace swoc::literals;
 using namespace std::literals;
 namespace chrono = std::chrono;
 
-constexpr auto Transaction_Delay_Cutoff = 1500ms;
+constexpr auto Transaction_Delay_Cutoff = 10s;
 
 bool Verbose = false;
 
@@ -94,7 +94,7 @@ block_sigpipe()
     zret = -1;
     zret.errata().error(R"(Could not block SIGPIPE: {})", swoc::bwf::Errno{});
   }
-  return std::move(zret);
+  return zret;
 }
 
 swoc::Errata
@@ -112,7 +112,7 @@ configure_logging(const std::string_view verbose_argument)
     severity_cutoff = swoc::Severity::DIAG;
   } else {
     errata.error("Unrecognized verbosity parameter: {}", verbose_argument);
-    return std::move(errata);
+    return errata;
   }
   errata.diag("Configuring logging at level {}", severity_cutoff);
 
@@ -132,7 +132,7 @@ configure_logging(const std::string_view verbose_argument)
       }
     }
   });
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Rv<YAML::Node const>
@@ -145,23 +145,23 @@ ReplayFileHandler::parse_for_protocol_node(
     desired_node.errata().error(
         "Protocol node at {} is not a sequence as required.",
         protocol_node.Mark());
-    return std::move(desired_node);
+    return desired_node;
   }
   if (protocol_node.size() == 0) {
     desired_node.errata().error("Protocol node at {} is an empty sequence.", protocol_node.Mark());
-    return std::move(desired_node);
+    return desired_node;
   }
   for (auto const &protocol_element : protocol_node) {
     if (!protocol_element.IsMap()) {
       desired_node.errata().error("Protocol element at {} is not a map.", protocol_element.Mark());
-      return std::move(desired_node);
+      return desired_node;
     }
     if (protocol_element[YAML_SSN_PROTOCOL_NAME].Scalar() != protocol_name) {
       continue;
     }
     return swoc::Rv<YAML::Node const>{protocol_element};
   }
-  return std::move(desired_node);
+  return desired_node;
 }
 
 swoc::Rv<std::string>
@@ -177,7 +177,7 @@ ReplayFileHandler::parse_sni(YAML::Node const &tls_node)
           YAML_SSN_TLS_SNI_KEY);
     }
   }
-  return std::move(sni);
+  return sni;
 }
 
 swoc::Rv<int>
@@ -193,7 +193,7 @@ ReplayFileHandler::parse_verify_mode(YAML::Node const &tls_node)
           YAML_SSN_TLS_SNI_KEY);
     }
   }
-  return std::move(verify_mode);
+  return verify_mode;
 }
 
 Session::Session() { }
@@ -210,7 +210,7 @@ Session::read(swoc::MemSpan<char> span)
   if (zret <= 0) {
     this->close();
   }
-  return std::move(zret);
+  return zret;
 }
 
 TLSSession::TLSSession(swoc::TextView const &client_sni, int client_verify_mode)
@@ -245,7 +245,7 @@ TLSSession::read(swoc::MemSpan<char> span)
   } else if (zret == 0) {
     this->close();
   }
-  return std::move(zret);
+  return zret;
 }
 
 swoc::Rv<ssize_t>
@@ -277,7 +277,7 @@ Session::write(HttpHeader const &hdr)
           swoc::bwf::Errno{});
     }
   }
-  return std::move(zret);
+  return zret;
 }
 
 swoc::Rv<ssize_t>
@@ -312,7 +312,7 @@ Session::read_header(swoc::FixedBufferWriter &w)
   if (zret.is_ok() && zret == -1) {
     zret.errata().error(R"(Header exceeded maximum size {}.)", w.capacity());
   }
-  return std::move(zret);
+  return zret;
 }
 
 swoc::Rv<size_t>
@@ -350,7 +350,7 @@ Session::drain_body_internal(
       this->drain_body(rsp_hdr_from_wire, expected_content_size, initial);
   num_drained_bytes.result() = bytes_drained;
   num_drained_bytes.errata().note(std::move(drain_errata));
-  return std::move(num_drained_bytes);
+  return num_drained_bytes;
 }
 
 swoc::Rv<size_t>
@@ -374,7 +374,7 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::T
         R"(Body overrun: received {} bytes of content, expected {}.)",
         initial.size(),
         expected_content_size);
-    return std::move(num_drained_bytes);
+    return num_drained_bytes;
   }
 
   // If there's a status, and it indicates no body, we're done. This is true
@@ -382,7 +382,7 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::T
   // a 304 response, for example: the Content-Length indicates the size of
   // the cached response, but the body is intentionally omitted.
   if (hdr._status && HttpHeader::STATUS_NO_CONTENT[hdr._status]) {
-    return std::move(num_drained_bytes);
+    return num_drained_bytes;
   }
 
   buff.reserve(std::min<size_t>(expected_content_size, MAX_DRAIN_BUFFER_SIZE));
@@ -391,7 +391,7 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::T
     num_drained_bytes.errata().error(
         R"(drain_body: stream closed. Could not read {} bytes)",
         num_drained_bytes.result());
-    return std::move(num_drained_bytes);
+    return num_drained_bytes;
   }
 
   if (hdr._chunked_p) {
@@ -424,7 +424,7 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::T
           R"(Unexpected chunked content: expected {} bytes, drained {} bytes.)",
           expected_content_size,
           num_drained_bytes.result());
-      return std::move(num_drained_bytes);
+      return num_drained_bytes;
     }
     num_drained_bytes.errata().diag("Drained {} chunked bytes.", num_drained_bytes.result());
   } else { // Content-Length instead of chunked.
@@ -450,11 +450,11 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::T
           R"(Invalid body read: expected {} fixed bytes, drained {} byts.)",
           expected_content_size,
           num_drained_bytes.result());
-      return std::move(num_drained_bytes);
+      return num_drained_bytes;
     }
     num_drained_bytes.errata().diag("Drained {} bytes.", num_drained_bytes.result());
   }
-  return std::move(num_drained_bytes);
+  return num_drained_bytes;
 }
 
 swoc::Rv<ssize_t>
@@ -533,7 +533,7 @@ Session::write_body(HttpHeader const &hdr)
     close();
   }
 
-  return std::move(bytes_written);
+  return bytes_written;
 }
 
 swoc::Errata
@@ -565,7 +565,7 @@ Session::run_transaction(Txn const &json_txn)
           errata.error(
               R"(Failed to find a well-formed, completed HTTP response: {})",
               (result == HttpHeader::PARSE_INCOMPLETE ? "PARSE_INCOMPLETE" : "PARSE_ERROR"));
-          return std::move(errata);
+          return errata;
         }
         if (rsp_hdr_from_wire._status == 100) {
           errata.diag("100-Continue response. Read another header.");
@@ -579,11 +579,11 @@ Session::run_transaction(Txn const &json_txn)
 
             if (!result.is_ok()) {
               errata.error(R"(Failed to parse post 100 header.)");
-              return std::move(errata);
+              return errata;
             }
           } else {
             errata.error(R"(Failed to read post 100 header.)");
-            return std::move(errata);
+            return errata;
           }
         }
         errata.diag(R"(Status: "{}")", rsp_hdr_from_wire._status);
@@ -603,7 +603,7 @@ Session::run_transaction(Txn const &json_txn)
               this->drain_body_internal(rsp_hdr_from_wire, json_txn, w.view().substr(body_offset));
           errata.note(std::move(drain_errata));
 
-          return std::move(errata);
+          return errata;
         }
         if (rsp_hdr_from_wire.verify_headers(key, *json_txn._rsp._fields_rules)) {
           errata.error(R"(Response headers did not match expected response headers.)");
@@ -621,7 +621,7 @@ Session::run_transaction(Txn const &json_txn)
       errata.error(R"(Invalid response read key={}.)", key);
     }
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -659,7 +659,7 @@ Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint const
     }
     session_errata.note(std::move(txn_errata));
   }
-  return std::move(session_errata);
+  return session_errata;
 }
 
 swoc::Rv<ssize_t>
@@ -670,7 +670,7 @@ TLSSession::write(swoc::TextView view)
   while (num_written < total_size) {
     if (this->is_closed()) {
       num_written.errata().error("write failed: session is closed");
-      return std::move(num_written);
+      return num_written;
     }
     errno = 0;
     const auto n = SSL_write(this->_ssl, view.data() + num_written, view.size() - num_written);
@@ -679,12 +679,12 @@ TLSSession::write(swoc::TextView view)
           R"(write failed: {}, errno: {})",
           swoc::bwf::SSLError{},
           swoc::bwf::Errno{});
-      return std::move(num_written);
+      return num_written;
     } else {
       num_written.result() += n;
     }
   }
-  return std::move(num_written);
+  return num_written;
 }
 
 swoc::Errata
@@ -692,7 +692,7 @@ Session::set_fd(int fd)
 {
   swoc::Errata errata;
   _fd = fd;
-  return std::move(errata);
+  return errata;
 }
 
 // Complete the TLS handshake (server-side).
@@ -712,10 +712,10 @@ TLSSession::accept()
     int retval = SSL_accept(_ssl);
     if (retval <= 0) {
       errata.error(R"(Failed SSL_accept {}, {}.)", swoc::bwf::SSLError{}, swoc::bwf::Errno{});
-      return std::move(errata);
+      return errata;
     }
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -748,14 +748,14 @@ Session::do_connect(swoc::IPEndpoint const *real_target)
   } else {
     errata.error(R"(Failed to open socket - {})", swoc::bwf::Errno{});
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
 Session::connect()
 {
   swoc::Errata errata;
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -776,7 +776,7 @@ TLSSession::connect(SSL_CTX *client_context)
         get_fd(),
         client_context,
         swoc::bwf::SSLError{});
-    return std::move(errata);
+    return errata;
   }
   SSL_set_fd(_ssl, get_fd());
   if (!_client_sni.empty()) {
@@ -791,13 +791,13 @@ TLSSession::connect(SSL_CTX *client_context)
   int retval = SSL_connect(_ssl);
   if (retval <= 0) {
     errata.error(R"(Failed SSL_connect {}, {}.)", swoc::bwf::SSLError{}, swoc::bwf::Errno{});
-    return std::move(errata);
+    return errata;
   }
   const auto verify_result = SSL_get_verify_result(_ssl);
   errata.diag(
       R"(Proxy TLS verification result: {}.)",
       (verify_result == X509_V_OK ? "passed" : "failed"));
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -856,7 +856,7 @@ H2Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint con
     errata.note(std::move(txn_errata));
   }
   recv_callback(this->get_session(), nullptr, 0, 0, this);
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -870,7 +870,7 @@ H2Session::run_transaction(Txn const &txn)
 
   errata.diag("wrote header");
 
-  return std::move(errata);
+  return errata;
 }
 
 void
@@ -918,7 +918,7 @@ Session::init()
       }
     }
   }
-  return std::move(errata);
+  return errata;
 }
 
 // static
@@ -1059,7 +1059,7 @@ TLSSession::configure_certificates(SSL_CTX *&context)
           swoc::bwf::SSLError{});
     }
   }
-  return std::move(errata);
+  return errata;
 }
 
 // static
@@ -1073,7 +1073,7 @@ TLSSession::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
   server_context = SSL_CTX_new(TLS_server_method());
   if (!server_context) {
     errata.error(R"(Failed to create server_context: {}.)", swoc::bwf::SSLError{});
-    return std::move(errata);
+    return errata;
   }
   errata.note(configure_certificates(server_context));
 
@@ -1084,10 +1084,10 @@ TLSSession::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
   client_context = SSL_CTX_new(TLS_client_method());
   if (!client_context) {
     errata.error(R"(Failed to create client_context: {}.)", swoc::bwf::SSLError{});
-    return std::move(errata);
+    return errata;
   }
   errata.note(configure_certificates(client_context));
-  return std::move(errata);
+  return errata;
 }
 
 // static
@@ -2034,7 +2034,7 @@ HttpHeader::update_content_length(swoc::TextView method)
     _content_size = cl;
     _content_length_p = true;
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -2069,7 +2069,7 @@ HttpHeader::serialize(swoc::BufferWriter &w) const
   }
   w.write(HTTP_EOL);
 
-  return std::move(errata);
+  return errata;
 }
 
 void
@@ -2105,7 +2105,7 @@ HttpFields::parse_global_rules(YAML::Node const &node)
   } else {
     errata.info(R"(Node at {} is missing a fields node.)", node.Mark());
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -2171,7 +2171,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
       }
     }
   }
-  return std::move(errata);
+  return errata;
 }
 
 void
@@ -2391,7 +2391,7 @@ HttpHeader::load(YAML::Node const &node)
     }
   }
 
-  return std::move(errata);
+  return errata;
 }
 
 std::string
@@ -2403,7 +2403,7 @@ HttpHeader::make_key() const
   w.print_n(binding, _key_format);
   key.resize(w.extent());
   swoc::FixedBufferWriter{key.data(), key.size()}.print_n(binding, _key_format);
-  return std::move(key);
+  return key;
 }
 
 // Verify that the fields in 'this' correspond to the provided rules.
@@ -2597,7 +2597,7 @@ HttpHeader::parse_request(swoc::TextView data)
       zret.errata().error("Empty first line in request.");
     }
   }
-  return std::move(zret);
+  return zret;
 }
 
 swoc::Rv<HttpHeader::ParseResult>
@@ -2637,7 +2637,7 @@ HttpHeader::parse_response(swoc::TextView data)
       zret.errata().error("Empty first line in response.");
     }
   }
-  return std::move(zret);
+  return zret;
 }
 
 swoc::BufferWriter &
@@ -2738,13 +2738,13 @@ Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
   HandlerOpener opener(handler, path);
   auto errata = opener.errata;
   if (!errata.is_ok()) {
-    return std::move(errata);
+    return errata;
   }
   std::error_code ec;
   std::string content{swoc::file::load(path, ec)};
   if (ec.value()) {
     errata.error(R"(Error loading "{}": {})", path, ec);
-    return std::move(errata);
+    return errata;
   }
   YAML::Node root;
   auto global_fields_rules = std::make_shared<HttpFields>();
@@ -2755,7 +2755,7 @@ Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
     errata.error(R"(Exception: {} in "{}".)", ex.what(), path);
   }
   if (!errata.is_ok()) {
-    return std::move(errata);
+    return errata;
   }
   if (root[YAML_META_KEY]) {
     auto meta_node{root[YAML_META_KEY]};
@@ -2770,7 +2770,7 @@ Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
   handler.global_config = VerificationConfig{global_fields_rules};
   if (!root[YAML_SSN_KEY]) {
     errata.error(R"(No sessions list ("{}") at "{}":{}.)", YAML_META_KEY, path, root.Mark().line);
-    return std::move(errata);
+    return errata;
   }
   auto ssn_list_node{root[YAML_SSN_KEY]};
   if (!ssn_list_node.IsSequence()) {
@@ -2779,11 +2779,11 @@ Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
         YAML_SSN_KEY,
         path,
         ssn_list_node.Mark());
-    return std::move(errata);
+    return errata;
   }
   if (ssn_list_node.size() == 0) {
     errata.diag(R"(Session list at "{}":{} is an empty list.)", path, ssn_list_node.Mark().line);
-    return std::move(errata);
+    return errata;
   }
   for (auto const &ssn_node : ssn_list_node) {
     // HeaderRules ssn_rules = global_rules;
@@ -2853,7 +2853,7 @@ Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
     session_errata.note(handler.ssn_close());
     errata.note(std::move(session_errata));
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -2920,7 +2920,7 @@ Load_Replay_Directory(
   } else {
     errata.error(R"(Failed to access directory "{}": {}.)", path, swoc::bwf::Errno{});
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -2936,11 +2936,11 @@ parse_ips(std::string arg, std::deque<swoc::IPEndpoint> &target)
     swoc::IPEndpoint addr;
     if (!addr.parse(name)) {
       errata.error(R"("{}" is not a valid IP address.)", name);
-      return std::move(errata);
+      return errata;
     }
     target.push_back(addr);
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -2956,11 +2956,11 @@ resolve_ips(std::string arg, std::deque<swoc::IPEndpoint> &target)
     auto &&[tmp_target, result] = Resolve_FQDN(name);
     if (!result.is_ok()) {
       errata.error(R"("{}" is not a valid IP address.)", name);
-      return std::move(errata);
+      return errata;
     }
     target.push_back(tmp_target);
   }
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Rv<swoc::IPEndpoint>
@@ -3012,7 +3012,7 @@ Resolve_FQDN(swoc::TextView fqdn)
   } else {
     zret.errata().error(R"(Malformed address "{}".)", fqdn);
   }
-  return std::move(zret);
+  return zret;
 }
 
 using namespace std::chrono_literals;

@@ -147,7 +147,7 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
         parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
     if (!tls_node.is_ok()) {
       errata.note(std::move(tls_node.errata()));
-      return std::move(errata);
+      return errata;
     }
     if (tls_node.result().IsDefined()) {
       _ssn->is_tls = true;
@@ -162,7 +162,7 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
       auto const verify_mode = parse_verify_mode(tls_node);
       if (!verify_mode.is_ok()) {
         errata.note(std::move(verify_mode.errata()));
-        return std::move(errata);
+        return errata;
       }
       if (verify_mode > 0) {
         _ssn->_client_verify_mode = verify_mode;
@@ -173,7 +173,7 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
         parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_HTTP_NAME);
     if (!http_node.is_ok()) {
       errata.note(std::move(http_node.errata()));
-      return std::move(errata);
+      return errata;
     }
     if (http_node.result().IsDefined() &&
         http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
@@ -204,7 +204,7 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
     }
   }
 
-  return std::move(errata);
+  return errata;
 }
 
 swoc::Errata
@@ -226,7 +226,7 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
         YAML_PROXY_RSP_KEY);
   }
   if (!errata.is_ok()) {
-    return std::move(errata);
+    return errata;
   }
   LoadMutex.lock();
   return {};
