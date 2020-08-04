@@ -1,0 +1,73 @@
+'''
+Implement the replay_gen.py extension.
+'''
+# @file
+#
+# Copyright 2020, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+from __future__ import print_function
+import hosts.output as host
+import os
+from os.path import dirname
+
+
+def ConfigureReplayGenDefaultProcess(test, name, replay_dir=None, num_transactions=1, url_file=None, other_args=''):
+    """
+    Create a replay_gen.py Process.
+
+    Args:
+        test: (Test) The Test object being updated with the replay_gen.py process.
+
+        name: (str) The name to apply to this particular replay_gen.py instance.
+            Individual verifier-client processes must have unique names to
+            distinguish between them.
+
+        replay_dir: (path) The directory containing the generated replay files. This
+            defaults to a directory in the test's RunDirectory and is accessible
+            via the process's ['replay-dir'].
+
+        num_transactions: (int) The number of transactions that should be generated.
+
+        url_file: (path) The path to a file with a list of URLs to be passed to
+            replay_gen.py as --url-file. If not specified, a default one will
+            be created that just has http://127.0.0.1 in it.
+
+        other_args: (str) Any other arbitrary options to pass to replay_gen.py.
+
+    Returns:
+        A verifier-client process.
+    """
+    process = test.Processes.Default
+
+    tools_dir = os.path.join(dirname(dirname(dirname(test.TestRoot))), "tools")
+    replay_script = os.path.join(tools_dir, "replay_gen.py")
+    process.Setup.Copy(replay_script, test.RunDirectory, CopyLogic.SoftFiles)
+
+    if url_file is None:
+        url_file = os.path.join(test.TestRoot, 'autest-site', "default_url_file")
+    process.Setup.Copy(url_file, test.RunDirectory, CopyLogic.SoftFiles)
+
+    if replay_dir is None:
+        replay_dir = os.path.join(test.RunDirectory, name, "replay_dir")
+    process.Variables['replay_dir'] = replay_dir
+
+    command = "python replay_gen.py "
+    command += " --number {}".format(num_transactions)
+    command += " --url-file {}".format(url_file)
+    command += " --output {}".format(replay_dir)
+    command += " {}".format(other_args)
+    process.Command = command
+
+    process.ReturnCode = 0
+
+    host.WriteVerbose(
+            "replay_gen",
+            "Running '{}' with replay_dir: '{}'".format(command, replay_dir))
+
+    return process
+
+
+##########################################################################
+ExtendTestRun(ConfigureReplayGenDefaultProcess, name="ConfigureReplayGenDefaultProcess")

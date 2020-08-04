@@ -16,6 +16,8 @@ import shutil
 import copy
 import ipaddress
 import re
+import sys
+from urllib.parse import urlparse
 
 http_status_codes = {
     100: 'Continue',
@@ -98,21 +100,21 @@ class ReplaySession:
         self.transactions = []
         return
 
-    def random_populate(self, transaction_num, url_dict, http_trans, tls_trans, h2_trans):
+    def random_populate(self, transaction_num, url_list, http_trans, tls_trans, h2_trans):
 
         # Grab a random url and strip out the hostname.
         # Also need to make sure the url matches the protocols we allow.
         if not http_trans:
             while True:
-                if self.random_hostname(url_dict):
+                if self.random_hostname(url_list):
                     self.random_tls_ver(not tls_trans and h2_trans)
                     break
         elif http_trans and not tls_trans and not h2_trans:
             while True:
-                if not self.random_hostname(url_dict):
+                if not self.random_hostname(url_list):
                     break
         else:
-            if self.random_hostname(url_dict):
+            if self.random_hostname(url_list):
                 self.random_tls_ver(not tls_trans and h2_trans)
 
         if h2_trans and self.tls_ver > 1.1:
@@ -142,8 +144,8 @@ class ReplaySession:
         self.session['transactions'] = self.transactions
         return
 
-    def random_hostname(self, url_dict):
-        self.url = random.choice(list(url_dict.keys()))
+    def random_hostname(self, url_list):
+        self.url = random.choice(url_list)
         self.hostname, is_tls = self.get_hostname_from_url(self.url)
         return is_tls
 
@@ -219,31 +221,9 @@ class ReplaySession:
 
     @staticmethod
     def get_hostname_from_url(url):
-        is_tls = False
-        if url[4] == 's':
-            is_tls = True
-            hostname = url[8:]
-        else:
-            hostname = url[7:]
-
-        try:
-            term_idx1 = hostname.index(':')
-        except ValueError:
-            term_idx1 = -1
-
-        try:
-            term_idx2 = hostname.index('/')
-        except ValueError:
-            term_idx2 = -1
-
-        if term_idx1 == -1:
-            hostname = hostname[:term_idx2]
-        elif term_idx2 == -1:
-            hostname = hostname[:term_idx1]
-        else:
-            hostname = hostname[:term_idx1 if term_idx1 < term_idx2 else term_idx2]
-
-        return hostname, is_tls
+        parsed = urlparse(url)
+        is_tls = True if parsed.scheme == "https" else False
+        return ''.join(parsed[1:]), is_tls
 
 
 class RepalyFile:
@@ -257,7 +237,7 @@ class RepalyFile:
         self.sess_count = 0
         self.trans_count = 0
 
-    def random_populate(self, curr_trans_num, total_trans_num, url_dict, sess_lower, sess_upper, trans_lower,
+    def random_populate(self, curr_trans_num, total_trans_num, url_list, sess_lower, sess_upper, trans_lower,
                         trans_upper, http_trans, tls_trans, h2_trans):
         sess_num = random.randint(sess_lower, sess_upper)
 
@@ -270,7 +250,7 @@ class RepalyFile:
             self.trans_count += trans_num
 
             session = ReplaySession()
-            session.random_populate(trans_num, url_dict, http_trans, tls_trans, h2_trans)
+            session.random_populate(trans_num, url_list, http_trans, tls_trans, h2_trans)
             self.replay_file['sessions'].append(session.session)
 
             if total_trans_num == curr_trans_num + self.trans_count:
@@ -291,36 +271,10 @@ class RepalyFile:
         return
 
 
-def remap_to_urls(remap_lines, no_ip):
-    url_dict = {}
-    for line in remap_lines:
-        line = line.strip()
-        if not line.startswith('map'):
-            continue
-        urls = line.split()
-
-        # For testing purposes only use maps that has the same scheme
-        # i.e. both http or both https
-        hostname1, _ = ReplaySession.get_hostname_from_url(urls[1])
-        hostname2, _ = ReplaySession.get_hostname_from_url(urls[-1])
-        if re.match('[a-zA-Z0-9]', hostname1) is None or re.match('[a-zA-Z0-9]', hostname2) is None:
-            continue
-
-        if urls[1][4] == urls[-1][4]:
-            if no_ip:
-                try:
-                    ipaddress.ip_address(hostname2)
-                except ValueError:
-                    url_dict[urls[1]] = urls[-1]
-            else:
-                url_dict[urls[1]] = urls[-1]
-
-    return url_dict
-
-
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-n', '--number', dest='number', type=int, required=True, help='Number of total transactions.')
+    parser.add_argument('-n', '--number', dest='number', type=int, required=True,
+                        help='Number of total transactions.')
     parser.add_argument('-tl', '--trans-lower', dest='trans_lower', type=int, default=10,
                         help='The lower limit of transactions per session.')
     parser.add_argument('-tu', '--trans-upper', dest='trans_upper', type=int, default=10,
@@ -332,14 +286,12 @@ def parse_args():
     parser.add_argument('-tp', '--trans-protocols', dest='trans_protocols', type=str, default='all',
                         help='A comma separated list of protocols that are allowed to be generated. '
                              'Available options are: http, tls, h2, all.')
-    parser.add_argument('-r', '--remap', dest='remap', type=argparse.FileType('r'), required=True,
-                        help='Path to the remap.config file.')
+    parser.add_argument('-u', '--url-file', dest='url_file', type=argparse.FileType('r'), required=True,
+                        help='Path to a file with the list of URLs that can be used.')
     parser.add_argument('-o', '--output', dest='output', type=str, default='replay',
                         help='Path to a directory where the replay files are generated.')
     parser.add_argument('-p', '--prefix', dest='prefix', type=str, default='',
                         help='Prefix for the replay file names.')
-    parser.add_argument('-nip', '--no-ip', dest='no_ip', action='store_true',
-                        help='Ignore ip address (in the "replacement" section) in the remap.config file.')
     return parser.parse_args()
 
 
@@ -376,19 +328,18 @@ def main():
 
     if pathlib.Path(args.output).is_file():
         print('Output path must be a directory.')
-        exit(1)
+        return 1
     if pathlib.Path(args.output).exists():
         delete_dir = input('Output path already exists, DELETE the directory? [y/N]: ')
         if delete_dir.lower() == 'y':
             shutil.rmtree(args.output)
         else:
             print('Please select a new output path.')
-            exit(1)
+            return 1
     pathlib.Path(args.output).mkdir(parents=True, exist_ok=True)
 
-    remap_lines = args.remap.readlines()
-    url_dict = remap_to_urls(remap_lines, args.no_ip)
-    args.remap.close()
+    url_list = args.url_file.readlines()
+    args.url_file.close()
 
     curr_trans_num = 0
     file_count = 0
@@ -402,7 +353,7 @@ def main():
         trans_count, finished = replay_file.random_populate(
             curr_trans_num=curr_trans_num,
             total_trans_num=args.number,
-            url_dict=url_dict,
+            url_list=url_list,
             sess_lower=args.sess_lower,
             sess_upper=args.sess_upper,
             trans_lower=args.trans_lower,
@@ -418,8 +369,8 @@ def main():
         if finished:
             break
 
-    exit(0)
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
