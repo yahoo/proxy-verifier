@@ -181,11 +181,14 @@ class ReplaySession:
         transaction['client-request']['method'] = random.choice(['GET'])
         transaction['client-request']['url'] = self.url
 
-        request_size = random.randint(1, 1000)
         req_headers = {}
         req_headers['encoding'] = 'esc_json'
         req_headers['fields'] = []
-        req_headers['fields'].append(['Content-Length', str(request_size)])
+        if transaction['client-request']['method'] != 'GET':
+          request_size = random.randint(1, 1000)
+          req_headers['fields'].append(['Content-Length', str(request_size)])
+        else:
+          request_size = 0
         req_headers['fields'].append(['Host', self.hostname])
 
         transaction['client-request']['headers'] = req_headers
@@ -223,7 +226,7 @@ class ReplaySession:
     def get_hostname_from_url(url):
         parsed = urlparse(url)
         is_tls = True if parsed.scheme == "https" else False
-        return ''.join(parsed[1:]), is_tls
+        return ''.join(parsed[1:2]), is_tls
 
 
 class RepalyFile:
@@ -338,7 +341,8 @@ def main():
             return 1
     pathlib.Path(args.output).mkdir(parents=True, exist_ok=True)
 
-    url_list = args.url_file.readlines()
+    # avoid the newlines from readlines()
+    url_list = args.url_file.read().splitlines()
     args.url_file.close()
 
     curr_trans_num = 0
