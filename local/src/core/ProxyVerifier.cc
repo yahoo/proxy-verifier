@@ -2702,7 +2702,10 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error)
     w.print(number_fmt, error._e);
   } else {
     w.write(short_name(error._e));
-    w.write(ERR_reason_error_string(error._e));
+    auto const &error_reason = ERR_reason_error_string(error._e);
+    if (error_reason != nullptr) {
+      w.write(ERR_reason_error_string(error._e));
+    }
     if (spec._type != 's' && spec._type != 'S') {
       w.write(' ');
       w.print(number_fmt, error._e);
