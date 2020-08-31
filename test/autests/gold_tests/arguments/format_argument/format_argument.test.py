@@ -16,7 +16,7 @@ Verify --format argument parsing.
 # Test 1: Test with the URL as a key. This is not unique across transactions,
 # so only one transaction will be registered.
 #
-r = Test.AddTestRun('--format "{field.url}"')
+r = Test.AddTestRun('--format "{url}"')
 client = r.AddClientProcess("client1", "replay_files/unique_by_host", http_ports=[8080],
                             other_args="--verbose diag --format '{url}'")
 server = r.AddServerProcess("server1", "replay_files/unique_by_host", http_ports=[8081],

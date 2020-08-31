@@ -649,16 +649,22 @@ main(int /* argc */, char const *argv[])
           MORE_THAN_ONE_ARG_N,
           [&]() -> void { engine.command_run(); })
       .add_option("--no-proxy", "", "Use proxy data instead of client data.")
-      .add_option("--repeat", "", "Repeatedly replay data set", "", 1, "")
+      .add_option(
+          "--repeat",
+          "",
+          "Specify a number of times to repeat replaying the data set.",
+          "",
+          1,
+          "")
       .add_option(
           "--sleep-limit",
           "",
-          "Limit the amount of time spent sleeping between replays "
+          "Limit the amount of time spent sleeping between sessions."
           "(microseconds)",
           "",
           1,
           "")
-      .add_option("--rate", "", "Specify desired transacton rate", "", 1, "")
+      .add_option("--rate", "", "Specify desired transacton rate (requests per second).", "", 1, "")
       .add_option("--format", "-f", "Transaction key format", "", 1, "")
       .add_option(
           "--strict",
