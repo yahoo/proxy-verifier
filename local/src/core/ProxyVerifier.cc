@@ -2398,7 +2398,7 @@ std::string
 HttpHeader::make_key() const
 {
   swoc::FixedBufferWriter w{nullptr};
-  std::string key; // Should generally leave --key argument empty on cmd line.
+  std::string key;
   Binding binding(*this);
   w.print_n(binding, _key_format);
   key.resize(w.extent());

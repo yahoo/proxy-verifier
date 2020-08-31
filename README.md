@@ -145,7 +145,43 @@ verification described therein.
 
 ### Optional Arguments
 
-#### --keys
+#### --format \<format-specification\>
+
+Each transaction has to be uniquely identifiable by the client and server in a
+way that is consistent across both replay file parsing and traffic replay
+processing.  Whatever attributes we use from the messages to uniquely identify
+transactions is called the "key" for the dataset. The ability to uniquely
+identify these messages is important for at least the following reasons:
+
+* When the Verifier server receives a request, it has to know from which of the
+  set of parsed transactions it should generate a response. At the time of
+  processing an incoming message, all it has to go on is the request header
+  line and the request header fields. From these, it has to be able to identify
+  which of the potentially thousands of parsed transactions from the replay input
+  files it should generate a response.
+* When the client and server perform field verification, they need to know what
+  particular verification rules specified in the replay files should be applied
+  to the given incoming message.
+* If the client and server are processing many transactions, generic log
+  messages could be near useless if there was not a way for the logs to
+  identify individual transactions to the user somehow.
+
+By default the Verifier client and server both expect a `uuid` header field
+value to function as the key.
+
+If the user would like to use other attributes as a key, they can specify
+something else via the `--format` argument. The format argument currently
+supports generating a key on arbitrary field values and the `URL` of the
+request. Some example `--format` expressions include:
+
+* `--format "{field.uuid}"`: This is the default key format. It treats the UUID
+  header field value as the transaction key.
+* `--format "{url}"`: Treat the request `URL` as the key.
+* `--format "{field.host}"`: Treat the `Host` header field value as the key.
+* `--format "{field.host}/{url}"`: Treat the combination of the `Host` header
+  field and the request `URL` as the key.
+
+#### --keys \<key1 key2 ... keyn\>
 
 `--keys` can be passed to the verifier-client to specify a subset of keys from
 the replay file to run. Only the transactions from the space-separated list of
@@ -212,7 +248,6 @@ server traffic. Concretely, this means that the Verifier client will replay the
 
 This is a client-side only option.
 
-
 #### --strict
 
 Generally, very little about the replayed traffic is verified except what is
@@ -224,6 +259,25 @@ unimportant or even unnecessarily noisy. If, however, the user wants every
 field to be verified regardless of specification, then the `--strict` option
 can be passed to either or both the Proxy Verifier client and server to report
 any verification issues against every field specified in the replay file.
+
+#### --rate \<requests/second\>
+
+By default, the client will replay the transactions in the replay file as fast
+as possible. If the user desires to configure the client to replay the
+transactions at a particular rate, they can provide the `--rate` argument. The
+argument takes the number of requests per second the client will attempt to
+send requests at.
+
+This is a client-side only option.
+
+#### --repeat \<number\>
+
+By default, the client will replay all the transactions once in the set of
+input replay files. If the user would like the client to automatically repeat
+this set a number of times, they can provide the `--repeat` argument. The
+argument takes the number of times the client should replay the entire dataset.
+
+This is a client-side only option.
 
 ## Contribute
 
