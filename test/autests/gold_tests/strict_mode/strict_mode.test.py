@@ -22,7 +22,10 @@ server = r.AddServerProcess("server1", "replay_files/fields_match",
                             http_ports=[8081], other_args="--verbose diag --strict")
 proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
 
-proxy.Streams.stdout = "gold/fields_match_proxy.gold"
+if Condition.IsPlatform("darwin"):
+    proxy.Streams.stdout = "gold/fields_match_proxy.gold_macos"
+else:
+    proxy.Streams.stdout = "gold/fields_match_proxy.gold"
 
 client.Streams.stdout = Testers.ExcludesExpression(
         "Violation:",
@@ -42,7 +45,10 @@ server = r.AddServerProcess("server2", "replay_files/fields_differ",
                             http_ports=[8083], other_args="--verbose diag --strict")
 proxy = r.AddProxyProcess("proxy2", listen_port=8082, server_port=8083)
 
-proxy.Streams.stdout = "gold/fields_differ_proxy.gold"
+if Condition.IsPlatform("darwin"):
+    proxy.Streams.stdout = "gold/fields_differ_proxy.gold_macos"
+else:
+    proxy.Streams.stdout = "gold/fields_differ_proxy.gold"
 
 client.Streams.stdout = Testers.ContainsExpression(
         'Violation: Absent. Key: "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119", Name: "x-thisresponseheaderwontexist", Correct Value: "ThereforeTheClientShouldWarn',

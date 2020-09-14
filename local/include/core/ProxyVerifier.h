@@ -1015,7 +1015,7 @@ public:
   ~H2Session();
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
-  virtual swoc::Rv<ssize_t> write(HttpHeader const &hdr);
+  swoc::Rv<ssize_t> write(HttpHeader const &hdr) override;
 
   swoc::Errata connect() override;
   static swoc::Errata init(SSL_CTX *&server_context, SSL_CTX *&client_context);

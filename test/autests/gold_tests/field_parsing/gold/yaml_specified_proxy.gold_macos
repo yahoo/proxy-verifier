@@ -1,0 +1,34 @@
+``
+GET http://example.one/config/settings.yaml HTTP/1.1
+x-test-header: something
+host: example.one
+uuid: 1
+
+
+HTTP/1.1 200 OK
+x-test-header: backAtYou
+content-type: text/html
+content-length: 16
+uuid: 1
+
+
+==== RESPONSE BODY ====
+b'0000000 0000001 '
+
+Connecting to: 127.0.0.1:8083
+GET http://example.one/config/settings.yaml HTTP/1.1
+host: example.one
+uuid: 2
+x-another-header: request
+
+
+HTTP/1.1 200 OK
+x-another-response: response
+content-type: text/html
+content-length: 32
+uuid: 2
+
+
+==== RESPONSE BODY ====
+b'0000000 0000001 0000002 0000003 '
+``

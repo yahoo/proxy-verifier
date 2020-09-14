@@ -21,14 +21,19 @@ server = r.AddServerProcess("server1", "replay_files/single_transaction", http_p
 proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
 
 
-proxy.Streams.stdout = "gold/single_transaction_proxy.gold"
+if Condition.IsPlatform("darwin"):
+    proxy.Streams.stdout = "gold/single_transaction_proxy.gold_macos"
+    client.Streams.stdout = "gold/single_transaction_client.gold_macos"
+    server.Streams.stdout = "gold/single_transaction_server.gold_macos"
+else:
+    proxy.Streams.stdout = "gold/single_transaction_proxy.gold"
+    client.Streams.stdout = "gold/single_transaction_client.gold"
+    server.Streams.stdout = "gold/single_transaction_server.gold"
 
-client.Streams.stdout = "gold/single_transaction_client.gold"
 client.Streams.stdout += Testers.ExcludesExpression(
         "Violation:",
         "There should be no verification errors because there are none added.")
 
-server.Streams.stdout = "gold/single_transaction_server.gold"
 server.Streams.stdout += Testers.ExcludesExpression(
         "Violation:",
         "There should be no verification errors because there are none added.")

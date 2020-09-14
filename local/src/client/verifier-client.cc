@@ -341,9 +341,9 @@ Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint con
     errata.diag("Connecting via HTTP.");
   }
 
-  errata.note(std::move(session->do_connect(real_target)));
+  errata.note(session->do_connect(real_target));
   if (errata.is_ok()) {
-    errata.note(std::move(session->run_transactions(ssn._transactions, real_target)));
+    errata.note(session->run_transactions(ssn._transactions, real_target));
   }
   return;
 }

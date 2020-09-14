@@ -23,9 +23,14 @@ server = r.AddServerProcess("server1", "replay_files/yaml_specified",
 proxy = r.AddProxyProcess("proxy1", listen_port=8082, server_port=8083)
 
 
-proxy.Streams.stdout = "gold/yaml_specified_proxy.gold"
-client.Streams.stdout = "gold/yaml_specified_client.gold"
-server.Streams.stdout = "gold/yaml_specified_server.gold"
+if Condition.IsPlatform("darwin"):
+    proxy.Streams.stdout = "gold/yaml_specified_proxy.gold_macos"
+    client.Streams.stdout = "gold/yaml_specified_client.gold_macos"
+    server.Streams.stdout = "gold/yaml_specified_server.gold_macos"
+else:
+    proxy.Streams.stdout = "gold/yaml_specified_proxy.gold"
+    client.Streams.stdout = "gold/yaml_specified_client.gold"
+    server.Streams.stdout = "gold/yaml_specified_server.gold"
 
 #
 # Test 2: Verify correct parsing of transaction-level fields.
@@ -37,6 +42,11 @@ server = r.AddServerProcess("server2", "replay_files/transaction_fields",
                             http_ports=[8083], other_args="--verbose diag")
 proxy = r.AddProxyProcess("proxy2", listen_port=8082, server_port=8083)
 
-proxy.Streams.stdout = "gold/transaction_fields_proxy.gold"
-client.Streams.stdout = "gold/transaction_fields_client.gold"
-server.Streams.stdout = "gold/transaction_fields_server.gold"
+if Condition.IsPlatform("darwin"):
+    proxy.Streams.stdout = "gold/transaction_fields_proxy.gold_macos"
+    client.Streams.stdout = "gold/transaction_fields_client.gold_macos"
+    server.Streams.stdout = "gold/transaction_fields_server.gold_macos"
+else:
+    proxy.Streams.stdout = "gold/transaction_fields_proxy.gold"
+    client.Streams.stdout = "gold/transaction_fields_client.gold"
+    server.Streams.stdout = "gold/transaction_fields_server.gold"

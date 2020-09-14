@@ -10,6 +10,7 @@ Implement the common test proxy logic.
 
 import argparse
 import os
+import sys
 
 import proxy_http1
 import proxy_http2
@@ -40,15 +41,20 @@ def parse_args():
 def main():
     args = parse_args()
 
-    if args.http2_to_1:
-        proxy_http2.configure_http2_server(args.listen_port, args.server_port, args.https_pem)
-    else:
-        proxy_http1.configure_http1_server(
-                proxy_http1.ProxyRequestHandler, proxy_http1.ThreadingHTTPServer,
-                "HTTP/1.1", args.listen_port, args.server_port, args.https_pem)
+    try:
+        if args.http2_to_1:
+            proxy_http2.configure_http2_server(args.listen_port, args.server_port, args.https_pem)
+        else:
+            proxy_http1.configure_http1_server(
+                    proxy_http1.ProxyRequestHandler, proxy_http1.ThreadingHTTPServer,
+                    "HTTP/1.1", args.listen_port, args.server_port, args.https_pem)
+    except KeyboardInterrupt:
+        print("Received KeyboardInterrupt. Exiting gracefully.")
+
+    return 0
 
 
 if __name__ == '__main__':
     import doctest
     doctest.testmod()
-    main()
+    sys.exit(main())

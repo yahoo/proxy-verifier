@@ -1,0 +1,16 @@
+``Configuring logging at level DIAG
+``Listening at 127.0.0.1:4443
+``Listening at 127.0.0.1:8081
+``Ready with 1 transactions.
+``Loading 1 replay files.
+``
+``Responding to request /client.do with status 200.
+``Headers:
+- "content-type": "application/octet-stream"
+- "host": "example.com"
+- "x-candy": "cane"
+- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119"
+- "content-length": "399"
+- "Accept-Encoding": "identity"
+- "x-someid": "fda39dfad1"
+``
