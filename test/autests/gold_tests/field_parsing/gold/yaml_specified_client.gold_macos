@@ -1,0 +1,25 @@
+``
+``Presence Success: Key: "1", Name: "x-test-header", Value: "backAtYou"
+``Absence Success: Key: "1", Name: "x-test-different"
+``
+``Absence Violation: Present. Key: "2", Name: "x-another-response", Value: "response"
+``
+- "content-length": "16"
+- "uuid": "1"
+- "content-type": "text/html"
+- "x-test-header": "backAtYou"
+
+``Drained 16 bytes.
+``Reading response body:``
+``
+- "content-length": "32"
+- "uuid": "2"
+- "x-another-response": "response"
+- "content-type": "text/html"
+
+``
+``Drained 32 bytes.
+``Reading response body:``
+``
+``2 transactions in 1 sessions``
+``

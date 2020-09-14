@@ -55,13 +55,7 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
     process.Command = command
 
     process.Ready = When.PortOpen(listen_port)
-    # The server is designed to be long-lived and thus will be interrupted by
-    # the test. Because of this, its return code may be non-zero, depending
-    # upon the server implementation.
-    if use_http2_to_1:
-        process.ReturnCode = 0
-    else:
-        process.ReturnCode = 1
+    process.ReturnCode = 0
 
 
 def MakeProxyProcess(test, name, listen_port=8080, server_port=8081,

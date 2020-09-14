@@ -16,12 +16,10 @@
 #include <thread>
 #include <unordered_map>
 
-#include <bits/signum.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -402,7 +400,7 @@ TF_Serve(std::thread *t)
       // If there is an Expect header with the value of 100-continue, send the
       // 100-continue response before Reading request body.
       if (req_hdr._send_continue) {
-        auto &&[bytes_written, write_errata] = thread_info._session->write(Continue_resp);
+        thread_info._session->write(Continue_resp);
       }
 
       if (req_hdr._content_length_p || req_hdr._chunked_p) {
@@ -458,7 +456,7 @@ TF_Accept(int socket_fd, bool do_tls)
     swoc::Errata errata;
     swoc::IPEndpoint remote_addr;
     socklen_t remote_addr_size = sizeof(remote_addr);
-    int fd = accept4(socket_fd, &remote_addr.sa, &remote_addr_size, 0);
+    int fd = accept(socket_fd, &remote_addr.sa, &remote_addr_size);
     if (fd < 0) {
       errata.error("Failed to create a socket via accept4: {}", swoc::bwf::Errno{});
       continue;

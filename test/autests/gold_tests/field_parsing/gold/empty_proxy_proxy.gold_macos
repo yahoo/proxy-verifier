@@ -1,0 +1,17 @@
+``
+GET http://example.one/config/settings.yaml HTTP/1.1
+host: example.one
+uuid: 1
+x-request: testRequest
+
+
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
+x-response: testResponse
+uuid: 1
+
+
+==== RESPONSE BODY ====
+b'0000000 0000001 '
+``

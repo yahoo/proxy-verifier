@@ -23,6 +23,11 @@ server = r.AddServerProcess("server1", "replay_files/duplicate_fields",
 proxy = r.AddProxyProcess("proxy1", listen_port=8082, server_port=8083)
 
 
-proxy.Streams.stdout = "gold/duplicate_fields_proxy.gold"
-client.Streams.stdout = "gold/duplicate_fields_client.gold"
-server.Streams.stdout = "gold/duplicate_fields_server.gold"
+if Condition.IsPlatform("darwin"):
+    proxy.Streams.stdout = "gold/duplicate_fields_proxy.gold_macos"
+    client.Streams.stdout = "gold/duplicate_fields_client.gold_macos"
+    server.Streams.stdout = "gold/duplicate_fields_server.gold_macos"
+else:
+    proxy.Streams.stdout = "gold/duplicate_fields_proxy.gold"
+    client.Streams.stdout = "gold/duplicate_fields_client.gold"
+    server.Streams.stdout = "gold/duplicate_fields_server.gold"

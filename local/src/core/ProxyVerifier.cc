@@ -26,14 +26,9 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
-/// TODO: libswoc currently produces an uninitialized-parameter warning. When
-/// this is resolved, these pragmas to ignore such warnings can be removed.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
-#pragma GCC diagnostic pop
 
 using swoc::Errata;
 using swoc::TextView;
@@ -2613,7 +2608,7 @@ HttpHeader::parse_response(swoc::TextView data)
 
     auto first_line{data.take_prefix_at('\n').rtrim_if(&isspace)};
     if (first_line) {
-      auto version{first_line.take_prefix_if(&isspace)};
+      first_line.take_prefix_if(&isspace); // Remove the "HTTP/<version>" prefix.
       auto status{first_line.ltrim_if(&isspace).take_prefix_if(&isspace)};
       _status = swoc::svtou(status);
 
