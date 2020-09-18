@@ -179,6 +179,22 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     do_OPTIONS = do_GET
     do_options = do_GET
 
+    def relay_streaming(self, res):
+        self.wfile.write("%s %d %s\r\n" % (self.protocol_version, res.status, res.reason))
+        for line in res.headers.headers:
+            self.wfile.write(line)
+        self.end_headers()
+        try:
+            while True:
+                chunk = res.read(8192)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+            self.wfile.flush()
+        except socket.error:
+            # connection closed by client
+            pass
+
     @staticmethod
     def filter_headers(headers):
         # http://tools.ietf.org/html/rfc2616#section-13.5.1

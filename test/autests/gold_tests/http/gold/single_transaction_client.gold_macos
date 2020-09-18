@@ -13,8 +13,8 @@
 ``
 ``Starting session "single_http_transaction.json":5 protocol=http.
 ``1 transactions in 1 sessions``
-``Parsed 1 transactions.
 ``
+``Parsed 1 transactions.
 ``Loading 1 replay files.
 ``Loading directory "``/single_transaction".
 ``

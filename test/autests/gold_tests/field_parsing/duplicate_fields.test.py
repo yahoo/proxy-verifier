@@ -13,7 +13,7 @@ Verify correct handling of duplicate fields in a message.
 '''
 
 #
-# Test 1: Verify correct behavior with a YAML-specified replay file.
+# Test 1: Verify correct behavior when there are duplicate HTTP fields.
 #
 r = Test.AddTestRun("Verify correct handling of duplicate fields in a message.")
 client = r.AddClientProcess("client1", "replay_files/duplicate_fields",

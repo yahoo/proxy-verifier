@@ -20,6 +20,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -41,7 +42,11 @@ using swoc::BufferWriter;
 using swoc::Errata;
 using swoc::TextView;
 
-void TF_Serve(std::thread *t);
+namespace chrono = std::chrono;
+using namespace std::literals;
+constexpr auto const Thread_Sleep_Interval_MS = 100ms;
+
+void TF_Serve_Connection(std::thread *t);
 
 /** Whether to verify each request against the corresponding proxy-request
  * in the yaml file.
@@ -52,7 +57,10 @@ bool Use_Strict_Checking = false;
 swoc::file::path ROOT_PATH;
 
 /// This must be a list so that iterators / pointers to elements do not go stale.
-std::list<std::thread *> Listen_threads;
+std::list<std::unique_ptr<std::thread>> Accept_Threads;
+
+/** Set this to true when it's time for the threads to stop. */
+bool Shutdown_Flag = false;
 
 class ServerThreadInfo : public ThreadInfo
 {
@@ -61,7 +69,7 @@ public:
   bool
   data_ready() override
   {
-    return this->_session;
+    return Shutdown_Flag || this->_session;
   }
 };
 
@@ -78,7 +86,9 @@ HttpHeader Continue_resp;
 std::thread
 ServerThreadPool::make_thread(std::thread *t)
 {
-  return std::thread(TF_Serve, t); // move the temporary into the list element for permanence.
+  return std::thread(
+      TF_Serve_Connection,
+      t); // move the temporary into the list element for permanence.
 }
 
 /** Command execution.
@@ -93,10 +103,35 @@ struct Engine
   void command_run();
 
   /// Status code to return to the operating system.
-  int status_code = 0;
+  static int status_code;
 };
 
-bool Shutdown_Flag = false;
+int Engine::status_code = 0;
+
+/** Handle SIGINT, exiting with an appropriate exit code.
+ *
+ * The Proxy Verifier server is long-lived and will likely be stopped by the
+ * user via a SIGINT. Handle this signal and exit with a non-zero status if
+ * some error has happened over the lifetime of the server.
+ *
+ * @param[in] signal The signal number of the signal being handled. This will
+ * always be SIGINT since that is all that is registered with this handler.
+ */
+void
+sigint_handler(int /* signal */)
+{
+  Errata errata;
+  if (Engine::status_code == 0) {
+    errata.diag("Handling SIGINT: shutting down and "
+                "exiting with a 0 resonse code because no errors have been seen.");
+  } else {
+    errata.diag(
+        "Handling SIGINT: shutting down and "
+        "exiting with response code {} because errors have been seen.",
+        Engine::status_code);
+  }
+  Shutdown_Flag = true;
+}
 
 std::mutex LoadMutex;
 
@@ -198,13 +233,6 @@ swoc::Errata
 ServerReplayFileHandler::txn_open(YAML::Node const &node)
 {
   Errata errata;
-  if (!node[YAML_PROXY_REQ_KEY]) {
-    errata.error(
-        R"(Transaction node at "{}":{} does not have a proxy request [{}].)",
-        _path,
-        node.Mark().line,
-        YAML_PROXY_REQ_KEY);
-  }
   if (!node[YAML_SERVER_RSP_KEY]) {
     errata.error(
         R"(Transaction node at "{}":{} does not have a server response [{}].)",
@@ -293,7 +321,7 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
   }
   auto const protocol_sequence_node{node[YAML_SSN_PROTOCOL_KEY]};
   if (!protocol_sequence_node) {
-    // A protocol sequence description on the response side is optional.
+    // A protocol sequence description on the server side is optional.
     return errata;
   }
   auto const tls_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
@@ -347,7 +375,18 @@ ServerReplayFileHandler::txn_close()
 }
 
 void
-TF_Serve(std::thread *t)
+delete_thread_info_session(ServerThreadInfo &thread_info)
+{
+  if (thread_info._session == nullptr) {
+    return;
+  }
+  std::unique_lock<std::mutex> lock(thread_info._mutex);
+  delete thread_info._session;
+  thread_info._session = nullptr;
+}
+
+void
+TF_Serve_Connection(std::thread *t)
 {
   ServerThreadInfo thread_info;
   thread_info._thread = t;
@@ -355,16 +394,31 @@ TF_Serve(std::thread *t)
     swoc::Errata errata;
 
     Server_Thread_Pool.wait_for_work(&thread_info);
+    if (Shutdown_Flag) {
+      // Calling Shutdown is a condition that releases wait_for_work.
+      delete_thread_info_session(thread_info);
+      break;
+    }
 
     errata = thread_info._session->accept();
-    while (!thread_info._session->is_closed() && errata.is_ok()) {
+    while (!Shutdown_Flag && !thread_info._session->is_closed() && errata.is_ok()) {
       HttpHeader req_hdr;
       swoc::Errata thread_errata;
       swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
+      auto &&[poll_return, poll_errata] = thread_info._session->poll(Thread_Sleep_Interval_MS);
+      thread_errata.note(poll_errata);
+      if (poll_return == 0) {
+        // Poll timed out. Loop back around.
+        continue;
+      } else if (!poll_errata.is_ok()) {
+        thread_errata.error("Poll failed: {}", swoc::bwf::Errno{});
+        break;
+      }
       auto &&[header_bytes_read, read_header_errata] = thread_info._session->read_header(w);
       thread_errata.note(read_header_errata);
       if (!read_header_errata.is_ok()) {
         thread_errata.error("Could not read the header.");
+        Engine::status_code = 1;
         break;
       }
 
@@ -380,6 +434,7 @@ TF_Serve(std::thread *t)
       if (parse_result != HttpHeader::PARSE_OK || !thread_errata.is_ok()) {
         thread_errata.error(R"(The received request was malformed.)");
         thread_errata.diag(R"(Received data: {}.)", received_data);
+        Engine::status_code = 1;
         break;
       }
       thread_errata.diag("Handling request with url: {}", req_hdr._url);
@@ -389,6 +444,7 @@ TF_Serve(std::thread *t)
 
       if (specified_response == Transactions.end()) {
         thread_errata.error(R"(Proxy request with key "{}" not found.)", key);
+        Engine::status_code = 1;
         break;
       }
 
@@ -419,6 +475,7 @@ TF_Serve(std::thread *t)
       thread_errata.diag("Validating request with url: {}", req_hdr._url);
       if (req_hdr.verify_headers(key, *txn._req._fields_rules)) {
         thread_errata.error(R"(Request headers did not match expected request headers.)");
+        Engine::status_code = 1;
       }
       // Responses to HEAD requests may have a non-zero Content-Length
       // but will never have a body. update_content_length adjusts
@@ -440,11 +497,7 @@ TF_Serve(std::thread *t)
     }
 
     // cleanup and get ready for another session.
-    {
-      std::unique_lock<std::mutex> lock(thread_info._mutex);
-      delete thread_info._session;
-      thread_info._session = nullptr;
-    }
+    delete_thread_info_session(thread_info);
   }
 }
 
@@ -452,13 +505,28 @@ void
 TF_Accept(int socket_fd, bool do_tls)
 {
   std::unique_ptr<Session> session;
+  struct pollfd poll_set[1];
+  int numfds = 1;
+  poll_set[0].fd = socket_fd;
+  poll_set[0].events = POLLIN;
+
   while (!Shutdown_Flag) {
     swoc::Errata errata;
+    // Poll so that we can set a timeout and check whether the user requested a shutdown.
+    auto const poll_return = ::poll(poll_set, numfds, Thread_Sleep_Interval_MS.count());
+    if (poll_return == 0) {
+      // poll timed out.
+      continue;
+    } else if (poll_return < 0) {
+      errata.error("poll failed: {}", swoc::bwf::Errno{});
+      continue;
+    }
     swoc::IPEndpoint remote_addr;
     socklen_t remote_addr_size = sizeof(remote_addr);
+
     int fd = accept(socket_fd, &remote_addr.sa, &remote_addr_size);
     if (fd < 0) {
-      errata.error("Failed to create a socket via accept4: {}", swoc::bwf::Errno{});
+      errata.error("Failed to create a socket via accept: {}", swoc::bwf::Errno{});
       continue;
     }
     if (do_tls) {
@@ -478,12 +546,9 @@ TF_Accept(int socket_fd, bool do_tls)
     if (nullptr == thread_info) {
       errata.error("Failed to get worker thread");
     } else {
-      // Only pointer to worker thread info.
-      {
-        std::unique_lock<std::mutex> lock(thread_info->_mutex);
-        thread_info->_session = session.release();
-        thread_info->_cvar.notify_one();
-      }
+      std::unique_lock<std::mutex> lock(thread_info->_mutex);
+      thread_info->_session = session.release();
+      thread_info->_cvar.notify_one();
     }
   }
 }
@@ -504,8 +569,8 @@ do_listen(swoc::IPEndpoint &server_addr, bool do_tls)
         int listen_result = listen(socket_fd, 16384);
         if (listen_result == 0) {
           errata.info(R"(Listening at {})", server_addr);
-          std::thread *runner = new std::thread{TF_Accept, socket_fd, do_tls};
-          Listen_threads.push_back(runner);
+          auto runner = std::make_unique<std::thread>(TF_Accept, socket_fd, do_tls);
+          Accept_Threads.push_back(std::move(runner));
         } else {
           errata.error(R"(Could not isten to {}: {}.)", server_addr, swoc::bwf::Errno{});
         }
@@ -558,8 +623,6 @@ Engine::command_run()
         return;
       }
     }
-
-    Session::init();
 
     if (server_addr_https_arg) {
       if (server_addr_https_arg.size() == 1) {
@@ -634,10 +697,11 @@ Engine::command_run()
         },
         10);
 
-    if (!errata.is_ok() && errata.severity() != swoc::Severity::ERROR) {
+    if (!errata.is_ok()) {
       status_code = 1;
       return;
     }
+    Session::init(Transactions.size());
 
     // After this, any string expected to be localized that isn't is an error,
     // so lock down the local string storage to avoid runtime locking and report
@@ -675,10 +739,18 @@ Engine::command_run()
     }
   } // End of scope for errata so it gets logged.
 
-  // Don't exit until all the listen threads go away
-  while (true) {
-    sleep(10);
+  // Wait for the listening threads to start up.
+  while (!Shutdown_Flag) {
+    usleep(chrono::microseconds{Thread_Sleep_Interval_MS}.count());
   }
+  for_each(
+      Accept_Threads.begin(),
+      Accept_Threads.end(),
+      [](std::unique_ptr<std::thread> const &thread) { thread->join(); });
+  Accept_Threads.clear();
+  Server_Thread_Pool.join_threads();
+
+  exit(Engine::status_code);
 }
 
 int
@@ -691,6 +763,12 @@ main(int /* argc */, char const *argv[])
                 "and SSL_write issues may trigger SIGPIPE which will abruptly "
                 "terminate execution.");
   }
+
+  struct sigaction sigIntHandler;
+  sigIntHandler.sa_handler = sigint_handler;
+  sigemptyset(&sigIntHandler.sa_mask);
+  sigIntHandler.sa_flags = 0;
+  sigaction(SIGINT, &sigIntHandler, nullptr);
 
   Engine engine;
 

@@ -53,6 +53,10 @@ server.Streams.stdout += Testers.ContainsExpression(
 server.Streams.stdout += Testers.ContainsExpression(
         'Key: "/same/path"',
         "The key should be parsed from the URL, not the uuid.")
+
+client.ReturnCode = 1
+server.ReturnCode = 1
+
 #
 # Test 2: Verify using the host as a key, which is unique across transactions.
 #

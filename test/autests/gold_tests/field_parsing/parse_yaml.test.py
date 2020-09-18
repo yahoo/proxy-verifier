@@ -32,6 +32,10 @@ else:
     client.Streams.stdout = "gold/yaml_specified_client.gold"
     server.Streams.stdout = "gold/yaml_specified_server.gold"
 
+# These expect verification errors.
+client.ReturnCode = 1
+server.ReturnCode = 1
+
 #
 # Test 2: Verify correct parsing of transaction-level fields.
 #

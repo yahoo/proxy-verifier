@@ -797,6 +797,15 @@ public:
    */
   virtual swoc::Errata connect();
 
+  /** Poll on the stream's socket until there is incoming data.
+   *
+   * @param[in] timeout The timeout, in milliseconds, for the poll.
+   *
+   * @return The return value of the poll. See poll(2) for a description of
+   * this value.
+   */
+  virtual swoc::Rv<int> poll(std::chrono::milliseconds timeout);
+
   /** Read from the stream's socket into span.
    *
    * @param[in] span The destination for the bytes read from the socket.
@@ -860,7 +869,7 @@ public:
   /** Close the connection. */
   virtual void close();
 
-  static swoc::Errata init();
+  static swoc::Errata init(int num_transactions);
 
   virtual swoc::Errata run_transactions(
       std::list<Txn> const &txn,

@@ -12,7 +12,6 @@
 - "Accept-Encoding": "identity"
 
 ``Handling request with url: /config/settings.yaml
-``
 ``Presence Violation: Absent. Key: "2", Name: "x-not-present"
 ``Success: Key: "2", Name: "x-another-header", Value: "request"
 ``

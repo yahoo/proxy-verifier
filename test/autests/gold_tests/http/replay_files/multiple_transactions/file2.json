@@ -127,6 +127,10 @@
                                     "no-store, no-cache, must-revalidate, private"
                                 ],
                                 [
+                                    "Content-Length",
+                                    "0"
+                                ],
+                                [
                                     "Pragma",
                                     "no-cache"
                                 ],
@@ -162,6 +166,10 @@
                                 [
                                     "Cache-Control",
                                     "no-store, no-cache, must-revalidate, private"
+                                ],
+                                [
+                                    "Content-Length",
+                                    "0"
                                 ],
                                 [
                                     "Pragma",
