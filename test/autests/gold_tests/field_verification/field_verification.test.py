@@ -70,6 +70,9 @@ client.Streams.stdout += Testers.ContainsExpression(
             'Correct Value: "from_proxy_response", Actual Value: "from_server_response"'),
         'Validation should complain that the "x-testheader" value differs from the expected value.')
 
+client.ReturnCode = 1
+server.ReturnCode = 1
+
 #
 # Test 2: Verify field verification in a YAML replay file.
 #
@@ -106,6 +109,9 @@ server.Streams.stdout += Testers.ContainsExpression(
         'Equals Success: Key: "5", Name: "cookie", Value: "',
         'Validation should be happy with the cookie value.')
 
+client.ReturnCode = 1
+server.ReturnCode = 1
+
 #
 # Test 3: Verify duplicate field verification in a YAML replay file.
 #
@@ -141,3 +147,6 @@ server.Streams.stdout += Testers.ContainsExpression(
 server.Streams.stdout += Testers.ContainsExpression(
         'Equals Violation: Different. Key: "1", Name: "x-test-request", Correct Values: "second_data" "first_data", Received Values: "first_data" "second_data"',
         'Validation should complain that "X-Test-Request" values are out of order.')
+
+client.ReturnCode = 1
+server.ReturnCode = 1

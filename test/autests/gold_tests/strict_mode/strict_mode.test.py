@@ -57,3 +57,6 @@ client.Streams.stdout = Testers.ContainsExpression(
 server.Streams.stdout = Testers.ContainsExpression(
         'Violation: Absent. Key: "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119", Name: "x-thisrequestheaderwontexist", Correct Value: "ThereforeTheServerShouldWarn',
         "There should be a warning about the missing proxy request header.")
+
+client.ReturnCode = 1
+server.ReturnCode = 1

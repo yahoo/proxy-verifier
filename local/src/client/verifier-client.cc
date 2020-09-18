@@ -218,13 +218,6 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
         node.Mark().line,
         YAML_CLIENT_REQ_KEY);
   }
-  if (!node[YAML_PROXY_RSP_KEY]) {
-    errata.error(
-        R"(Transaction node at "{}":{} does not have a proxy response [{}].)",
-        _path,
-        node.Mark().line,
-        YAML_PROXY_RSP_KEY);
-  }
   if (!errata.is_ok()) {
     return errata;
   }
@@ -307,6 +300,31 @@ ClientReplayFileHandler::ssn_close()
   return {};
 }
 
+/** Command execution.
+ *
+ * This handles parsing and acting on the command line arguments.
+ */
+struct Engine
+{
+  ts::ArgParser parser;    ///< Command line argument parser.
+  ts::Arguments arguments; ///< Results from argument parsing.
+
+  static constexpr swoc::TextView COMMAND_RUN{"run"};
+  static constexpr swoc::TextView COMMAND_RUN_ARGS{
+      "Arguments:\n"
+      "\t<dir>: Directory containing replay files.\n"
+      "\t<upstream http>: hostname and port for http requests. Can be a comma "
+      "seprated list\n"
+      "\t<upstream https>: hostname and port for https requests. Can be a "
+      "comma separated list "};
+  void command_run();
+
+  /// Status code to return to the operating system.
+  static int status_code;
+};
+
+int Engine::status_code = 0;
+
 void
 Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint const &target_https)
 {
@@ -345,6 +363,9 @@ Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint con
   if (errata.is_ok()) {
     errata.note(session->run_transactions(ssn._transactions, real_target));
   }
+  if (!errata.is_ok()) {
+    Engine::status_code = 1;
+  }
   return;
 }
 
@@ -375,29 +396,6 @@ session_start_compare(const std::shared_ptr<Ssn> ssn1, const std::shared_ptr<Ssn
 {
   return ssn1->_start < ssn2->_start;
 }
-
-/** Command execution.
- *
- * This handles parsing and acting on the command line arguments.
- */
-struct Engine
-{
-  ts::ArgParser parser;    ///< Command line argument parser.
-  ts::Arguments arguments; ///< Results from argument parsing.
-
-  static constexpr swoc::TextView COMMAND_RUN{"run"};
-  static constexpr swoc::TextView COMMAND_RUN_ARGS{
-      "Arguments:\n"
-      "\t<dir>: Directory containing replay files.\n"
-      "\t<upstream http>: hostname and port for http requests. Can be a comma "
-      "seprated list\n"
-      "\t<upstream https>: hostname and port for https requests. Can be a "
-      "comma separated list "};
-  void command_run();
-
-  /// Status code to return to the operating system.
-  int status_code = 0;
-};
 
 uint64_t
 GetUTimestamp()
@@ -512,12 +510,6 @@ Engine::command_run()
     return;
   }
 
-  Session::init();
-  errata.diag(R"(Initializing TLS)");
-  TLSSession::init();
-  errata.diag(R"(Initialize H2)");
-  H2Session::init();
-
   // Sort the Session_List and adjust the time offsets
   Session_List.sort(session_start_compare);
 
@@ -540,6 +532,12 @@ Engine::command_run()
   }
   errata.info("Parsed {} transactions.", transaction_count);
   HttpHeader::set_max_content_length(max_content_length);
+
+  Session::init(transaction_count);
+  errata.diag(R"(Initializing TLS)");
+  TLSSession::init();
+  errata.diag(R"(Initialize H2)");
+  H2Session::init();
 
   float rate_multiplier = 0.0;
   auto rate_arg{arguments.get("rate")};

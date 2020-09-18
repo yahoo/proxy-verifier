@@ -94,9 +94,9 @@ def _configure_server(obj, process, name, replay_dir, use_ipv6=False,
     process.Command = command
 
     process.Ready = When.PortOpen(http_ports[0])
-    # The server is designed to be long-lived and thus will be interrupted by
-    # the test. Because of this, its return code will be non-zero.
-    process.ReturnCode = -2
+    # Tests that expect a failure due to verification issues will need
+    # to set this to 1.
+    process.ReturnCode = 0
 
 
 def MakeServerProcess(test, name, replay_dir, use_ipv6=False,

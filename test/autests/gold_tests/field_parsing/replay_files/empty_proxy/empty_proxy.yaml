@@ -14,7 +14,6 @@ sessions:
         fields:
         - [ Host, example.one ]
         - [ X-Request, testRequest ]
-    proxy-request:
 
     server-response:
       status: 200
@@ -26,5 +25,3 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
         - [ X-Response, testResponse ]
-
-    proxy-response:

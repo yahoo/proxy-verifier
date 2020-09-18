@@ -9,22 +9,21 @@
 #include "core/yaml_util.h"
 
 #include <algorithm>
+#include <csignal>
 #include <dirent.h>
+#include <fcntl.h>
 #include <netdb.h>
+#include <netinet/tcp.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <poll.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <thread>
 #include <unistd.h>
 #include <vector>
-
-#include <signal.h>
-
-#include <fcntl.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
 
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
@@ -111,6 +110,8 @@ configure_logging(const std::string_view verbose_argument)
   }
   errata.diag("Configuring logging at level {}", severity_cutoff);
 
+  static std::mutex logging_mutex;
+
   swoc::Errata::register_sink([severity_cutoff](Errata const &errata) {
     if (errata.severity() < severity_cutoff) {
       return;
@@ -120,8 +121,11 @@ configure_logging(const std::string_view verbose_argument)
       if (annotation.severity() < severity_cutoff) {
         continue;
       }
-      std::cout << lead << " [" << static_cast<int>(annotation.severity())
-                << "]: " << annotation.text() << std::endl;
+      {
+        std::lock_guard<std::mutex> lock(logging_mutex);
+        std::cout << lead << " [" << static_cast<int>(annotation.severity())
+                  << "]: " << annotation.text() << std::endl;
+      }
       if (lead.size() == 0) {
         lead = "  "_sv;
       }
@@ -275,12 +279,23 @@ Session::write(HttpHeader const &hdr)
   return zret;
 }
 
+swoc::Rv<int>
+Session::poll(std::chrono::milliseconds timeout)
+{
+  if (_fd == -1) {
+    return {0, std::move(Errata().diag("Poll called on a closed connection."))};
+  }
+  struct pollfd poll_set[1];
+  int numfds = 1;
+  poll_set[0].fd = _fd;
+  poll_set[0].events = POLLIN;
+  return ::poll(poll_set, numfds, timeout.count());
+}
+
 swoc::Rv<ssize_t>
 Session::read_header(swoc::FixedBufferWriter &w)
 {
   swoc::Rv<ssize_t> zret{-1};
-
-  zret.errata().diag("Reading header.");
   while (w.remaining() > 0) {
     auto n = read(w.aux_span());
     if (!is_closed()) {
@@ -899,17 +914,32 @@ SSL_CTX *TLSSession::client_context = nullptr;
 const int MAX_NOFILE = 300000;
 
 swoc::Errata
-Session::init()
+Session::init(int num_transactions)
 {
   swoc::Errata errata;
   struct rlimit lim;
   if (getrlimit(RLIMIT_NOFILE, &lim) == 0) {
-    if (MAX_NOFILE > (int)lim.rlim_cur) {
+    auto const previous_limit = lim.rlim_cur;
+    if (MAX_NOFILE > static_cast<int>(previous_limit)) {
       lim.rlim_cur = (lim.rlim_max = (rlim_t)MAX_NOFILE);
       if (setrlimit(RLIMIT_NOFILE, &lim) == 0 && getrlimit(RLIMIT_NOFILE, &lim) == 0) {
-        errata.diag("Updated RLIMIT_NOFILE to {}", MAX_NOFILE);
+        errata.diag("Updated RLIMIT_NOFILE to {} from {}", MAX_NOFILE, previous_limit);
+
+        // We could not set the rlimit. This will not be a problem if the user is
+        // not testing under load. For instance, if this is run for a correctness
+        // test with 10 transactions, not being able to raise the limit of the
+        // number of files isn't a problem. The 300 is an arbitrary check on
+        // whether the message should raise an error or just emit an info
+        // message.
+      } else if (num_transactions > 300) {
+        errata.error(
+            "Could not setrlimit to {} from {}, errno={}",
+            MAX_NOFILE,
+            previous_limit,
+            errno);
       } else {
-        errata.error("Failed setrlimit errno={}", errno);
+        errata
+            .info("Could not setrlimit to {} from {}, errno={}", MAX_NOFILE, previous_limit, errno);
       }
     }
   }
