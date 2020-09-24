@@ -7,20 +7,6 @@ Verify basic HTTP/2 functionality.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-# The Python OpenSSL library used by the test proxy on the Mac fails with a
-# not-implemented error:
-# Traceback (most recent call last):
-#   File "/tmp/sbpv/http2/proxy1/test_proxy.py", line 60, in <module>
-#     sys.exit(main())
-#   File "/tmp/sbpv/http2/proxy1/test_proxy.py", line 46, in main
-#     proxy_http2.configure_http2_server(args.listen_port, args.server_port, args.https_pem)
-#   File "/Users/bneradt/project_not_synced/src/proxy-verifier/test/autests/gold_tests/autest-site/proxy_http2.py", line 188, in configure_http2_server
-#     context.set_npn_advertise_callback(npn_advertise_cb)
-#   File "/Users/bneradt/.local/share/virtualenvs/autests-Wg7FsRw_/lib/python3.8/site-packages/OpenSSL/SSL.py", line 666, in explode
-#     raise NotImplementedError(error)
-# NotImplementedError: NPN not available
-Test.SkipUnless(Condition.IsPlatform("linux"))
-
 Test.Summary = '''
 Verify basic HTTP/2 functionality.
 '''

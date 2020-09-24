@@ -15,7 +15,7 @@ _END_
 if [ $? = 1 ]
 then
     echo "Python 3.5 or newer is not installed/enabled."
-    return
+    exit 1
 else
     echo "Python 3.5 or newer detected!"
 fi
@@ -27,16 +27,20 @@ then
     echo "python3-dev/devel detected!"
 else
     echo "python3-dev/devel is not installed. "
-    return
+    exit 1
 fi
 
 # check for pipenv
 pipenv --version &> /dev/null
-if [ $? = 0 ]
-then
+if [ $? -eq 0 ]; then
     echo "pipenv detected!"
-    pipenv install
-    # pipenv shell
+    pipenv --venv &> /dev/null
+    if [ $? -ne 0 ]; then
+        echo "Installing a new virtual environment via pipenv"
+        pipenv install
+    else
+        echo "Using the pre-existing virtual environment."
+    fi
 else
     echo "pipenv is not installed/enabled. "
 fi
