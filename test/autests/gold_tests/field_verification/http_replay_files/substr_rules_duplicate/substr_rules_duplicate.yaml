@@ -1,0 +1,57 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ { name: tcp }, {name: ip, version: 4} ]
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+    client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ Set-Cookie, [ ABCD, EFG ] ]
+        - [ Pref-Cookie, [ ABCD ] ]
+    proxy-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ Pref-Cookie, [ AB, EF ], prefix ]
+        - [ Suff-Cookie, [ AB, EF ], suffix ]
+        - [ Set-Cookie, [ G, F ], contains ]
+        - [ Set-Cookie, [ AB, G ], suffix ]
+        - [ Set-Cookie, [ AB, E ], contains ]
+        - [ Set-Cookie, [ A, EFG ], prefix ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Set-Cookie, [ ABCD, EFG ] ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Set-Cookie, [ AB ], contains ]
+        - [ Set-Cookie, [ BC, EF ], prefix ]
+        - [ Set-Cookie, [ ABCD, EFG ], suffix ]

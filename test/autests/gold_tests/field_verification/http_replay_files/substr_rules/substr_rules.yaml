@@ -1,0 +1,58 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ { name: tcp }, {name: ip, version: 4} ]
+  transactions:
+
+  - client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ X-Test-Request, RequestData ]
+        - [ X-Test-Present, It's there ]
+        - [ uuid, 5 ]
+    proxy-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, le.on, contains ]
+        - [ X-Test-Request, Req, prefix ]
+        - [ X-Test-Present, there, suffix ]
+        - [ Host, two, contains ]
+        - [ X-Test-Request, equest, prefix ]
+        - [ X-Test-Present, er, suffix ]
+        - [ uuid, 5 ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Set-Cookie, ABCD ]
+        - [ uuid, 5 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Content-Type, html, contains ]
+        - [ Set-Cookie, ABCDE, contains ]
+        - [ X-Not-A-Header, Whatever, prefix ]
+        - [ X-Does-Not-Exist, NotHere, contains ]
+        - [ X-Does-Not-Exist, NotHere, suffix ]
+        - [ uuid, 5 ]
