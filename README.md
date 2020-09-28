@@ -18,7 +18,10 @@ Each header field specification can verify one of the following:
 
 1. The absence of a field with the specified name.
 1. The presence of a field with the specified name.
-1. Both the presence of a field with the specified name and value (matched cases sensitively).
+1. Both the presence of a field with the specified name and value (matched case sensitively).
+1. The presence of a field with the specified name with a value containing the specified value (matched case sensitively).
+1. The presence of a field with the specified name with a value prefixed with the specified value (matched case sensitively).
+1. The presence of a field with the specified name with a value suffixed with the specified value (matched case sensitively).
 
 Thus the following JSON field specification requests no field verification:
 
@@ -32,10 +35,34 @@ The following specifies that the HTTP field `X-Forwarded-For` _with any value_ s
   - [ X-Forwarded-For, 10.10.10.2, absent ]
 ```
 
+The following specifies that the HTTP field `X-Forwarded-For` _with any value_ should  have been sent by the proxy:
+
+```YAML
+  - [ X-Forwarded-For, 10.10.10.2, present ]
+```
+
 The following specifies that `X-Forwarded-For` should have been received from the proxy with the exact value "10.10.10.2":
 
 ```YAML
   - [ X-Forwarded-For, 10.10.10.2, equal ]
+```
+
+The following specifies that `X-Forwarded-For` should have been received from the proxy containing the value "10" at any position in the actual value:
+
+```YAML
+  - [ X-Forwarded-For, 10, contains ]
+```
+
+The following specifies that `X-Forwarded-For` should have been received from the proxy with an actual value prefixed with "1":
+
+```YAML
+  - [ X-Forwarded-For, 1, prefix ]
+```
+
+The following specifies that `X-Forwarded-For` should have been received from the proxy with an actual value suffixed with "2":
+
+```YAML
+  - [ X-Forwarded-For, 2, suffix ]
 ```
 
 ## Install

@@ -1797,6 +1797,10 @@ RuleCheck::options_init()
       static_cast<single_field_function_type>(make_presence);
   options[swoc::TextView(YAML_RULE_ABSENCE)] =
       static_cast<single_field_function_type>(make_absence);
+  options[swoc::TextView(YAML_RULE_CONTAINS)] =
+      static_cast<single_field_function_type>(make_contains);
+  options[swoc::TextView(YAML_RULE_PREFIX)] = static_cast<single_field_function_type>(make_prefix);
+  options[swoc::TextView(YAML_RULE_SUFFIX)] = static_cast<single_field_function_type>(make_suffix);
 
   duplicate_field_options = DuplicateFieldRuleOptions();
   using duplicate_field_function_type =
@@ -1807,6 +1811,12 @@ RuleCheck::options_init()
       static_cast<duplicate_field_function_type>(make_presence);
   duplicate_field_options[swoc::TextView(YAML_RULE_ABSENCE)] =
       static_cast<duplicate_field_function_type>(make_absence);
+  duplicate_field_options[swoc::TextView(YAML_RULE_CONTAINS)] =
+      static_cast<duplicate_field_function_type>(make_contains);
+  duplicate_field_options[swoc::TextView(YAML_RULE_PREFIX)] =
+      static_cast<duplicate_field_function_type>(make_prefix);
+  duplicate_field_options[swoc::TextView(YAML_RULE_SUFFIX)] =
+      static_cast<duplicate_field_function_type>(make_suffix);
 }
 
 std::shared_ptr<RuleCheck>
@@ -1877,6 +1887,42 @@ RuleCheck::make_absence(swoc::TextView name, std::list<swoc::TextView> && /* val
   return std::shared_ptr<RuleCheck>(new AbsenceCheck(name, EXPECTS_DUPLICATE_FIELDS));
 }
 
+std::shared_ptr<RuleCheck>
+RuleCheck::make_contains(swoc::TextView name, swoc::TextView value)
+{
+  return std::shared_ptr<RuleCheck>(new ContainsCheck(name, value));
+}
+
+std::shared_ptr<RuleCheck>
+RuleCheck::make_contains(swoc::TextView name, std::list<swoc::TextView> &&values)
+{
+  return std::shared_ptr<RuleCheck>(new ContainsCheck(name, std::move(values)));
+}
+
+std::shared_ptr<RuleCheck>
+RuleCheck::make_prefix(swoc::TextView name, swoc::TextView value)
+{
+  return std::shared_ptr<RuleCheck>(new PrefixCheck(name, value));
+}
+
+std::shared_ptr<RuleCheck>
+RuleCheck::make_prefix(swoc::TextView name, std::list<swoc::TextView> &&values)
+{
+  return std::shared_ptr<RuleCheck>(new PrefixCheck(name, std::move(values)));
+}
+
+std::shared_ptr<RuleCheck>
+RuleCheck::make_suffix(swoc::TextView name, swoc::TextView value)
+{
+  return std::shared_ptr<RuleCheck>(new SuffixCheck(name, value));
+}
+
+std::shared_ptr<RuleCheck>
+RuleCheck::make_suffix(swoc::TextView name, std::list<swoc::TextView> &&values)
+{
+  return std::shared_ptr<RuleCheck>(new SuffixCheck(name, std::move(values)));
+}
+
 EqualityCheck::EqualityCheck(swoc::TextView name, swoc::TextView value)
 {
   _name = name;
@@ -1902,24 +1948,63 @@ AbsenceCheck::AbsenceCheck(swoc::TextView name, bool expects_duplicate_fields)
   _expects_duplicate_fields = expects_duplicate_fields;
 }
 
+ContainsCheck::ContainsCheck(swoc::TextView name, swoc::TextView value)
+{
+  _name = name;
+  _value = value;
+}
+
+ContainsCheck::ContainsCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
+{
+  _name = name;
+  _values = std::move(values);
+  _expects_duplicate_fields = true;
+}
+
+PrefixCheck::PrefixCheck(swoc::TextView name, swoc::TextView value)
+{
+  _name = name;
+  _value = value;
+}
+
+PrefixCheck::PrefixCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
+{
+  _name = name;
+  _values = std::move(values);
+  _expects_duplicate_fields = true;
+}
+
+SuffixCheck::SuffixCheck(swoc::TextView name, swoc::TextView value)
+{
+  _name = name;
+  _value = value;
+}
+
+SuffixCheck::SuffixCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
+{
+  _name = name;
+  _values = std::move(values);
+  _expects_duplicate_fields = true;
+}
+
 bool
 EqualityCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const
 {
   swoc::Errata errata;
-  if (name.empty())
+  if (name.empty()) {
     errata.info(
         R"(Equals Violation: Absent. Key: "{}", Name: "{}", Correct Value: "{}")",
         key,
         _name,
         _value);
-  else if (strcmp(value, _value))
+  } else if (strcmp(value, _value)) {
     errata.info(
         R"(Equals Violation: Different. Key: "{}", Name: "{}", Correct Value: "{}", Actual Value: "{}")",
         key,
         _name,
         _value,
         value);
-  else {
+  } else {
     errata.info(R"(Equals Success: Key: "{}", Name: "{}", Value: "{}")", key, _name, _value);
     return true;
   }
@@ -1934,11 +2019,12 @@ EqualityCheck::test(
 {
   swoc::Errata errata;
   if (name.empty()) {
-    errata.info(
-        R"(Equals Violation: Absent. Key: "{}", Name: "{}", Correct Value: "{}")",
-        key,
-        _name,
-        _value);
+    MSG_BUFF message;
+    message.print(R"(Equals Violation: Absent. Key: "{}", Name: "{}", )", key, _name);
+    message.print(R"(Correct Values:)");
+    for (auto const &value : _values) {
+      message.print(R"( "{}")", value);
+    }
   } else if (_values != values) {
     MSG_BUFF message;
     message.print(R"(Equals Violation: Different. Key: "{}", Name: "{}", )", key, _name);
@@ -2027,6 +2113,260 @@ AbsenceCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::Text
     return false;
   }
   errata.info(R"(Absence Success: Key: "{}", Name: "{}")", key, _name);
+  return true;
+}
+
+bool
+ContainsCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const
+{
+  swoc::Errata errata;
+  if (name.empty()) {
+    errata.info(
+        R"(Contains Violation: Absent. Key: "{}", Name: "{}", Required Value: "{}")",
+        key,
+        _name,
+        _value);
+  } else if (value.find(_value) == std::string::npos) {
+    errata.info(
+        R"(Contains Violation: Not Contained. Key: "{}", Name: "{}", Required Value: "{}", Actual Value: "{}")",
+        key,
+        _name,
+        _value,
+        value);
+  } else {
+    errata.info(
+        R"(Contains Success: Key: "{}", Name: "{}", Required Value: "{}", Value: "{}")",
+        key,
+        _name,
+        _value,
+        value);
+    return true;
+  }
+  return false;
+}
+
+bool
+ContainsCheck::test(
+    swoc::TextView key,
+    swoc::TextView name,
+    std::list<swoc::TextView> const &values) const
+{
+  swoc::Errata errata;
+  if (name.empty() || values.size() != _values.size()) {
+    MSG_BUFF message;
+    message.print(R"(Contains Violation: Absent/Mismatched. Key: "{}", Name: "{}", )", key, _name);
+    message.print(R"(Required Values:)");
+    for (auto const &value : _values) {
+      message.print(R"( "{}")", value);
+    }
+    message.print(R"(, Received Values:)");
+    for (auto const &value : values) {
+      message.print(R"( "{}")", value);
+    }
+    errata.info(message.view());
+    return false;
+  }
+  auto value_it = values.begin();
+  auto contain_it = _values.begin();
+  while (value_it != values.end()) {
+    if (value_it->find(*contain_it) == std::string::npos) {
+      MSG_BUFF message;
+      message.print(R"(Contains Violation: Not Contained. Key: "{}", Name: "{}", )", key, _name);
+
+      message.print(R"(Required Values:)");
+      for (auto const &value : _values) {
+        message.print(R"( "{}")", value);
+      }
+      message.print(R"(, Received Values:)");
+      for (auto const &value : values) {
+        message.print(R"( "{}")", value);
+      }
+      errata.info(message.view());
+      break;
+    }
+    ++value_it;
+    ++contain_it;
+  }
+  MSG_BUFF message;
+  message.print(R"(Contains Success: Key: "{}", Name: "{}", )", key, _name);
+
+  message.print(R"(Required Values:)");
+  for (auto const &value : _values) {
+    message.print(R"( "{}")", value);
+  }
+  message.print(R"(, Received Values:)");
+  for (auto const &value : values) {
+    message.print(R"( "{}")", value);
+  }
+  errata.info(message.view());
+  return true;
+}
+
+bool
+PrefixCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const
+{
+  swoc::Errata errata;
+  if (name.empty()) {
+    errata.info(
+        R"(Prefix Violation: Absent. Key: "{}", Name: "{}", Required Prefix: "{}")",
+        key,
+        _name,
+        _value);
+  } else if (!value.starts_with(_value)) {
+    errata.info(
+        R"(Prefix Violation: Not Found. Key: "{}", Name: "{}", Required Prefix: "{}", Actual Value: "{}")",
+        key,
+        _name,
+        _value,
+        value);
+  } else {
+    errata.info(
+        R"(Prefix Success: Key: "{}", Name: "{}", Required Prefix: "{}", Value: "{}")",
+        key,
+        _name,
+        _value,
+        value);
+    return true;
+  }
+  return false;
+}
+
+bool
+PrefixCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+    const
+{
+  swoc::Errata errata;
+  if (name.empty() || values.size() != _values.size()) {
+    MSG_BUFF message;
+    message.print(R"(Prefix Violation: Absent/Mismatched. Key: "{}", Name: "{}", )", key, _name);
+    message.print(R"(Required Prefixes:)");
+    for (auto const &value : _values) {
+      message.print(R"( "{}")", value);
+    }
+    message.print(R"(, Received Values:)");
+    for (auto const &value : values) {
+      message.print(R"( "{}")", value);
+    }
+    errata.info(message.view());
+    return false;
+  }
+  auto value_it = values.begin();
+  auto prefix_it = _values.begin();
+  while (value_it != values.end()) {
+    if (!value_it->starts_with(*prefix_it)) {
+      MSG_BUFF message;
+      message.print(R"(Prefix Violation: Not Found. Key: "{}", Name: "{}", )", key, _name);
+
+      message.print(R"(Required Prefixes:)");
+      for (auto const &value : _values) {
+        message.print(R"( "{}")", value);
+      }
+      message.print(R"(, Received Values:)");
+      for (auto const &value : values) {
+        message.print(R"( "{}")", value);
+      }
+      errata.info(message.view());
+      return false;
+    }
+    ++value_it;
+    ++prefix_it;
+  }
+  MSG_BUFF message;
+  message.print(R"(Prefix Success: Key: "{}", Name: "{}", )", key, _name);
+
+  message.print(R"(Required Prefixes:)");
+  for (auto const &value : _values) {
+    message.print(R"( "{}")", value);
+  }
+  message.print(R"(, Received Values:)");
+  for (auto const &value : values) {
+    message.print(R"( "{}")", value);
+  }
+  errata.info(message.view());
+  return true;
+}
+
+bool
+SuffixCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const
+{
+  swoc::Errata errata;
+  if (name.empty()) {
+    errata.info(
+        R"(Suffix Violation: Absent. Key: "{}", Name: "{}", Required Suffix: "{}")",
+        key,
+        _name,
+        _value);
+  } else if (!value.ends_with(_value)) {
+    errata.info(
+        R"(Suffix Violation: Not Found. Key: "{}", Name: "{}", Required Suffix: "{}", Actual Value: "{}")",
+        key,
+        _name,
+        _value,
+        value);
+  } else {
+    errata.info(
+        R"(Suffix Success: Key: "{}", Name: "{}", Required Suffix: "{}", Value: "{}")",
+        key,
+        _name,
+        _value,
+        value);
+    return true;
+  }
+  return false;
+}
+
+bool
+SuffixCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+    const
+{
+  swoc::Errata errata;
+  if (name.empty() || values.size() != _values.size()) {
+    MSG_BUFF message;
+    message.print(R"(Suffix Violation: Absent/Mismatched. Key: "{}", Name: "{}", )", key, _name);
+    message.print(R"(Required Suffixes:)");
+    for (auto const &value : _values) {
+      message.print(R"( "{}")", value);
+    }
+    message.print(R"(, Received Values:)");
+    for (auto const &value : values) {
+      message.print(R"( "{}")", value);
+    }
+    errata.info(message.view());
+    return false;
+  }
+  auto value_it = values.begin();
+  auto suffix_it = _values.begin();
+  while (value_it != values.end()) {
+    if (!value_it->starts_with(*suffix_it)) {
+      MSG_BUFF message;
+      message.print(R"(Suffix Violation: Not Found. Key: "{}", Name: "{}", )", key, _name);
+
+      message.print(R"(Required Suffixes:)");
+      for (auto const &value : _values) {
+        message.print(R"( "{}")", value);
+      }
+      message.print(R"(, Received Values:)");
+      for (auto const &value : values) {
+        message.print(R"( "{}")", value);
+      }
+      errata.info(message.view());
+      return false;
+    }
+    ++value_it;
+    ++suffix_it;
+  }
+  MSG_BUFF message;
+  message.print(R"(Suffix Success: Key: "{}", Name: "{}", )", key, _name);
+
+  message.print(R"(Required Suffixes:)");
+  for (auto const &value : _values) {
+    message.print(R"( "{}")", value);
+  }
+  message.print(R"(, Received Values:)");
+  for (auto const &value : values) {
+    message.print(R"( "{}")", value);
+  }
+  errata.info(message.view());
   return true;
 }
 

@@ -76,6 +76,9 @@ static constexpr size_t YAML_RULE_TYPE_KEY{2};
 static const std::string YAML_RULE_EQUALS{"equal"};
 static const std::string YAML_RULE_PRESENCE{"present"};
 static const std::string YAML_RULE_ABSENCE{"absent"};
+static const std::string YAML_RULE_CONTAINS{"contains"};
+static const std::string YAML_RULE_PREFIX{"prefix"};
+static const std::string YAML_RULE_SUFFIX{"suffix"};
 
 static constexpr size_t MAX_HDR_SIZE = 131072; // Max our ATS is configured for
 static constexpr size_t MAX_DRAIN_BUFFER_SIZE = 1 << 20;
@@ -150,6 +153,18 @@ BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError con
  *   3. Equality: an HTTP header with the given name and value should exist
  *   in the request or response being verified.
  *
+ *   4. Contains: an HTTP header with the given name and the given value
+ *   somewhere in the header value should exist in the request or response
+ *   being verified.
+ *
+ *   5. Prefix: an HTTP header with the given name and the given value as
+ *   a prefix in the header value should exist in the request or response
+ *   being verified.
+ *
+ *   6. Suffix: an HTTP header with the given name and the given value as
+ *   a suffix in the header value should exist in the request or response
+ *   being verified.
+ *
  * Thus rules are the expectations that are provided to proxy-verifier
  * concerning transactions coming out of the proxy. In the absence of a rule, no
  * verification is done.
@@ -197,7 +212,8 @@ class RuleCheck
       std::function<std::shared_ptr<RuleCheck>(swoc::TextView, swoc::TextView)>;
   using RuleOptions = std::unordered_map<swoc::TextView, MakeRuleFunction, Hash, Hash>;
   static RuleOptions options; ///< Returns function to construct a RuleCheck child class for a
-                              ///< given rule type ("equals", "presence", or "absence")
+                              ///< given rule type ("equals", "presence", "absence",
+                              ///< "contains", "prefix", "or "suffix")
 
   using MakeDuplicateFieldRuleFunction =
       std::function<std::shared_ptr<RuleCheck>(swoc::TextView, std::list<swoc::TextView> &&)>;
@@ -206,7 +222,8 @@ class RuleCheck
   static DuplicateFieldRuleOptions
       duplicate_field_options; ///< Returns function to construct a RuleCheck
                                ///< child class for a given duplicate field rule
-                               ///< type ("equals", "presence", or "absence")
+                               ///< type ("equals", "presence", "absence",
+                               ///< "contains", "prefix", "or "suffix")
 
 protected:
   /// Name the expects_duplicate_fields parameter to the Rule constructors.
@@ -296,6 +313,60 @@ public:
    * @param values (unused) The list of values specified in the YAML node.
    */
   static std::shared_ptr<RuleCheck> make_absence(
+      swoc::TextView name,
+      std::list<swoc::TextView> &&values);
+
+  /** Generate @a ContainsCheck, invoked by the factory function when the
+   * "contains" flag is present.
+   *
+   * @param name The name of the target field
+   * @param value The associated "contains" value with the target field,
+   * that is used with strcasecmp comparisons
+   * @return A pointer to the ContainsCheck instance generated, holding a name
+   * TextView for the rule to compare inputs to
+   */
+  static std::shared_ptr<RuleCheck> make_contains(swoc::TextView name, swoc::TextView value);
+
+  /**
+   * @param values The list of values to expect in the response.
+   */
+  static std::shared_ptr<RuleCheck> make_contains(
+      swoc::TextView name,
+      std::list<swoc::TextView> &&values);
+
+  /** Generate @a PrefixCheck, invoked by the factory function when the
+   * "prefix" flag is present.
+   *
+   * @param name The name of the target field
+   * @param value The associated "prefix" value with the target field,
+   * that is used with strcasecmp comparisons
+   * @return A pointer to the PrefixCheck instance generated, holding a name
+   * TextView for the rule to compare inputs to
+   */
+  static std::shared_ptr<RuleCheck> make_prefix(swoc::TextView name, swoc::TextView value);
+
+  /**
+   * @param values The list of values to expect in the response.
+   */
+  static std::shared_ptr<RuleCheck> make_prefix(
+      swoc::TextView name,
+      std::list<swoc::TextView> &&values);
+
+  /** Generate @a SuffixCheck, invoked by the factory function when the
+   * "suffix" flag is present.
+   *
+   * @param name The name of the target field
+   * @param value The associated "suffix" value with the target field,
+   * that is used with strcasecmp comparisons
+   * @return A pointer to the SuffixCheck instance generated, holding a name
+   * TextView for the rule to compare inputs to
+   */
+  static std::shared_ptr<RuleCheck> make_suffix(swoc::TextView name, swoc::TextView value);
+
+  /**
+   * @param values (unused) The list of values specified in the YAML node.
+   */
+  static std::shared_ptr<RuleCheck> make_suffix(
       swoc::TextView name,
       std::list<swoc::TextView> &&values);
 
@@ -474,6 +545,195 @@ public:
 private:
   /** Whether this Rule is configured for duplicate fields. */
   bool _expects_duplicate_fields = false;
+};
+
+class ContainsCheck : public RuleCheck
+{
+public:
+  ~ContainsCheck() { }
+
+  /** Construct @a ContainsCheck with a given name and "contains" value.
+   *
+   * @param name The name of the target field
+   * @param value The associated "contains" value with the target field,
+   * that is used with strcasecmp comparisons
+   */
+  ContainsCheck(swoc::TextView name, swoc::TextView value);
+
+  /** Construct @a ContainsCheck with a given name and set of "contains" values.
+   *
+   * @param name The name of the target field
+   * @param value The associated "contains" values with the target field,
+   * that is used with strcasecmp comparisons
+   */
+  ContainsCheck(swoc::TextView name, std::list<swoc::TextView> &&values);
+
+  /** Test whether the name matches the expected name and the value contains
+   * the expected value per the values instantiated in construction.
+   *
+   * Reports errors in verbose mode.
+   *
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not found)
+   * @param value The value of the target field (null if not found)
+   * @return Whether the check was successful or not
+   */
+  bool test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const override;
+
+  /** Test whether the name and matches the expected name and the values contain
+   * the expected values per the values instantiated in construction.
+   *
+   * Reports errors in verbose mode.
+   *
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not found)
+   * @param values The values of the target field (null if not found)
+   * @return Whether the check was successful or not
+   */
+  bool test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+      const override;
+
+  /** Whether this Rule is configured for duplicate fields.
+   *
+   * @return True of the Rule is configured for duplicate fields, false
+   * otherwise.
+   */
+  bool
+  expects_duplicate_fields() const override
+  {
+    return _expects_duplicate_fields;
+  }
+
+private:
+  swoc::TextView _value;                  ///< ContainsChecks require value comparisons.
+  std::list<swoc::TextView> _values;      ///< ContainsChecks require value comparisons.
+  bool _expects_duplicate_fields = false; ///< Whether the Rule is configured for duplicate fields.
+};
+
+class PrefixCheck : public RuleCheck
+{
+public:
+  ~PrefixCheck() { }
+
+  /** Construct @a PrefixCheck with a given name and value.
+   *
+   * @param name The name of the target field
+   * @param value The associated value with the target field,
+   * that is used with strcasecmp comparisons
+   */
+  PrefixCheck(swoc::TextView name, swoc::TextView value);
+
+  /** Construct @a PrefixCheck with a given name and set of expected values.
+   *
+   * @param name The name of the target field
+   * @param value The associated values with the target field,
+   * that is used with strcasecmp comparisons
+   */
+  PrefixCheck(swoc::TextView name, std::list<swoc::TextView> &&values);
+
+  /** Test whether the name matches the expected name and the value is prefixed
+   * with the expected value per the values instantiated in construction.
+   *
+   * Reports errors in verbose mode.
+   *
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not found)
+   * @param value The value of the target field (null if not found)
+   * @return Whether the check was successful or not
+   */
+  bool test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const override;
+
+  /** Test whether the name matches the expected name and the values are prefixed
+   * with the expected value per the values instantiated in construction.
+   *
+   * Reports errors in verbose mode.
+   *
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not found)
+   * @param values The values of the target field (null if not found)
+   * @return Whether the check was successful or not
+   */
+  bool test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+      const override;
+
+  /** Whether this Rule is configured for duplicate fields.
+   *
+   * @return True of the Rule is configured for duplicate fields, false
+   * otherwise.
+   */
+  bool
+  expects_duplicate_fields() const override
+  {
+    return _expects_duplicate_fields;
+  }
+
+private:
+  swoc::TextView _value;                  ///< PrefixChecks require value comparisons.
+  std::list<swoc::TextView> _values;      ///< PrefixChecks require value comparisons.
+  bool _expects_duplicate_fields = false; ///< Whether the Rule is configured for duplicate fields.
+};
+
+class SuffixCheck : public RuleCheck
+{
+public:
+  ~SuffixCheck() { }
+
+  /** Construct @a SuffixCheck with a given name and value.
+   *
+   * @param name The name of the target field
+   * @param value The associated "suffix" value with the target field,
+   * that is used with strcasecmp comparisons
+   */
+  SuffixCheck(swoc::TextView name, swoc::TextView value);
+
+  /** Construct @a SuffixCheck with a given name and set of expected values.
+   *
+   * @param name The name of the target field
+   * @param value The associated "suffix" values with the target field,
+   * that is used with strcasecmp comparisons
+   */
+  SuffixCheck(swoc::TextView name, std::list<swoc::TextView> &&values);
+
+  /** Test whether the name matches the expected name and the value is suffixed
+   * with the expected value per the values instantiated in construction.
+   *
+   * Reports errors in verbose mode.
+   *
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not found)
+   * @param value The value of the target field (null if not found)
+   * @return Whether the check was successful or not
+   */
+  bool test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const override;
+
+  /** Test whether the name matches the expected name and the values are suffixed
+   * with the expected values per the values instantiated in construction.
+   *
+   * Reports errors in verbose mode.
+   *
+   * @param key The identifying transaction key.
+   * @param name The name of the target field (null if not found)
+   * @param values The values of the target field (null if not found)
+   * @return Whether the check was successful or not
+   */
+  bool test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+      const override;
+
+  /** Whether this Rule is configured for duplicate fields.
+   *
+   * @return True of the Rule is configured for duplicate fields, false
+   * otherwise.
+   */
+  bool
+  expects_duplicate_fields() const override
+  {
+    return _expects_duplicate_fields;
+  }
+
+private:
+  swoc::TextView _value;                  ///< SuffixChecks require value comparisons.
+  std::list<swoc::TextView> _values;      ///< SuffixChecks require value comparisons.
+  bool _expects_duplicate_fields = false; ///< Whether the Rule is configured for duplicate fields.
 };
 
 class HttpFields

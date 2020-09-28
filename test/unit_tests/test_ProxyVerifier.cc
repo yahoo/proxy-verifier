@@ -70,6 +70,53 @@ TEST_CASE("RuleChecks of non-duplicate fields", "[RuleCheck]")
     CHECK(equal_check_blank->test(key, test_name, empty_value));
     CHECK_FALSE(equal_check_blank->test(key, test_name, non_empty_value));
   }
+
+  SECTION("contains checks")
+  {
+    swoc::TextView contained_value("Val");
+    std::shared_ptr<RuleCheck> contains_check =
+        RuleCheck::make_rule_check(test_name, contained_value, "contains");
+    REQUIRE(contains_check);
+
+    CHECK_FALSE(contains_check->test(key, empty_name, empty_value));
+    CHECK_FALSE(contains_check->test(key, empty_name, expected_value));
+    CHECK_FALSE(contains_check->test(key, empty_name, contained_value));
+    CHECK_FALSE(contains_check->test(key, test_name, empty_value));
+    CHECK(contains_check->test(key, test_name, expected_value));
+    CHECK(contains_check->test(key, test_name, contained_value));
+  }
+
+  SECTION("prefix checks")
+  {
+    swoc::TextView prefix_value("test");
+    std::shared_ptr<RuleCheck> prefix_check =
+        RuleCheck::make_rule_check(test_name, prefix_value, "prefix");
+    REQUIRE(prefix_check);
+
+    CHECK_FALSE(prefix_check->test(key, empty_name, empty_value));
+    CHECK_FALSE(prefix_check->test(key, empty_name, expected_value));
+    CHECK_FALSE(prefix_check->test(key, empty_name, prefix_value));
+    CHECK_FALSE(prefix_check->test(key, test_name, empty_value));
+    CHECK(prefix_check->test(key, test_name, expected_value));
+    CHECK(prefix_check->test(key, test_name, prefix_value));
+  }
+
+  SECTION("suffix checks")
+  {
+    swoc::TextView suffix_value("alue");
+    std::shared_ptr<RuleCheck> suffix_check =
+        RuleCheck::make_rule_check(test_name, suffix_value, "suffix");
+    REQUIRE(suffix_check);
+
+    CHECK_FALSE(suffix_check->test(key, empty_name, empty_value));
+    CHECK_FALSE(suffix_check->test(key, empty_name, expected_value));
+    CHECK_FALSE(suffix_check->test(key, empty_name, suffix_value));
+    CHECK_FALSE(suffix_check->test(key, test_name, empty_value));
+    CHECK(suffix_check->test(key, test_name, expected_value));
+    CHECK(suffix_check->test(key, test_name, suffix_value));
+  }
+
+  // contains/prefix/suffix rule with blank value would be absurd, so skipped
 }
 
 TEST_CASE("RuleChecks of duplicate fields", "[RuleCheck]")
