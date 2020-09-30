@@ -150,7 +150,8 @@ verifier-server \
     run \
     --listen 127.0.0.1:8080 \
     --listen-https 127.0.0.1:4443 \
-    --cert <key_and_cert_pem> \
+    --server-cert <server_cert> \
+    --ca-certs <file_or_directory_of_ca_certs> \
     <replay_file_directory>
 ```
 
@@ -161,6 +162,8 @@ connections and localhost port 4444 for HTTPS connections:
 ```
 verifier-client \
     run \
+    --client-cert <client_cert> \
+    --ca-certs <file_or_directory_of_ca_certs> \
     <replay_file_directory> \
     127.0.0.1:8081 \
     127.0.0.1:4444
@@ -169,6 +172,13 @@ verifier-client \
 With these two invocations, the verifier-client and verifier-server will replay the
 sessions and transactions in `<replay_file_directory>`  and perform any field
 verification described therein.
+
+Note that the `--client-cert` and `--server-cert` both take either a
+certificate file containing the public and private key or a directory
+containing pem and key files. Similarly, the `--ca-certs` takes either a file
+containing one or more certificates or a directory with separate certificate
+files.  For convenience, the `test/keys` directory contains key files which can
+be used for testing.
 
 ### Optional Arguments
 
