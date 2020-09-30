@@ -1762,7 +1762,7 @@ ChunkCodex::transmit(Session &session, swoc::TextView data, size_t chunk_size)
     }
   }
   n = session.write(ZERO_CHUNK);
-  if (n != ZERO_CHUNK.size()) {
+  if (n != static_cast<ssize_t>(ZERO_CHUNK.size())) {
     return {total, std::error_code(errno, std::system_category())};
   }
   return {total, NO_ERROR};

@@ -123,7 +123,7 @@ sigint_handler(int /* signal */)
   Errata errata;
   if (Engine::status_code == 0) {
     errata.diag("Handling SIGINT: shutting down and "
-                "exiting with a 0 resonse code because no errors have been seen.");
+                "exiting with a 0 response code because no errors have been seen.");
   } else {
     errata.diag(
         "Handling SIGINT: shutting down and "
