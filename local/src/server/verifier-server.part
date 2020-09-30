@@ -10,6 +10,7 @@ env.DependsOn([
 
 env.AppendUnique(
     CCFLAGS=['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror'],
+    LIBS=['pthread'],
 )
 
 env.InstallBin(

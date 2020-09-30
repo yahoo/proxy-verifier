@@ -11,6 +11,7 @@ env.DependsOn([
 env.AppendUnique(
     CPPPATH=["${CHECK_OUT_DIR}/local/include"],
     CCFLAGS=['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror'],
+    LIBS=['pthread'],
 )
 
 env.SdkInclude(
