@@ -7,7 +7,7 @@ provided to generate these files.
 
 -----
 
-$ mkdir newcerts && cd newcerts
+$ mkdir cert-artifacts && cd cert-artifacts
 
 
 

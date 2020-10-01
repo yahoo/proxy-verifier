@@ -53,9 +53,6 @@ void TF_Serve_Connection(std::thread *t);
  */
 bool Use_Strict_Checking = false;
 
-/// Path to the parent directory of the executable, used for relative paths.
-swoc::file::path ROOT_PATH;
-
 /// This must be a list so that iterators / pointers to elements do not go stale.
 std::list<std::unique_ptr<std::thread>> Accept_Threads;
 
@@ -635,45 +632,18 @@ Engine::command_run()
 
         auto cert_arg{arguments.get("server-cert")};
         if (cert_arg.size() >= 1) {
-          swoc::file::path cert_path{cert_arg[0]};
-          if (!cert_path.is_absolute()) {
-            cert_path = ROOT_PATH / cert_path;
-          }
-          auto stat{swoc::file::status(cert_path, ec)};
-          if (ec.value() == 0) {
-            if (is_dir(stat)) {
-              TLSSession::certificate_file = cert_path / "server.pem";
-              TLSSession::privatekey_file = cert_path / "server.key";
-            } else {
-              TLSSession::certificate_file = cert_path;
-            }
-          } else {
-            errata.error(R"(Invalid certificate path "{}": {}.)", cert_arg[0], ec);
+          errata.note(TLSSession::configure_server_cert(cert_arg[0]));
+          if (!errata.is_ok()) {
+            errata.error(R"(Invalid server-cert path "{}")", cert_arg[0]);
             status_code = 1;
             return;
           }
-        } else {
-          TLSSession::certificate_file = ROOT_PATH / "server.pem";
-          TLSSession::privatekey_file = ROOT_PATH / "server.key";
-        }
-        if (errata.is_ok()) {
-          errata = TLSSession::init();
         }
         auto ca_certs_arg{arguments.get("ca-certs")};
         if (ca_certs_arg.size() >= 1) {
-          swoc::file::path cert_path{ca_certs_arg[0]};
-          if (!cert_path.is_absolute()) {
-            cert_path = ROOT_PATH / cert_path;
-          }
-          auto stat{swoc::file::status(cert_path, ec)};
-          if (ec.value() == 0) {
-            if (is_dir(stat)) {
-              TLSSession::ca_certificate_dir = cert_path;
-            } else {
-              TLSSession::ca_certificate_file = cert_path;
-            }
-          } else {
-            errata.error(R"(Invalid ca certificate path "{}": {}.)", ca_certs_arg[0], ec);
+          errata.note(TLSSession::configure_ca_cert(ca_certs_arg[0]));
+          if (!errata.is_ok()) {
+            errata.error(R"(Invalid ca-certs path "{}")", cert_arg[0]);
             status_code = 1;
             return;
           }
@@ -847,9 +817,6 @@ main(int /* argc */, char const *argv[])
     std::cerr << "Unrecognized verbosity option: " << verbosity << std::endl;
     return 1;
   }
-
-  ROOT_PATH = argv[0];
-  ROOT_PATH = ROOT_PATH.parent_path().parent_path();
 
   Continue_resp._status = 100;
   Continue_resp._http_version = "1.1";

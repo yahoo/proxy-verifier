@@ -28,6 +28,7 @@
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
+#include "swoc/bwf_std.h"
 
 using swoc::Errata;
 using swoc::TextView;
@@ -1030,6 +1031,74 @@ client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */)
       client_sni,
       (verify_result == X509_V_OK ? "passed" : "failed"));
   return ret;
+}
+// static
+swoc::Errata
+TLSSession::configure_host_cert(std::string_view _cert_path, std::string_view public_file, std::string_view private_file)
+{
+  swoc::Errata errata;
+  swoc::file::path cert_path{_cert_path};
+  std::error_code ec;
+  cert_path = swoc::file::absolute(cert_path, ec);
+  if (ec.value() != 0) {
+    errata.error(R"(Could not get absolute path for host certificate path "{}": {}.)", cert_path, ec);
+    return errata;
+  }
+
+  auto stat{swoc::file::status(cert_path, ec)};
+  if (ec.value() != 0) {
+    errata.error(R"(Invalid host certificate path "{}": {}.)", cert_path, ec);
+    return errata;
+  }
+
+  if (is_dir(stat)) {
+    TLSSession::certificate_file = swoc::file::path{(cert_path / public_file).string()};
+    TLSSession::privatekey_file = swoc::file::path{(cert_path / private_file).string()};
+  } else {
+    TLSSession::certificate_file = swoc::file::path{cert_path.string()};
+  }
+  return errata;
+}
+
+// static
+swoc::Errata
+TLSSession::configure_client_cert(std::string_view cert_path)
+{
+  return TLSSession::configure_host_cert(cert_path, "client.pem", "client.key");
+}
+
+// static
+swoc::Errata
+TLSSession::configure_server_cert(std::string_view cert_path)
+{
+  return TLSSession::configure_host_cert(cert_path, "server.pem", "server.key");
+}
+
+// static
+swoc::Errata
+TLSSession::configure_ca_cert(std::string_view _cert_path)
+{
+  swoc::Errata errata;
+  swoc::file::path cert_path{_cert_path};
+  std::error_code ec;
+  cert_path = swoc::file::absolute(cert_path, ec);
+  if (ec.value() != 0) {
+    errata.error(R"(Could not get absolute path for CA certificate path "{}": {}.)", cert_path, ec);
+    return errata;
+  }
+
+  auto stat{swoc::file::status(cert_path, ec)};
+  if (ec.value() != 0) {
+    errata.error(R"(Could not stat certificate path "{}": {}.)", cert_path, ec);
+    return errata;
+  }
+
+  if (is_dir(stat)) {
+    TLSSession::ca_certificate_dir = swoc::file::path{cert_path};
+  } else {
+    TLSSession::ca_certificate_file = swoc::file::path{cert_path};
+  }
+  return errata;
 }
 
 // static
