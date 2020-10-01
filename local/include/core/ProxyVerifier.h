@@ -1213,6 +1213,35 @@ public:
    */
   static int get_verify_mode_for_sni(std::string_view sni);
 
+  /** Configure the use of a client certificate.
+   *
+   * @param[in] cert_path The path to a directory with "client.pem" and
+   * "client.key" files, or the path to a file with both the private and public
+   * keys.
+   *
+   * @return logging and status information via an Errata.
+   */
+  static swoc::Errata configure_client_cert(std::string_view cert_path);
+
+  /** Configure the use of a server certificate.
+   *
+   * @param[in] cert_path The path to a directory with "client.pem" and
+   * "client.key" files, or the path to a file with both the private and public
+   * keys.
+   *
+   * @return logging and status information via an Errata.
+   */
+  static swoc::Errata configure_server_cert(std::string_view cert_path);
+
+  /** Configure the use of a CA.
+   *
+   * @param[in] cert_path The path to a directory contain CA files or a file
+   * containing CA information.
+   *
+   * @return logging and status information via an Errata.
+   */
+  static swoc::Errata configure_ca_cert(std::string_view cert_path);
+
 public:
   /// The client or server public key file. This may also contain the private
   /// key.
@@ -1228,6 +1257,21 @@ public:
   static swoc::file::path ca_certificate_dir;
 
 protected:
+  /** A helper file to configure a host certificate.
+   *
+   * @param[in] cert_path The path to a directory with private and public key
+   * files or the path to a file with both the private and public keys.
+   *
+   * @param[in] public_file The name to expect for the public file if cert_path
+   * is a directory.
+   *
+   * @param[in] private_file The name to expect for the private file if
+   * cert_path is a directory.
+   *
+   * @return logging and status information via an Errata.
+   */
+  static swoc::Errata configure_host_cert(std::string_view cert_path, std::string_view public_file, std::string_view private_key);
+
   /** Configure the context to use any provided certificates.
    *
    * @param[in] context The context upon which to configure the host and CA certificates.
