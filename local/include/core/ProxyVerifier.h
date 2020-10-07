@@ -1006,7 +1006,7 @@ struct Ssn
   std::list<Txn> _transactions;
   swoc::file::path _path;
   unsigned _line_no = 0;
-  uint64_t _start; ///< Start time in HR ticks.
+  uint64_t _start = 0; ///< Start time in HR ticks.
   /// The SNI to send from the client to the proxy.
   std::string _client_sni;
   /// The TLS verify mode for the client against the proxy.
