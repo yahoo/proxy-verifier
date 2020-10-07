@@ -474,11 +474,18 @@ Session::write_body(HttpHeader const &hdr)
   swoc::Rv<ssize_t> bytes_written{0};
   std::error_code ec;
 
+#if 0
+  // The use of this swoc::bwf::If crashes infrequently. Removing for now.
   bytes_written.errata().diag(
       "Transmit {} byte body {}{}.",
       hdr._content_size,
       swoc::bwf::If(hdr._content_length_p, "[CL]"),
       swoc::bwf::If(hdr._chunked_p, "[chunked]"));
+#else
+  // Use this workaround for now to avoid the above mentioned crash.
+  auto const *body_type = hdr._content_length_p ? "[CL]" : "[chunked]";
+  bytes_written.errata().diag("Transmit {} byte body {}.", hdr._content_size, body_type);
+#endif
 
   /* Observe that by this point, hdr._content_size will have been adjusted to 0
    * for HEAD requests via update_content_length. */
