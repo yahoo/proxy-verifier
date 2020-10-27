@@ -24,7 +24,7 @@ gunicorn = "*"
 httpbin = "*"
 microserver = ">=1.0.4"
 jsonschema = "*"
-cryptography = "==2.8"
+cryptography = "==3.2"
 pyopenssl = "*"
 eventlet = "*"
 
