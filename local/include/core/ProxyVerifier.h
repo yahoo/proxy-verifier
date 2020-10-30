@@ -39,7 +39,7 @@ using clock_type = std::chrono::system_clock;
 static const std::string YAML_META_KEY{"meta"};
 static const std::string YAML_GLOBALS_KEY{"global-field-rules"};
 static const std::string YAML_SSN_KEY{"sessions"};
-static const std::string YAML_SSN_START_KEY{"connection-time"};
+static const std::string YAML_TIME_START_KEY{"connection-time"};
 static const std::string YAML_SSN_PROTOCOL_KEY{"protocol"};
 static const std::string YAML_SSN_PROTOCOL_NAME{"name"};
 static const std::string YAML_SSN_PROTOCOL_VERSION{"version"};
@@ -62,6 +62,8 @@ static const std::string YAML_HTTP_STATUS_KEY{"status"};
 static const std::string YAML_HTTP_REASON_KEY{"reason"};
 static const std::string YAML_HTTP_METHOD_KEY{"method"};
 static const std::string YAML_HTTP_SCHEME_KEY{"scheme"};
+static const std::string YAML_HTTP2_KEY{"http2"};
+static const std::string YAML_HTTP_STREAM_ID_KEY{"stream-id"};
 static const std::string YAML_HTTP_URL_KEY{"url"};
 static const std::string YAML_CONTENT_KEY{"content"};
 static const std::string YAML_CONTENT_SIZE_KEY{"size"};
@@ -103,6 +105,8 @@ class HttpHeader;
  * @return 0 on success, non-zero on failure.
  */
 swoc::Rv<int> block_sigpipe();
+
+uint64_t GetUTimestamp();
 
 /** Configure logging.
  *
@@ -853,6 +857,7 @@ public:
    */
   bool verify_headers(swoc::TextView key, HttpFields const &rules_) const;
 
+  int32_t _stream_id = -1; ///< For protocols with streams, this is the stream identifier.
   unsigned _status = 0;
   TextView _reason;
   /// If @a content_size is valid but not @a content_data, synthesize the
@@ -997,8 +1002,9 @@ struct Txn
 {
   Txn(bool verify_strictly) : _req{verify_strictly}, _rsp{verify_strictly} { }
 
-  HttpHeader _req; ///< Request to send.
-  HttpHeader _rsp; ///< Rules for response to expect.
+  uint64_t _start = 0; ///< Start time in HR ticks.
+  HttpHeader _req;     ///< Request to send.
+  HttpHeader _rsp;     ///< Rules for response to expect.
 };
 
 struct Ssn
@@ -1007,12 +1013,16 @@ struct Ssn
   swoc::file::path _path;
   unsigned _line_no = 0;
   uint64_t _start = 0; ///< Start time in HR ticks.
+  /// The desired length of time in ms to replay this session.
+  float _rate_multiplier = 0.0;
   /// The SNI to send from the client to the proxy.
   std::string _client_sni;
   /// The TLS verify mode for the client against the proxy.
   int _client_verify_mode = SSL_VERIFY_NONE;
   bool is_tls = false;
   bool is_h2 = false;
+
+  swoc::Errata post_process_transactions();
 };
 
 /** A session reader.
@@ -1133,7 +1143,8 @@ public:
 
   virtual swoc::Errata run_transactions(
       std::list<Txn> const &txn,
-      swoc::IPEndpoint const *real_target);
+      swoc::IPEndpoint const *real_target,
+      float rate_multiplier);
   virtual swoc::Errata run_transaction(Txn const &json_txn);
 
 private:
@@ -1270,7 +1281,10 @@ protected:
    *
    * @return logging and status information via an Errata.
    */
-  static swoc::Errata configure_host_cert(std::string_view cert_path, std::string_view public_file, std::string_view private_key);
+  static swoc::Errata configure_host_cert(
+      std::string_view cert_path,
+      std::string_view public_file,
+      std::string_view private_key);
 
   /** Configure the context to use any provided certificates.
    *
@@ -1339,8 +1353,10 @@ public:
   }
   swoc::Errata session_init();
   swoc::Errata send_client_connection_header();
-  swoc::Errata run_transactions(std::list<Txn> const &txn, swoc::IPEndpoint const *real_target)
-      override;
+  swoc::Errata run_transactions(
+      std::list<Txn> const &txn,
+      swoc::IPEndpoint const *real_target,
+      float rate_multiplier) override;
   swoc::Errata run_transaction(Txn const &txn) override;
 
   nghttp2_session *

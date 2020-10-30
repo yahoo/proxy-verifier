@@ -63,6 +63,29 @@ std::deque<swoc::IPEndpoint> Target, Target_Https;
  */
 bool Use_Proxy_Request_Directives = false;
 
+swoc::Rv<uint64_t>
+get_start_time(YAML::Node const &node)
+{
+  swoc::Rv<uint64_t> zret{0};
+  if (node[YAML_TIME_START_KEY]) {
+    auto start_node{node[YAML_TIME_START_KEY]};
+    if (start_node.IsScalar()) {
+      auto t = swoc::svtou(start_node.Scalar());
+      if (t != 0) {
+        return (t / 1000); // Convert to usec from nsec
+      } else {
+        zret.errata().error(
+            R"("{}" node value "{}" that is not a positive integer.)",
+            YAML_TIME_START_KEY,
+            start_node.Scalar());
+      }
+    } else {
+      zret.errata().error(R"("{}" key that is not a scalar.)", YAML_TIME_START_KEY);
+    }
+  }
+  return zret;
+}
+
 class ClientReplayFileHandler : public ReplayFileHandler
 {
 public:
@@ -178,29 +201,19 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
     }
   }
 
-  if (node[YAML_SSN_START_KEY]) {
-    auto start_node{node[YAML_SSN_START_KEY]};
-    if (start_node.IsScalar()) {
-      auto t = swoc::svtou(start_node.Scalar());
-      if (t != 0) {
-        _ssn->_start = t / 1000; // Convert to usec from nsec
-      } else {
-        errata.error(
-            R"(Session at "{}":{} has a "{}" value "{}" that is not a positive integer.)",
-            _path,
-            _ssn->_line_no,
-            YAML_SSN_START_KEY,
-            start_node.Scalar());
-      }
-    } else {
+  if (node[YAML_TIME_START_KEY]) {
+    auto const start_time = get_start_time(node);
+    if (!start_time.is_ok()) {
+      errata.note(std::move(start_time.errata()));
       errata.error(
-          R"(Session at "{}":{} has a "{}" key that is not a scalar.)",
+          R"(Session at "{}":{} has a bad "{}" key.)",
           _path,
           _ssn->_line_no,
-          YAML_SSN_START_KEY);
+          YAML_TIME_START_KEY);
+      return errata;
     }
+    _ssn->_start = start_time;
   }
-
   return errata;
 }
 
@@ -217,6 +230,19 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
   }
   if (!errata.is_ok()) {
     return errata;
+  }
+  if (node[YAML_TIME_START_KEY]) {
+    auto const start_time = get_start_time(node);
+    if (!start_time.is_ok()) {
+      errata.note(std::move(start_time.errata()));
+      errata.error(
+          R"(Transaction at "{}":{} has a bad "{}" key.)",
+          _path,
+          node.Mark().line,
+          YAML_TIME_START_KEY);
+      return errata;
+    }
+    _txn._start = start_time;
   }
   LoadMutex.lock();
   return {};
@@ -290,6 +316,15 @@ ClientReplayFileHandler::ssn_close()
   {
     std::lock_guard<std::mutex> lock(LoadMutex);
     if (!_ssn->_transactions.empty()) {
+      auto const &e = _ssn->post_process_transactions();
+      if (!e.is_ok()) {
+        swoc::Errata errata;
+        errata.note(e);
+        errata.error(
+            R"("{}":{} Could not process transactions in session.)",
+            _path,
+            _ssn->_line_no);
+      }
       Session_List.push_back(_ssn);
     }
   }
@@ -358,7 +393,7 @@ Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint con
 
   errata.note(session->do_connect(real_target));
   if (errata.is_ok()) {
-    errata.note(session->run_transactions(ssn._transactions, real_target));
+    errata.note(session->run_transactions(ssn._transactions, real_target, ssn._rate_multiplier));
   }
   if (!errata.is_ok()) {
     Engine::status_code = 1;
@@ -386,20 +421,6 @@ TF_Client(std::thread *t)
         target_https_index = 0;
     }
   }
-}
-
-bool
-session_start_compare(const std::shared_ptr<Ssn> ssn1, const std::shared_ptr<Ssn> ssn2)
-{
-  return ssn1->_start < ssn2->_start;
-}
-
-uint64_t
-GetUTimestamp()
-{
-  auto retval = std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::system_clock::now().time_since_epoch());
-  return retval.count();
 }
 
 void
@@ -482,7 +503,9 @@ Engine::command_run()
   }
 
   // Sort the Session_List and adjust the time offsets
-  Session_List.sort(session_start_compare);
+  Session_List.sort([](const std::shared_ptr<Ssn> ssn1, const std::shared_ptr<Ssn> ssn2) {
+    return ssn1->_start < ssn2->_start;
+  });
 
   // After this, any string expected to be localized that isn't is an error,
   // so lock down the local string storage to avoid locking and report an
@@ -599,9 +622,11 @@ Engine::command_run()
     for (auto ssn : Session_List) {
       if (use_sleep_time) {
         usleep(sleep_time);
+        // Transactions will be run with no rate limiting.
       } else if (rate_multiplier != 0) {
+        ssn->_rate_multiplier = rate_multiplier;
         uint64_t curtime = GetUTimestamp();
-        auto start_time = ssn->_start;
+        auto const start_time = ssn->_start;
         nexttime = (uint64_t)(rate_multiplier * start_time) + firsttime;
         if (nexttime > curtime) {
           usleep(std::min(sleep_limit, nexttime - curtime));
