@@ -92,6 +92,14 @@ block_sigpipe()
   return zret;
 }
 
+uint64_t
+GetUTimestamp()
+{
+  auto retval = std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::system_clock::now().time_since_epoch());
+  return retval.count();
+}
+
 swoc::Errata
 configure_logging(const std::string_view verbose_argument)
 {
@@ -643,10 +651,15 @@ Session::run_transaction(Txn const &json_txn)
 }
 
 swoc::Errata
-Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint const *real_target)
+Session::run_transactions(
+    const std::list<Txn> &txn_list,
+    swoc::IPEndpoint const *real_target,
+    float rate_multiplier)
 {
   swoc::Errata session_errata;
 
+  uint64_t firsttime = GetUTimestamp();
+  uint64_t nexttime = 0;
   for (auto const &txn : txn_list) {
     swoc::Errata txn_errata;
     if (this->is_closed()) {
@@ -659,6 +672,14 @@ Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint const
         session_errata.note(std::move(txn_errata));
         // If we don't have a valid connection, there's no point in continuing.
         break;
+      }
+    }
+    if (rate_multiplier != 0) {
+      uint64_t curtime = GetUTimestamp();
+      auto const start_time = txn._start;
+      nexttime = (uint64_t)(rate_multiplier * start_time) + firsttime;
+      if (nexttime > curtime) {
+        usleep(nexttime - curtime);
       }
     }
     const auto before = clock_type::now();
@@ -852,10 +873,15 @@ H2Session::connect()
 }
 
 swoc::Errata
-H2Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint const *real_target)
+H2Session::run_transactions(
+    const std::list<Txn> &txn_list,
+    swoc::IPEndpoint const *real_target,
+    float rate_multiplier)
 {
   swoc::Errata errata;
 
+  uint64_t firsttime = GetUTimestamp();
+  uint64_t nexttime = 0;
   for (auto const &txn : txn_list) {
     swoc::Errata txn_errata;
     const auto key{txn._req.make_key()};
@@ -865,6 +891,14 @@ H2Session::run_transactions(const std::list<Txn> &txn_list, swoc::IPEndpoint con
         txn_errata.error(R"(Failed to reconnect HTTP/2 key={}.)", key);
         // If we don't have a valid connection, there's no point in continuing.
         break;
+      }
+    }
+    if (rate_multiplier != 0) {
+      uint64_t curtime = GetUTimestamp();
+      auto const start_time = txn._start;
+      nexttime = (uint64_t)(rate_multiplier * start_time) + firsttime;
+      if (nexttime > curtime) {
+        usleep(nexttime - curtime);
       }
     }
     txn_errata.note(this->run_transaction(txn));
@@ -1041,14 +1075,20 @@ client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */)
 }
 // static
 swoc::Errata
-TLSSession::configure_host_cert(std::string_view _cert_path, std::string_view public_file, std::string_view private_file)
+TLSSession::configure_host_cert(
+    std::string_view _cert_path,
+    std::string_view public_file,
+    std::string_view private_file)
 {
   swoc::Errata errata;
   swoc::file::path cert_path{_cert_path};
   std::error_code ec;
   cert_path = swoc::file::absolute(cert_path, ec);
   if (ec.value() != 0) {
-    errata.error(R"(Could not get absolute path for host certificate path "{}": {}.)", cert_path, ec);
+    errata.error(
+        R"(Could not get absolute path for host certificate path "{}": {}.)",
+        cert_path,
+        ec);
     return errata;
   }
 
@@ -1387,7 +1427,7 @@ on_stream_close_cb(
         chrono::duration_cast<chrono::milliseconds>(message_end - message_start);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
       errata.error(
-          R"(HTTP/2 transaction for key={} took {} milliseconds.)",
+          R"(HTTP/2 transactions in stream having key={} took {} milliseconds.)",
           stream_state._key,
           elapsed_ms.count());
     }
@@ -1856,6 +1896,20 @@ HttpHeader::global_init()
   STATUS_NO_CONTENT[304] = true;
 
   RuleCheck::options_init();
+}
+
+swoc::Errata
+Ssn::post_process_transactions()
+{
+  swoc::Errata errata;
+  _transactions.sort([](Txn const &txn1, Txn const &txn2) { return txn1._start < txn2._start; });
+  auto const offset_time = _transactions.front()._start;
+  for (auto &txn : _transactions) {
+    if (txn._start >= offset_time) {
+      txn._start -= offset_time;
+    }
+  }
+  return errata;
 }
 
 void
@@ -2670,6 +2724,38 @@ HttpHeader::load(YAML::Node const &node)
     _http_version = this->localize_lower(node[YAML_HTTP_VERSION_KEY].Scalar());
   } else {
     _http_version = "1.1";
+  }
+  if (node[YAML_HTTP2_KEY]) {
+    auto http2_node{node[YAML_HTTP2_KEY]};
+    if (http2_node.IsMap()) {
+      if (http2_node[YAML_HTTP_STREAM_ID_KEY]) {
+        auto http_stream_id_node{http2_node[YAML_HTTP_STREAM_ID_KEY]};
+        if (http_stream_id_node.IsScalar()) {
+          TextView text{http_stream_id_node.Scalar()};
+          TextView parsed;
+          auto n = swoc::svtou(text, &parsed);
+          if (parsed.size() == text.size() && 0 < n) {
+            _stream_id = n;
+          } else {
+            errata.error(
+                R"("{}" value "{}" at {} must be a positive integer.)",
+                YAML_HTTP_STREAM_ID_KEY,
+                text,
+                http_stream_id_node.Mark());
+          }
+        } else {
+          errata.error(
+              R"("{}" at {} must be a positive integer.)",
+              YAML_HTTP_STREAM_ID_KEY,
+              http_stream_id_node.Mark());
+        }
+      }
+    } else {
+      errata.error(
+          R"("{}" value at {} must be a map of HTTP/2 values.)",
+          YAML_HTTP2_KEY,
+          http2_node.Mark());
+    }
   }
 
   if (node[YAML_HTTP_STATUS_KEY]) {
