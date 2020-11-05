@@ -11,10 +11,9 @@
 - "date": "Sat, 16 Mar 2019 03:11:36 GMT"
 
 ``
-``Starting session "single_http_transaction.json":5 protocol=http.
+``Starting session "``single_transaction.json":5 protocol=http.
 ``1 transactions in 1 sessions``
 ``
 ``Parsed 1 transactions in 1 sessions.
-``Loading 1 replay files.
-``Loading directory "``/single_transaction".
+``Loading replay data from "``single_transaction.json".
 ``

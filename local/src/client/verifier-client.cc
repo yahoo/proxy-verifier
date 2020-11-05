@@ -489,7 +489,7 @@ Engine::command_run()
     }
   }
 
-  errata.info(R"(Loading directory "{}".)", args[0]);
+  errata.info(R"(Loading replay data from "{}".)", args[0]);
   errata.note(Load_Replay_Directory(
       swoc::file::path{args[0]},
       [](swoc::file::path const &file) -> swoc::Errata {

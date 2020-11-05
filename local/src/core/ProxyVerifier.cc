@@ -292,7 +292,7 @@ swoc::Rv<int>
 Session::poll(std::chrono::milliseconds timeout)
 {
   if (_fd == -1) {
-    return {0, std::move(Errata().diag("Poll called on a closed connection."))};
+    return {0, Errata().diag("Poll called on a closed connection.")};
   }
   struct pollfd poll_set[1];
   int numfds = 1;

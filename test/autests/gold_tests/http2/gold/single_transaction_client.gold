@@ -7,6 +7,6 @@
 ``content-length: 16
 ``content-type: application/json;charset=utf-8
 ``
-``Starting session "single_transaction.json":5 protocol=h2.
+``Starting session "``single_transaction.json":5 protocol=h2.
 ``1 transactions in 1 sessions ``
 ``

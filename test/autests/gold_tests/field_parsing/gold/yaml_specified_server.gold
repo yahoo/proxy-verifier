@@ -2,7 +2,6 @@
 ``Listening at 127.0.0.1:4443
 ``Listening at 127.0.0.1:8083
 ``Ready with 2 transactions.
-``Loading 1 replay files.
 ``Absence Success: Key: "1", Name: "x-not-there"
 ``Presence Success: Key: "1", Name: "x-test-header", Value: "something"
 ``

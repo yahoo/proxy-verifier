@@ -17,9 +17,9 @@ Verify --format argument parsing.
 # so only one transaction will be registered.
 #
 r = Test.AddTestRun('--format "{url}"')
-client = r.AddClientProcess("client1", "replay_files/unique_by_host", http_ports=[8080],
+client = r.AddClientProcess("client1", "unique_by_host.yaml", http_ports=[8080],
                             other_args="--verbose diag --format '{url}'")
-server = r.AddServerProcess("server1", "replay_files/unique_by_host", http_ports=[8081],
+server = r.AddServerProcess("server1", "unique_by_host.yaml", http_ports=[8081],
                             other_args="--verbose diag --format '{url}'")
 proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
 
@@ -61,9 +61,9 @@ server.ReturnCode = 1
 # Test 2: Verify using the host as a key, which is unique across transactions.
 #
 r = Test.AddTestRun('--format "{field.host}"')
-client = r.AddClientProcess("client2", "replay_files/unique_by_host", http_ports=[8080],
+client = r.AddClientProcess("client2", "unique_by_host.yaml", http_ports=[8080],
                             other_args="--verbose diag --format '{field.host}'")
-server = r.AddServerProcess("server2", "replay_files/unique_by_host", http_ports=[8081],
+server = r.AddServerProcess("server2", "unique_by_host.yaml", http_ports=[8081],
                             other_args="--verbose diag --format '{field.host}'")
 proxy = r.AddProxyProcess("proxy2", listen_port=8080, server_port=8081)
 
@@ -95,9 +95,9 @@ server.Streams.stdout += Testers.ContainsExpression(
 # Test 3: Use a more complicated key made up of two specifiers.
 #
 r = Test.AddTestRun('--format "{field.host}/{url}"')
-client = r.AddClientProcess("client3", "replay_files/unique_by_host", http_ports=[8080],
+client = r.AddClientProcess("client3", "unique_by_host.yaml", http_ports=[8080],
                             other_args="--verbose diag --format '{field.host}/{url}'")
-server = r.AddServerProcess("server3", "replay_files/unique_by_host", http_ports=[8081],
+server = r.AddServerProcess("server3", "unique_by_host.yaml", http_ports=[8081],
                             other_args="--verbose diag --format '{field.host}/{url}'")
 proxy = r.AddProxyProcess("proxy3", listen_port=8080, server_port=8081)
 

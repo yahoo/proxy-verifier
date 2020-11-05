@@ -16,9 +16,9 @@ Verify correct handling of malformed replay files.
 # Test 1: Verify correct handling of empty fields.
 #
 r = Test.AddTestRun("Verify correct handling of empty header fields")
-client = r.AddClientProcess("client1", "replay_files/empty_field",
+client = r.AddClientProcess("client1", "replay_files/empty_field.yaml",
                             http_ports=[8082], other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/empty_field",
+server = r.AddServerProcess("server1", "replay_files/empty_field.yaml",
                             http_ports=[8083], other_args="--verbose diag")
 proxy = r.AddProxyProcess("proxy1", listen_port=8082, server_port=8083)
 

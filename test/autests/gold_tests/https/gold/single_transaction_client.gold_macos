@@ -9,6 +9,6 @@
 
 ``
 ``Connecting via TLS.
-``Starting session "single_http_transaction.yaml":5 protocol=https.
+``Starting session "``single_transaction.yaml":5 protocol=https.
 ``1 transactions in 1 sessions ``
 ``
