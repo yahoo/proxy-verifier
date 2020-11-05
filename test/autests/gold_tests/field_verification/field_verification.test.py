@@ -16,8 +16,8 @@ Verify correct field verification behavior.
 # Test 1: Verify field verification in a JSON replay file.
 #
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
-client = r.AddClientProcess("client1", "http_replay_files/json", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server1", "http_replay_files/json", http_ports=[8081], other_args="--verbose diag")
+client = r.AddClientProcess("client1", "replay_files/various_verification.json", http_ports=[8080], other_args="--verbose diag")
+server = r.AddServerProcess("server1", "replay_files/various_verification.json", http_ports=[8081], other_args="--verbose diag")
 proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
 
 # Verify a success and failure of each validation in the request.
@@ -77,8 +77,8 @@ server.ReturnCode = 1
 # Test 2: Verify field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
-client = r.AddClientProcess("client2", "http_replay_files/yaml", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server2", "http_replay_files/yaml", http_ports=[8081], other_args="--verbose diag")
+client = r.AddClientProcess("client2", "replay_files/cookie_equal.yaml", http_ports=[8080], other_args="--verbose diag")
+server = r.AddServerProcess("server2", "replay_files/cookie_equal.yaml", http_ports=[8081], other_args="--verbose diag")
 proxy = r.AddProxyProcess("proxy2", listen_port=8080, server_port=8081)
 
 client.Streams.stdout += Testers.ContainsExpression(
@@ -116,8 +116,8 @@ server.ReturnCode = 1
 # Test 3: Verify duplicate field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify field verification works for HTTP transaction with duplicate fields")
-client = r.AddClientProcess("client3", "http_replay_files/duplicate_fields", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server3", "http_replay_files/duplicate_fields", http_ports=[8081], other_args="--verbose diag")
+client = r.AddClientProcess("client3", "replay_files/duplicate_fields.yaml", http_ports=[8080], other_args="--verbose diag")
+server = r.AddServerProcess("server3", "replay_files/duplicate_fields.yaml", http_ports=[8081], other_args="--verbose diag")
 proxy = r.AddProxyProcess("proxy3", listen_port=8080, server_port=8081)
 
 client.Streams.stdout += Testers.ContainsExpression(

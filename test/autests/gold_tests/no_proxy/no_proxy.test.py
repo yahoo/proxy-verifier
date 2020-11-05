@@ -12,9 +12,9 @@ Verify basic --no-proxy functionality.
 '''
 
 r = Test.AddTestRun("Verify no-proxy mode works for a simple HTTP transaction")
-client = r.AddClientProcess("client", "http_replay_file",
+client = r.AddClientProcess("client", "single_transaction.json",
                             other_args="--no-proxy --verbose diag")
-server = r.AddServerProcess("server", "http_replay_file",
+server = r.AddServerProcess("server", "single_transaction.json",
                             other_args="--verbose diag")
 
 client.Streams.stdout = Testers.ContainsExpression(
