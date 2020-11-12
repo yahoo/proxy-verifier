@@ -62,7 +62,22 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         req = self
         content_length = int(req.headers.get('Content-Length', 0))
-        req_body = self.rfile.read(content_length) if content_length else None
+        req_body = b''
+        if content_length:
+            req_body = self.rfile.read(content_length)
+        elif "chunked" in req.headers.get("Transfer-Encoding", ""):
+            # Borrowed chunk reading code from: https://stackoverflow.com/a/63037533/629530
+            while True:
+                line = self.rfile.readline().strip()
+                chunk_length = int(line, 16)
+                if chunk_length == 0:
+                    self.rfile.readline()
+                    break
+                req_body += self.rfile.read(chunk_length)
+
+                # Each chunk is followed by an additional empty newline (\r\n)
+                # that we have to consume.
+                self.rfile.readline()
 
         if req.path[0] == '/':
             if isinstance(self.connection, ssl.SSLSocket):
@@ -126,7 +141,9 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                 else:
                     self.tls.conns[origin] = http.client.HTTPConnection(replay_server, timeout=self.timeout)
             conn = self.tls.conns[origin]
-            
+
+            if 'transfer-encoding' in req.headers and req.headers['transfer-encoding'] == 'chunked':
+                req_body = self.chunkify_body(req_body)
             conn.request(self.command, final_url, req_body, req.headers)
             res = conn.getresponse()
 
@@ -153,6 +170,11 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             traceback.print_exc(file=sys.stdout)
             return
 
+        if 'transfer-encoding' in res.headers and res.headers['transfer-encoding'] == 'chunked':
+            res_body = self.chunkify_body(res_body)
+
+        if 'connection' in res.headers and res.headers['connection'] == 'keep-alive':
+            self.close_connection = False
         setattr(res, 'headers', self.filter_headers(res.headers))
 
         status_line = "%s %d %s\r\n" % (self.protocol_version, res.status, res.reason)
@@ -200,9 +222,9 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def filter_headers(headers):
         # http://tools.ietf.org/html/rfc2616#section-13.5.1
-        hop_by_hop = ('connection', 'keep-alive', 'proxy-authenticate',
+        hop_by_hop = ['proxy-authenticate',
                       'proxy-authorization', 'te', 'trailers',
-                      'transfer-encoding', 'upgrade')
+                      'upgrade']
         for k in hop_by_hop:
             del headers[k]
 
@@ -218,6 +240,12 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             return original_url
         else:
             return new_url
+
+    @staticmethod
+    def chunkify_body(res_body):
+        header = '{:x}\r\n'.format(len(res_body)).encode()
+        trailer = b'\r\n0\r\n\r\n'
+        return header + res_body + trailer
 
     def print_info(self, req, req_body, res, res_body):
         def parse_qsl(s):

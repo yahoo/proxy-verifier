@@ -5,6 +5,7 @@
 ``
 ``Responding to request /a/path with status 200.
 ``Headers:
+- "connection": "Keep-Alive"
 - "content-type": "application/json; charset=utf-8"
 - "accept-encoding": "gzip"
 - "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"

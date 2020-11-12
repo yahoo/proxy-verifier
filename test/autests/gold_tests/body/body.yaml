@@ -1,0 +1,129 @@
+---
+meta:
+  version: '1.0'
+
+sessions:
+- protocol: [ {name: http, version: 1.1}, {name: tls, version: 1.2, sni: test_sni}, { name: tcp }, {name: ip, version: 4} ]
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+    client-request:
+      version: '1.1'
+      scheme: https
+      method: POST
+      url: https://example.data.com/a/path
+      content:
+        encoding: plain
+        size: 48
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, application/json; charset=utf-8 ]
+        - [ Transfer-Encoding, chunked ]
+        - [ X-Request, "first_request" ]
+
+    proxy-request:
+      version: '1.1'
+      scheme: ''
+      method: POST
+      url: "/a/path"
+      content:
+        encoding: plain
+        size: 48
+      headers:
+        fields:
+        - [ Transfer-Encoding, chunked ]
+        - [ X-Request, "first_request", equal ]
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        encoding: plain
+        size: 64
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, multipart/form-data;snoopy=123456 ]
+        - [ Date, "Sat, 16 Mar 2019 01:33:27 GMT" ]
+        - [ Age, '1' ]
+        - [ Connection, keep-alive ]
+        - [ Transfer-Encoding, chunked ]
+        - [ X-Response, "first_response" ]
+
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        encoding: plain
+        size: 64
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, multipart/form-data;snoopy=123456 ]
+        - [ Transfer-Encoding, chunked ]
+        - [ Connection, keep-alive ]
+        - [ X-Response, "first_response", equal ]
+
+  - all:
+      headers:
+        fields:
+        - [ uuid, 2 ]
+
+    client-request:
+      version: '1.1'
+      scheme: https
+      method: POST
+      url: https://example.data.com/a/path
+      content:
+        encoding: plain
+        size: 16
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, application/json; charset=utf-8 ]
+        - [ Content-Length, '16' ]
+        - [ X-Request, "second_request" ]
+
+    proxy-request:
+      version: '1.1'
+      scheme: ''
+      method: POST
+      url: "/a/path"
+      content:
+        encoding: plain
+        size: 16
+      headers:
+        fields:
+        - [ X-Request, "second_request", equal ]
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        encoding: plain
+        size: 32
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, multipart/form-data;snoopy=123456 ]
+        - [ Connection, keep-alive ]
+        - [ Content-Length, '32' ]
+        - [ X-Response, "second_response", equal ]
+
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        encoding: plain
+        size: 32
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, multipart/form-data;snoopy=123456 ]
+        - [ Transfer-Encoding, chunked ]
+        - [ Connection, keep-alive ]
+        - [ X-Response, "second_response", equal ]

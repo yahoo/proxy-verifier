@@ -2,11 +2,12 @@
 ``Responding to request /config/settings.yaml with status 200.
 ``Headers:
 - "Accept-Encoding": "identity"
-- "uuid": "1"
-- "host": "example.one"
 - "x-test-request": "first"
 - "x-test-request": "second"
 - "x-request-sequence": "first"
 - "x-request-sequence": "second"
+- "Content-Length": "0"
+- "uuid": "1"
+- "host": "example.one"
 
 ``

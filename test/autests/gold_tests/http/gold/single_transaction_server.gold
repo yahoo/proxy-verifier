@@ -6,6 +6,7 @@
 ``Responding to request /client.do with status 200.
 ``Headers:
 - "content-type": "application/octet-stream"
+- "connection": "Keep-Alive"
 - "host": "example.com"
 - "content-length": "399"
 - "Accept-Encoding": "identity"

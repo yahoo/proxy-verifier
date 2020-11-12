@@ -5,6 +5,9 @@ uuid: 1
 host: example.one
 
 
+==== REQUEST BODY ====
+b''
+
 HTTP/1.1 200 OK
 x-test-header: backAtYou
 uuid: 1
@@ -21,6 +24,9 @@ x-another-header: request
 uuid: 2
 host: example.one
 
+
+==== REQUEST BODY ====
+b''
 
 HTTP/1.1 200 OK
 x-another-response: response

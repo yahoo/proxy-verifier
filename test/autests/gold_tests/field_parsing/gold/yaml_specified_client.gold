@@ -9,8 +9,7 @@
 - "uuid": "1"
 - "x-test-header": "backAtYou"
 
-``Drained 16 bytes.
-``Reading response body: 0000000 0000001 .
+``Drained ``: 0000000 0000001 
 ``
 - "content-type": "text/html"
 - "content-length": "32"
@@ -18,8 +17,7 @@
 - "x-another-response": "response"
 
 ``
-``Drained 32 bytes.
-``Reading response body: 0000000 0000001 0000002 0000003 .
+``Drained ``: 0000000 0000001 0000002 0000003 
 ``
 ``2 transactions in 1 sessions``
 ``

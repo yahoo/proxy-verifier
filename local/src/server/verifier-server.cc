@@ -457,12 +457,15 @@ TF_Serve_Connection(std::thread *t)
       }
 
       if (req_hdr._content_length_p || req_hdr._chunked_p) {
-        thread_errata.diag("Draining request body.");
+        if (req_hdr._chunked_p) {
+          req_hdr._content_size = txn._req._content_size;
+        }
+        thread_errata.diag("Draining request body of {} bytes.", req_hdr._content_size);
         auto &&[bytes_drained, drain_errata] = thread_info._session->drain_body(
             req_hdr,
             req_hdr._content_size,
             w.view().substr(body_offset));
-        thread_errata.note(drain_errata);
+        thread_errata.note(std::move(drain_errata));
 
         if (!thread_errata.is_ok()) {
           thread_errata.error("Failed to drain the request body.");
