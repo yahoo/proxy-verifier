@@ -2,6 +2,7 @@
 ``Headers:
 - "x-request": "testRequest"
 - "Accept-Encoding": "identity"
+- "Content-Length": "0"
 - "host": "example.one"
 - "uuid": "1"
 

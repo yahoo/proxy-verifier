@@ -1,10 +1,10 @@
 ``
-``Status: "200"
+``Status for key 1: "200"
 ``Headers:
 - "content-type": "text/html"
 - "content-length": "16"
 - "x-response": "testResponse"
 - "uuid": "1"
 
-``Drained 16 bytes.
+``Drained ``: 0000000 0000001 
 ``

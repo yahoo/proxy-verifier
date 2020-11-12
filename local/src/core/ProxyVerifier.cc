@@ -9,6 +9,7 @@
 #include "core/yaml_util.h"
 
 #include <algorithm>
+#include <cassert>
 #include <csignal>
 #include <dirent.h>
 #include <fcntl.h>
@@ -341,25 +342,11 @@ Session::drain_body_internal(
     Txn const &json_txn,
     swoc::TextView initial)
 {
-  swoc::Rv<size_t> num_drained_bytes = 0; // bytes drained for the content body.
-  num_drained_bytes.errata().diag("Reading response body: {}.", initial);
+  // The number of body bytes strictly considered. This does not include
+  // any chunk headers, if present.
+  swoc::Rv<size_t> num_drained_body_bytes = 0;
   rsp_hdr_from_wire.update_content_length(json_txn._req._method);
   rsp_hdr_from_wire.update_transfer_encoding();
-  /* Looks like missing plugins is causing issues with length mismatches
-   */
-  /*
-  if (json_txn._rsp._content_length_p != rsp_hdr._content_length_p) {
-    errata.error(R"(Content length specificaton mismatch: got {} ({})
-  expected {}({}) . url={})", rsp_hdr._content_length_p ? "length" :
-  "chunked", rsp_hdr._content_size, json_txn._rsp._content_length_p ? "length"
-  : "chunked" , json_txn._rsp._content_size, json_txn._req._url); return errata;
-  }
-  if (json_txn._rsp._content_length_p && json_txn._rsp._content_size !=
-  rsp_hdr._content_size) { errata.error(R"(Content length mismatch: got
-  {}, expected {}. url={})", rsp_hdr._content_size,
-  json_txn._rsp._content_size, json_txn._req._url); return errata;
-  }
-  */
   // The following helps set an expectation for chunked-encoded responses.
   size_t expected_content_size = json_txn._rsp._content_size;
   if (rsp_hdr_from_wire._content_length_p) {
@@ -368,9 +355,9 @@ Session::drain_body_internal(
   }
   auto &&[bytes_drained, drain_errata] =
       this->drain_body(rsp_hdr_from_wire, expected_content_size, initial);
-  num_drained_bytes.result() = bytes_drained;
-  num_drained_bytes.errata().note(std::move(drain_errata));
-  return num_drained_bytes;
+  num_drained_body_bytes = bytes_drained;
+  num_drained_body_bytes.errata().note(std::move(drain_errata));
+  return num_drained_body_bytes;
 }
 
 swoc::Rv<size_t>
@@ -378,103 +365,201 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::T
 {
   // The number of content body bytes drained. initial contains the body bytes
   // already drained, so we initialize it to that size.
-  swoc::Rv<size_t> num_drained_bytes = initial.size();
-  std::string buff;
-  if (expected_content_size < initial.size() && !hdr._chunked_p) {
-    // We do not emit this error for chunked responses as a concession. If the
-    // response has a Content-Length header, we adjust the expected size of the
-    // body based upon the value of that header in the response (see the
-    // calling function). If the response is chunked, there is no such
-    // advertized value in the response to use. In this case,
-    // expected_content_size is the content:size value in the dump. But the
-    // proxy may use a slightly different body with a different size. For this
-    // reason, we do not fail the transaction based upon such chunked responses
-    // having a larger than recorded body size.
-    num_drained_bytes.errata().error(
-        R"(Body overrun: received {} bytes of content, expected {}.)",
-        initial.size(),
-        expected_content_size);
-    return num_drained_bytes;
+  swoc::Rv<size_t> num_drained_body_bytes = initial.size();
+  // Check whether we got all the content already. Note that the expected size,
+  // which is the expected body size, should not equal the received size if it
+  // is chunked because chunked content will include extra chunk header
+  // content. Thus if the expected and received sizes are equal and the body is
+  // chunked, then the equality of size is a coincidence and a few more bytes
+  // are needed.
+  if (expected_content_size == num_drained_body_bytes && !hdr._chunked_p) {
+    num_drained_body_bytes.errata().diag(
+        "Drained with headers body of {} bytes with content: {}",
+        num_drained_body_bytes.result(),
+        initial);
+    return num_drained_body_bytes;
+  }
+  if (expected_content_size < initial.size()) {
+    if (hdr._chunked_p) {
+      // See the comment below for why chunked responses are special. Since we
+      // don't know how much content will come in, arbitrarily initialize our
+      // expectations to twice what we've received already for the body.
+      expected_content_size = initial.size() * 2;
+    } else {
+      // We do not emit this error for chunked responses as a concession. If
+      // the response has a Content-Length header, we already adjusted the
+      // expected size of the body based upon the value of that header in the
+      // response (see the calling function). If the response is chunked, there
+      // is no such advertised value in the response headers to use. In this
+      // case, expected_content_size is the content:size value in the dump. But
+      // the proxy may use a slightly different body with a different size. For
+      // this reason, we do not fail the transaction based upon such chunked
+      // responses having a larger than recorded body size.
+      num_drained_body_bytes.errata().error(
+          R"(Body overrun: received {} bytes of content, expected {}.)",
+          initial.size(),
+          expected_content_size);
+      return num_drained_body_bytes;
+    }
   }
 
   // If there's a status, and it indicates no body, we're done. This is true
-  // regarldess of the presence of a non-zero Content-Length header. Consider
+  // regardless of the presence of a non-zero Content-Length header. Consider
   // a 304 response, for example: the Content-Length indicates the size of
   // the cached response, but the body is intentionally omitted.
   if (hdr._status && HttpHeader::STATUS_NO_CONTENT[hdr._status]) {
-    return num_drained_bytes;
+    return num_drained_body_bytes;
   }
 
-  buff.reserve(std::min<size_t>(expected_content_size, MAX_DRAIN_BUFFER_SIZE));
+  // Read the above conditionals: they should guaranteed that
+  // expected_content_size > initial.size()
+  assert(expected_content_size > num_drained_body_bytes);
+  auto buff_storage_size = expected_content_size;
+  if (expected_content_size > MAX_DRAIN_BUFFER_SIZE) {
+    num_drained_body_bytes.errata().diag(
+        "Truncating the number of body bytes to store from {} to {}.",
+        expected_content_size,
+        MAX_DRAIN_BUFFER_SIZE);
+    buff_storage_size = MAX_DRAIN_BUFFER_SIZE;
+  }
+  if (hdr._chunked_p) {
+    // Allow a bit of extra room on top of the body size for chunk headers and trailers.
+    buff_storage_size += 50;
+  }
+  std::string body{initial};
+  body.reserve(buff_storage_size);
 
   if (is_closed()) {
-    num_drained_bytes.errata().error(
-        R"(drain_body: stream closed. Could not read {} bytes)",
-        num_drained_bytes.result());
-    return num_drained_bytes;
+    num_drained_body_bytes.errata().error(
+        R"(Stream closed before finishing reading the body. Read {} bytes of {} expected bytes)",
+        num_drained_body_bytes.result(),
+        expected_content_size);
+    return num_drained_body_bytes;
   }
 
   if (hdr._chunked_p) {
     ChunkCodex::ChunkCallback cb{
-        [&num_drained_bytes](TextView block, size_t /* offset */, size_t /* size */) -> bool {
-          num_drained_bytes.result() += block.size();
+        // TODO: Note that @a block is the set of body bytes in this chunk and
+        // does not include chunk header content. It would be more accurate to
+        // make @a body populated from @a block, and if we add body validation
+        // we'll need to consider that. However we're using @a body as our read
+        // buffer (thus it includes the entire body stream, including chunk
+        // headers), and it would be expensive to have two buffers holding
+        // copies of this same memory.
+        [&num_drained_body_bytes](TextView block, size_t /* offset */, size_t /* size */) -> bool {
+          num_drained_body_bytes.result() += block.size();
           return true;
         }};
     ChunkCodex codex;
 
+    // num_drained_body_bytes was initialized to initial.size(), which was
+    // sufficient and handy in the above code. However, for chunked content it
+    // is slightly inaccurate because it includes chunk headers and EOL
+    // trailers.  We reset it to zero here and count the body bytes accurately
+    // via the chunk parsing callback.
+    num_drained_body_bytes = 0;
     auto result = codex.parse(initial, cb);
     while (result == ChunkCodex::CONTINUE) {
-      auto n{read(
-          {buff.data() + buff.size(),
-           std::min<size_t>(expected_content_size - num_drained_bytes, MAX_DRAIN_BUFFER_SIZE)})};
+      if (buff_storage_size <= body.size()) {
+        // We've filled up our buffer. Try to expand it.
+        if (buff_storage_size == MAX_DRAIN_BUFFER_SIZE) {
+          // We do not want to expand it passed the MAX_DRAIN_BUFFER_SIZE. But
+          // we have to read the rest of the body bytes from the socket. To do
+          // this, we just start our buffer over from the beginning. We
+          // currently don't validate body bytes anyway and just print the
+          // buffer for debug purposes, so nothing critical depends upon an
+          // accurate body content. We did the best we could. The
+          // num_drained_body_bytes value will, however, be accurate.
+          body.resize(0);
+          num_drained_body_bytes.errata().diag(
+              "Drained {} bytes of a chunked body. "
+              "Resetting storage since we hit capacity limit: {}.",
+              num_drained_body_bytes.result(),
+              buff_storage_size);
+        } else {
+          // Since it is chunked, there's no way for us to know how much is
+          // coming in. We continue by using the doubling heuristic we
+          // previously used to initialize the buffer.
+          buff_storage_size = std::min<size_t>(buff_storage_size * 2, MAX_DRAIN_BUFFER_SIZE);
+          body.reserve(buff_storage_size);
+        }
+      }
+      auto const old_size = body.size();
+      body.resize(buff_storage_size);
+      ssize_t const n = read({body.data() + old_size, buff_storage_size - old_size});
+      if (n > 0) {
+        body.resize(old_size + n);
+        result = codex.parse(TextView(body.data() + old_size, n), cb);
+      } else {
+        body.resize(old_size);
+      }
       if (is_closed()) {
-        if (num_drained_bytes < expected_content_size) {
-          num_drained_bytes.errata().error(
+        if (num_drained_body_bytes < expected_content_size) {
+          num_drained_body_bytes.errata().error(
               R"(Body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
-              num_drained_bytes.result(),
+              num_drained_body_bytes.result(),
               expected_content_size,
               swoc::bwf::Errno{});
         }
         break;
       }
-      result = codex.parse(TextView(buff.data(), n), cb);
     }
-    if (result != ChunkCodex::DONE && num_drained_bytes != expected_content_size) {
-      num_drained_bytes.errata().error(
+    // We finished draining. Make sure we got to the DONE chunk.
+    if (result != ChunkCodex::DONE && num_drained_body_bytes != expected_content_size) {
+      num_drained_body_bytes.errata().error(
           R"(Unexpected chunked content: expected {} bytes, drained {} bytes.)",
           expected_content_size,
-          num_drained_bytes.result());
-      return num_drained_bytes;
+          num_drained_body_bytes.result());
     }
-    num_drained_bytes.errata().diag("Drained {} chunked bytes.", num_drained_bytes.result());
+    // As described above in the chunk callback comment, this will print the
+    // entire chunk stream, including chunk headers.
+    num_drained_body_bytes.errata().diag(
+        "Drained {} chunked body bytes with chunk stream: {}",
+        num_drained_body_bytes.result(),
+        body);
   } else { // Content-Length instead of chunked.
-    while (num_drained_bytes < expected_content_size) {
-      ssize_t n = read(
-          {buff.data(),
-           std::min(expected_content_size - num_drained_bytes, MAX_DRAIN_BUFFER_SIZE)});
-      // Do not update num_drained_bytes with n yet because read may return a
-      // negative value on error conditions. If there is an error on read, then
-      // we close the connection. Thus we check is_closed() here.
+    while (num_drained_body_bytes < expected_content_size) {
+      if (buff_storage_size <= body.size()) {
+        // See the comment above in the corresponding chunk code for an
+        // explanation of the logic here.
+        body.resize(0);
+        num_drained_body_bytes.errata().diag(
+            "Drained {} of {} expected bytes. Not storing any more since we hit buffer capacity: "
+            "{}.",
+            num_drained_body_bytes.result(),
+            expected_content_size,
+            buff_storage_size);
+      }
+      auto const old_size = body.size();
+      body.resize(buff_storage_size);
+      ssize_t const n = read({body.data() + old_size, buff_storage_size - old_size});
+      if (n > 0) {
+        body.resize(old_size + n);
+        num_drained_body_bytes.result() += n;
+      } else {
+        body.resize(old_size);
+      }
       if (is_closed()) {
-        num_drained_bytes.errata().error(
-            R"(Body underrun: received {} bytes  of content, expected {}, when file closed because {}.)",
-            num_drained_bytes.result(),
+        num_drained_body_bytes.errata().error(
+            R"(Body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
+            num_drained_body_bytes.result(),
             expected_content_size,
             swoc::bwf::Errno{});
         break;
       }
-      num_drained_bytes.result() += n;
     }
-    if (num_drained_bytes > expected_content_size) {
-      num_drained_bytes.errata().error(
-          R"(Invalid body read: expected {} fixed bytes, drained {} byts.)",
-          expected_content_size,
-          num_drained_bytes.result());
-      return num_drained_bytes;
+    if (num_drained_body_bytes > expected_content_size) {
+      num_drained_body_bytes.errata().error(
+          R"(Body overrun while reading it: received {} bytes of content, expected {}.)",
+          num_drained_body_bytes.result(),
+          expected_content_size);
     }
-    num_drained_bytes.errata().diag("Drained {} bytes.", num_drained_bytes.result());
+    num_drained_body_bytes.errata().diag(
+        "Drained body of {} bytes with content: {}",
+        body.size(),
+        body);
   }
-  return num_drained_bytes;
+  return num_drained_body_bytes;
 }
 
 swoc::Rv<ssize_t>
@@ -482,19 +567,14 @@ Session::write_body(HttpHeader const &hdr)
 {
   swoc::Rv<ssize_t> bytes_written{0};
   std::error_code ec;
+  auto const key = hdr.make_key();
 
-#if 0
-  // The use of this swoc::bwf::If crashes infrequently. Removing for now.
   bytes_written.errata().diag(
-      "Transmit {} byte body {}{}.",
+      "Transmit {} byte body {}{} for key {}.",
       hdr._content_size,
       swoc::bwf::If(hdr._content_length_p, "[CL]"),
-      swoc::bwf::If(hdr._chunked_p, "[chunked]"));
-#else
-  // Use this workaround for now to avoid the above mentioned crash.
-  auto const *body_type = hdr._content_length_p ? "[CL]" : "[chunked]";
-  bytes_written.errata().diag("Transmit {} byte body {}.", hdr._content_size, body_type);
-#endif
+      swoc::bwf::If(hdr._chunked_p, "[chunked]"),
+      key);
 
   /* Observe that by this point, hdr._content_size will have been adjusted to 0
    * for HEAD requests via update_content_length. */
@@ -521,16 +601,18 @@ Session::write_body(HttpHeader const &hdr)
       if (!hdr._content_length_p) { // no content-length, must close to signal
                                     // end of body
         bytes_written.errata().diag(
-            "No content length, status {}. Closing the connection.",
-            hdr._status);
+            "No content length, status {}. Closing the connection for key {}.",
+            hdr._status,
+            key);
         close();
       }
     }
 
     if (bytes_written != static_cast<ssize_t>(hdr._content_size)) {
       bytes_written.errata().error(
-          R"(Body write{} failed with {} of {} bytes written: {}.)",
+          R"(Body write{} failed for key {} with {} of {} bytes written: {}.)",
           swoc::bwf::If(hdr._chunked_p, " [chunked]"),
+          key,
           bytes_written.result(),
           hdr._content_size,
           ec);
@@ -556,7 +638,10 @@ Session::write_body(HttpHeader const &hdr)
     // will result in the client needing to reconnect more frequently than it
     // would otherwise need to, but we have logic for handling this in
     // run_transaction.
-    bytes_written.errata().diag("No CL or TE, status {}: closing.", hdr._status);
+    bytes_written.errata().diag(
+        "No CL or TE, status {}: closing conection for key {}.",
+        hdr._status,
+        key);
     close();
   }
 
@@ -613,7 +698,7 @@ Session::run_transaction(Txn const &json_txn)
             return errata;
           }
         }
-        errata.diag(R"(Status: "{}")", rsp_hdr_from_wire._status);
+        errata.diag(R"(Status for key {}: "{}")", key, rsp_hdr_from_wire._status);
         errata.diag("{}", rsp_hdr_from_wire);
         if (json_txn._rsp._status != 0 && rsp_hdr_from_wire._status != json_txn._rsp._status &&
             (rsp_hdr_from_wire._status != 200 || json_txn._rsp._status != 304) &&
@@ -640,6 +725,7 @@ Session::run_transaction(Txn const &json_txn)
         errata.note(std::move(drain_errata));
 
         if (!errata.is_ok()) {
+          errata.error("Failed to replay transaction with key: {}", key);
         }
       } else {
         errata.error(R"(Invalid response. key={})", key);
@@ -1428,7 +1514,7 @@ on_stream_close_cb(
         chrono::duration_cast<chrono::milliseconds>(message_end - message_start);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
       errata.error(
-          R"(HTTP/2 transactions in stream having key={} took {} milliseconds.)",
+          R"(HTTP/2 transaction in stream having key={} took {} milliseconds.)",
           stream_state._key,
           elapsed_ms.count());
     }
@@ -3042,6 +3128,8 @@ HttpHeader::load(YAML::Node const &node)
                 _content_size,
                 content_size);
           }
+        } else if (_chunked_p) {
+          _content_size = content_size;
         }
       } else {
         errata.error(

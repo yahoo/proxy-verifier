@@ -8,6 +8,9 @@ x-test-request: second
 host: example.one
 
 
+==== REQUEST BODY ====
+b''
+
 HTTP/1.1 200 OK
 uuid: 1
 x-response-sequence: first

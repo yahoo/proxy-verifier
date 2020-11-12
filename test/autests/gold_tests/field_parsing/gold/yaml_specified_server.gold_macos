@@ -5,10 +5,11 @@
 ``Presence Success: Key: "1", Field Name: "x-test-header", Value: "something"
 ``Absence Success: Key: "1", Field Name: "x-not-there"
 ``
-- "host": "example.one"
-- "uuid": "1"
 - "x-test-header": "something"
 - "Accept-Encoding": "identity"
+- "Content-Length": "0"
+- "host": "example.one"
+- "uuid": "1"
 
 ``Handling request with url: /config/settings.yaml
 ``Success: Key: "2", Field Name: "x-another-header", Value: "request"
@@ -16,6 +17,7 @@
 ``
 - "x-another-header": "request"
 - "Accept-Encoding": "identity"
+- "Content-Length": "0"
 - "host": "example.one"
 - "uuid": "2"
 ``

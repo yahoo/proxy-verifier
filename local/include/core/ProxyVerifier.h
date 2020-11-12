@@ -1293,7 +1293,9 @@ public:
    *
    * @param[in] initial The body already read from the socket.
    *
-   * @return The number of bytes drained and an errata with messaging.
+   * @return The number of total drained body bytes, including the contents of
+   * initial. This count is strictly the number of body bytes and does not
+   * include any chunk header bytes (if chunk encoding was used).
    */
   virtual swoc::Rv<size_t>
   drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView initial);
@@ -1576,7 +1578,7 @@ class ChunkCodex
 {
 public:
   /// The callback when a chunk is decoded.
-  /// @param chunk Data for the chunk in the provided view.
+  /// @param chunk Chunk body (not headers, etc.) for the chunk in the provided view.
   /// @param offset The offset from the full chunk for @a chunk.
   /// @param size The size of the full chunk.
   /// Because the data provided might not contain the entire chunk, a chunk can

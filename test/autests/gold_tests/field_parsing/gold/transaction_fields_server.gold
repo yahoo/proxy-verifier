@@ -1,11 +1,13 @@
 ``
 - "host": "example.one"
 - "uuid": "1"
+- "Content-Length": "0"
 - "Accept-Encoding": "identity"
 
 ``
 - "host": "example.one"
 - "uuid": "2"
+- "Content-Length": "0"
 - "Accept-Encoding": "identity"
 
 ``

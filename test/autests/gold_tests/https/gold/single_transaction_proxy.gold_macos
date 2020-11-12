@@ -12,6 +12,7 @@ b'0000000 00'
 HTTP/1.1 200 OK
 uuid: cb9b4e94-5d42-43d4-8545-320033298ba2-214279439
 age: 1
+connection: keep-alive
 content-length: 12
 ``
 ==== RESPONSE BODY ====

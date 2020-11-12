@@ -6,6 +6,7 @@
 ``Responding to request /client.do with status 200.
 ``Headers:
 - "content-type": "application/octet-stream"
+- "connection": "Keep-Alive"
 - "host": "example.com"
 - "x-candy": "cane"
 - "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119"

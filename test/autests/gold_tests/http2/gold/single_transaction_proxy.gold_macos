@@ -16,6 +16,7 @@ b''
 200 OK
 
 ==== RESPONSE HEADERS ====
+connection: keep-alive
 age: 0
 date: Sat, 16 Mar 2019 01:13:21 GMT
 content-type: application/json;charset=utf-8

@@ -5,6 +5,9 @@ uuid: 1
 host: example.one
 
 
+==== REQUEST BODY ====
+b''
+
 HTTP/1.1 200 OK
 uuid: 1
 x-response: testResponse

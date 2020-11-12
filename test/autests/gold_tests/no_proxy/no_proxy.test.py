@@ -18,7 +18,7 @@ server = r.AddServerProcess("server", "single_transaction.json",
                             other_args="--verbose diag")
 
 client.Streams.stdout = Testers.ContainsExpression(
-        'Status: "200"',
+        'Status for key .*: "200"',
         "Verify that the response came back from replay-server")
 
 client.Streams.stdout += Testers.ContainsExpression(

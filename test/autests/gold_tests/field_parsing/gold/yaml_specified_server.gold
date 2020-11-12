@@ -6,16 +6,18 @@
 ``Presence Success: Key: "1", Field Name: "x-test-header", Value: "something"
 ``
 - "host": "example.one"
+- "Accept-Encoding": "identity"
+- "Content-Length": "0"
 - "uuid": "1"
 - "x-test-header": "something"
-- "Accept-Encoding": "identity"
 
 ``Handling request with url: /config/settings.yaml
 ``Presence Violation: Absent. Key: "2", Field Name: "x-not-present"
 ``Success: Key: "2", Field Name: "x-another-header", Value: "request"
 ``
 - "host": "example.one"
+- "Accept-Encoding": "identity"
+- "Content-Length": "0"
 - "uuid": "2"
 - "x-another-header": "request"
-- "Accept-Encoding": "identity"
 ``

@@ -1,13 +1,14 @@
 ``Configuring logging at level DIAG
 ``
-``Status: "200"
+``Status for key cb9b4e94-5d42-43d4-8545-320033298ba2-226381119: "200"
 ``Headers:
 - "content-length": "0"
 - "content-type": "application/octet-stream"
 - "server": "ATS"
-- "via": "http/1.1 example.data1.com, http/1.1 example.data2.com"
 - "x-testheader": "from_server_response"
+- "connection": "keep-alive"
 - "age": "0"
+- "via": "http/1.1 example.data1.com, http/1.1 example.data2.com"
 - "date": "Sat, 16 Mar 2019 03:11:36 GMT"
 
 ``

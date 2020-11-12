@@ -1,14 +1,15 @@
 ``Configuring logging at level DIAG
 ``
-``Status: "200"
+``Status for key ``: "200"
 ``Headers:
 - "content-type": "application/octet-stream"
 - "server": "ATS"
-- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
-- "via": "http/1.1 example.data1.com, http/1.1 example.data2.com"
 - "x-testheader": "from_server_response"
+- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
+- "connection": "keep-alive"
 - "content-length": "0"
 - "age": "0"
+- "via": "http/1.1 example.data1.com, http/1.1 example.data2.com"
 
 ``
 ``Starting session "``single_transaction.json":5 protocol=http.

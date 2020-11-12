@@ -8,6 +8,9 @@ x-test-request: second
 x-test-request: first
 
 
+==== REQUEST BODY ====
+b''
+
 HTTP/1.1 200 OK
 uuid: 1
 x-response-sequence: third
