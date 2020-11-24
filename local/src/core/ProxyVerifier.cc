@@ -3132,7 +3132,8 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
           issue_exists = true;
         }
       } else {
-        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<YamlUrlPart>(i)], value)) {
+        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<YamlUrlPart>(i)], value))
+        {
           issue_exists = true;
         }
       }
