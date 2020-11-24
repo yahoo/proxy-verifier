@@ -84,8 +84,17 @@ static const std::string YAML_RULE_CONTAINS{"contains"};
 static const std::string YAML_RULE_PREFIX{"prefix"};
 static const std::string YAML_RULE_SUFFIX{"suffix"};
 
-enum class YamlUrlPart { Scheme, Host, Port, Authority, Path, Query, Fragment, Error,
-                        YamlUrlPartCount=Error };
+enum class YamlUrlPart {
+  Scheme,
+  Host,
+  Port,
+  Authority,
+  Path,
+  Query,
+  Fragment,
+  Error,
+  YamlUrlPartCount = Error
+};
 
 static const std::string YAML_URL_SCHEME{"scheme"};
 static const std::string YAML_URL_HOST{"host"};
@@ -899,9 +908,10 @@ class HttpFields
 public:
   Rules _rules;   ///< Maps field names to functors.
   Fields _fields; ///< Maps field names to values.
-  std::vector<std::shared_ptr<RuleCheck>>
-      _url_rules[static_cast<size_t>(YamlUrlPart::YamlUrlPartCount)];            ///< Maps URL part names to functors.
-  swoc::TextView _url_parts[static_cast<size_t>(YamlUrlPart::YamlUrlPartCount)]; ///< Maps URL part names to values.
+  std::vector<std::shared_ptr<RuleCheck>> _url_rules[static_cast<size_t>(
+      YamlUrlPart::YamlUrlPartCount)]; ///< Maps URL part names to functors.
+  swoc::TextView _url_parts[static_cast<size_t>(
+      YamlUrlPart::YamlUrlPartCount)]; ///< Maps URL part names to values.
 
   /** Add the field and rules from other into self.
    *
