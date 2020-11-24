@@ -2,8 +2,8 @@
 ``Listening at 127.0.0.1:4443
 ``Listening at 127.0.0.1:8083
 ``Ready with 2 transactions.
-``Presence Success: Key: "1", Name: "x-test-header", Value: "something"
-``Absence Success: Key: "1", Name: "x-not-there"
+``Presence Success: Key: "1", Field Name: "x-test-header", Value: "something"
+``Absence Success: Key: "1", Field Name: "x-not-there"
 ``
 - "host": "example.one"
 - "uuid": "1"
@@ -11,8 +11,8 @@
 - "Accept-Encoding": "identity"
 
 ``Handling request with url: /config/settings.yaml
-``Success: Key: "2", Name: "x-another-header", Value: "request"
-``Presence Violation: Absent. Key: "2", Name: "x-not-present"
+``Success: Key: "2", Field Name: "x-another-header", Value: "request"
+``Presence Violation: Absent. Key: "2", Field Name: "x-not-present"
 ``
 - "x-another-header": "request"
 - "Accept-Encoding": "identity"

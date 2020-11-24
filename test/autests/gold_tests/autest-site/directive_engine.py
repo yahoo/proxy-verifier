@@ -15,12 +15,12 @@ class Directive:
     """
     The base class for the logic of a single directive.
     """
-    def apply(self, headers):
+    def apply_headers(self, headers):
         """
         The public interface of all Directive objects.
 
-        Derived classes must implement the _apply function which implements its
-        particular logic against headers.
+        Derived classes must implement the _apply_headers function which
+        implements its particular logic against headers.
 
         Args:
             headers: The headers upon which the directive acts.
@@ -28,7 +28,19 @@ class Directive:
         Returns:
             The new headers after the directive manipulates them.
         """
-        return self._apply(headers)
+        return self._apply_headers(headers)
+
+    def apply_url(self):
+        """
+        Another public interface of all Directive objects.
+
+        Derived classes must implement the _apply_url function which
+        implements its particular logic for a URL.
+
+        Returns:
+            The new URL. None if no change
+        """
+        return self._apply_url()
 
     @staticmethod
     def directive_factory(command, value):
@@ -46,6 +58,45 @@ class Directive:
             return DeleteDirective(value)
         if command.lower() == InsertDirective._command_name.lower():
             return InsertDirective(value)
+        if command.lower() == SetURLDirective._command_name.lower():
+            return SetURLDirective(value)
+
+
+class SetURLDirective(Directive):
+    """
+    Implement the set URL directive.
+
+    This is associated with the SetURL=%<new_URL%> specification. The URL
+    will be replaced with the specified one.
+    """
+
+    _command_name = "SetURL"
+
+    def __init__(self, new_URL):
+        self._new_URL = new_URL
+
+    def _apply_headers(self, headers):
+        """
+        >>> import email.message
+        >>> headers = email.message.Message()
+        >>> headers.add_header('X-tEsT', 'Candy-CANE')
+        >>> headers.add_header('Host', 'example.com')
+        >>> d = SetURLDirective('x-test')
+        >>> new_headers = d.apply_headers(headers)
+        >>> len(new_headers)
+        2
+        >>> new_headers['host']
+        'example.com'
+        """
+        return headers
+
+    def _apply_url(self):
+        """
+        >>> d = SetURLDirective('test')
+        >>> d.apply_url()
+        'test'
+        """
+        return self._new_URL
 
 
 class DeleteDirective(Directive):
@@ -61,14 +112,14 @@ class DeleteDirective(Directive):
     def __init__(self, field_name_to_delete):
         self._field_name_to_delete = field_name_to_delete
 
-    def _apply(self, headers):
+    def _apply_headers(self, headers):
         """
         >>> import email.message
         >>> headers = email.message.Message()
         >>> headers.add_header('X-tEsT', 'Candy-CANE')
         >>> headers.add_header('Host', 'example.com')
         >>> d = DeleteDirective('x-test')
-        >>> new_headers = d.apply(headers)
+        >>> new_headers = d.apply_headers(headers)
         >>> len(new_headers)
         1
         >>> new_headers['host']
@@ -77,7 +128,7 @@ class DeleteDirective(Directive):
         Nothing happens if the requested field is not in the headers.
 
         >>> d = DeleteDirective('x-non-existent')
-        >>> new_headers = d.apply(new_headers)
+        >>> new_headers = d.apply_headers(new_headers)
         >>> len(new_headers)
         1
         >>> new_headers['host']
@@ -85,6 +136,14 @@ class DeleteDirective(Directive):
         """
         del headers[self._field_name_to_delete]
         return headers
+
+    def _apply_url(self):
+        """
+        >>> d = DeleteDirective('x-test')
+        >>> d.apply_url() is None
+        True
+        """
+        return None
 
 
 class InsertDirective(Directive):
@@ -107,13 +166,13 @@ class InsertDirective(Directive):
         self._new_field_name = field_to_insert[:colon_index].strip()
         self._new_field_value = field_to_insert[colon_index+1:].strip()
 
-    def _apply(self, headers):
+    def _apply_headers(self, headers):
         """
         >>> import email.message
         >>> headers = email.message.Message()
         >>> headers.add_header('Host', 'data.flurry.com')
         >>> d = InsertDirective('x-request-id:3')
-        >>> new_headers = d.apply(headers)
+        >>> new_headers = d.apply_headers(headers)
         >>> len(new_headers)
         2
         >>> new_headers['host']
@@ -123,7 +182,7 @@ class InsertDirective(Directive):
 
         Inserting an already existing field replaces it.
         >>> d = InsertDirective('x-request-id:    5')
-        >>> new_headers = d.apply(new_headers)
+        >>> new_headers = d.apply_headers(new_headers)
         >>> len(new_headers)
         2
         >>> new_headers['host']
@@ -135,6 +194,14 @@ class InsertDirective(Directive):
         del headers[self._new_field_name]
         headers[self._new_field_name] = self._new_field_value
         return headers
+
+    def _apply_url(self):
+        """
+        >>> d = InsertDirective('x-request-id:    5')
+        >>> d.apply_url() is None
+        True
+        """
+        return None
 
 
 class DirectiveEngine:
@@ -149,6 +216,10 @@ class DirectiveEngine:
       This header requests the proxy to insert a header with name <field_name>
       and value <field_value>. If a header with <field_name> already exists,
       then its value is modified to match the provided <field_value>.
+
+    X-Proxy-Directive: SetURL=%<new_URL%>
+      This header requests the proxy to replace the forwarded URL with the
+      specified value <new_URL>.
 
     Multiple directives can be passed in the same X-Proxy-Directive by simply
     appending them in the value of the header. White space may be used as a
@@ -191,12 +262,37 @@ class DirectiveEngine:
         [('Insert', 'X-TestHeader: from_proxy_response')]
         >>> DirectiveEngine._directive_value_parser("Delete=%<X-Test%>Insert=%<X-WOW:    3%>")
         [('Delete', 'X-Test'), ('Insert', 'X-WOW:    3')]
+        >>> DirectiveEngine._directive_value_parser("SetURL=%<http://example.one:8080/config/settings.yaml?q=3#F%>")
+        [('SetURL', 'http://example.one:8080/config/settings.yaml?q=3#F')]
         """
-        return re.findall("(Delete|Insert)=%<(.*?)%>", x_proxy_directive_value)
+        return re.findall("(Delete|Insert|SetURL)=%<(.*?)%>", x_proxy_directive_value)
+
+    def get_new_url(self):
+        """
+        Apply each of the X-Proxy-Directive specified URL directives.
+
+        Return:
+            The new URL value after the above-described manipulations are applied to it.
+        >>> import email.message
+        >>> headers = email.message.Message()
+        >>> headers.add_header('X-Proxy-Directive', 'SetURL=%<example.one%> Delete=%<x-foo%>')
+        >>> e = DirectiveEngine(headers)
+        >>> e.get_new_url()
+        'example.one'
+        >>> new_headers = e.get_new_headers()
+        >>> len(new_headers)
+        0
+        """
+        new_url = None
+        for directive in self._directives:
+            possible_url = directive.apply_url()
+            if possible_url != None:
+                new_url = possible_url
+        return new_url
 
     def get_new_headers(self):
         """
-        Apply each of the X-Proxy-Directive specified directives and, if it
+        Apply each of the X-Proxy-Directive specified header directives and, if it
         exists, also remove the X-Proxy-Directive field itself.
 
         Return:
@@ -224,7 +320,7 @@ class DirectiveEngine:
         """
         new_headers = self._original_headers
         for directive in self._directives:
-            new_headers = directive.apply(new_headers)
+            new_headers = directive.apply_headers(new_headers)
         del new_headers[DirectiveEngine.PROXY_DIRECTIVE_FIELD_NAME]
         return new_headers
 
