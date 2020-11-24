@@ -85,6 +85,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         u = urllib.parse.urlsplit(req.path)
         scheme, netloc, path = u.scheme, u.netloc, (u.path + '?' + u.query if u.query else u.path)
         assert scheme in ('http', 'https')
+        final_url = self.get_url(req.headers, path)
         setattr(req, 'headers', self.filter_headers(req.headers))
 
         replay_server = "127.0.0.1:{}".format(self.server_port)
@@ -125,7 +126,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                 else:
                     self.tls.conns[origin] = http.client.HTTPConnection(replay_server, timeout=self.timeout)
             conn = self.tls.conns[origin]
-            conn.request(self.command, path, req_body, req.headers)
+            
+            conn.request(self.command, final_url, req_body, req.headers)
             res = conn.getresponse()
 
             version_table = {10: 'HTTP/1.0', 11: 'HTTP/1.1'}
@@ -207,6 +209,15 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         # Apply our X-Proxy-Directive manipulations.
         directive_engine = DirectiveEngine(headers)
         return directive_engine.get_new_headers()
+
+    @staticmethod
+    def get_url(headers, original_url):
+        directive_engine = DirectiveEngine(headers)
+        new_url = directive_engine.get_new_url()
+        if new_url == None:
+            return original_url
+        else:
+            return new_url
 
     def print_info(self, req, req_body, res, res_body):
         def parse_qsl(s):

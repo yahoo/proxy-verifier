@@ -53,6 +53,7 @@ swoc::TextView HttpHeader::FIELD_HOST;
 std::bitset<600> HttpHeader::STATUS_NO_CONTENT;
 
 RuleCheck::RuleOptions RuleCheck::options;
+RuleCheck::URLRuleOptions RuleCheck::url_rule_options;
 RuleCheck::DuplicateFieldRuleOptions RuleCheck::duplicate_field_options;
 std::unordered_map<std::string, int> TLSSession::_verify_mode_per_sni;
 
@@ -1932,6 +1933,19 @@ RuleCheck::options_init()
   options[swoc::TextView(YAML_RULE_PREFIX)] = static_cast<single_field_function_type>(make_prefix);
   options[swoc::TextView(YAML_RULE_SUFFIX)] = static_cast<single_field_function_type>(make_suffix);
 
+  url_rule_options = URLRuleOptions();
+  using url_function_type = std::shared_ptr<RuleCheck> (*)(YamlUrlPart, swoc::TextView);
+  url_rule_options[swoc::TextView(YAML_RULE_EQUALS)] =
+      static_cast<url_function_type>(make_equality);
+  url_rule_options[swoc::TextView(YAML_RULE_PRESENCE)] =
+      static_cast<url_function_type>(make_presence);
+  url_rule_options[swoc::TextView(YAML_RULE_ABSENCE)] =
+      static_cast<url_function_type>(make_absence);
+  url_rule_options[swoc::TextView(YAML_RULE_CONTAINS)] =
+      static_cast<url_function_type>(make_contains);
+  url_rule_options[swoc::TextView(YAML_RULE_PREFIX)] = static_cast<url_function_type>(make_prefix);
+  url_rule_options[swoc::TextView(YAML_RULE_SUFFIX)] = static_cast<url_function_type>(make_suffix);
+
   duplicate_field_options = DuplicateFieldRuleOptions();
   using duplicate_field_function_type =
       std::shared_ptr<RuleCheck> (*)(swoc::TextView, std::list<swoc::TextView> &&);
@@ -1967,6 +1981,22 @@ RuleCheck::make_rule_check(
 
 std::shared_ptr<RuleCheck>
 RuleCheck::make_rule_check(
+    YamlUrlPart url_part,
+    swoc::TextView localized_value,
+    swoc::TextView rule_type)
+{
+  swoc::Errata errata;
+
+  auto fn_iter = url_rule_options.find(rule_type);
+  if (fn_iter == url_rule_options.end()) {
+    errata.info(R"(Invalid Test: Key: "{}")", rule_type);
+    return nullptr;
+  }
+  return fn_iter->second(url_part, localized_value);
+}
+
+std::shared_ptr<RuleCheck>
+RuleCheck::make_rule_check(
     swoc::TextView localized_name,
     std::list<swoc::TextView> &&localized_values,
     swoc::TextView rule_type)
@@ -1988,6 +2018,12 @@ RuleCheck::make_equality(swoc::TextView name, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
+RuleCheck::make_equality(YamlUrlPart url_part, swoc::TextView value)
+{
+  return std::shared_ptr<RuleCheck>(new EqualityCheck(url_part, value));
+}
+
+std::shared_ptr<RuleCheck>
 RuleCheck::make_equality(swoc::TextView name, std::list<swoc::TextView> &&values)
 {
   return std::shared_ptr<RuleCheck>(new EqualityCheck(name, std::move(values)));
@@ -1997,6 +2033,12 @@ std::shared_ptr<RuleCheck>
 RuleCheck::make_presence(swoc::TextView name, swoc::TextView /* value */)
 {
   return std::shared_ptr<RuleCheck>(new PresenceCheck(name, !EXPECTS_DUPLICATE_FIELDS));
+}
+
+std::shared_ptr<RuleCheck>
+RuleCheck::make_presence(YamlUrlPart url_part, swoc::TextView /* value */)
+{
+  return std::shared_ptr<RuleCheck>(new PresenceCheck(url_part));
 }
 
 std::shared_ptr<RuleCheck>
@@ -2012,6 +2054,12 @@ RuleCheck::make_absence(swoc::TextView name, swoc::TextView /* value */)
 }
 
 std::shared_ptr<RuleCheck>
+RuleCheck::make_absence(YamlUrlPart url_part, swoc::TextView /* value */)
+{
+  return std::shared_ptr<RuleCheck>(new AbsenceCheck(url_part));
+}
+
+std::shared_ptr<RuleCheck>
 RuleCheck::make_absence(swoc::TextView name, std::list<swoc::TextView> && /* values */)
 {
   return std::shared_ptr<RuleCheck>(new AbsenceCheck(name, EXPECTS_DUPLICATE_FIELDS));
@@ -2021,6 +2069,12 @@ std::shared_ptr<RuleCheck>
 RuleCheck::make_contains(swoc::TextView name, swoc::TextView value)
 {
   return std::shared_ptr<RuleCheck>(new ContainsCheck(name, value));
+}
+
+std::shared_ptr<RuleCheck>
+RuleCheck::make_contains(YamlUrlPart url_part, swoc::TextView value)
+{
+  return std::shared_ptr<RuleCheck>(new ContainsCheck(url_part, value));
 }
 
 std::shared_ptr<RuleCheck>
@@ -2036,6 +2090,12 @@ RuleCheck::make_prefix(swoc::TextView name, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
+RuleCheck::make_prefix(YamlUrlPart url_part, swoc::TextView value)
+{
+  return std::shared_ptr<RuleCheck>(new PrefixCheck(url_part, value));
+}
+
+std::shared_ptr<RuleCheck>
 RuleCheck::make_prefix(swoc::TextView name, std::list<swoc::TextView> &&values)
 {
   return std::shared_ptr<RuleCheck>(new PrefixCheck(name, std::move(values)));
@@ -2048,6 +2108,12 @@ RuleCheck::make_suffix(swoc::TextView name, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
+RuleCheck::make_suffix(YamlUrlPart url_part, swoc::TextView value)
+{
+  return std::shared_ptr<RuleCheck>(new SuffixCheck(url_part, value));
+}
+
+std::shared_ptr<RuleCheck>
 RuleCheck::make_suffix(swoc::TextView name, std::list<swoc::TextView> &&values)
 {
   return std::shared_ptr<RuleCheck>(new SuffixCheck(name, std::move(values)));
@@ -2057,6 +2123,14 @@ EqualityCheck::EqualityCheck(swoc::TextView name, swoc::TextView value)
 {
   _name = name;
   _value = value;
+  _is_field = true;
+}
+
+EqualityCheck::EqualityCheck(YamlUrlPart url_part, swoc::TextView value)
+{
+  _name = URL_PART_NAMES[url_part];
+  _value = value;
+  _is_field = false;
 }
 
 EqualityCheck::EqualityCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
@@ -2064,24 +2138,47 @@ EqualityCheck::EqualityCheck(swoc::TextView name, std::list<swoc::TextView> &&va
   _name = name;
   _values = std::move(values);
   _expects_duplicate_fields = true;
+  _is_field = true;
 }
 
 PresenceCheck::PresenceCheck(swoc::TextView name, bool expects_duplicate_fields)
 {
   _name = name;
   _expects_duplicate_fields = expects_duplicate_fields;
+  _is_field = true;
+}
+
+PresenceCheck::PresenceCheck(YamlUrlPart url_part)
+{
+  _name = URL_PART_NAMES[url_part];
+  _is_field = false;
 }
 
 AbsenceCheck::AbsenceCheck(swoc::TextView name, bool expects_duplicate_fields)
 {
   _name = name;
   _expects_duplicate_fields = expects_duplicate_fields;
+  _is_field = true;
+}
+
+AbsenceCheck::AbsenceCheck(YamlUrlPart url_part)
+{
+  _name = URL_PART_NAMES[url_part];
+  _is_field = false;
 }
 
 ContainsCheck::ContainsCheck(swoc::TextView name, swoc::TextView value)
 {
   _name = name;
   _value = value;
+  _is_field = true;
+}
+
+ContainsCheck::ContainsCheck(YamlUrlPart url_part, swoc::TextView value)
+{
+  _name = URL_PART_NAMES[url_part];
+  _value = value;
+  _is_field = false;
 }
 
 ContainsCheck::ContainsCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
@@ -2089,12 +2186,21 @@ ContainsCheck::ContainsCheck(swoc::TextView name, std::list<swoc::TextView> &&va
   _name = name;
   _values = std::move(values);
   _expects_duplicate_fields = true;
+  _is_field = true;
 }
 
 PrefixCheck::PrefixCheck(swoc::TextView name, swoc::TextView value)
 {
   _name = name;
   _value = value;
+  _is_field = true;
+}
+
+PrefixCheck::PrefixCheck(YamlUrlPart url_part, swoc::TextView value)
+{
+  _name = URL_PART_NAMES[url_part];
+  _value = value;
+  _is_field = false;
 }
 
 PrefixCheck::PrefixCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
@@ -2102,12 +2208,21 @@ PrefixCheck::PrefixCheck(swoc::TextView name, std::list<swoc::TextView> &&values
   _name = name;
   _values = std::move(values);
   _expects_duplicate_fields = true;
+  _is_field = true;
 }
 
 SuffixCheck::SuffixCheck(swoc::TextView name, swoc::TextView value)
 {
   _name = name;
   _value = value;
+  _is_field = true;
+}
+
+SuffixCheck::SuffixCheck(YamlUrlPart url_part, swoc::TextView value)
+{
+  _name = URL_PART_NAMES[url_part];
+  _value = value;
+  _is_field = false;
 }
 
 SuffixCheck::SuffixCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
@@ -2115,6 +2230,7 @@ SuffixCheck::SuffixCheck(swoc::TextView name, std::list<swoc::TextView> &&values
   _name = name;
   _values = std::move(values);
   _expects_duplicate_fields = true;
+  _is_field = true;
 }
 
 bool
@@ -2123,19 +2239,26 @@ EqualityCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView valu
   swoc::Errata errata;
   if (name.empty()) {
     errata.info(
-        R"(Equals Violation: Absent. Key: "{}", Name: "{}", Correct Value: "{}")",
+        R"(Equals Violation: Absent. Key: "{}", {}: "{}", Correct Value: "{}")",
         key,
+        target_type(),
         _name,
         _value);
   } else if (strcmp(value, _value)) {
     errata.info(
-        R"(Equals Violation: Different. Key: "{}", Name: "{}", Correct Value: "{}", Actual Value: "{}")",
+        R"(Equals Violation: Different. Key: "{}", {}: "{}", Correct Value: "{}", Actual Value: "{}")",
         key,
+        target_type(),
         _name,
         _value,
         value);
   } else {
-    errata.info(R"(Equals Success: Key: "{}", Name: "{}", Value: "{}")", key, _name, _value);
+    errata.info(
+        R"(Equals Success: Key: "{}", {}: "{}", Value: "{}")",
+        key,
+        target_type(),
+        _name,
+        _value);
     return true;
   }
   return false;
@@ -2150,14 +2273,15 @@ EqualityCheck::test(
   swoc::Errata errata;
   if (name.empty()) {
     MSG_BUFF message;
-    message.print(R"(Equals Violation: Absent. Key: "{}", Name: "{}", )", key, _name);
+    message.print(R"(Equals Violation: Absent. Key: "{}", {}: "{}", )", key, target_type(), _name);
     message.print(R"(Correct Values:)");
     for (auto const &value : _values) {
       message.print(R"( "{}")", value);
     }
   } else if (_values != values) {
     MSG_BUFF message;
-    message.print(R"(Equals Violation: Different. Key: "{}", Name: "{}", )", key, _name);
+    message
+        .print(R"(Equals Violation: Different. Key: "{}", {}: "{}", )", key, target_type(), _name);
 
     message.print(R"(Correct Values:)");
     for (auto const &value : _values) {
@@ -2170,7 +2294,7 @@ EqualityCheck::test(
     errata.info(message.view());
   } else {
     MSG_BUFF message;
-    message.print(R"(Equals Success: Key: "{}", Name: "{}", Values:)", key, _name);
+    message.print(R"(Equals Success: Key: "{}", {}: "{}", Values:)", key, target_type(), _name);
     for (auto const &value : values) {
       message.print(R"( "{}")", value);
     }
@@ -2185,10 +2309,15 @@ PresenceCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView valu
 {
   swoc::Errata errata;
   if (name.empty()) {
-    errata.info(R"(Presence Violation: Absent. Key: "{}", Name: "{}")", key, _name);
+    errata.info(R"(Presence Violation: Absent. Key: "{}", {}: "{}")", key, target_type(), _name);
     return false;
   }
-  errata.info(R"(Presence Success: Key: "{}", Name: "{}", Value: "{}")", key, _name, value);
+  errata.info(
+      R"(Presence Success: Key: "{}", {}: "{}", Value: "{}")",
+      key,
+      target_type(),
+      _name,
+      value);
   return true;
 }
 
@@ -2200,11 +2329,11 @@ PresenceCheck::test(
 {
   swoc::Errata errata;
   if (name.empty()) {
-    errata.info(R"(Presence Violation: Absent. Key: "{}", Name: "{}")", key, _name);
+    errata.info(R"(Presence Violation: Absent. Key: "{}", {}: "{}")", key, target_type(), _name);
     return false;
   }
   MSG_BUFF message;
-  message.print(R"(Presence Success: Key: "{}", Name: "{}", Values:)", key, _name);
+  message.print(R"(Presence Success: Key: "{}", {}: "{}", Values:)", key, target_type(), _name);
   for (auto const &value : values) {
     message.print(R"( "{}")", value);
   }
@@ -2218,13 +2347,14 @@ AbsenceCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value
   swoc::Errata errata;
   if (!name.empty()) {
     errata.info(
-        R"(Absence Violation: Present. Key: "{}", Name: "{}", Value: "{}")",
+        R"(Absence Violation: Present. Key: "{}", {}: "{}", Value: "{}")",
         key,
+        target_type(),
         _name,
         value);
     return false;
   }
-  errata.info(R"(Absence Success: Key: "{}", Name: "{}")", key, _name);
+  errata.info(R"(Absence Success: Key: "{}", {}: "{}")", key, target_type(), _name);
   return true;
 }
 
@@ -2235,38 +2365,48 @@ AbsenceCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::Text
   swoc::Errata errata;
   if (!name.empty()) {
     MSG_BUFF message;
-    message.print(R"(Absence Violation: Present. Key: "{}", Name: "{}", Values:)", key, _name);
+    message.print(
+        R"(Absence Violation: Present. Key: "{}", {}: "{}", Values:)",
+        key,
+        target_type(),
+        _name);
     for (auto const &value : values) {
       message.print(R"( "{}")", value);
     }
     errata.info(message.view());
     return false;
   }
-  errata.info(R"(Absence Success: Key: "{}", Name: "{}")", key, _name);
+  errata.info(R"(Absence Success: Key: "{}", {}: "{}")", key, target_type(), _name);
   return true;
 }
 
 bool
-ContainsCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const
+SubstrCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const
 {
   swoc::Errata errata;
   if (name.empty()) {
     errata.info(
-        R"(Contains Violation: Absent. Key: "{}", Name: "{}", Required Value: "{}")",
+        R"({} Violation: Absent. Key: "{}", {}: "{}", Required Value: "{}")",
+        get_test_name(),
         key,
+        target_type(),
         _name,
         _value);
-  } else if (value.find(_value) == std::string::npos) {
+  } else if (test_tv(value, _value)) {
     errata.info(
-        R"(Contains Violation: Not Contained. Key: "{}", Name: "{}", Required Value: "{}", Actual Value: "{}")",
+        R"({} Violation: Not Found. Key: "{}", {}: "{}", Required Value: "{}", Actual Value: "{}")",
+        get_test_name(),
         key,
+        target_type(),
         _name,
         _value,
         value);
   } else {
     errata.info(
-        R"(Contains Success: Key: "{}", Name: "{}", Required Value: "{}", Value: "{}")",
+        R"({} Success: Key: "{}", {}: "{}", Required Value: "{}", Value: "{}")",
+        get_test_name(),
         key,
+        target_type(),
         _name,
         _value,
         value);
@@ -2276,15 +2416,18 @@ ContainsCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView valu
 }
 
 bool
-ContainsCheck::test(
-    swoc::TextView key,
-    swoc::TextView name,
-    std::list<swoc::TextView> const &values) const
+SubstrCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+    const
 {
   swoc::Errata errata;
   if (name.empty() || values.size() != _values.size()) {
     MSG_BUFF message;
-    message.print(R"(Contains Violation: Absent/Mismatched. Key: "{}", Name: "{}", )", key, _name);
+    message.print(
+        R"({} Violation: Absent/Mismatched. Key: "{}", {}: "{}", )",
+        get_test_name(),
+        key,
+        target_type(),
+        _name);
     message.print(R"(Required Values:)");
     for (auto const &value : _values) {
       message.print(R"( "{}")", value);
@@ -2297,11 +2440,16 @@ ContainsCheck::test(
     return false;
   }
   auto value_it = values.begin();
-  auto contain_it = _values.begin();
+  auto test_it = _values.begin();
   while (value_it != values.end()) {
-    if (value_it->find(*contain_it) == std::string::npos) {
+    if (test_tv(*value_it, *test_it)) {
       MSG_BUFF message;
-      message.print(R"(Contains Violation: Not Contained. Key: "{}", Name: "{}", )", key, _name);
+      message.print(
+          R"({} Violation: Not Found. Key: "{}", {}: "{}", )",
+          get_test_name(),
+          key,
+          target_type(),
+          _name);
 
       message.print(R"(Required Values:)");
       for (auto const &value : _values) {
@@ -2315,10 +2463,10 @@ ContainsCheck::test(
       break;
     }
     ++value_it;
-    ++contain_it;
+    ++test_it;
   }
   MSG_BUFF message;
-  message.print(R"(Contains Success: Key: "{}", Name: "{}", )", key, _name);
+  message.print(R"({} Success: Key: "{}", {}: "{}", )", get_test_name(), key, target_type(), _name);
 
   message.print(R"(Required Values:)");
   for (auto const &value : _values) {
@@ -2332,172 +2480,23 @@ ContainsCheck::test(
   return true;
 }
 
+// Return true for failure, false for success
 bool
-PrefixCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const
+ContainsCheck::test_tv(swoc::TextView value, swoc::TextView test) const
 {
-  swoc::Errata errata;
-  if (name.empty()) {
-    errata.info(
-        R"(Prefix Violation: Absent. Key: "{}", Name: "{}", Required Prefix: "{}")",
-        key,
-        _name,
-        _value);
-  } else if (!value.starts_with(_value)) {
-    errata.info(
-        R"(Prefix Violation: Not Found. Key: "{}", Name: "{}", Required Prefix: "{}", Actual Value: "{}")",
-        key,
-        _name,
-        _value,
-        value);
-  } else {
-    errata.info(
-        R"(Prefix Success: Key: "{}", Name: "{}", Required Prefix: "{}", Value: "{}")",
-        key,
-        _name,
-        _value,
-        value);
-    return true;
-  }
-  return false;
+  return (value.find(test) == std::string::npos);
 }
 
 bool
-PrefixCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
-    const
+PrefixCheck::test_tv(swoc::TextView value, swoc::TextView test) const
 {
-  swoc::Errata errata;
-  if (name.empty() || values.size() != _values.size()) {
-    MSG_BUFF message;
-    message.print(R"(Prefix Violation: Absent/Mismatched. Key: "{}", Name: "{}", )", key, _name);
-    message.print(R"(Required Prefixes:)");
-    for (auto const &value : _values) {
-      message.print(R"( "{}")", value);
-    }
-    message.print(R"(, Received Values:)");
-    for (auto const &value : values) {
-      message.print(R"( "{}")", value);
-    }
-    errata.info(message.view());
-    return false;
-  }
-  auto value_it = values.begin();
-  auto prefix_it = _values.begin();
-  while (value_it != values.end()) {
-    if (!value_it->starts_with(*prefix_it)) {
-      MSG_BUFF message;
-      message.print(R"(Prefix Violation: Not Found. Key: "{}", Name: "{}", )", key, _name);
-
-      message.print(R"(Required Prefixes:)");
-      for (auto const &value : _values) {
-        message.print(R"( "{}")", value);
-      }
-      message.print(R"(, Received Values:)");
-      for (auto const &value : values) {
-        message.print(R"( "{}")", value);
-      }
-      errata.info(message.view());
-      return false;
-    }
-    ++value_it;
-    ++prefix_it;
-  }
-  MSG_BUFF message;
-  message.print(R"(Prefix Success: Key: "{}", Name: "{}", )", key, _name);
-
-  message.print(R"(Required Prefixes:)");
-  for (auto const &value : _values) {
-    message.print(R"( "{}")", value);
-  }
-  message.print(R"(, Received Values:)");
-  for (auto const &value : values) {
-    message.print(R"( "{}")", value);
-  }
-  errata.info(message.view());
-  return true;
+  return (!value.starts_with(test));
 }
 
 bool
-SuffixCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value) const
+SuffixCheck::test_tv(swoc::TextView value, swoc::TextView test) const
 {
-  swoc::Errata errata;
-  if (name.empty()) {
-    errata.info(
-        R"(Suffix Violation: Absent. Key: "{}", Name: "{}", Required Suffix: "{}")",
-        key,
-        _name,
-        _value);
-  } else if (!value.ends_with(_value)) {
-    errata.info(
-        R"(Suffix Violation: Not Found. Key: "{}", Name: "{}", Required Suffix: "{}", Actual Value: "{}")",
-        key,
-        _name,
-        _value,
-        value);
-  } else {
-    errata.info(
-        R"(Suffix Success: Key: "{}", Name: "{}", Required Suffix: "{}", Value: "{}")",
-        key,
-        _name,
-        _value,
-        value);
-    return true;
-  }
-  return false;
-}
-
-bool
-SuffixCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
-    const
-{
-  swoc::Errata errata;
-  if (name.empty() || values.size() != _values.size()) {
-    MSG_BUFF message;
-    message.print(R"(Suffix Violation: Absent/Mismatched. Key: "{}", Name: "{}", )", key, _name);
-    message.print(R"(Required Suffixes:)");
-    for (auto const &value : _values) {
-      message.print(R"( "{}")", value);
-    }
-    message.print(R"(, Received Values:)");
-    for (auto const &value : values) {
-      message.print(R"( "{}")", value);
-    }
-    errata.info(message.view());
-    return false;
-  }
-  auto value_it = values.begin();
-  auto suffix_it = _values.begin();
-  while (value_it != values.end()) {
-    if (!value_it->starts_with(*suffix_it)) {
-      MSG_BUFF message;
-      message.print(R"(Suffix Violation: Not Found. Key: "{}", Name: "{}", )", key, _name);
-
-      message.print(R"(Required Suffixes:)");
-      for (auto const &value : _values) {
-        message.print(R"( "{}")", value);
-      }
-      message.print(R"(, Received Values:)");
-      for (auto const &value : values) {
-        message.print(R"( "{}")", value);
-      }
-      errata.info(message.view());
-      return false;
-    }
-    ++value_it;
-    ++suffix_it;
-  }
-  MSG_BUFF message;
-  message.print(R"(Suffix Success: Key: "{}", Name: "{}", )", key, _name);
-
-  message.print(R"(Required Suffixes:)");
-  for (auto const &value : _values) {
-    message.print(R"( "{}")", value);
-  }
-  message.print(R"(, Received Values:)");
-  for (auto const &value : values) {
-    message.print(R"( "{}")", value);
-  }
-  errata.info(message.view());
-  return true;
+  return (!value.ends_with(test));
 }
 
 void
@@ -2579,6 +2578,58 @@ HttpFields::merge(HttpFields const &other)
 }
 
 swoc::Errata
+HttpFields::parse_url_rules(YAML::Node const &url_rules_node, bool assume_equality_rule)
+{
+  swoc::Errata errata;
+
+  for (auto const &node : url_rules_node) {
+    if (!node.IsSequence()) {
+      errata.error("URL rule at {} is not a sequence as required.", node.Mark());
+      continue;
+    }
+    const auto node_size = node.size();
+    if (node_size != 2 && node_size != 3) {
+      errata.error(
+          "URL rule node at {} is not a sequence of length 2 "
+          "or 3 as required.",
+          node.Mark());
+      continue;
+    }
+
+    TextView name{HttpHeader::localize_lower(node[YAML_RULE_NAME_KEY].Scalar())};
+    YamlUrlPart part_id = HttpHeader::parse_url_part(name);
+    if (part_id == YamlUrlPart::Error) {
+      errata.error("URL rule node at {} has an invalid URL part.", node.Mark());
+      continue;
+    }
+    const YAML::Node ValueNode{node[YAML_RULE_DATA_KEY]};
+    if (ValueNode.IsScalar()) {
+      // There's only a single value associated with this field name.
+      TextView value{HttpHeader::localize(node[YAML_RULE_DATA_KEY].Scalar())};
+      if (node_size == 2 && assume_equality_rule) {
+        _url_rules[static_cast<size_t>(part_id)].push_back(
+            RuleCheck::make_equality(part_id, value));
+      } else if (node_size == 3) {
+        // Contains a verification rule.
+        TextView rule_type{node[YAML_RULE_TYPE_KEY].Scalar()};
+        std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(part_id, value, rule_type);
+        if (!tester) {
+          errata.error("Field rule at {} does not have a valid flag ({})", node.Mark(), rule_type);
+          continue;
+        } else {
+          _url_rules[static_cast<size_t>(part_id)].push_back(tester);
+        }
+      }
+      // No error reported if incorrect length
+    } else if (ValueNode.IsSequence()) {
+      errata.error("URL rule node at {} has multiple values, which is not allowed.", node.Mark());
+      continue;
+    }
+  }
+  return errata;
+}
+
+swoc::Errata
 HttpFields::parse_global_rules(YAML::Node const &node)
 {
   swoc::Errata errata;
@@ -2631,7 +2682,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
       if (node_size == 2 && assume_equality_rule) {
         _rules.emplace(name, RuleCheck::make_equality(name, value));
       } else if (node_size == 3) {
-        // Contans a verification rule.
+        // Contains a verification rule.
         TextView rule_type{node[YAML_RULE_TYPE_KEY].Scalar()};
         std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(name, value, rule_type);
         if (!tester) {
@@ -2653,7 +2704,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
       if (node_size == 2 && assume_equality_rule) {
         _rules.emplace(name, RuleCheck::make_equality(name, std::move(values)));
       } else if (node_size == 3) {
-        // Contans a verification rule.
+        // Contains a verification rule.
         TextView rule_type{node[YAML_RULE_TYPE_KEY].Scalar()};
         std::shared_ptr<RuleCheck> tester =
             RuleCheck::make_rule_check(name, std::move(values), rule_type);
@@ -2687,6 +2738,82 @@ swoc::Errata
 HttpHeader::parse_url(TextView url)
 {
   swoc::Errata errata;
+
+  // URI parsing
+  std::size_t scheme_end = url.find("://");
+  std::size_t host_start = scheme_end + 3;            // "://" is 3 characters
+  std::size_t path_start = url.find("/", host_start); // / begins path
+  std::size_t port_start = url.find(":", host_start); // : begins port
+  if (port_start > path_start && path_start != std::string::npos) {
+    port_start = std::string::npos;
+  }
+
+  std::size_t host_end = port_start;
+  if (port_start == std::string::npos) {
+    host_end = path_start;
+  }
+  std::size_t port_end = path_start;
+  if (port_start != std::string::npos) {
+    ++port_start;
+  }
+  if (path_start != std::string::npos) {
+    ++path_start;
+  }
+
+  if (scheme_end != std::string::npos) {
+    uri_scheme = this->localize(url.substr(0, scheme_end));
+    if (host_end != std::string::npos) {
+      uri_host = this->localize(url.substr(host_start, host_end - host_start));
+    }
+    if (port_end != std::string::npos) {
+      uri_port = this->localize(url.substr(port_start, port_end - port_start));
+    } else {
+      port_end = host_end;
+    }
+    uri_authority = this->localize(url.substr(host_start, port_end - host_start));
+  } else {
+    path_start = 0; // assume no scheme or authority
+  }
+  std::size_t query_start = url.find("?", port_end);
+  std::size_t fragment_start = url.find("#", port_end);
+  std::size_t path_end = query_start;
+  if (query_start == std::string::npos) {
+    if (fragment_start == std::string::npos) {
+      path_end = url.length();
+    }
+    path_end = fragment_start;
+  }
+  std::size_t query_end = fragment_start;
+  if (fragment_start == std::string::npos) {
+    query_end = url.length();
+  }
+  std::size_t fragment_end = url.length();
+  if (query_start != std::string::npos) {
+    ++query_start;
+  }
+  if (fragment_start != std::string::npos) {
+    ++fragment_start;
+  }
+
+  if (path_start != std::string::npos) {
+    uri_path = this->localize(url.substr(path_start, path_end - path_start));
+  }
+  if (query_start != std::string::npos) {
+    uri_query = this->localize(url.substr(query_start, query_end - query_start));
+  }
+  if (fragment_start != std::string::npos) {
+    uri_fragment = this->localize(url.substr(fragment_start, fragment_end - fragment_start));
+  }
+
+  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Scheme)] = uri_scheme;
+  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Host)] = uri_host;
+  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Port)] = uri_port;
+  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Authority)] = uri_authority;
+  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Path)] = uri_path;
+  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Query)] = uri_query;
+  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Fragment)] = uri_fragment;
+
+  // Non-URI parsing
   // Split out the path and scheme for http/2 required headers
   // See rfc3986 section-3.2.
   std::size_t end_scheme = url.find("://");
@@ -2696,23 +2823,29 @@ HttpHeader::parse_url(TextView url)
     // YAML nodes.
     return errata;
   }
-  std::size_t auth_start = end_scheme + 3; // "://" is 3 characters.
-  std::size_t end_host = auth_start;
+  std::size_t start_auth = end_scheme + 3; // "://" is 3 characters.
+  std::size_t end_host = start_auth;
   _scheme = this->localize(url.substr(0, end_scheme));
   // Look for the ':' for the port.
-  std::size_t next_colon = url.find(":", auth_start);
-  std::size_t next_slash = url.find("/", auth_start);
+  std::size_t next_colon = url.find(":", start_auth);
+  std::size_t next_slash = url.find("/", start_auth);
   end_host = std::min(next_colon, next_slash);
   if (end_host == std::string::npos) {
     // No ':' nor '/'. Assume the rest of the string is the host.
     end_host = url.length();
   }
-  _authority = this->localize(url.substr(auth_start, end_host - auth_start));
-  std::size_t path_start = url.find("/", end_host);
-  if (path_start != std::string::npos) {
-    _path = this->localize(url.substr(path_start));
+  _authority = this->localize(url.substr(start_auth, end_host - start_auth));
+  std::size_t start_path = url.find("/", end_host);
+  if (start_path != std::string::npos) {
+    _path = this->localize(url.substr(start_path));
   }
   return errata;
+}
+
+YamlUrlPart
+HttpHeader::parse_url_part(swoc::TextView name)
+{
+  return URL_PART_NAMES[name];
 }
 
 swoc::Errata
@@ -2810,8 +2943,13 @@ HttpHeader::load(YAML::Node const &node)
     if (url_node.IsScalar()) {
       _url = this->localize(url_node.Scalar());
       this->parse_url(_url);
+    } else if (url_node.IsSequence()) {
+      _fields_rules->parse_url_rules(url_node, _verify_strictly);
     } else {
-      errata.error(R"("{}" value at {} must be a string.)", YAML_HTTP_URL_KEY, url_node.Mark());
+      errata.error(
+          R"("{}" value at {} must be a string or sequence.)",
+          YAML_HTTP_URL_KEY,
+          url_node.Mark());
     }
   }
 
@@ -2941,7 +3079,9 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
   // Setting true does not break loop because test() calls errata.diag()
   bool issue_exists = false;
   auto const &rules = rules_._rules;
+  auto const *url_rules = rules_._url_rules;
   auto const &fields = _fields_rules->_fields;
+  auto const *url_parts = _fields_rules->_url_parts;
   for (auto const &[name, rule_check] : rules) {
     auto name_range = fields.equal_range(name);
     auto field_iter = name_range.first;
@@ -2972,6 +3112,27 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
       } else {
         if (!rule_check
                  ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second))) {
+          issue_exists = true;
+        }
+      }
+    }
+  }
+  for (std::size_t i = 0; i < URL_PART_NAMES.count(); ++i) {
+    const std::vector<std::shared_ptr<RuleCheck>> &v = url_rules[i];
+    for (size_t j = 0; j < v.size(); ++j) {
+      const std::shared_ptr<RuleCheck> rule_check = v[j];
+      swoc::TextView value = url_parts[i];
+      if (rule_check == nullptr) {
+        continue;
+      }
+      if (value.empty()) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), swoc::TextView())) {
+          // We supply the empty name and value for the absence check which
+          // expects this to indicate an absent field.
+          issue_exists = true;
+        }
+      } else {
+        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<YamlUrlPart>(i)], value)) {
           issue_exists = true;
         }
       }
@@ -3091,15 +3252,7 @@ HttpHeader::parse_request(swoc::TextView data)
       first_line.remove_suffix_if(&isspace);
       _method = first_line.take_prefix_if(&isspace);
       _url = first_line.ltrim_if(&isspace).take_prefix_if(&isspace);
-      // Split out the path and scheme for http/2 required headers
-      std::size_t offset = _url.find("://");
-      if (offset != std::string::npos) {
-        _scheme = _url.substr(offset);
-      }
-      offset = _url.find("/", offset);
-      if (offset != std::string::npos) {
-        _path = _url.substr(offset + 1);
-      }
+      parse_url(_url);
 
       while (data) {
         auto field{data.take_prefix_at('\n').rtrim_if(&isspace)};

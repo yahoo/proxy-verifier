@@ -1,0 +1,62 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ { name: tcp }, {name: ip, version: 4} ]
+  transactions:
+
+  - client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one:8080/config/settings.yaml?q=3"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ X-Test-Request, RequestData ]
+        - [ uuid, 5 ]
+        - [ X-Proxy-Directive, "SetURL=%<http://example.one:8080/config/settings.yaml?q=3%>" ]
+    proxy-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url:
+      - [ host, example.one, equal ]
+      - [ path, config/settings.yaml, equal ]
+      - [ scheme, http, equal ]
+      - [ authority, example.one:8080, equal ]
+      - [ net-loc, example.one:8080, equal ]
+      - [ port, 8, contains ]
+      - [ query, q=3, present ]
+      - [ fragment, F, absent ]
+      - [ host, example.one, present ]
+      - [ path, yaml, contains ]
+      - [ scheme, p, suffix ]
+      - [ port, 8, prefix ]
+      - [ authority, 8080, equal ]
+      - [ fragment, F, equal ]
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ uuid, 5 ]
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Set-Cookie, ABCD, equal ]
+        - [ uuid, 5 ]
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Set-Cookie, ABCD, equal ]

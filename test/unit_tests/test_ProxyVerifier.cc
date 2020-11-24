@@ -210,6 +210,14 @@ TEST_CASE("Test path parsing", "[ParseUrl]")
     CHECK(header._scheme == "");
     CHECK(header._path == "/a/path");
     CHECK(header._authority == "");
+
+    CHECK(header.uri_scheme == "");
+    CHECK(header.uri_host == "");
+    CHECK(header.uri_port == "");
+    CHECK(header.uri_authority == "");
+    CHECK(header.uri_path == "/a/path");
+    CHECK(header.uri_query == "");
+    CHECK(header.uri_fragment == "");
   }
   SECTION("Verify URL parsing")
   {
@@ -218,13 +226,29 @@ TEST_CASE("Test path parsing", "[ParseUrl]")
     CHECK(header._scheme == "https");
     CHECK(header._path == "/xy?zab=123456789:98765432");
     CHECK(header._authority == "example-ab.candy.com");
+
+    CHECK(header.uri_scheme == "https");
+    CHECK(header.uri_host == "example-ab.candy.com");
+    CHECK(header.uri_port == "");
+    CHECK(header.uri_authority == "example-ab.candy.com");
+    CHECK(header.uri_path == "xy");
+    CHECK(header.uri_query == "zab=123456789:98765432");
+    CHECK(header.uri_fragment == "");
   }
   SECTION("Verify URL parsing with a port")
   {
-    std::string url = "http://example-ab.candy.com:8080/xy?zab=123456789:98765432";
+    std::string url = "http://example-ab.candy.com:8080/xy/yx?zab=123456789:98765432#Frag";
     header.parse_url(url);
     CHECK(header._scheme == "http");
-    CHECK(header._path == "/xy?zab=123456789:98765432");
+    CHECK(header._path == "/xy/yx?zab=123456789:98765432#Frag");
     CHECK(header._authority == "example-ab.candy.com");
+
+    CHECK(header.uri_scheme == "http");
+    CHECK(header.uri_host == "example-ab.candy.com");
+    CHECK(header.uri_port == "8080");
+    CHECK(header.uri_authority == "example-ab.candy.com:8080");
+    CHECK(header.uri_path == "xy/yx");
+    CHECK(header.uri_query == "zab=123456789:98765432");
+    CHECK(header.uri_fragment == "Frag");
   }
 }

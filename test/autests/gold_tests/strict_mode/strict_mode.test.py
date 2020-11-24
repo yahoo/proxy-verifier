@@ -51,11 +51,11 @@ else:
     proxy.Streams.stdout = "gold/fields_differ_proxy.gold"
 
 client.Streams.stdout = Testers.ContainsExpression(
-        'Violation: Absent. Key: "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119", Name: "x-thisresponseheaderwontexist", Correct Value: "ThereforeTheClientShouldWarn',
+        'Violation: Absent. Key: "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119", Field Name: "x-thisresponseheaderwontexist", Correct Value: "ThereforeTheClientShouldWarn',
         "There should be a warning about the missing response header")
 
 server.Streams.stdout = Testers.ContainsExpression(
-        'Violation: Absent. Key: "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119", Name: "x-thisrequestheaderwontexist", Correct Value: "ThereforeTheServerShouldWarn',
+        'Violation: Absent. Key: "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119", Field Name: "x-thisrequestheaderwontexist", Correct Value: "ThereforeTheServerShouldWarn',
         "There should be a warning about the missing proxy request header.")
 
 client.ReturnCode = 1
