@@ -547,7 +547,10 @@ Engine::command_run()
   int repeat_count = 0;
   // The amount of time that the recording took will be the time of the last,
   // now start-time-adjusted, session time.
-  auto recording_time = Session_List.back()->_start;
+  auto recording_time = 0;
+  if (!Session_List.empty()) {
+    recording_time = Session_List.back()->_start;
+  }
   uint64_t sleep_time = 0u;
   bool use_sleep_time = false;
   if (rate_arg.size() == 1 && !Session_List.empty()) {
@@ -603,7 +606,7 @@ Engine::command_run()
         rate_multiplier,
         sleep_time,
         transaction_count,
-        Session_List.back()->_start,
+        recording_time,
         offset_time);
   }
 
