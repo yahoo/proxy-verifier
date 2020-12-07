@@ -15,17 +15,14 @@ pyflakes = "*"
 
 [packages]
 autest = "==1.7.4"
-traffic-replay = "*" # this should install TRLib, MicroServer, MicroDNS, Traffic-Replay
 hyper = "*"
 dnslib = "*"
 # These are likely to be available via yum/dnf or apt-get
 requests = "*"
 gunicorn = "*"
 httpbin = "*"
-microserver = ">=1.0.4"
 jsonschema = "*"
-cryptography = "==2.8"
-pyopenssl = "*"
+pyOpenSSL = "==19.1.0"
 eventlet = "*"
 
 [requires]
