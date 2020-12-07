@@ -205,10 +205,26 @@ TEST_CASE("Test path parsing", "[ParseUrl]")
   HttpHeader header;
   SECTION("Verify a simple path can be parsed")
   {
-    std::string url = "/a/path";
+    std::string url = "a/path";
     header.parse_url(url);
     CHECK(header._scheme == "");
-    CHECK(header._path == "/a/path");
+    CHECK(header._path == "a/path");
+    CHECK(header._authority == "");
+
+    CHECK(header.uri_scheme == "");
+    CHECK(header.uri_host == "");
+    CHECK(header.uri_port == "");
+    CHECK(header.uri_authority == "");
+    CHECK(header.uri_path == "a/path");
+    CHECK(header.uri_query == "");
+    CHECK(header.uri_fragment == "");
+  }
+  SECTION("Verify a less simple path can be parsed")
+  {
+    std::string url = "/a/path?q=q#F";
+    header.parse_url(url);
+    CHECK(header._scheme == "");
+    CHECK(header._path == "/a/path?q=q#F");
     CHECK(header._authority == "");
 
     CHECK(header.uri_scheme == "");
@@ -216,8 +232,8 @@ TEST_CASE("Test path parsing", "[ParseUrl]")
     CHECK(header.uri_port == "");
     CHECK(header.uri_authority == "");
     CHECK(header.uri_path == "/a/path");
-    CHECK(header.uri_query == "");
-    CHECK(header.uri_fragment == "");
+    CHECK(header.uri_query == "q=q");
+    CHECK(header.uri_fragment == "F");
   }
   SECTION("Verify URL parsing")
   {

@@ -2859,6 +2859,7 @@ HttpHeader::parse_url(TextView url)
     uri_authority = this->localize(url.substr(host_start, port_end - host_start));
   } else {
     path_start = 0; // assume no scheme or authority
+    port_end = 0;
   }
   std::size_t query_start = url.find("?", port_end);
   std::size_t fragment_start = url.find("#", port_end);

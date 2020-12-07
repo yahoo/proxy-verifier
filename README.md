@@ -67,11 +67,12 @@ The following specifies that `X-Forwarded-For` should have been received from th
 
 ## URL Verification
 
-Similarly to Field Verification, a mechanism exists to verify the parts of URLs being received from the proxy by the server. The parts follow the URI specification, with scheme, host, port, authority (also known as net-loc, the combination of host and port), path, query, and fragment supported. In each of these cases, supporting characters like slashes, colons, question marks, and number signs are removed, with the exception of a URL with no scheme or authority, where a leading slash to start the path, if present, is maintained.
+Similarly to Field Verification, a mechanism exists to verify the parts of URLs being received from the proxy by the server. These rules can be given as an alternative to a scalar URL for the "url" field in the proxy request. The parts follow the URI specification, with scheme, host, port, authority (also known as net-loc, the combination of host and port), path, query, and fragment supported. In each of these cases, supporting characters like slashes, colons, question marks, and number signs are removed, with the exception of a URL with no scheme or authority, where a leading slash to start the path, if present, is maintained.
 
  The following specifies the verification of the URL `http://example.one:8080/path?query=q#Frag`. All rules specified in Field Verification are still supported:
 
 ```YAML
+  url:
   - [ scheme, http, equal ]
   - [ host, example.one, equal ]
   - [ port, 8080, equal ]
@@ -89,6 +90,7 @@ Alternatively, authority, with an alias of net-loc, could be used. It is the com
 Verification of the path `/path/x/y?query=q#Frag` could be specified like this:
 
 ```YAML
+  url:
   - [ authority, foo, absent ]
   - [ path, /path/x/y, equal ]
   - [ query, query=q, equal ]
