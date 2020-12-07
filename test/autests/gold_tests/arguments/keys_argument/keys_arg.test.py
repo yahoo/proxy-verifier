@@ -51,7 +51,7 @@ for uuid in [1, 3, 4, 5, 6]:
 #
 # Test 3: Verify a multiple transactions can be selected with --keys.
 #
-r = Test.AddTestRun("Verify all keys are sent when --keys is not used.")
+r = Test.AddTestRun("Verify multiple transactions can be sent with --keys.")
 client = r.AddClientProcess("client3", "five_transactions.yaml",
                             http_ports=[8082],
                             other_args="--keys 3 5 --verbose diag")
@@ -68,3 +68,19 @@ for uuid in [1, 2, 4]:
     client.Streams.stdout += Testers.ExcludesExpression(
             '- "uuid": "{}"'.format(uuid),
             "Client has uuid {}.".format(uuid))
+
+#
+# Test 4: Verify we can handle the situation if no transactions exist for the
+# key.
+#
+r = Test.AddTestRun("Verify no transactions are sent if none match the key.")
+client = r.AddClientProcess("client4", "five_transactions.yaml",
+                            http_ports=[8082],
+                            other_args="--keys does_not_exist --verbose diag")
+server = r.AddServerProcess("server4", "five_transactions.yaml",
+                            http_ports=[8083], other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy4", listen_port=8082, server_port=8083)
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Parsed 0 transactions'.format(uuid),
+        "Verify no transactions are found")
