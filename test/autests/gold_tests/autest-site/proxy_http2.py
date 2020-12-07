@@ -165,10 +165,6 @@ def alpn_callback(conn, protos):
     raise RuntimeError("No acceptable protocol offered!")
 
 
-def npn_advertise_cb(conn):
-    return [b'h2']
-
-
 def configure_http2_server(listen_port, server_port, https_pem):
     # Let's set up SSL. This is a lot of work in PyOpenSSL.
     options = (
@@ -185,7 +181,6 @@ def configure_http2_server(listen_port, server_port, https_pem):
     context.set_verify(SSL.VERIFY_NONE, lambda *args: True)
     context.use_privatekey_file(https_pem)
     context.use_certificate_file(https_pem)
-    context.set_npn_advertise_callback(npn_advertise_cb)
     context.set_alpn_select_callback(alpn_callback)
     context.set_cipher_list(
         "RSA+AESGCM"
