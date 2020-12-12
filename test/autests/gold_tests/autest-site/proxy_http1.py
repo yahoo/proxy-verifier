@@ -104,7 +104,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         setattr(req, 'headers', self.filter_headers(req.headers))
 
         replay_server = "127.0.0.1:{}".format(self.server_port)
-        print("Connecting to: {}".format(replay_server))
+        print("Connecting to: {} with scheme {}".format(replay_server, scheme))
 
         try:
             origin = (scheme, replay_server)
@@ -243,6 +243,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def chunkify_body(res_body):
+        if len(res_body) == 0:
+            return b'0\r\n\r\n'
         header = '{:x}\r\n'.format(len(res_body)).encode()
         trailer = b'\r\n0\r\n\r\n'
         return header + res_body + trailer
