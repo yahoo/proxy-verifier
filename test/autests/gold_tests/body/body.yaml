@@ -2,6 +2,9 @@
 meta:
   version: '1.0'
 
+#
+# Verify correct handling of chunked and content-length bodies.
+#
 sessions:
 - protocol: [ {name: http, version: 1.1}, {name: tls, version: 1.2, sni: test_sni}, { name: tcp }, {name: ip, version: 4} ]
   transactions:
@@ -35,7 +38,7 @@ sessions:
         size: 48
       headers:
         fields:
-        - [ Transfer-Encoding, chunked ]
+        - [ Transfer-Encoding, chunked, equal ]
         - [ X-Request, "first_request", equal ]
 
     server-response:
@@ -64,7 +67,7 @@ sessions:
         encoding: esc_json
         fields:
         - [ Content-Type, multipart/form-data;snoopy=123456 ]
-        - [ Transfer-Encoding, chunked ]
+        - [ Transfer-Encoding, chunked, equal ]
         - [ Connection, keep-alive ]
         - [ X-Response, "first_response", equal ]
 
@@ -125,5 +128,69 @@ sessions:
         fields:
         - [ Content-Type, multipart/form-data;snoopy=123456 ]
         - [ Transfer-Encoding, chunked ]
+        - [ Connection, keep-alive ]
+        - [ X-Response, "second_response", equal ]
+
+  #
+  # Verify we can handle a zero-length chunk.
+  #
+  - all:
+      headers:
+        fields:
+        - [ uuid, 3 ]
+
+    client-request:
+      version: '1.1'
+      scheme: https
+      method: POST
+      url: https://example.data.com/a/path
+      content:
+        encoding: plain
+        size: 0
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, application/json; charset=utf-8 ]
+        - [ Transfer-Encoding, chunked ]
+        - [ X-Request, "second_request" ]
+
+    proxy-request:
+      version: '1.1'
+      scheme: ''
+      method: POST
+      url: "/a/path"
+      content:
+        encoding: plain
+        size: 0
+      headers:
+        fields:
+        - [ X-Request, "second_request", equal ]
+        - [ Transfer-Encoding, chunked, equal ]
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        encoding: plain
+        size: 0
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, multipart/form-data;snoopy=123456 ]
+        - [ Connection, keep-alive ]
+        - [ Transfer-Encoding, chunked ]
+        - [ X-Response, "second_response", equal ]
+
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        encoding: plain
+        size: 0
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, multipart/form-data;snoopy=123456 ]
+        - [ Transfer-Encoding, chunked, equal ]
         - [ Connection, keep-alive ]
         - [ X-Response, "second_response", equal ]

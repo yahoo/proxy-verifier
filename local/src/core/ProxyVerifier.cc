@@ -578,9 +578,10 @@ Session::write_body(HttpHeader const &hdr)
 
   /* Observe that by this point, hdr._content_size will have been adjusted to 0
    * for HEAD requests via update_content_length. */
-  if (hdr._content_size > 0 && ((hdr._status == 0 /* this is a request */) ||
-                                (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status])))
-  {
+  auto const message_type_permits_body =
+      (hdr._status == 0 || (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status]));
+  // Note that zero-length chunked bodies must send a zero-length encoded chunk.
+  if (message_type_permits_body && (hdr._content_size > 0 || hdr._chunked_p)) {
     TextView content;
     if (hdr._content_data) {
       content = TextView{hdr._content_data, hdr._content_size};
