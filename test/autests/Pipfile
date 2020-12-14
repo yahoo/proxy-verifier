@@ -22,7 +22,7 @@ requests = "*"
 gunicorn = "*"
 httpbin = "*"
 jsonschema = "*"
-pyOpenSSL = "==19.1.0"
+pyOpenSSL = "*"
 eventlet = "*"
 
 [requires]
