@@ -26,8 +26,14 @@ def parse_args():
     parser.add_argument('--https-pem', metavar='https_pem', type=str, default=None,
                         help='The file with the cert and key to use for the '
                         'proxy https connection from the client')
-    parser.add_argument('--http2_to_1', action="store_true",
-                        help='Listen for HTTP/2 connections but talk HTTP/1 to the server.')
+    parser.add_argument('--ca-pem', metavar='ca_pem', type=str, default=None,
+                        help='The certificate authority file for verifying peers')
+
+    proto_group = parser.add_mutually_exclusive_group()
+    proto_group.add_argument('--http2_to_1', action="store_true",
+                             help='Listen for HTTP/2 connections but talk HTTP/1 to the server.')
+    proto_group.add_argument('--http2_to_2', action="store_true",
+                             help='Listen for HTTP/2 connections and talk HTTP/2 to the server.')
 
     args = parser.parse_args()
 
@@ -43,7 +49,9 @@ def main():
 
     try:
         if args.http2_to_1:
-            proxy_http2.configure_http2_server(args.listen_port, args.server_port, args.https_pem)
+            proxy_http2.configure_http2_server(args.listen_port, args.server_port, args.https_pem, args.ca_pem, h2_to_server=False)
+        if args.http2_to_2:
+            proxy_http2.configure_http2_server(args.listen_port, args.server_port, args.https_pem, args.ca_pem, h2_to_server=True)
         else:
             proxy_http1.configure_http1_server(
                     proxy_http1.ProxyRequestHandler, proxy_http1.ThreadingHTTPServer,

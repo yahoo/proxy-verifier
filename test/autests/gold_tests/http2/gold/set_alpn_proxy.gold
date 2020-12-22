@@ -1,0 +1,44 @@
+``
+Got SNI from client: b'test_sni_with_h2'
+Got SNI from client: b'test_sni_no_h2'
+HTTP/2 negotiation failed. Trying with HTTP/1
+==== REQUEST HEADERS ====
+:method: GET
+:scheme: https
+:path: /a/path
+:authority: example.data.com
+uuid: 1
+content-length: 0
+host: example.data.com
+
+==== RESPONSE ====
+200 
+
+==== RESPONSE HEADERS ====
+:status: 200
+uuid: 1
+x-response-header: response
+
+==== RESPONSE BODY ====
+b''
+
+==== REQUEST HEADERS ====
+:method: GET
+:scheme: https
+:path: /b/path
+:authority: example.data.com
+uuid: 2
+content-length: 0
+host: example.data.com
+
+==== RESPONSE ====
+200 
+
+==== RESPONSE HEADERS ====
+:status: 200
+uuid: 2
+x-response-header: response2
+
+==== RESPONSE BODY ====
+b''
+``

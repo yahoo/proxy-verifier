@@ -1,7 +1,6 @@
 ``
 ``Presence Success: Key: "1", Field Name: "x-test-header", Value: "backAtYou"
 ``Absence Success: Key: "1", Field Name: "x-test-different"
-``
 ``Absence Violation: Present. Key: "2", Field Name: "x-another-response", Value: "response"
 ``
 - "content-length": "16"

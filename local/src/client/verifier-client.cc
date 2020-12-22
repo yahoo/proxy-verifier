@@ -23,7 +23,6 @@
 #include <unordered_set>
 
 #include <dirent.h>
-#include <fcntl.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
@@ -37,6 +36,14 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, std::chrono::milliseconds ms)
 } // namespace swoc
 
 using swoc::TextView;
+using namespace std::literals;
+using std::chrono::duration_cast;
+using std::chrono::microseconds;
+using std::chrono::milliseconds;
+using std::chrono::nanoseconds;
+using clock_type = std::chrono::system_clock;
+using TimePoint = std::chrono::time_point<clock_type, nanoseconds>;
+using std::this_thread::sleep_for;
 
 /** Whether to verify each response against the corresponding proxy-response
  * in the yaml file.
@@ -63,16 +70,16 @@ std::deque<swoc::IPEndpoint> Target, Target_Https;
  */
 bool Use_Proxy_Request_Directives = false;
 
-swoc::Rv<uint64_t>
+swoc::Rv<TimePoint>
 get_start_time(YAML::Node const &node)
 {
-  swoc::Rv<uint64_t> zret{0};
+  swoc::Rv<TimePoint> zret;
   if (node[YAML_TIME_START_KEY]) {
     auto start_node{node[YAML_TIME_START_KEY]};
     if (start_node.IsScalar()) {
       auto t = swoc::svtou(start_node.Scalar());
       if (t != 0) {
-        return (t / 1000); // Convert to usec from nsec
+        return TimePoint(nanoseconds(t));
       } else {
         zret.errata().error(
             R"("{}" node value "{}" that is not a positive integer.)",
@@ -221,6 +228,8 @@ swoc::Errata
 ClientReplayFileHandler::txn_open(YAML::Node const &node)
 {
   swoc::Errata errata;
+  _txn._req._is_request = true;
+  _txn._rsp._is_response = true;
   if (!node[YAML_CLIENT_REQ_KEY]) {
     errata.error(
         R"(Transaction node at "{}":{} does not have a client request [{}].)",
@@ -232,9 +241,9 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
     return errata;
   }
   if (node[YAML_TIME_START_KEY]) {
-    auto const start_time = get_start_time(node);
-    if (!start_time.is_ok()) {
-      errata.note(std::move(start_time.errata()));
+    auto const transaction_start_time = get_start_time(node);
+    if (!transaction_start_time.is_ok()) {
+      errata.note(std::move(transaction_start_time.errata()));
       errata.error(
           R"(Transaction at "{}":{} has a bad "{}" key.)",
           _path,
@@ -242,28 +251,46 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
           YAML_TIME_START_KEY);
       return errata;
     }
-    _txn._start = start_time;
+    if (transaction_start_time.result() < _ssn->_start) {
+      // Maybe the mechanisms used to measure session start and transaction
+      // count are different and for some reason the session start time is
+      // recorded as later than the transaction start. For our purposes, this
+      // simply means that we should consider session start to be the time of
+      // the earliest transaction.
+      _ssn->_start = transaction_start_time;
+    }
+    _txn._start = transaction_start_time.result() - _ssn->_start;
   }
   LoadMutex.lock();
-  return {};
+  return errata;
 }
 
 swoc::Errata
 ClientReplayFileHandler::client_request(YAML::Node const &node)
 {
+  swoc::Errata errata;
   if (!Use_Proxy_Request_Directives) {
-    return _txn._req.load(node);
+    _txn._req._is_http2 = _ssn->is_h2;
+    errata.note(_txn._req.load(node));
+    if (_txn._req._method.empty()) {
+      errata.error(R"(client-request node without a method at "{}":{}.)", _path, node.Mark().line);
+    }
   }
-  return {};
+  return errata;
 }
 
 swoc::Errata
 ClientReplayFileHandler::proxy_request(YAML::Node const &node)
 {
+  swoc::Errata errata;
   if (Use_Proxy_Request_Directives) {
-    return _txn._req.load(node);
+    _txn._req._is_http2 = _ssn->is_h2;
+    errata.note(_txn._req.load(node));
+    if (_txn._req._method.empty()) {
+      errata.error(R"(proxy-request node without a method at "{}":{}.)", _path, node.Mark().line);
+    }
   }
-  return {};
+  return errata;
 }
 
 swoc::Errata
@@ -272,6 +299,7 @@ ClientReplayFileHandler::proxy_response(YAML::Node const &node)
   if (!Use_Proxy_Request_Directives) {
     // We only expect proxy responses when we are behaving according to the
     // client-request directives and there is a proxy.
+    _txn._rsp._is_http2 = _ssn->is_h2;
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
     return _txn._rsp.load(node);
   }
@@ -281,13 +309,18 @@ ClientReplayFileHandler::proxy_response(YAML::Node const &node)
 swoc::Errata
 ClientReplayFileHandler::server_response(YAML::Node const &node)
 {
+  swoc::Errata errata;
   if (Use_Proxy_Request_Directives) {
     // If we are behaving like the proxy, then replay-client is talking directly
     // with the server and should expect the server's responses.
+    _txn._rsp._is_http2 = _ssn->is_h2;
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-    return _txn._rsp.load(node);
+    errata.note(_txn._rsp.load(node));
+    if (_txn._rsp._status == 0) {
+      errata.error(R"(server-response node without a status at "{}":{})", _path, node.Mark().line);
+    }
   }
-  return {};
+  return errata;
 }
 
 swoc::Errata
@@ -351,11 +384,11 @@ struct Engine
       "comma separated list "};
   void command_run();
 
-  /// Status code to return to the operating system.
-  static int status_code;
+  /// The process return code with which to exit.
+  static int process_exit_code;
 };
 
-int Engine::status_code = 0;
+int Engine::process_exit_code = 0;
 
 void
 Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint const &target_https)
@@ -371,16 +404,9 @@ Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint con
       ssn.is_h2 ? "h2" : (ssn.is_tls ? "https" : "http"));
 
   if (ssn.is_h2) {
-    if (Use_Proxy_Request_Directives) {
-      // replay-server does not support HTTP/2 yet. We currently rely upon
-      // TrafficServer to handle HTTP/2 on the client-side and talk HTTP/1 on
-      // the server side. If there is no TrafficServer proxy, ignore the HTTP/2
-      // traffic therefore.
-      errata.diag(R"(Ignoring HTTP/2 traffic in proxy mode, "{}":{})", ssn._path, ssn._line_no);
-      return;
-    }
-    session = std::make_unique<H2Session>();
+    session = std::make_unique<H2Session>(ssn._client_sni, ssn._client_verify_mode);
     real_target = &target_https;
+    errata.diag("Connecting via HTTP/2 over TLS.");
   } else if (ssn.is_tls) {
     session = std::make_unique<TLSSession>(ssn._client_sni, ssn._client_verify_mode);
     real_target = &target_https;
@@ -396,7 +422,7 @@ Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint con
     errata.note(session->run_transactions(ssn._transactions, real_target, ssn._rate_multiplier));
   }
   if (!errata.is_ok()) {
-    Engine::status_code = 1;
+    Engine::process_exit_code = 1;
   }
   return;
 }
@@ -431,7 +457,7 @@ Engine::command_run()
 
   if (args.size() < 3) {
     errata.error(R"(Not enough arguments for "{}" command.\n{})", COMMAND_RUN, COMMAND_RUN_ARGS);
-    status_code = 1;
+    process_exit_code = 1;
     return;
   }
 
@@ -448,12 +474,12 @@ Engine::command_run()
 
   errata.note(resolve_ips(args[1], Target));
   if (!errata.is_ok()) {
-    status_code = 1;
+    process_exit_code = 1;
     return;
   }
   errata.note(resolve_ips(args[2], Target_Https));
   if (!errata.is_ok()) {
-    status_code = 1;
+    process_exit_code = 1;
     return;
   }
 
@@ -467,7 +493,7 @@ Engine::command_run()
     errata.note(TLSSession::configure_client_cert(cert_arg[0]));
     if (!errata.is_ok()) {
       errata.error(R"(Invalid client-cert path "{}")", cert_arg[0]);
-      status_code = 1;
+      process_exit_code = 1;
       return;
     }
   }
@@ -477,7 +503,7 @@ Engine::command_run()
     errata.note(TLSSession::configure_ca_cert(ca_certs_arg[0]));
     if (!errata.is_ok()) {
       errata.error(R"(Invalid ca-certs path "{}")", cert_arg[0]);
-      status_code = 1;
+      process_exit_code = 1;
       return;
     }
   }
@@ -498,7 +524,7 @@ Engine::command_run()
       },
       10));
   if (!errata.is_ok()) {
-    status_code = 1;
+    process_exit_code = 1;
     return;
   }
 
@@ -512,13 +538,8 @@ Engine::command_run()
   // error instead if not found.
   HttpHeader::_frozen = true;
   size_t max_content_length = 0;
-  uint64_t offset_time = 0;
   int transaction_count = 0;
-  if (!Session_List.empty()) {
-    offset_time = Session_List.front()->_start;
-  }
   for (auto ssn : Session_List) {
-    ssn->_start -= offset_time;
     transaction_count += ssn->_transactions.size();
     for (auto const &txn : ssn->_transactions) {
       max_content_length = std::max<size_t>(max_content_length, txn._req._content_size);
@@ -532,26 +553,41 @@ Engine::command_run()
   errata.diag(R"(Initializing TLS)");
   TLSSession::init();
   errata.diag(R"(Initialize H2)");
-  H2Session::init();
+  H2Session::init(&process_exit_code);
 
   auto sleep_limit_arg{arguments.get("sleep-limit")};
-  uint64_t sleep_limit = 500000;
+  microseconds sleep_limit = 500ms;
   if (sleep_limit_arg.size() == 1) {
-    sleep_limit = atoi(sleep_limit_arg[0].c_str());
+    sleep_limit = microseconds(atoi(sleep_limit_arg[0].c_str()));
+  }
+
+  auto thread_limit_arg{arguments.get("thread-limit")};
+  if (thread_limit_arg.size() == 1) {
+    auto const thread_limit_int = atoi(thread_limit_arg[0].c_str());
+    Client_Thread_Pool.set_max_threads(thread_limit_int);
   }
 
   // A value of zero means to run the transactions as fast as possible.
-  float rate_multiplier = 0.0;
+  double rate_multiplier = 0.0;
   auto rate_arg{arguments.get("rate")};
   auto repeat_arg{arguments.get("repeat")};
   int repeat_count = 0;
-  // The amount of time that the recording took will be the time of the last,
-  // now start-time-adjusted, session time.
-  auto recording_time = 0;
+
+  TimePoint recording_start_time;
   if (!Session_List.empty()) {
-    recording_time = Session_List.back()->_start;
+    // Note that, from above, the sessions are sorted from earliest session
+    // _start time to latest. Therefore the first Ssn is the earliest one.
+    recording_start_time = Session_List.front()->_start;
   }
-  uint64_t sleep_time = 0u;
+  // The amount of time that the recording took will be considered approximated
+  // by the difference of the time of the last session and the time of the
+  // first session. In reality it would be more accurate to have the time the
+  // last session ended rather than started, but this is hopefully close enough.
+  auto recording_duration = 0ns;
+  if (!Session_List.empty()) {
+    recording_duration = Session_List.back()->_start - recording_start_time;
+  }
+  auto sleep_time = 0us;
   bool use_sleep_time = false;
   if (rate_arg.size() == 1 && !Session_List.empty()) {
     int target_rate = atoi(rate_arg[0].c_str());
@@ -570,17 +606,17 @@ Engine::command_run()
       //   * recorded_rate is number of transactions per microsecond.
       //   * t is in microseconds
       //
-      // Thus the time of the replay at per the recorded capture is:
+      // Thus the rate at the time of the replay per the recorded capture is:
       //
       // recorded_rate = num_transactions / time
       //
-      // Our multiplier is, conceptually, simply the ration of the recorded
+      // Our multiplier is, conceptually, simply the ratio of the recorded
       // rate to the target rate:
       //
       // multiplier = recorded_rate / target_rate
       //
       // Thus if the recorded rate is 5,000 rps, and the target rate is 10,000
-      // rpm, then the delay between each session should be halved by
+      // rps, then the delay between each session should be halved via
       // multiplying by 0.5.
       //
       // However, the recorded rate is in microseconds and the user provides a
@@ -588,26 +624,28 @@ Engine::command_run()
       // to normalize both rates to a per second unit:
       //
       // multiplier = (recorded_rate * 1,000,000) / target_rate
-      if (recording_time == 0) {
+      if (recording_duration == 0ns) {
         // Session timing data is not provided, but the user wants a specific
         // rate. We simply need to calculate how much time to sleep between
-        // sessions. To simplify the math, our "recording_time" will simply be
+        // sessions. To simplify the math, our "recording_duration" will simply be
         // the session_count, i.e, 1 microsecond for each session.
-        sleep_time = (transaction_count * 1'000'000.0) / (target_rate * session_count);
+        auto const sleep_time_raw =
+            static_cast<int>((transaction_count * 1'000'000.0) / (target_rate * session_count));
+        auto sleep_time = microseconds(sleep_time_raw);
         sleep_time = std::min(sleep_time, sleep_limit);
         use_sleep_time = true;
       } else {
-        rate_multiplier = (transaction_count * 1'000'000.0) / (target_rate * recording_time);
+        rate_multiplier = (transaction_count * 1'000'000.0) /
+                          (target_rate * duration_cast<microseconds>(recording_duration).count());
       }
     }
     errata.info(
-        "Rate multiplier: {}, per session sleep time: {}, transaction count: {}, time delta: {}, "
-        "first time {}",
+        "Rate multiplier: {}, per session sleep time: {} ms, transaction count: {}, recording "
+        "duration: {} ms",
         rate_multiplier,
-        sleep_time,
+        duration_cast<milliseconds>(sleep_time).count(),
         transaction_count,
-        recording_time,
-        offset_time);
+        duration_cast<milliseconds>(recording_duration).count());
   }
 
   if (repeat_arg.size() == 1) {
@@ -616,23 +654,22 @@ Engine::command_run()
     repeat_count = 1;
   }
 
-  auto start = std::chrono::high_resolution_clock::now();
+  auto replay_start_time = clock_type::now();
   unsigned n_ssn = 0;
   unsigned n_txn = 0;
   for (int i = 0; i < repeat_count; i++) {
-    uint64_t firsttime = GetUTimestamp();
-    uint64_t nexttime = 0;
+    auto const this_iteration_start_time = clock_type::now();
     for (auto ssn : Session_List) {
       if (use_sleep_time) {
-        usleep(sleep_time);
+        sleep_for(sleep_time);
         // Transactions will be run with no rate limiting.
       } else if (rate_multiplier != 0) {
         ssn->_rate_multiplier = rate_multiplier;
-        uint64_t curtime = GetUTimestamp();
-        auto const start_time = ssn->_start;
-        nexttime = (uint64_t)(rate_multiplier * start_time) + firsttime;
+        auto const curtime = clock_type::now();
+        auto const start_offset = ssn->_start - recording_start_time;
+        auto const nexttime = (rate_multiplier * start_offset) + this_iteration_start_time;
         if (nexttime > curtime) {
-          usleep(std::min(sleep_limit, nexttime - curtime));
+          sleep_for(std::min(sleep_limit, duration_cast<microseconds>(nexttime - curtime)));
         }
       }
       ClientThreadInfo *thread_info =
@@ -655,16 +692,15 @@ Engine::command_run()
   Shutdown_Flag = true;
   Client_Thread_Pool.join_threads();
 
-  auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::high_resolution_clock::now() - start);
+  auto replay_duration = duration_cast<milliseconds>(clock_type::now() - replay_start_time);
   errata.info(
-      "{} transactions in {} sessions (reuse {:.2f}) in {} ({:.3f} / "
+      "{} transactions in {} sessions (reuse {:.2f}) in {} milliseconds ({:.3f} / "
       "millisecond).",
       n_txn,
       n_ssn,
       n_txn / static_cast<double>(n_ssn),
-      delta,
-      n_txn / static_cast<double>(delta.count()));
+      replay_duration.count(),
+      n_txn / static_cast<double>(replay_duration.count()));
 };
 
 int
@@ -691,6 +727,11 @@ main(int /* argc */, char const *argv[])
       .add_option("--version", "-V", "Print version string")
       .add_option("--help", "-h", "Print usage information");
 
+  static std::string const thread_limit_description =
+      std::string("Specify the maximum number of threads to use for handling "
+                  "concurrent connections. Default: ") +
+      std::to_string(ThreadPool::default_max_threads);
+
   engine.parser
       .add_command(
           Engine::COMMAND_RUN.data(),
@@ -714,6 +755,7 @@ main(int /* argc */, char const *argv[])
           "",
           1,
           "")
+      .add_option("--thread-limit", "", thread_limit_description.c_str(), "", 1, "")
       .add_option(
           "--rate",
           "",
@@ -769,5 +811,5 @@ main(int /* argc */, char const *argv[])
   }
 
   engine.arguments.invoke();
-  return engine.status_code;
+  return engine.process_exit_code;
 }

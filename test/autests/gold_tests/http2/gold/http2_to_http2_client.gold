@@ -1,0 +1,84 @@
+``
+``Equals Success: Key: "1", Field Name: "content-length", Value: "16"
+``Received an HTTP/2 response for stream id 1:
+- ":status": "200"
+- "content-type": "application/json;charset=utf-8"
+- "content-length": "16"
+- "cache-control": "private"
+- "content-encoding": "gzip"
+- "uuid": "1"
+- "age": "0"
+- "date": "Sat, 16 Mar 2019 01:13:21 GMT"
+
+``
+``Equals Success: Key: "2", Field Name: ":status", Value: "500"
+``Presence Success: Key: "2", Field Name: "x-response-header", Value: "response"
+``Absence Success: Key: "2", Field Name: "content-length"
+``Equals Success: Key: "2", Field Name: "x-equal-header", Value: "some_content"
+``Absence Success: Key: "2", Field Name: "x-deleted-header2"
+``Received an HTTP/2 response for stream id 3:
+- ":status": "500"
+- "x-added-header": "1"
+- "uuid": "2"
+- "x-equal-header": "some_content"
+- "x-response-header": "response"
+
+``
+``Absence Success: Key: "3", Field Name: "content-length"
+``Equals Success: Key: "3", Field Name: "x-response-header", Value: "response"
+``Equals Success: Key: "3", Field Name: ":status", Value: "200"
+``Received an HTTP/2 response for stream id 5:
+- ":status": "200"
+- "x-response-header": "response"
+- "uuid": "3"
+
+``
+``Equals Success: Key: "4", Field Name: "content-length", Value: "0"
+``Equals Success: Key: "4", Field Name: "x-response-header", Value: "response"
+``Equals Success: Key: "4", Field Name: ":status", Value: "200"
+``Received an HTTP/2 response for stream id 7:
+- ":status": "200"
+- "x-response-header": "response"
+- "content-length": "0"
+- "uuid": "4"
+
+``
+``Sent the following HTTP/2 headers for stream id 1:
+- ":method": "GET"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/a/path?q=3"
+- "content-length": "0"
+- "uuid": "1"
+- "accept": "*/*"
+- "accept-language": "en-us"
+- "host": "example.data.com"
+- "accept-encoding": "gzip"
+
+``Sent the following HTTP/2 headers for stream id 3:
+- ":method": "POST"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/a/path"
+- "uuid": "2"
+- "x-proxy-directive": "Delete=%<x-deleted-header%> Insert=%<X-Added-Header: 1%>"
+- "x-deleted-header": "this_will_be_deleted"
+- "x-request-header": "request"
+
+``Sent the following HTTP/2 headers for stream id 5:
+- ":method": "GET"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/b/path"
+- "uuid": "3"
+- "x-request-header": "test_request"
+
+``Sent the following HTTP/2 headers for stream id 7:
+- ":method": "GET"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/b/path"
+- "uuid": "4"
+- "x-request-header": "test_request"
+
+``

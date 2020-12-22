@@ -12,7 +12,8 @@ import os
 
 
 def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
-                     use_ssl=False, https_pem=None, use_http2_to_1=False):
+                     use_ssl=False, https_pem=None, ca_pem=None, use_http2_to_1=False,
+                     use_http2_to_2=False):
     """
     Configure the provided process to run the proxy command.
 
@@ -23,6 +24,9 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
 
         For all other arguments, see MakeProxyProcess
     """
+
+    if use_http2_to_1 and use_http2_to_2:
+        raise ValueError("Cannot specify both use_http2_to_1 and use_http2_to_2 parameters.")
 
     proxy_rundir = os.path.join(obj.RunDirectory, name)
     process.Setup.MakeDir(proxy_rundir)
@@ -45,11 +49,28 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
 
         run_pem = os.path.join(proxy_rundir, os.path.basename(pem_file))
         process.Setup.Copy(pem_file, run_pem, CopyLogic.SoftFiles)
-
         command += " --https-pem {}".format(run_pem)
+
+        ca_file = ca_pem
+        if not ca_file:
+            from os.path import dirname
+            git_root = dirname(dirname(dirname(test_root)))
+            ca_file = os.path.join(git_root, "test", "keys", "ca.pem")
+
+            if not os.path.isfile(ca_file):
+                raise ValueError("Tried to use '{}' for --ca-pem, but it is not "
+                                 "a valid file.".format(ca_file))
+
+        run_ca_file = os.path.join(proxy_rundir, os.path.basename(ca_file))
+        process.Setup.Copy(ca_file, run_ca_file, CopyLogic.SoftFiles)
+
+        command += " --ca-pem {}".format(run_ca_file)
 
     if use_http2_to_1:
         command += " --http2_to_1"
+
+    if use_http2_to_2:
+        command += " --http2_to_2"
 
     process.Setup.Copy(proxy_src, proxy_dest, CopyLogic.SoftFiles)
     process.Command = command
@@ -59,7 +80,8 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
 
 
 def MakeProxyProcess(test, name, listen_port=8080, server_port=8081,
-                     use_ssl=False, https_pem=None, use_http2=False):
+                     use_ssl=False, https_pem=None, ca_pem=None,
+                     use_http2_to_1=False, use_http2_to_2=False):
     """
     Create a Process to run the proxy command.
 
@@ -80,20 +102,27 @@ def MakeProxyProcess(test, name, listen_port=8080, server_port=8081,
         https_pem: (str) The path to the pem file to use for the HTTPS
         connections.
 
-        use_http2: (bool) True if the connection should expect HTTP/2 traffic,
-        false otherwise.
+        ca_pem: (str) The path to the pem file containing certificate authority
+        information.
+
+        use_http2_to_1: (bool) True if the connection should expect HTTP/2
+        traffic for the client but send HTTP/1 to the server, false otherwise.
+
+        use_http2_to_2: (bool) True if the connection should expect HTTP/2
+        traffic for the client and also send HTTP/2 to the server, false otherwise.
 
     Returns:
         The newly created proxy Process.
     """
     proxy = test.Processes.Process(name)
     _configure_proxy(test, proxy, name, listen_port, server_port,
-                     use_ssl, https_pem)
+                     use_ssl, https_pem, ca_pem, use_http2_to_1, use_http2_to_2)
     return proxy
 
 
 def AddProxyProcess(run, name, listen_port=8080, server_port=8081,
-                    use_ssl=False, https_pem=None, use_http2_to_1=False):
+                    use_ssl=False, https_pem=None, ca_pem=None, use_http2_to_1=False,
+                    use_http2_to_2=False):
     """
     Create a proxy Process and add it to the provided TestRun.
 
@@ -107,7 +136,7 @@ def AddProxyProcess(run, name, listen_port=8080, server_port=8081,
     """
     proxy = run.Processes.Process(name)
     _configure_proxy(run, proxy, name, listen_port, server_port,
-                     use_ssl, https_pem, use_http2_to_1)
+                     use_ssl, https_pem, ca_pem, use_http2_to_1, use_http2_to_2)
 
     client = run.Processes.Default
     client.StartBefore(proxy)

@@ -1,10 +1,23 @@
 ``
+``response status 200:
+- "uuid": "1"
+- "content-length": "16"
+- "content-type": "text/html"
+
+``
+``Received an HTTP/1 request with key 1:
 - "host": "example.one"
 - "uuid": "1"
 - "Content-Length": "0"
 - "Accept-Encoding": "identity"
 
+``response status 200:
+- "uuid": "2"
+- "content-length": "32"
+- "content-type": "text/html"
+
 ``
+``Received an HTTP/1 request with key 2:
 - "host": "example.one"
 - "uuid": "2"
 - "Content-Length": "0"

@@ -1,6 +1,11 @@
 ``
-``Status for key 1: "200"
-``Headers:
+``Sent the following HTTP/1 GET request:
+- "uuid": "1"
+- "x-test-request": "request"
+- "host": "example.one"
+
+``
+``Received an HTTP/1 200 response for key 1 with headers:
 - "content-type": "text/html"
 - "content-length": "16"
 - "x-test-response": "response"

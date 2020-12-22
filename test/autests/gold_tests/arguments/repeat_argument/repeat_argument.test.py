@@ -86,10 +86,17 @@ client.Streams.stdout += Testers.ContainsExpression(
         'Verify each transaction is executed twice.')
 
 if Condition.IsPlatform("darwin"):
-    # On the Mac, the test proxy seems to close the session prematurely for
-    # some transactions, causing the client to fail due to PARSE_INCOMPLETE
-    # warnings. Because the client says "Connection reset by peer", I believe
-    # this is a test issue.
+    # On the Mac, the test proxy closes the session prematurely for some
+    # transactions, causing the client to fail due to PARSE_INCOMPLETE
+    # warnings. This can be observed in packet captures of the running test
+    # (the proxy does indeed send RESET responses after the request comes in)
+    # and from the client output which says "Connection reset by peer". I've
+    # spent some time trying to get the Python server to not close the
+    # connections prematurely on Mac but have not been able to get it to work
+    # yet.  The client does indeed send the desired number of transactions, as
+    # verified with the above stdout Testers, so this test is nevertheless
+    # helpful despite the annoying test proxy behavior. For now we'll just
+    # ignore the return code.
     client.ReturnCode = 1
 
 #

@@ -1,0 +1,167 @@
+meta:
+  version: '1.0'
+
+#
+# Verify HTTP/2 is negotiated if h2 is in the server's ALPN string.
+#
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    version: 1.2
+    sni: test_sni_with_h2
+  - name: tcp
+  - name: ip
+    version: 4
+
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+    client-request:
+      method: GET
+      scheme: https
+      url: https://example.data.com/a/path
+      version: '2'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, example.data.com ]
+        - [ Content-Length, "0" ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-request:
+      # HTTP/2 on the server-side.
+      protocol:
+      - name: http
+        version: 2
+      - name: tls
+        version: 1.2
+        sni: test_sni_with_h2
+        #
+        # *** NOTE "h2" is in this list.
+        #
+        alpn-protocols: [ "h2", "http/1.1", "http1.1" ]
+      - name: tcp
+      - name: ip
+        version: 4
+
+      method: GET
+      scheme: ''
+      url: /a/path
+      version: '2'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, example.data.com, equal ]
+        - [ Content-Length, "0", equal ]
+      content:
+        encoding: plain
+        size: 0
+
+    server-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, response ]
+      content:
+        encoding: plain
+        size: 16
+
+    proxy-response:
+      status: 200
+      content:
+        encoding: plain
+        size: 16
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, response, equal ]
+
+  #
+  # Remove h2 from the server's ALPN protocol list.
+  #
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    version: 1.2
+    sni: test_sni_no_h2
+  - name: tcp
+  - name: ip
+    version: 4
+
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 2 ]
+
+    client-request:
+      method: GET
+      scheme: https
+      url: https://example.data.com/b/path
+      version: '2'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, example.data.com ]
+        - [ Content-Length, "0" ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-request:
+      # HTTP/2 on the server-side.
+      protocol:
+      - name: http
+        version: 2
+      - name: tls
+        version: 1.2
+        sni: test_sni_no_h2
+        #
+        # *** NOTE "h2" is not in this list.
+        #
+        alpn-protocols: [ "http/1.1", "http1.1" ]
+      - name: tcp
+      - name: ip
+        version: 4
+
+      method: GET
+      scheme: ''
+      url: /b/path
+      version: '2'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, example.data.com, equal ]
+        - [ Content-Length, "0", equal ]
+      content:
+        encoding: plain
+        size: 0
+
+    server-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, response2 ]
+      content:
+        encoding: plain
+        size: 16
+
+    proxy-response:
+      status: 200
+      content:
+        encoding: plain
+        size: 16
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, response2, equal ]

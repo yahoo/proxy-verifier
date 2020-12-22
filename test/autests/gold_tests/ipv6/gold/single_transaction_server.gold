@@ -2,7 +2,14 @@
 ``Listening at [::1]:4443
 ``Listening at [::1]:8080
 ``
-``Headers:
+``an HTTP/1 response to request with key 1 with response status 200:
+- "uuid": "1"
+- "x-test-response": "response"
+- "content-length": "16"
+- "content-type": "text/html"
+
+``Request with key 1 passed validation.
+``Received an HTTP/1 request with key 1:
 - "host": "example.one"
 - "x-test-request": "request"
 - "uuid": "1"

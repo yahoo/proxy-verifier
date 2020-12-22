@@ -1,6 +1,14 @@
 ``
-``Status for key ``: "200"
-``Headers:
+``Sent the following HTTP/1 POST request:
+- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
+- "content-type": "application/json; charset=utf-8"
+- "accept-encoding": "gzip"
+- "content-length": "10"
+- "host": "example.com"
+- "connection": "Keep-Alive"
+
+``
+``an HTTP/1 200 response for key cb9b4e94-5d42-43d4-8545-320033298ba2-214279439 with headers:
 - "date": "Sat, 16 Mar 2019 01:33:27 GMT"
 - "content-type": "multipart/form-data;snoopy=123456"
 - "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"

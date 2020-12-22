@@ -24,12 +24,16 @@ server = r.AddServerProcess("server1", "replay_files/single_transaction.yaml",
                             other_args="--verbose diag")
 
 
-client.Streams.stdout = "gold/single_transaction_client.gold"
+if Condition.IsPlatform("darwin"):
+    client.Streams.stdout = "gold/single_transaction_client.gold_macos"
+    server.Streams.stdout = "gold/single_transaction_server.gold_macos"
+else:
+    client.Streams.stdout = "gold/single_transaction_client.gold"
+    server.Streams.stdout = "gold/single_transaction_server.gold"
+
 client.Streams.stdout += Testers.ExcludesExpression(
         "Violation:",
         "There should be no verification errors because there are none added.")
-
-server.Streams.stdout = "gold/single_transaction_server.gold"
 server.Streams.stdout += Testers.ExcludesExpression(
         "Violation:",
         "There should be no verification errors because there are none added.")

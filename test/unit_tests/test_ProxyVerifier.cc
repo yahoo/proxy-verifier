@@ -8,6 +8,27 @@
 #include "catch.hpp"
 #include "core/ProxyVerifier.h"
 
+TEST_CASE("ALPN string formatting", "[alpn]")
+{
+  SECTION("empty alpn")
+  {
+    const unsigned char no_protos[] = {0};
+    CHECK(std::string("") == get_printable_alpn_string({(char *)no_protos, sizeof(no_protos)}));
+  }
+  SECTION("Single protocol")
+  {
+    const unsigned char one_protos[] = {2, 'h', '2'};
+    CHECK(std::string("h2") == get_printable_alpn_string({(char *)one_protos, sizeof(one_protos)}));
+  }
+  SECTION("Two protocols")
+  {
+    const unsigned char two_protos[] = {2, 'h', '2', 7, 'h', 't', 't', 'p', '1', '.', '1'};
+    CHECK(
+        std::string("h2,http1.1") ==
+        get_printable_alpn_string({(char *)two_protos, sizeof(two_protos)}));
+  }
+}
+
 const std::string key = "1";
 
 // Other parts of new code involve Info calls and reliance on these functions,
@@ -200,71 +221,250 @@ TEST_CASE("RuleChecks of duplicate fields", "[RuleCheck]")
   }
 }
 
+struct ParseUrlTestCase
+{
+  std::string const description;
+  std::string const url_input;
+
+  std::string const expected_scheme;
+  std::string const expected_authority;
+  std::string const expected_path;
+
+  std::string const expected_uri_scheme;
+  std::string const expected_uri_host;
+  std::string const expected_uri_port;
+  std::string const expected_uri_authority;
+  std::string const expected_uri_path;
+  std::string const expected_uri_query;
+  std::string const expected_uri_fragment;
+};
+
+std::initializer_list<ParseUrlTestCase> parse_url_test_cases = {
+    {
+        .description = "Verify an empty URL can be parsed.",
+        .url_input = "",
+
+        .expected_scheme = "",
+        .expected_authority = "",
+        .expected_path = "",
+
+        .expected_uri_scheme = "",
+        .expected_uri_host = "",
+        .expected_uri_port = "",
+        .expected_uri_authority = "",
+        .expected_uri_path = "",
+        .expected_uri_query = "",
+        .expected_uri_fragment = "",
+    },
+    {
+        .description = "Verify scheme only is parsed correctly.",
+        .url_input = "http://",
+
+        .expected_scheme = "http",
+        .expected_authority = "",
+        .expected_path = "",
+
+        .expected_uri_scheme = "http",
+        .expected_uri_host = "",
+        .expected_uri_port = "",
+        .expected_uri_authority = "",
+        .expected_uri_path = "",
+        .expected_uri_query = "",
+        .expected_uri_fragment = "",
+    },
+    {
+        .description = "Verify a scheme and authority is parsed correctly.",
+        .url_input = "https://www.example.com",
+
+        .expected_scheme = "https",
+        .expected_authority = "www.example.com",
+        .expected_path = "",
+
+        .expected_uri_scheme = "https",
+        .expected_uri_host = "www.example.com",
+        .expected_uri_port = "",
+        .expected_uri_authority = "www.example.com",
+        .expected_uri_path = "",
+        .expected_uri_query = "",
+        .expected_uri_fragment = "",
+    },
+    {
+        .description = "Verify a scheme and authority with port is parsed correctly.",
+        .url_input = "https://www.example.com:443",
+
+        .expected_scheme = "https",
+        .expected_authority = "www.example.com:443",
+        .expected_path = "",
+
+        .expected_uri_scheme = "https",
+        .expected_uri_host = "www.example.com",
+        .expected_uri_port = "443",
+        .expected_uri_authority = "www.example.com:443",
+        .expected_uri_path = "",
+        .expected_uri_query = "",
+        .expected_uri_fragment = "",
+    },
+    {
+        .description = "Verify correct parsing of authority-only targets.",
+        .url_input = "www.example.com:443",
+
+        .expected_scheme = "",
+        .expected_authority = "www.example.com:443",
+        .expected_path = "",
+
+        .expected_uri_scheme = "",
+        .expected_uri_host = "www.example.com",
+        .expected_uri_port = "443",
+        .expected_uri_authority = "www.example.com:443",
+        .expected_uri_path = "",
+        .expected_uri_query = "",
+        .expected_uri_fragment = "",
+    },
+    {
+        .description = "Verify a path can be parsed.",
+        .url_input = "/a/path.yaml",
+
+        .expected_scheme = "",
+        .expected_authority = "",
+        .expected_path = "/a/path.yaml",
+
+        .expected_uri_scheme = "",
+        .expected_uri_host = "",
+        .expected_uri_port = "",
+        .expected_uri_authority = "",
+        .expected_uri_path = "/a/path.yaml",
+        .expected_uri_query = "",
+        .expected_uri_fragment = "",
+    },
+    {
+        .description = "Verify a path with a fragment can be parsed.",
+        .url_input = "/a/path.json#Fraggle",
+
+        .expected_scheme = "",
+        .expected_authority = "",
+        .expected_path = "/a/path.json#Fraggle",
+
+        .expected_uri_scheme = "",
+        .expected_uri_host = "",
+        .expected_uri_port = "",
+        .expected_uri_authority = "",
+        .expected_uri_path = "/a/path.json",
+        .expected_uri_query = "",
+        .expected_uri_fragment = "Fraggle",
+    },
+    {
+        .description = "Verify a path with a query and fragment can be parsed.",
+        .url_input = "/a/path?q=q#F",
+
+        .expected_scheme = "",
+        .expected_authority = "",
+        .expected_path = "/a/path?q=q#F",
+
+        .expected_uri_scheme = "",
+        .expected_uri_host = "",
+        .expected_uri_port = "",
+        .expected_uri_authority = "",
+        .expected_uri_path = "/a/path",
+        .expected_uri_query = "q=q",
+        .expected_uri_fragment = "F",
+    },
+    {
+        .description = "Verify parsing of a URI containing all the URI parts.",
+        .url_input = "https://example-ab.candy.com/xy?zab=123456789:98765432#candy?cane",
+
+        .expected_scheme = "https",
+        .expected_authority = "example-ab.candy.com",
+        .expected_path = "/xy?zab=123456789:98765432#candy?cane",
+
+        .expected_uri_scheme = "https",
+        .expected_uri_host = "example-ab.candy.com",
+        .expected_uri_port = "",
+        .expected_uri_authority = "example-ab.candy.com",
+        .expected_uri_path = "/xy",
+        .expected_uri_query = "zab=123456789:98765432",
+        .expected_uri_fragment = "candy?cane",
+    },
+    {
+        .description = "Verify parsing of a path with a colon.",
+        .url_input = "https://example-ab.candy.com/xy/path:.yaml?zab=123456789:98765432#candy?cane",
+
+        .expected_scheme = "https",
+        .expected_authority = "example-ab.candy.com",
+        .expected_path = "/xy/path:.yaml?zab=123456789:98765432#candy?cane",
+
+        .expected_uri_scheme = "https",
+        .expected_uri_host = "example-ab.candy.com",
+        .expected_uri_port = "",
+        .expected_uri_authority = "example-ab.candy.com",
+        .expected_uri_path = "/xy/path:.yaml",
+        .expected_uri_query = "zab=123456789:98765432",
+        .expected_uri_fragment = "candy?cane",
+    },
+    {
+        .description = "Verify URL parsing with a port.",
+        .url_input = "http://example-ab.candy.com:8080/xy/yx?zab=123456789:98765432#Frag",
+
+        .expected_scheme = "http",
+        .expected_authority = "example-ab.candy.com:8080",
+        .expected_path = "/xy/yx?zab=123456789:98765432#Frag",
+
+        .expected_uri_scheme = "http",
+        .expected_uri_host = "example-ab.candy.com",
+        .expected_uri_port = "8080",
+        .expected_uri_authority = "example-ab.candy.com:8080",
+        .expected_uri_path = "/xy/yx",
+        .expected_uri_query = "zab=123456789:98765432",
+        .expected_uri_fragment = "Frag",
+    },
+    {
+        .description = "Verify an empty path can be parsed.",
+        .url_input = "http://example-ab.candy.com:8080?zab=123456789:98765432#Frag",
+
+        .expected_scheme = "http",
+        .expected_authority = "example-ab.candy.com:8080",
+        .expected_path = "?zab=123456789:98765432#Frag",
+
+        .expected_uri_scheme = "http",
+        .expected_uri_host = "example-ab.candy.com",
+        .expected_uri_port = "8080",
+        .expected_uri_authority = "example-ab.candy.com:8080",
+        .expected_uri_path = "",
+        .expected_uri_query = "zab=123456789:98765432",
+        .expected_uri_fragment = "Frag",
+    },
+    {
+        .description = "Verify an empty path and just a fragment can be parsed.",
+        .url_input = "http://example-ab.candy.com:8080#Frag",
+
+        .expected_scheme = "http",
+        .expected_authority = "example-ab.candy.com:8080",
+        .expected_path = "#Frag",
+
+        .expected_uri_scheme = "http",
+        .expected_uri_host = "example-ab.candy.com",
+        .expected_uri_port = "8080",
+        .expected_uri_authority = "example-ab.candy.com:8080",
+        .expected_uri_path = "",
+        .expected_uri_query = "",
+        .expected_uri_fragment = "Frag",
+    },
+};
+
 TEST_CASE("Test path parsing", "[ParseUrl]")
 {
+  auto const &test_case = GENERATE(values(parse_url_test_cases));
   HttpHeader header;
-  SECTION("Verify a simple path can be parsed")
-  {
-    std::string url = "a/path";
-    header.parse_url(url);
-    CHECK(header._scheme == "");
-    CHECK(header._path == "a/path");
-    CHECK(header._authority == "");
+  header.parse_url(test_case.url_input);
 
-    CHECK(header.uri_scheme == "");
-    CHECK(header.uri_host == "");
-    CHECK(header.uri_port == "");
-    CHECK(header.uri_authority == "");
-    CHECK(header.uri_path == "a/path");
-    CHECK(header.uri_query == "");
-    CHECK(header.uri_fragment == "");
-  }
-  SECTION("Verify a less simple path can be parsed")
-  {
-    std::string url = "/a/path?q=q#F";
-    header.parse_url(url);
-    CHECK(header._scheme == "");
-    CHECK(header._path == "/a/path?q=q#F");
-    CHECK(header._authority == "");
+  CHECK(header._scheme == test_case.expected_scheme);
+  CHECK(header._path == test_case.expected_path);
+  CHECK(header._authority == test_case.expected_authority);
 
-    CHECK(header.uri_scheme == "");
-    CHECK(header.uri_host == "");
-    CHECK(header.uri_port == "");
-    CHECK(header.uri_authority == "");
-    CHECK(header.uri_path == "/a/path");
-    CHECK(header.uri_query == "q=q");
-    CHECK(header.uri_fragment == "F");
-  }
-  SECTION("Verify URL parsing")
-  {
-    std::string url = "https://example-ab.candy.com/xy?zab=123456789:98765432";
-    header.parse_url(url);
-    CHECK(header._scheme == "https");
-    CHECK(header._path == "/xy?zab=123456789:98765432");
-    CHECK(header._authority == "example-ab.candy.com");
-
-    CHECK(header.uri_scheme == "https");
-    CHECK(header.uri_host == "example-ab.candy.com");
-    CHECK(header.uri_port == "");
-    CHECK(header.uri_authority == "example-ab.candy.com");
-    CHECK(header.uri_path == "xy");
-    CHECK(header.uri_query == "zab=123456789:98765432");
-    CHECK(header.uri_fragment == "");
-  }
-  SECTION("Verify URL parsing with a port")
-  {
-    std::string url = "http://example-ab.candy.com:8080/xy/yx?zab=123456789:98765432#Frag";
-    header.parse_url(url);
-    CHECK(header._scheme == "http");
-    CHECK(header._path == "/xy/yx?zab=123456789:98765432#Frag");
-    CHECK(header._authority == "example-ab.candy.com");
-
-    CHECK(header.uri_scheme == "http");
-    CHECK(header.uri_host == "example-ab.candy.com");
-    CHECK(header.uri_port == "8080");
-    CHECK(header.uri_authority == "example-ab.candy.com:8080");
-    CHECK(header.uri_path == "xy/yx");
-    CHECK(header.uri_query == "zab=123456789:98765432");
-    CHECK(header.uri_fragment == "Frag");
-  }
+  CHECK(header.uri_scheme == test_case.expected_uri_scheme);
+  CHECK(header.uri_host == test_case.expected_uri_host);
+  CHECK(header.uri_port == test_case.expected_uri_port);
+  CHECK(header.uri_authority == test_case.expected_uri_authority);
+  CHECK(header.uri_path == test_case.expected_uri_path);
+  CHECK(header.uri_query == test_case.expected_uri_query);
+  CHECK(header.uri_fragment == test_case.expected_uri_fragment);
 }

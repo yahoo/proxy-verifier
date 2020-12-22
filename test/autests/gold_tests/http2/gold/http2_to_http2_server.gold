@@ -1,0 +1,83 @@
+``
+``Ready with 4 transactions.
+``Received an HTTP/2 request for stream id 1:
+- ":method": "GET"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/a/path?q=3"
+- "accept-encoding": "gzip"
+- "host": "example.data.com"
+- "accept": "*/*"
+- "uuid": "1"
+- "content-length": "0"
+- "accept-language": "en-us"
+
+``
+``in an HTTP/2 response to request with key 1 with response status 200:
+- ":status": "200"
+- "uuid": "1"
+- "age": "0"
+- "date": "Sat, 16 Mar 2019 01:13:21 GMT"
+- "content-encoding": "gzip"
+- "cache-control": "private"
+- "content-length": "16"
+- "content-type": "application/json;charset=utf-8"
+
+``
+``Received an HTTP/2 request for stream id 3:
+- ":method": "POST"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/a/path"
+- "x-added-header": "1"
+- "x-request-header": "request"
+- "uuid": "2"
+
+``Presence Success: Key: "2", Field Name: "x-added-header", Value: "1"
+``Equals Success: Key: "2", Field Name: ":method", Value: "POST"
+``Equals Success: Key: "2", Field Name: ":scheme", Value: "https"
+``Equals Success: Key: "2", Field Name: ":authority", Value: "example.data.com"
+``Absence Success: Key: "2", Field Name: "content-length"
+``Absence Success: Key: "2", Field Name: "x-deleted-header"
+``Presence Success: Key: "2", Field Name: "x-request-header", Value: "request"
+``
+``in an HTTP/2 response to request with key 2 with response status 500:
+- ":status": "500"
+- "uuid": "2"
+- "x-proxy-directive": "Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>"
+- "x-response-header": "response"
+- "x-equal-header": "some_content"
+- "x-deleted-header2": "this_will_be_deleted"
+
+``
+``Received an HTTP/2 request for stream id 5:
+- ":method": "GET"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/b/path"
+- "x-request-header": "test_request"
+- "uuid": "3"
+
+``
+``in an HTTP/2 response to request with key 3 with response status 200:
+- ":status": "200"
+- "uuid": "3"
+- "x-response-header": "response"
+
+``
+``Received an HTTP/2 request for stream id 7:
+- ":method": "GET"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/b/path"
+- "x-request-header": "test_request"
+- "uuid": "4"
+
+``
+``in an HTTP/2 response to request with key 4 with response status 200:
+- ":status": "200"
+- "uuid": "4"
+- "content-length": "0"
+- "x-response-header": "response"
+
+``

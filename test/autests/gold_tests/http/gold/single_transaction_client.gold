@@ -1,7 +1,14 @@
-``Configuring logging at level DIAG
 ``
-``Status for key cb9b4e94-5d42-43d4-8545-320033298ba2-226381119: "200"
-``Headers:
+- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119"
+- "x-someid": "fda39dfad1"
+- "x-candy": "cane"
+- "content-length": "399"
+- "host": "example.com"
+- "connection": "Keep-Alive"
+- "content-type": "application/octet-stream"
+
+``
+``Received an HTTP/1 200 response for key cb9b4e94-5d42-43d4-8545-320033298ba2-226381119 with headers:
 - "content-length": "0"
 - "content-type": "application/octet-stream"
 - "server": "ATS"
@@ -12,9 +19,6 @@
 - "date": "Sat, 16 Mar 2019 03:11:36 GMT"
 
 ``
-``Starting session "``single_transaction.json":5 protocol=http.
-``1 transactions in 1 sessions``
-``
 ``Parsed 1 transactions in 1 sessions.
-``Loading replay data from "``single_transaction.json".
+``Loading replay data from "``single_transaction.yaml".
 ``
