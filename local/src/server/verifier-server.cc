@@ -42,9 +42,10 @@ using swoc::BufferWriter;
 using swoc::Errata;
 using swoc::TextView;
 
+using std::this_thread::sleep_for;
 namespace chrono = std::chrono;
 using namespace std::literals;
-constexpr auto const Thread_Sleep_Interval_MS = 100ms;
+constexpr auto const Thread_Sleep_Interval = 100ms;
 
 void TF_Serve_Connection(std::thread *t);
 
@@ -78,7 +79,18 @@ public:
 
 ServerThreadPool Server_Thread_Pool;
 
-HttpHeader Continue_resp;
+HttpHeader
+get_continue_response(int32_t stream_id = -1)
+{
+  HttpHeader response;
+  response._status = 100;
+  response._http_version = "1.1";
+  response._reason = "continue";
+  if (stream_id >= 0) {
+    response._stream_id = stream_id;
+  }
+  return response;
+}
 
 std::thread
 ServerThreadPool::make_thread(std::thread *t)
@@ -99,11 +111,11 @@ struct Engine
 
   void command_run();
 
-  /// Status code to return to the operating system.
-  static int status_code;
+  /// The process return code with which to exit.
+  static int process_exit_code;
 };
 
-int Engine::status_code = 0;
+int Engine::process_exit_code = 0;
 
 /** Handle SIGINT, exiting with an appropriate exit code.
  *
@@ -118,14 +130,14 @@ void
 sigint_handler(int /* signal */)
 {
   Errata errata;
-  if (Engine::status_code == 0) {
+  if (Engine::process_exit_code == 0) {
     errata.diag("Handling SIGINT: shutting down and "
                 "exiting with a 0 response code because no errors have been seen.");
   } else {
     errata.diag(
         "Handling SIGINT: shutting down and "
         "exiting with response code {} because errors have been seen.",
-        Engine::status_code);
+        Engine::process_exit_code);
   }
   Shutdown_Flag = true;
 }
@@ -204,7 +216,7 @@ public:
   void reset();
 
 private:
-  swoc::Rv<int> handle_verify_mode(YAML::Node const &tls_node, std::string_view sni);
+  swoc::Errata handle_tls_node_directives(YAML::Node const &tls_node, std::string_view sni);
 
 private:
   std::string _key;
@@ -229,6 +241,8 @@ ServerReplayFileHandler::ssn_open(YAML::Node const & /* node */)
 swoc::Errata
 ServerReplayFileHandler::txn_open(YAML::Node const &node)
 {
+  _txn._req._is_request = true;
+  _txn._rsp._is_response = true;
   Errata errata;
   if (!node[YAML_SERVER_RSP_KEY]) {
     errata.error(
@@ -244,26 +258,28 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
   return {};
 }
 
-swoc::Rv<int>
-ServerReplayFileHandler::handle_verify_mode(YAML::Node const &tls_node, std::string_view sni)
+swoc::Errata
+ServerReplayFileHandler::handle_tls_node_directives(
+    YAML::Node const &tls_node,
+    std::string_view sni)
 {
-  swoc::Rv<int> verify_mode{-1};
+  swoc::Errata errata;
   auto should_request_certificate = parse_request_certificate(tls_node);
   if (!should_request_certificate.is_ok()) {
-    verify_mode.errata().note(std::move(should_request_certificate.errata()));
-    return verify_mode;
+    errata.note(std::move(should_request_certificate.errata()));
+    return errata;
   }
 
   auto proxy_provided_certificate = parse_proxy_provided_certificate(tls_node);
   if (!proxy_provided_certificate.is_ok()) {
-    verify_mode.errata().note(std::move(proxy_provided_certificate.errata()));
-    return verify_mode;
+    errata.note(std::move(proxy_provided_certificate.errata()));
+    return errata;
   }
 
   auto const verify_mode_node_value = parse_verify_mode(tls_node);
   if (!verify_mode_node_value.is_ok()) {
-    verify_mode.errata().note(std::move(verify_mode_node_value.errata()));
-    return verify_mode;
+    errata.note(std::move(verify_mode_node_value.errata()));
+    return errata;
   }
 
   /* And all of these can exist concurrently but they must all agree. */
@@ -276,33 +292,43 @@ ServerReplayFileHandler::handle_verify_mode(YAML::Node const &tls_node, std::str
       (should_request_certificate == 1 && verify_mode_node_value == 0) ||
       (should_request_certificate == 0 && verify_mode_node_value > 0))
   {
-    verify_mode.errata().error(
+    errata.error(
         R"(The "tls" node at "{}":{} has conflicting {}, {}, and {} values.)",
         _path,
         tls_node.Mark().line,
         YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY,
         YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY,
         YAML_SSN_TLS_VERIFY_MODE_KEY);
-    return verify_mode;
+    return errata;
   }
 
+  TLSHandshakeBehavior handshake_behavior;
   if (verify_mode_node_value > 0) {
-    TLSSession::register_sni_for_client_verification(sni, verify_mode_node_value);
-    verify_mode.errata().diag(
+    handshake_behavior.set_verify_mode(verify_mode_node_value);
+    errata.diag(
         R"(Registered an SNI for client certification "{}":{}. SNI: {}, verify_mode: {}.)",
         _path,
         tls_node.Mark().line,
         sni,
         verify_mode_node_value.result());
   } else if (should_request_certificate == 1 || proxy_provided_certificate == 1) {
-    TLSSession::register_sni_for_client_verification(sni, SSL_VERIFY_PEER);
-    verify_mode.errata().diag(
+    handshake_behavior.set_verify_mode(SSL_VERIFY_PEER);
+    errata.diag(
         R"(Registered an SNI for client certification "{}":{}. SNI: {}.)",
         _path,
         tls_node.Mark().line,
         sni);
   }
-  return verify_mode;
+
+  auto const alpn_protocols = parse_alpn_protocols_node(tls_node);
+  if (!alpn_protocols.result().empty()) {
+    handshake_behavior.set_alpn_protocols_string(alpn_protocols.result());
+    auto const printable_alpn = get_printable_alpn_string(alpn_protocols.result());
+    errata.diag(R"(Using ALPN protocol string "{}" for SNI "{}")", printable_alpn, sni);
+  }
+
+  TLSSession::register_tls_handshake_behavior(sni, std::move(handshake_behavior));
+  return errata;
 }
 
 swoc::Errata
@@ -339,9 +365,9 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
     return errata;
   }
 
-  auto const verify_mode = handle_verify_mode(tls_node, sni);
-  if (!verify_mode.is_ok()) {
-    errata.note(std::move(verify_mode.errata()));
+  auto handle_errata = handle_tls_node_directives(tls_node, sni);
+  if (!handle_errata.is_ok()) {
+    errata.note(std::move(handle_errata));
     return errata;
   }
   return errata;
@@ -350,7 +376,12 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
 swoc::Errata
 ServerReplayFileHandler::server_response(YAML::Node const &node)
 {
-  return _txn._rsp.load(node);
+  swoc::Errata errata;
+  errata.note(_txn._rsp.load(node));
+  if (_txn._rsp._status == 0) {
+    errata.error(R"(server-response without a status at "{}":{}.)", _path, node.Mark().line);
+  }
+  return errata;
 }
 
 swoc::Errata
@@ -399,10 +430,11 @@ TF_Serve_Connection(std::thread *t)
 
     errata = thread_info._session->accept();
     while (!Shutdown_Flag && !thread_info._session->is_closed() && errata.is_ok()) {
-      HttpHeader req_hdr;
       swoc::Errata thread_errata;
-      swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
-      auto &&[poll_return, poll_errata] = thread_info._session->poll(Thread_Sleep_Interval_MS);
+
+      // Poll so we can timeout and check for shutdown.
+      auto &&[poll_return, poll_errata] =
+          thread_info._session->poll_for_headers(Thread_Sleep_Interval);
       thread_errata.note(poll_errata);
       if (poll_return == 0) {
         // Poll timed out. Loop back around.
@@ -410,90 +442,88 @@ TF_Serve_Connection(std::thread *t)
       } else if (!poll_errata.is_ok()) {
         thread_errata.error("Poll failed: {}", swoc::bwf::Errno{});
         break;
+      } else if (poll_return == -1) {
+        // Socket closed.
+        thread_info._session->close();
+        break;
       }
-      auto &&[header_bytes_read, read_header_errata] = thread_info._session->read_header(w);
-      thread_errata.note(read_header_errata);
-      if (!read_header_errata.is_ok()) {
+
+      swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
+      auto &&[req_hdr, read_header_errata] = thread_info._session->read_and_parse_request(w);
+      thread_errata.note(std::move(read_header_errata));
+      if (!thread_errata.is_ok()) {
         thread_errata.error("Could not read the header.");
-        Engine::status_code = 1;
+        Engine::process_exit_code = 1;
         break;
       }
-
-      ssize_t body_offset = header_bytes_read;
-      if (body_offset == 0) {
-        break; // client closed between transactions, that's not an error.
-      }
-
-      auto received_data = swoc::TextView(w.data(), body_offset);
-      auto &&[parse_result, parse_errata] = req_hdr.parse_request(received_data);
-      thread_errata.note(parse_errata);
-
-      if (parse_result != HttpHeader::PARSE_OK || !thread_errata.is_ok()) {
-        thread_errata.error(R"(The received request was malformed.)");
-        thread_errata.diag(R"(Received data: {}.)", received_data);
-        Engine::status_code = 1;
+      if (!req_hdr) {
+        // There were no headers to retrieve. This would happen if the client
+        // closed the connection and is not an error.
         break;
       }
-      thread_errata.diag("Handling request with url: {}", req_hdr._url);
-      thread_errata.diag("{}", req_hdr);
-      auto key{req_hdr.make_key()};
-      auto specified_response{Transactions.find(key)};
+      auto const stream_id = req_hdr->_stream_id;
+      auto const is_http2 = (stream_id >= 0);
+      auto key{req_hdr->make_key()};
+      auto specified_transaction_it{Transactions.find(key)};
 
-      if (specified_response == Transactions.end()) {
+      if (specified_transaction_it == Transactions.end()) {
         thread_errata.error(R"(Proxy request with key "{}" not found.)", key);
-        Engine::status_code = 1;
+        Engine::process_exit_code = 1;
         break;
       }
 
-      [[maybe_unused]] auto &[unused_key, txn] = *specified_response;
+      [[maybe_unused]] auto &[unused_key, specified_transaction] = *specified_transaction_it;
 
-      thread_errata.note(req_hdr.update_content_length(req_hdr._method));
-      thread_errata.note(req_hdr.update_transfer_encoding());
+      thread_errata.note(req_hdr->update_content_length(req_hdr->_method));
+      thread_errata.note(req_hdr->update_transfer_encoding());
 
       // If there is an Expect header with the value of 100-continue, send the
       // 100-continue response before Reading request body.
-      if (req_hdr._send_continue) {
-        thread_info._session->write(Continue_resp);
+      if (req_hdr->_send_continue) {
+        HttpHeader continue_response = get_continue_response(stream_id);
+        thread_info._session->write(continue_response);
       }
 
-      if (req_hdr._content_length_p || req_hdr._chunked_p) {
-        if (req_hdr._chunked_p) {
-          req_hdr._content_size = txn._req._content_size;
+      if (is_http2 || req_hdr->_content_size || req_hdr->_content_length_p || req_hdr->_chunked_p) {
+        if (req_hdr->_chunked_p) {
+          req_hdr->_content_size = specified_transaction._req._content_size;
         }
-        thread_errata.diag("Draining request body of {} bytes.", req_hdr._content_size);
-        auto &&[bytes_drained, drain_errata] = thread_info._session->drain_body(
-            req_hdr,
-            req_hdr._content_size,
-            w.view().substr(body_offset));
+        auto &&[bytes_drained, drain_errata] =
+            thread_info._session->drain_body(*req_hdr, req_hdr->_content_size, w.view());
         thread_errata.note(std::move(drain_errata));
 
         if (!thread_errata.is_ok()) {
-          thread_errata.error("Failed to drain the request body.");
+          thread_errata.error("Failed to drain the request body for key: {}.", key);
           break;
         }
       }
-      thread_errata.diag("Validating request with url: {}", req_hdr._url);
-      if (req_hdr.verify_headers(key, *txn._req._fields_rules)) {
+      if (req_hdr->verify_headers(key, *specified_transaction._req._fields_rules)) {
         thread_errata.error(R"(Request headers did not match expected request headers.)");
-        Engine::status_code = 1;
+        Engine::process_exit_code = 1;
+      } else {
+        thread_errata.diag(R"(Request with key {} passed validation.)", key);
       }
       // Responses to HEAD requests may have a non-zero Content-Length
       // but will never have a body. update_content_length adjusts
       // expectations so the body is not written for responses to such
       // requests.
-      txn._rsp.update_content_length(req_hdr._method);
+      specified_transaction._rsp.update_content_length(req_hdr->_method);
+      if (is_http2) {
+        specified_transaction._rsp._is_http2 = true;
+        specified_transaction._rsp._stream_id = stream_id;
+      }
+      auto &&[bytes_written, write_errata] =
+          thread_info._session->write(specified_transaction._rsp);
+      thread_errata.note(std::move(write_errata));
       thread_errata.diag(
-          "Responding to request {} with status {}.",
-          req_hdr._url,
-          txn._rsp._status);
-      auto &&[bytes_written, write_errata] = thread_info._session->write(txn._rsp);
-      thread_errata.note(write_errata);
-      thread_errata.diag(
-          "Wrote {} bytes in response to request with url {} "
-          "with response status {}",
+          "Wrote {} bytes in an {}{} response to request with key {} "
+          "with response status {}:\n{}",
           bytes_written,
-          req_hdr._url,
-          txn._rsp._status);
+          swoc::bwf::If(is_http2, "HTTP/2"),
+          swoc::bwf::If(!is_http2, "HTTP/1"),
+          key,
+          specified_transaction._rsp._status,
+          specified_transaction._rsp);
     }
 
     // cleanup and get ready for another session.
@@ -505,15 +535,12 @@ void
 TF_Accept(int socket_fd, bool do_tls)
 {
   std::unique_ptr<Session> session;
-  struct pollfd poll_set[1];
-  int numfds = 1;
-  poll_set[0].fd = socket_fd;
-  poll_set[0].events = POLLIN;
+  struct pollfd pfd = {.fd = socket_fd, .events = POLLIN, .revents = 0};
 
   while (!Shutdown_Flag) {
     swoc::Errata errata;
     // Poll so that we can set a timeout and check whether the user requested a shutdown.
-    auto const poll_return = ::poll(poll_set, numfds, Thread_Sleep_Interval_MS.count());
+    auto const poll_return = ::poll(&pfd, 1, Thread_Sleep_Interval.count());
     if (poll_return == 0) {
       // poll timed out.
       continue;
@@ -530,7 +557,9 @@ TF_Accept(int socket_fd, bool do_tls)
       continue;
     }
     if (do_tls) {
-      session = std::make_unique<TLSSession>();
+      // H2Session will figure out the HTTP protocol during the TLS handshake
+      // and handle HTTP/1.x or HTTP/2 accordingly.
+      session = std::make_unique<H2Session>();
     } else {
       session = std::make_unique<Session>();
     }
@@ -540,6 +569,9 @@ TF_Accept(int socket_fd, bool do_tls)
     }
     static const int ONE = 1;
     setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
+    if (0 != ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
+      errata.error("Failed to make the server socket non-blocking: {}", swoc::bwf::Errno{});
+    }
 
     ServerThreadInfo *thread_info =
         dynamic_cast<ServerThreadInfo *>(Server_Thread_Pool.get_worker());
@@ -564,18 +596,25 @@ do_listen(swoc::IPEndpoint &server_addr, bool do_tls)
     if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
       errata.error(R"(Could not set reuseaddr on socket {}: {}.)", socket_fd, swoc::bwf::Errno{});
     } else {
-      int bind_result = bind(socket_fd, &server_addr.sa, server_addr.size());
-      if (bind_result == 0) {
-        int listen_result = listen(socket_fd, 16384);
-        if (listen_result == 0) {
-          errata.info(R"(Listening at {})", server_addr);
-          auto runner = std::make_unique<std::thread>(TF_Accept, socket_fd, do_tls);
-          Accept_Threads.push_back(std::move(runner));
+      if (0 == ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
+        int bind_result = bind(socket_fd, &server_addr.sa, server_addr.size());
+        if (bind_result == 0) {
+          int listen_result = listen(socket_fd, 16384);
+          if (listen_result == 0) {
+            errata.info(R"(Listening at {})", server_addr);
+            auto runner = std::make_unique<std::thread>(TF_Accept, socket_fd, do_tls);
+            Accept_Threads.push_back(std::move(runner));
+          } else {
+            errata.error(R"(Could not isten to {}: {}.)", server_addr, swoc::bwf::Errno{});
+          }
         } else {
-          errata.error(R"(Could not isten to {}: {}.)", server_addr, swoc::bwf::Errno{});
+          errata.error(R"(Could not bind to {}: {}.)", server_addr, swoc::bwf::Errno{});
         }
       } else {
-        errata.error(R"(Could not bind to {}: {}.)", server_addr, swoc::bwf::Errno{});
+        errata.error(
+            R"(Could not make socket non-blocking {}: {}.)",
+            server_addr,
+            swoc::bwf::Errno{});
       }
     }
   } else {
@@ -601,8 +640,14 @@ Engine::command_run()
 
     if (args.size() < 1) {
       errata.error(R"("run" command requires a directory path as an argument.)");
-      status_code = 1;
+      process_exit_code = 1;
       return;
+    }
+
+    auto thread_limit_arg{arguments.get("thread-limit")};
+    if (thread_limit_arg.size() == 1) {
+      auto const thread_limit_int = atoi(thread_limit_arg[0].c_str());
+      Server_Thread_Pool.set_max_threads(thread_limit_int);
     }
 
     if (arguments.get("strict")) {
@@ -619,7 +664,7 @@ Engine::command_run()
         errata = parse_ips(server_addr_arg[0], server_addrs);
       } else {
         errata.error(R"(--listen option must have a single value, the listen address and port.)");
-        status_code = 1;
+        process_exit_code = 1;
         return;
       }
     }
@@ -628,7 +673,7 @@ Engine::command_run()
       if (server_addr_https_arg.size() == 1) {
         errata = parse_ips(server_addr_https_arg[0], server_addrs_https);
         if (!errata.is_ok()) {
-          status_code = 1;
+          process_exit_code = 1;
           return;
         }
         std::error_code ec;
@@ -638,7 +683,7 @@ Engine::command_run()
           errata.note(TLSSession::configure_server_cert(cert_arg[0]));
           if (!errata.is_ok()) {
             errata.error(R"(Invalid server-cert path "{}")", cert_arg[0]);
-            status_code = 1;
+            process_exit_code = 1;
             return;
           }
         }
@@ -647,17 +692,17 @@ Engine::command_run()
           errata.note(TLSSession::configure_ca_cert(ca_certs_arg[0]));
           if (!errata.is_ok()) {
             errata.error(R"(Invalid ca-certs path "{}")", cert_arg[0]);
-            status_code = 1;
+            process_exit_code = 1;
             return;
           }
         }
         if (errata.is_ok()) {
-          errata = TLSSession::init();
+          errata = H2Session::init(&process_exit_code);
         }
       } else {
         errata.error(
             R"(--listen-https option must have a single value, the listen address and port.)");
-        status_code = 1;
+        process_exit_code = 1;
         return;
       }
     }
@@ -671,7 +716,7 @@ Engine::command_run()
         10);
 
     if (!errata.is_ok()) {
-      status_code = 1;
+      process_exit_code = 1;
       return;
     }
     Session::init(Transactions.size());
@@ -701,7 +746,7 @@ Engine::command_run()
         errata.note(do_listen(server_addr, false));
       }
       if (!errata.is_ok()) {
-        status_code = 1;
+        process_exit_code = 1;
         return;
       }
     }
@@ -714,7 +759,7 @@ Engine::command_run()
 
   // Wait for the listening threads to start up.
   while (!Shutdown_Flag) {
-    usleep(chrono::microseconds{Thread_Sleep_Interval_MS}.count());
+    sleep_for(Thread_Sleep_Interval);
   }
   for_each(
       Accept_Threads.begin(),
@@ -723,7 +768,7 @@ Engine::command_run()
   Accept_Threads.clear();
   Server_Thread_Pool.join_threads();
 
-  exit(Engine::status_code);
+  exit(Engine::process_exit_code);
 }
 
 int
@@ -762,6 +807,10 @@ main(int /* argc */, char const *argv[])
       .add_option("--version", "-V", "Print version string")
       .add_option("--help", "-h", "Print usage information");
 
+  static std::string const thread_limit_description =
+      std::string("Specify the maximum number of threads to use for handling "
+                  "concurrent connections. Default: ") +
+      std::to_string(ThreadPool::default_max_threads);
   engine.parser
       .add_command(
           "run",
@@ -769,6 +818,7 @@ main(int /* argc */, char const *argv[])
           "",
           1,
           [&]() -> void { engine.command_run(); })
+      .add_option("--thread-limit", "", thread_limit_description.c_str(), "", 1, "")
       .add_option(
           "--listen",
           "",
@@ -821,10 +871,6 @@ main(int /* argc */, char const *argv[])
     return 1;
   }
 
-  Continue_resp._status = 100;
-  Continue_resp._http_version = "1.1";
-  Continue_resp._reason = "continue";
-
   engine.arguments.invoke();
-  return engine.status_code;
+  return engine.process_exit_code;
 }

@@ -1,0 +1,328 @@
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    version: 1.2
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+
+  transactions:
+
+  #
+  # Use Content-Length in each message to verify we handle that correctly.
+  # Also, verify that the method, scheme, etc. nodes can be used in place
+  # of the :method, :scheme, etc. pseudo header fields.
+  #
+  - all:
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+    client-request:
+      method: GET
+      scheme: https
+      url: https://example.data.com/a/path?q=3
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Accept, '*/*' ]
+        - [ Accept-Language, en-us ]
+        - [ Accept-Encoding, gzip ]
+        # Generally HTTP/2 does not use the Host header field, instead relying
+        # upon the :authority pseudo header field. But Proxy Verifier should do both if
+        # requested.
+        - [ Host, example.data.com ]
+        - [ Content-Length, "0" ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-request:
+      # HTTP/2 on the server-side.
+      protocol:
+      - name: http
+        version: 2
+      - name: tls
+        version: 1.2
+        sni: test_sni
+      - name: tcp
+      - name: ip
+        version: 4
+
+      # URL verification is supported for HTTP/2, with the appropriate fields
+      # from :scheme, :authority, and :path used.
+      - [ scheme, https, equal ]
+      - [ host, example.data.com, equal ]
+      - [ path, /a/path, equal ]
+      - [ authority, example.data.com, equal ]
+      - [ net-loc, example.data.com, equal ]
+      - [ query, q=3, present ]
+      - [ query, 3, contains ]
+      - [ fragment, F, absent ]
+      - [ host, example, present ]
+      - [ path, /, prefix ]
+      - [ port, 8, absent ]
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET, equal ]
+        - [ :scheme, https, equal ]
+        - [ :authority, example.data.com, equal ]
+        - [ :path, '/a/path?q=3', equal ]
+        - [ Accept, '*/*' ]
+        - [ Accept-Language, en-us ]
+        - [ Accept-Encoding, gzip ]
+        # Note that the Host field is still sent.
+        - [ Host, example.data.com, equal ]
+        - [ Content-Length, "0", equal ]
+      content:
+        encoding: plain
+        size: 0
+
+    server-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Cache-Control, private ]
+        - [ Content-Encoding, gzip ]
+        - [ Content-Type, application/json;charset=utf-8 ]
+        - [ Content-Length, '16' ]
+        - [ Date, "Sat, 16 Mar 2019 01:13:21 GMT" ]
+        - [ Age, '0' ]
+      content:
+        encoding: plain
+        size: 16
+
+    proxy-response:
+      content:
+        encoding: plain
+        size: 16
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, 200, equal ]
+        - [ Cache-Control, private ]
+        - [ Content-Encoding, gzip ]
+        - [ Content-Type, application/json;charset=utf-8 ]
+        - [ Content-Length, '16', equal ]
+        - [ Date, "Sat, 16 Mar 2019 01:13:21 GMT" ]
+        - [ Age, '0' ]
+
+  #
+  # Do these without a content-length to make sure we handle that correctly.
+  # Content-Length should not be required.
+  #
+  # Also, make sure the user can use pseudo header fields rather than the
+  # method, scheme, url nodes.
+  #
+  - all:
+      headers:
+        fields:
+        - [ uuid, 2 ]
+
+    client-request:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, POST ]
+        - [ :scheme, https ]
+        - [ :authority, example.data.com ]
+        - [ :path, /a/path ]
+        - [ X-Request-Header, request ]
+        - [ X-Deleted-Header, this_will_be_deleted ]
+        - [ X-Proxy-Directive, "Delete=%<x-deleted-header%> Insert=%<X-Added-Header: 1%>" ]
+      content:
+        encoding: plain
+        size: 10
+
+    proxy-request:
+      # HTTP/2 on the server-side.
+      protocol:
+      - name: http
+        version: 2
+      - name: tls
+        version: 1.2
+        sni: test_sni
+      - name: tcp
+      - name: ip
+        version: 4
+
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, POST, equal ]
+        - [ :scheme, https, equal ]
+        - [ :authority, example.data.com, equal ]
+        - [ :path, /a/path ]
+        - [ X-Request-Header, different_value, present ]
+        - [ X-Added-Header, 2, present ]
+        - [ X-Deleted-Header, 2, absent ]
+        - [ Content-Length, 10, absent ]
+      content:
+        encoding: plain
+        size: 10
+
+    server-response:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, 500 ]
+        - [ X-Equal-Header, some_content ]
+        - [ X-Response-Header, response ]
+        - [ X-Deleted-Header2, this_will_be_deleted ]
+        - [ X-Proxy-Directive, "Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>" ]
+      content:
+        encoding: plain
+        size: 32
+
+    proxy-response:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, 500, equal ]
+        - [ X-Equal-Header, some_content, equal ]
+        - [ X-Response-Header, response, present ]
+        - [ X-Deleted-Header2, response, absent ]
+        - [ Content-Length, 32, absent ]
+      content:
+        encoding: plain
+        size: 32
+
+  #
+  # Verify we can handle a response with an empty body.
+  #
+  - all:
+      headers:
+        fields:
+        - [ uuid, 3 ]
+
+    client-request:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, example.data.com ]
+        - [ :path, /b/path ]
+        - [ X-Request-Header, test_request ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-request:
+      # HTTP/2 on the server-side.
+      protocol:
+      - name: http
+        version: 2
+      - name: tls
+        version: 1.2
+        sni: test_sni
+      - name: tcp
+      - name: ip
+        version: 4
+
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET, equal ]
+        - [ :scheme, https, equal ]
+        - [ :authority, example.data.com, equal ]
+        - [ :path, /b/path, equal ]
+        - [ X-Request-Header, test_request, equal ]
+      content:
+        encoding: plain
+        size: 0
+
+    server-response:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, 200 ]
+        - [ X-Response-Header, response ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-response:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, 200, equal ]
+        - [ X-Response-Header, response, equal ]
+        - [ Content-Length, 0, absent ]
+      content:
+        encoding: plain
+        size: 0
+
+  #
+  # Verify we can handle a response with an empty body and a 0 Content-Length.
+  #
+  - all:
+      headers:
+        fields:
+        - [ uuid, 4 ]
+
+    client-request:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, example.data.com ]
+        - [ :path, /b/path ]
+        - [ X-Request-Header, test_request ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-request:
+      # HTTP/2 on the server-side.
+      protocol:
+      - name: http
+        version: 2
+      - name: tls
+        version: 1.2
+        sni: test_sni
+      - name: tcp
+      - name: ip
+        version: 4
+
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET, equal ]
+        - [ :scheme, https, equal ]
+        - [ :authority, example.data.com, equal ]
+        - [ :path, /b/path, equal ]
+        - [ X-Request-Header, test_request, equal ]
+      content:
+        encoding: plain
+        size: 0
+
+    server-response:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, 200 ]
+        - [ X-Response-Header, response ]
+        - [ Content-Length, 0 ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-response:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, 200, equal ]
+        - [ X-Response-Header, response, equal ]
+        - [ Content-Length, 0, equal ]
+      content:
+        encoding: plain
+        size: 0

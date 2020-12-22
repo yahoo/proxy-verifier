@@ -14,6 +14,7 @@
 #include <nghttp2/nghttp2.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <poll.h>
 #include <string>
 #include <thread>
 #include <vector>
@@ -33,8 +34,6 @@
 #include "swoc/swoc_file.h"
 #include "swoc/swoc_ip.h"
 
-using clock_type = std::chrono::system_clock;
-
 // Definitions of keys in the CONFIG files.
 // These need to be @c std::string or the node look up will construct a @c
 // std::string.
@@ -48,6 +47,7 @@ static const std::string YAML_SSN_PROTOCOL_VERSION{"version"};
 static const std::string YAML_SSN_PROTOCOL_TLS_NAME{"tls"};
 static const std::string YAML_SSN_PROTOCOL_HTTP_NAME{"http"};
 static const std::string YAML_SSN_TLS_SNI_KEY{"sni"};
+static const std::string YAML_SSN_TLS_ALPN_PROTOCOLS_KEY{"alpn-protocols"};
 static const std::string YAML_SSN_TLS_VERIFY_MODE_KEY{"verify-mode"};
 static const std::string YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY{"request-certificate"};
 static const std::string YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY{"proxy-provided-certificate"};
@@ -65,6 +65,11 @@ static const std::string YAML_HTTP_REASON_KEY{"reason"};
 static const std::string YAML_HTTP_METHOD_KEY{"method"};
 static const std::string YAML_HTTP_SCHEME_KEY{"scheme"};
 static const std::string YAML_HTTP2_KEY{"http2"};
+static const std::string YAML_HTTP2_PSEUDO_METHOD_KEY{":method"};
+static const std::string YAML_HTTP2_PSEUDO_SCHEME_KEY{":scheme"};
+static const std::string YAML_HTTP2_PSEUDO_AUTHORITY_KEY{":authority"};
+static const std::string YAML_HTTP2_PSEUDO_PATH_KEY{":path"};
+static const std::string YAML_HTTP2_PSEUDO_STATUS_KEY{":status"};
 static const std::string YAML_HTTP_STREAM_ID_KEY{"stream-id"};
 static const std::string YAML_HTTP_URL_KEY{"url"};
 static const std::string YAML_CONTENT_KEY{"content"};
@@ -138,17 +143,31 @@ class HttpHeader;
  */
 swoc::Rv<int> block_sigpipe();
 
-uint64_t GetUTimestamp();
-
 /** Configure logging.
  *
  * @param[in] verbose_argument The user-specified verbosity requested.
  */
 swoc::Errata configure_logging(const std::string_view verbose_argument);
 
+/** Get a printable version of the ALPN wire format string.
+ *
+ * For example, given this character array:
+ * {2, 'h', '2', 7, 'h', 't', 't', 'p', '1', '.', '1'}
+ *
+ * This will return:
+ * "h2,http1.1"
+ *
+ * @param[in] alpn_wire_string The alpn char array as passed to
+ * SSL_select_next_proto.
+ *
+ * @return a printable version of the alpn string.
+ */
+std::string get_printable_alpn_string(std::string_view alpn_wire_string);
+
 namespace swoc
 {
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const &h);
+BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, std::chrono::milliseconds const &s);
 
 namespace bwf
 {
@@ -161,7 +180,9 @@ namespace bwf
 struct SSLError
 {
   unsigned long _e;
-  explicit SSLError(int e = ERR_peek_last_error()) : _e(e) { }
+  explicit SSLError() : _e(ERR_peek_last_error()) { }
+  explicit SSLError(int e) : _e(e) { }
+  explicit SSLError(SSL const *ssl, int e) : _e(SSL_get_error(ssl, e)) { }
 };
 } // namespace bwf
 
@@ -972,6 +993,10 @@ public:
 
   /** Convert _fields into nghttp2_nv and add them to the vector provided
    *
+   * This assumes that the pseudo header fields are handled separately.  If
+   * such fields are in the _fields container they are not added here to the
+   * nghttp2_nv vector.
+   *
    * @param[out] l vector of nghttp2_nv structs to populate from _fields.
    */
   void add_fields_to_ngnva(nghttp2_nv *l) const;
@@ -1039,15 +1064,52 @@ public:
    */
   bool verify_headers(swoc::TextView key, HttpFields const &rules_) const;
 
+  /// Whether this is an HTTP/2 message.
+  bool _is_http2 = false;
+
+  /// Whether this is an HTTP request
+  bool _is_request = false;
+
+  /// Whether this is an HTTP response
+  bool _is_response = false;
+
+  /// Whether the _fields array contains pseudo header fields.
+  bool _contains_pseudo_headers_in_fields_array = false;
   int32_t _stream_id = -1; ///< For protocols with streams, this is the stream identifier.
+
+  /// The HTTP response status, such as 200, 304, etc.
   unsigned _status = 0;
+
+  /// A string version of _status, such as "200", "304", etc. We create this
+  /// local version around so that if an HTTP/2 response is generated and
+  /// passed to an nghttp2 array, this keeps the storage for the string
+  /// persistent across the callback.
+  std::string _status_string;
+
+  /// The reason phrase, such as "OK" for a 200 HTTP/1.x response.
+  ///
+  /// This is left empty for HTTP/2 responses because the spec intentionally
+  /// omits reason phrases. See RFC 7540, section 8.1.2.4.
   TextView _reason;
   /// If @a content_size is valid but not @a content_data, synthesize the
   /// content. This is split instead of @c TextView because these get set
   /// independently during load.
+
   char const *_content_data = nullptr; ///< Literal data for the content.
-  size_t _content_size = 0;            ///< Length of the content.
-  TextView _method;                    // Required
+
+  /// The size of content we should prepare to send.
+  size_t _content_size = 0;
+
+  /// The size of content recorded that was sent in the replay file.
+  ///
+  /// This is helpful to reference when replaying traffic. We may decide to try
+  /// to send n bytes because that's what the content-length indicates, but it
+  /// could be that, due to the handling of something like a 304, the proxy may
+  /// decide to close the connection before we were able to write the data. If
+  /// that happens during our replay and the recorded content size indicates
+  /// this, then we don't warn about it.
+  size_t _recorded_content_size = 0;
+  TextView _method; // Required
   TextView _http_version;
   TextView _url;
 
@@ -1176,6 +1238,8 @@ private:
    */
   static constexpr bool SHOULD_LOWER = true;
 
+  swoc::Errata process_pseudo_headers(YAML::Node const &node);
+
   /** Convert @a text to a localized view.
    *
    * @param[in] text Text to localize.
@@ -1194,9 +1258,9 @@ struct Txn
 {
   Txn(bool verify_strictly) : _req{verify_strictly}, _rsp{verify_strictly} { }
 
-  uint64_t _start = 0; ///< Start time in HR ticks.
-  HttpHeader _req;     ///< Request to send.
-  HttpHeader _rsp;     ///< Rules for response to expect.
+  std::chrono::nanoseconds _start; ///< The delay since the beginning of the session.
+  HttpHeader _req;                 ///< Request to send.
+  HttpHeader _rsp;                 ///< Rules for response to expect.
 };
 
 struct Ssn
@@ -1204,9 +1268,13 @@ struct Ssn
   std::list<Txn> _transactions;
   swoc::file::path _path;
   unsigned _line_no = 0;
-  uint64_t _start = 0; ///< Start time in HR ticks.
+
+  using clock_type = std::chrono::system_clock;
+  using TimePoint = std::chrono::time_point<clock_type, std::chrono::nanoseconds>;
+  TimePoint _start; ///< Start time at which the session began.
+
   /// The desired length of time in ms to replay this session.
-  float _rate_multiplier = 0.0;
+  double _rate_multiplier = 0.0;
   /// The SNI to send from the client to the proxy.
   std::string _client_sni;
   /// The TLS verify mode for the client against the proxy.
@@ -1259,30 +1327,28 @@ public:
    */
   virtual swoc::Errata connect();
 
-  /** Poll on the stream's socket until there is incoming data.
+  /** Poll until there is header data to read.
    *
    * @param[in] timeout The timeout, in milliseconds, for the poll.
    *
-   * @return The return value of the poll. See poll(2) for a description of
-   * this value.
+   * @return 0 if the poll timed out, -1 on failure or the socket is closed, a
+   * positive value on success.
    */
-  virtual swoc::Rv<int> poll(std::chrono::milliseconds timeout);
+  virtual swoc::Rv<int> poll_for_headers(std::chrono::milliseconds timeout);
 
-  /** Read from the stream's socket into span.
+  /** Poll until there is data on the socket.
    *
-   * @param[in] span The destination for the bytes read from the socket.
+   * @param[in] timeout The timeout, in milliseconds, for the poll.
+   * @param[in] events The event(s) to poll upon. (See the man page for poll(2)).
    *
-   * @return The number of bytes read and an errata with any messaging.
+   * @return 0 if the poll timed out, -1 on failure or the socket is closed, a
+   * positive value on success.
    */
-  virtual swoc::Rv<ssize_t> read(swoc::MemSpan<char> span);
+  virtual swoc::Rv<int> poll_for_data_on_socket(
+      std::chrono::milliseconds timeout,
+      short events = POLLIN);
 
-  /** Read the headers to a buffer.
-   *
-   * @param[in] w The buffer into which to write the headers.
-   *
-   * @return The number of bytes read and an errata with messaging.
-   */
-  virtual swoc::Rv<ssize_t> read_header(swoc::FixedBufferWriter &w);
+  virtual swoc::Rv<std::shared_ptr<HttpHeader>> read_and_parse_request(swoc::FixedBufferWriter &w);
 
   /** Read body bytes out of the socket.
    *
@@ -1291,14 +1357,14 @@ public:
    * @param[in] expected_content_size The response's content-length value
    * or, failing that, the content:size value from the dumped response.
    *
-   * @param[in] initial The body already read from the socket.
+   * @param[in] bytes_read The content read to this put from the socket.
    *
    * @return The number of total drained body bytes, including the contents of
    * initial. This count is strictly the number of body bytes and does not
    * include any chunk header bytes (if chunk encoding was used).
    */
   virtual swoc::Rv<size_t>
-  drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView initial);
+  drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView bytes_read);
 
   virtual swoc::Errata do_connect(swoc::IPEndpoint const *real_target);
 
@@ -1338,8 +1404,25 @@ public:
   virtual swoc::Errata run_transactions(
       std::list<Txn> const &txn,
       swoc::IPEndpoint const *real_target,
-      float rate_multiplier);
+      double rate_multiplier);
   virtual swoc::Errata run_transaction(Txn const &json_txn);
+
+protected:
+  /** Read from the stream's socket into span.
+   *
+   * @param[in] span The destination for the bytes read from the socket.
+   *
+   * @return The number of bytes read and an errata with any messaging.
+   */
+  virtual swoc::Rv<ssize_t> read(swoc::MemSpan<char> span);
+
+  /** Read the headers to a buffer.
+   *
+   * @param[in] w The buffer into which to write the headers.
+   *
+   * @return The number of bytes read and an errata with messaging.
+   */
+  virtual swoc::Rv<ssize_t> read_headers(swoc::FixedBufferWriter &w);
 
 private:
   virtual swoc::Rv<size_t>
@@ -1347,6 +1430,7 @@ private:
 
 private:
   int _fd = -1; ///< Socket.
+  ssize_t _body_offset = 0;
 };
 
 inline int
@@ -1354,11 +1438,52 @@ Session::get_fd() const
 {
   return _fd;
 }
+
 inline bool
 Session::is_closed() const
 {
   return _fd < 0;
 }
+
+/** A class encapsulating how Proxy Verifier should behave in a TLS handshake.
+ *
+ * This is used by the Verifier Server. Instances of this are keyed off of SNI.
+ */
+class TLSHandshakeBehavior
+{
+public:
+  TLSHandshakeBehavior() = default;
+  // Make sure we don't accidentally copy these.
+  TLSHandshakeBehavior(TLSHandshakeBehavior const &) = delete;
+  TLSHandshakeBehavior(TLSHandshakeBehavior &&) = default;
+  TLSHandshakeBehavior &operator=(TLSHandshakeBehavior &&) = default;
+  ~TLSHandshakeBehavior() = default;
+
+  /** Set the TLS verify mode to use via SSL_set_verify. */
+  void set_verify_mode(int verify_mode);
+
+  /** A getter for the TLS verify mode set via set_verify_mode. */
+  int get_verify_mode() const;
+
+  /** Set the raw bytes to use in SSL_select_next_proto to specify
+   * the server's accepted protocols.
+   *
+   * @param[in] alpn_protocols The protos string accepted by
+   * SSL_select_next_proto. This has its own specific length-value structure.
+   * See https://www.openssl.org/docs/man1.1.0/man3/SSL_set_alpn_protos.html
+   * for details.
+   */
+  void set_alpn_protocols_string(std::string_view alpn_protocols);
+
+  /** A getter for the string set via set_alpn_protocols_string. */
+  std::string_view get_alpn_wire_string() const;
+
+private:
+  /// The verify mode to pass to SSL_set_verify().
+  int _verify_mode = SSL_VERIFY_NONE;
+  /// The exact set of bytes to pass to SSL_CTX_set_alpn_protos.
+  std::string _alpn_wire_string;
+};
 
 class TLSSession : public Session
 {
@@ -1373,6 +1498,23 @@ public:
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   /** @see Session::write */
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
+
+  /** Poll until there is data on the socket after an SSL operation fails.
+   *
+   * Note that Proxy Verifier is organized using non-blocking sockets in which
+   * read or write operations are attempted with a poll used after EAGAIN or
+   * SSL_ERROR_WANT_READ/WRITE errors. This handles the poll for the latter
+   * such SSL errors.
+   *
+   * @param[in] timeout The timeout, in milliseconds, for the poll.
+   * @param[in] ssl_error The ssl_error retrieved after an SSL_write or SSL_read failure.
+   *
+   * @return 0 if the poll timed out, -1 on failure or the socket is closed, a
+   * positive value on success.
+   */
+  virtual swoc::Rv<int> poll_for_data_on_ssl_socket(
+      std::chrono::milliseconds timeout,
+      int ssl_error);
 
   /** @see Session::close */
   void close() override;
@@ -1399,12 +1541,14 @@ public:
    * This specifies what verification mode should be done against the client in
    * the TLS handshake if the client uses the given SNI in the client hello.
    *
-   * @param[in] sni The SNI which is the key for the mode value.
+   * @param[in] sni The SNI which is the key for the handshake behavior.
    *
-   * @param[in] mode The verification mode to use in TLS handshakes in which
-   * the sni is the servername in the client hello.
+   * @param[in] handshake_behavior Dictates how proxy verifier should behave
+   * during a TLS handshake with the given SNI.
    */
-  static void register_sni_for_client_verification(std::string_view sni, int mode);
+  static void register_tls_handshake_behavior(
+      std::string_view sni,
+      TLSHandshakeBehavior &&handshake_behavior);
 
   /** A lookup function for the registered verification mode given the SNI.
    *
@@ -1417,6 +1561,18 @@ public:
    * then SSL_VERIFY_NONE will be returned as a default.
    */
   static int get_verify_mode_for_sni(std::string_view sni);
+
+  /** A lookup function for the registered alpn protocol string given the SNI.
+   *
+   * This function is only relevant to the server.
+   *
+   * @param[in] sni The SNI key from which the alpn string is queried.
+   *
+   * @return The wire format alpn protocol string for the given SNI previously
+   * registered via register_sni_for_client_verification. If no such SNI has
+   * been registered, then an empty string will be returned as a default.
+   */
+  static std::string_view get_alpn_protocol_string_for_sni(std::string_view sni);
 
   /** Configure the use of a client certificate.
    *
@@ -1503,29 +1659,69 @@ protected:
   static SSL_CTX *server_context;
   static SSL_CTX *client_context;
 
-  /** The verification mode of the verifier server against the proxy in the TLS
+  /** The handshake behavior of the verifier server against the proxy in the TLS
    * handshake as specified per the SNI received from the proxy.
    */
-  static std::unordered_map<std::string, int> _verify_mode_per_sni;
+  static std::unordered_map<std::string, TLSHandshakeBehavior> _handshake_behavior_per_sni;
 };
 
 class H2StreamState
 {
 public:
   H2StreamState();
-  H2StreamState(int32_t stream_id);
-  H2StreamState(int32_t stream_id, char *send_body, int send_body_length);
+  ~H2StreamState();
 
-  int32_t _stream_id = 0;
-  int _data_to_recv = 0;
+  /** Increment the nghttp2 reference count on buf and return a view of it.
+   *
+   * A reference count to the buffer will be held for the remainder of the
+   * lifetime of the stream.
+   *
+   * @param[in] buf The nghttp2 ref counted buffer to register and for which a
+   * TextView will be returned.
+   *
+   * @return A view representation of the given buffer.
+   */
+  swoc::TextView register_rcbuf(nghttp2_rcbuf *rcbuf);
+
+  /** Indicate that the stream has ended. */
+  void set_stream_has_ended();
+
+  /** Return whether this stream has ended. */
+  bool get_stream_has_ended() const;
+
+  /** Set the stream_id for this and the appropriate members. */
+  void set_stream_id(int32_t id);
+
+  /** Retrieve the stream id for this stream. */
+  int32_t get_stream_id() const;
+
+  /** Store the nghttp2 response headers to be freed upon destruction. */
+  void store_nv_response_headers_to_free(nghttp2_nv *hdrs);
+
+  /** Store the nghttp2 request headers to be freed upon destruction. */
+  void store_nv_request_headers_to_free(nghttp2_nv *hdrs);
+
+public:
   size_t _send_body_offset = 0;
-  char const *_send_body = nullptr;
+  char const *_body_to_send = nullptr;
   size_t _send_body_length = 0;
-  HttpHeader const *_req = nullptr;
-  HttpHeader const *_resp = nullptr;
+  size_t _received_body_length = 0;
   bool _wait_for_continue = false;
   std::string _key;
   std::chrono::time_point<std::chrono::system_clock> _stream_start;
+  HttpHeader const *_specified_response = nullptr;
+
+  /// The HTTP request headers for this stream.
+  std::shared_ptr<HttpHeader> _request_from_client;
+  /// The HTTP response headers for this stream.
+  std::shared_ptr<HttpHeader> _response_from_server;
+
+private:
+  int32_t _stream_id = -1;
+  std::deque<nghttp2_rcbuf *> _rcbufs_to_free;
+  bool _stream_has_ended = false;
+  nghttp2_nv *_request_nv_headers = nullptr;
+  nghttp2_nv *_response_nv_headers = nullptr;
 };
 
 class H2Session : public TLSSession
@@ -1533,24 +1729,30 @@ class H2Session : public TLSSession
 public:
   using super_type = TLSSession;
   H2Session();
+  H2Session(swoc::TextView const &client_sni, int client_verify_mode = SSL_VERIFY_NONE);
   ~H2Session();
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
   swoc::Rv<ssize_t> write(HttpHeader const &hdr) override;
 
+  swoc::Rv<int> poll_for_headers(std::chrono::milliseconds timeout) override;
+  swoc::Rv<std::shared_ptr<HttpHeader>> read_and_parse_request(swoc::FixedBufferWriter &w) override;
+  swoc::Rv<size_t> drain_body(
+      HttpHeader const &hdr,
+      size_t expected_content_size,
+      swoc::TextView bytes_read) override;
+
+  swoc::Errata accept() override;
   swoc::Errata connect() override;
   static swoc::Errata init(SSL_CTX *&server_context, SSL_CTX *&client_context);
-  static swoc::Errata
-  init()
-  {
-    return H2Session::init(h2_server_context, h2_client_context);
-  }
-  swoc::Errata session_init();
-  swoc::Errata send_client_connection_header();
+  static swoc::Errata init(int *process_exit_code);
+  swoc::Errata client_session_init();
+  swoc::Errata server_session_init();
+  swoc::Errata send_connection_settings();
   swoc::Errata run_transactions(
       std::list<Txn> const &txn,
       swoc::IPEndpoint const *real_target,
-      float rate_multiplier) override;
+      double rate_multiplier) override;
   swoc::Errata run_transaction(Txn const &txn) override;
 
   nghttp2_session *
@@ -1559,19 +1761,78 @@ public:
     return _session;
   }
 
-  std::map<int32_t, std::unique_ptr<H2StreamState>> _stream_map;
+  /** Indicate that a stream has completed its HEADERS frame.
+   *
+   * @param[in] stream_id The stream identifier which has completed its HEADERS
+   * frame.
+   */
+  void set_headers_are_available(int32_t stream_id);
 
-protected:
-  nghttp2_session *_session;
-  nghttp2_session_callbacks *_callbacks;
-  nghttp2_option *_options;
+  /// Whether headers have been received.
+  bool get_headers_are_available() const;
 
-  static SSL_CTX *h2_server_context;
-  static SSL_CTX *h2_client_context;
+  /// Return whether this session is for a listening server.
+  bool get_is_server() const;
+
+  void record_stream_state(int32_t stream_id, std::shared_ptr<H2StreamState> stream_state);
+
+  /** Indicates that that the user should receive a non-zero status code.
+   *
+   * Most of this code is blocking a procedural and this can be communicated to
+   * the caller via Errata. But the HTTP/2 nghttp2 callbacks do not return
+   * directly to a caller. Therefore this is used to communicate a non-zero
+   * status.
+   */
+  static void set_non_zero_exit_status();
+
+public:
+  /// A mapping from stream_id to H2StreamState.
+  std::unordered_map<int32_t, std::shared_ptr<H2StreamState>> _stream_map;
 
 private:
+  /** Populate an nghttp2 vector from the information in an HttpHeader instance.
+   *
+   * @param[in] hdr The instance from which to pack headers.
+   * @param[out] nv_hdr The packed headers.
+   * @param[out] hdr_count The size of the nv_hdr vector.
+   *
+   * @return Any errata information from the packing operation.
+   */
   swoc::Errata pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_count);
   nghttp2_nv tv_to_nv(char const *name, swoc::TextView v);
+  void set_expected_response_for_last_request(HttpHeader const &response);
+
+private:
+  /// Whether this session is for a listening server.
+  bool _is_server = false;
+
+  nghttp2_session *_session = nullptr;
+  nghttp2_session_callbacks *_callbacks = nullptr;
+  nghttp2_option *_options = nullptr;
+  bool _h2_is_negotiated = false;
+
+  bool _headers_are_available = false;
+  std::deque<int32_t> _streams_with_headers;
+  std::shared_ptr<H2StreamState> _last_added_stream;
+
+#ifndef OPENSSL_NO_NEXTPROTONEG
+  static unsigned char next_proto_list[256];
+  static size_t next_proto_list_len;
+#endif /* !OPENSSL_NO_NEXTPROTONEG */
+
+  /** The client context to use for HTTP/2 connections.
+   *
+   * This is used per HTTP/2 connection so that ALPN advertises h2. For HTTP/1
+   * TLS connections, client_context is used which does not advertise h2
+   * support.
+   *
+   * A dedicated server context is not needed because, if H2Session::init() is
+   * used, the same server_context is used for both TLS and HTTP/2 sessions.
+   */
+  static SSL_CTX *h2_client_context;
+
+  /// The system status code. This is set to non-zero if problems are detected.
+  static int *process_exit_code;
 };
 
 class ChunkCodex
@@ -1758,6 +2019,8 @@ protected:
    */
   static swoc::Rv<int> parse_verify_mode(YAML::Node const &tls_node);
 
+  static swoc::Rv<std::string> parse_alpn_protocols_node(YAML::Node const &tls_node);
+
 protected:
   /** The replay file associated with this handler.
    */
@@ -1792,6 +2055,8 @@ public:
   ThreadInfo *get_worker();
   virtual std::thread make_thread(std::thread *) = 0;
   void join_threads();
+  static constexpr size_t default_max_threads = 2'000;
+  void set_max_threads(size_t new_max);
 
 protected:
   std::list<std::thread> _allThreads;
@@ -1799,5 +2064,5 @@ protected:
   std::deque<ThreadInfo *> _threadPool;
   std::condition_variable _threadPoolCvar;
   std::mutex _threadPoolMutex;
-  const size_t max_threads = 2000;
+  size_t max_threads = default_max_threads;
 };

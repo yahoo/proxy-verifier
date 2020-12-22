@@ -134,7 +134,10 @@ class DeleteDirective(Directive):
         >>> new_headers['host']
         'example.com'
         """
-        del headers[self._field_name_to_delete]
+        try:
+            del headers[self._field_name_to_delete]
+        except KeyError:
+            pass
         return headers
 
     def _apply_url(self):
@@ -191,7 +194,10 @@ class InsertDirective(Directive):
         '5'
         """
         # We delete to ensure there we don't add a duplicate header.
-        del headers[self._new_field_name]
+        try:
+            del headers[self._new_field_name]
+        except KeyError:
+            pass
         headers[self._new_field_name] = self._new_field_value
         return headers
 
@@ -242,9 +248,16 @@ class DirectiveEngine:
         self._split_directive_values = []
         self._directives = []
 
-        if DirectiveEngine.PROXY_DIRECTIVE_FIELD_NAME in headers:
-            self._x_proxy_directive_value = \
-                    headers[DirectiveEngine.PROXY_DIRECTIVE_FIELD_NAME]
+        if DirectiveEngine.PROXY_DIRECTIVE_FIELD_NAME.lower() in headers:
+            directive_value = headers[DirectiveEngine.PROXY_DIRECTIVE_FIELD_NAME.lower()]
+            if isinstance(directive_value, list):
+                if len(directive_value) != 1:
+                    raise RuntimeError("Expected only one directive field, got {}".format(
+                        len(directive_value)))
+                directive_value = directive_value[0]
+            if isinstance(directive_value, bytes):
+                directive_value = directive_value.decode('ascii')
+            self._x_proxy_directive_value = directive_value
             self._split_directive_values = DirectiveEngine._directive_value_parser(
                     self._x_proxy_directive_value)
 
@@ -262,10 +275,12 @@ class DirectiveEngine:
         [('Insert', 'X-TestHeader: from_proxy_response')]
         >>> DirectiveEngine._directive_value_parser("Delete=%<X-Test%>Insert=%<X-WOW:    3%>")
         [('Delete', 'X-Test'), ('Insert', 'X-WOW:    3')]
+        >>> DirectiveEngine._directive_value_parser("Delete=%<X-Test%> Insert=%<X-WOW:    3%>")
+        [('Delete', 'X-Test'), ('Insert', 'X-WOW:    3')]
         >>> DirectiveEngine._directive_value_parser("SetURL=%<http://example.one:8080/config/settings.yaml?q=3#F%>")
         [('SetURL', 'http://example.one:8080/config/settings.yaml?q=3#F')]
         """
-        return re.findall("(Delete|Insert|SetURL)=%<(.*?)%>", x_proxy_directive_value)
+        return re.findall(r"(Delete|Insert|SetURL)=%<(.*?)%>", x_proxy_directive_value)
 
     def get_new_url(self):
         """
@@ -286,7 +301,7 @@ class DirectiveEngine:
         new_url = None
         for directive in self._directives:
             possible_url = directive.apply_url()
-            if possible_url != None:
+            if possible_url is not None:
                 new_url = possible_url
         return new_url
 
@@ -317,11 +332,38 @@ class DirectiveEngine:
         'one'
         >>> new_headers.items()
         [('Host', 'example.com'), ('X-Duplicate-Header', 'one'), ('X-Duplicate-Header', 'two'), ('X-Request-ID', '4')]
+
+        Headers from HTTP/2 come in as an OrderedDict. Make sure those work as
+        well. Note that OrderedDict behaves differently in that it is case
+        sensitive and does not support duplicates. Also, the HTTP/2 framework
+        makes all the field names lower case.
+        >>> import collections
+        >>> headers = collections.OrderedDict()
+        >>> headers['host'] = 'example.com'
+        >>> headers['x-test-header'] = 'something'
+        >>> headers['x-duplicate-header'] = 'one'
+        >>> headers['x-duplicate-header'] = 'two'
+        >>> headers['x-proxy-directive'] = 'Delete=%<x-test-header%> Insert=%<X-Request-ID: 4%>'
+        >>> e = DirectiveEngine(headers)
+        >>> new_headers = e.get_new_headers()
+        >>> len(new_headers)
+        3
+        >>> new_headers['host']
+        'example.com'
+        >>> new_headers['X-Request-ID']
+        '4'
+        >>> new_headers['x-duplicate-header']
+        'two'
+        >>> new_headers.items()
+        odict_items([('host', 'example.com'), ('x-duplicate-header', 'two'), ('X-Request-ID', '4')])
         """
         new_headers = self._original_headers
         for directive in self._directives:
             new_headers = directive.apply_headers(new_headers)
-        del new_headers[DirectiveEngine.PROXY_DIRECTIVE_FIELD_NAME]
+        try:
+            del new_headers[DirectiveEngine.PROXY_DIRECTIVE_FIELD_NAME.lower()]
+        except KeyError:
+            pass
         return new_headers
 
 

@@ -1,6 +1,13 @@
 ``
-``Status for key 1: "200"
-``Headers:
+``Sent the following HTTP/1 GET request:
+- "uuid": "1"
+- "x-request-sequence": "first"
+- "x-request-sequence": "second"
+- "x-test-request": "first"
+- "x-test-request": "second"
+- "host": "example.one"
+
+``an HTTP/1 200 response for key 1 with headers:
 - "x-test-response": "first"
 - "x-test-response": "second"
 - "x-test-response": "third"

@@ -16,8 +16,8 @@ Verify basic HTTP/1.x functionality.
 # Test 1: Verify correct behavior of a single HTTP transaction.
 #
 r = Test.AddTestRun("Verify HTTP/1 processing of a single HTTP transaction")
-client = r.AddClientProcess("client1", "replay_files/single_transaction.json", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/single_transaction.json", http_ports=[8081], other_args="--verbose diag")
+client = r.AddClientProcess("client1", "replay_files/single_transaction.yaml", http_ports=[8080], other_args="--verbose diag")
+server = r.AddServerProcess("server1", "replay_files/single_transaction.yaml", http_ports=[8081], other_args="--verbose diag")
 proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
 
 

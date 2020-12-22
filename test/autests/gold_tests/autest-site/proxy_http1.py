@@ -44,6 +44,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     in DirectiveEngine for how these directives work.
     """
     timeout = 5
+    # For serializing output. See the uses of "with lock".
     lock = threading.Lock()
 
     def __init__(self, *args, **kwargs):
@@ -173,7 +174,9 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         if 'transfer-encoding' in res.headers and res.headers['transfer-encoding'] == 'chunked':
             res_body = self.chunkify_body(res_body)
 
-        if 'connection' in res.headers and res.headers['connection'] == 'keep-alive':
+        if 'connection' in res.headers and res.headers['connection'] == 'close':
+            self.close_connection = True
+        else:
             self.close_connection = False
         setattr(res, 'headers', self.filter_headers(res.headers))
 
@@ -226,7 +229,12 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                       'proxy-authorization', 'te', 'trailers',
                       'upgrade']
         for k in hop_by_hop:
-            del headers[k]
+            try:
+                del headers[k]
+            except KeyError:
+                # This is fine. The key we're trying to delete did not exist in
+                # the headers, which is what we want anyway.
+                continue
 
         # Apply our X-Proxy-Directive manipulations.
         directive_engine = DirectiveEngine(headers)
@@ -236,7 +244,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     def get_url(headers, original_url):
         directive_engine = DirectiveEngine(headers)
         new_url = directive_engine.get_new_url()
-        if new_url == None:
+        if new_url is None:
             return original_url
         else:
             return new_url

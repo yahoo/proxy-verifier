@@ -27,11 +27,11 @@ ArgParser::ArgParser(
     std::string const &name,
     std::string const &description,
     std::string const &envvar,
-    unsigned arg_num,
+    unsigned num_args,
     Function const &f)
 {
   // initialize _top_level_command according to the provided message
-  _top_level_command = ArgParser::Command(name, description, envvar, arg_num, f);
+  _top_level_command = ArgParser::Command(name, description, envvar, num_args, f);
 }
 
 ArgParser::~ArgParser() { }
@@ -43,12 +43,12 @@ ArgParser::add_option(
     std::string const &short_option,
     std::string const &description,
     std::string const &envvar,
-    unsigned arg_num,
+    unsigned num_args,
     std::string const &default_value,
     std::string const &key)
 {
   return _top_level_command
-      .add_option(long_option, short_option, description, envvar, arg_num, default_value, key);
+      .add_option(long_option, short_option, description, envvar, num_args, default_value, key);
 }
 
 // add sub-command with only function
@@ -68,11 +68,12 @@ ArgParser::add_command(
     std::string const &cmd_name,
     std::string const &cmd_description,
     std::string const &cmd_envvar,
-    unsigned cmd_arg_num,
+    unsigned cmd_num_args,
     Function const &f,
     std::string const &key)
 {
-  return _top_level_command.add_command(cmd_name, cmd_description, cmd_envvar, cmd_arg_num, f, key);
+  return _top_level_command
+      .add_command(cmd_name, cmd_description, cmd_envvar, cmd_num_args, f, key);
 }
 
 void
@@ -218,12 +219,12 @@ ArgParser::Command::Command(
     std::string const &name,
     std::string const &description,
     std::string const &envvar,
-    unsigned arg_num,
+    unsigned num_args,
     Function const &f,
     std::string const &key)
   : _name(name)
   , _description(description)
-  , _arg_num(arg_num)
+  , _num_args(num_args)
   , _envvar(envvar)
   , _f(f)
   , _key(key)
@@ -280,7 +281,7 @@ ArgParser::Command::add_option(
     std::string const &short_option,
     std::string const &description,
     std::string const &envvar,
-    unsigned arg_num,
+    unsigned num_args,
     std::string const &default_value,
     std::string const &key)
 {
@@ -291,7 +292,7 @@ ArgParser::Command::add_option(
       short_option == "-" ? "" : short_option,
       description,
       envvar,
-      arg_num,
+      num_args,
       default_value,
       lookup_key};
   if (short_option != "-" && !short_option.empty()) {
@@ -320,14 +321,14 @@ ArgParser::Command::add_command(
     std::string const &cmd_name,
     std::string const &cmd_description,
     std::string const &cmd_envvar,
-    unsigned cmd_arg_num,
+    unsigned cmd_num_args,
     Function const &f,
     std::string const &key)
 {
   std::string lookup_key = key.empty() ? cmd_name : key;
   check_command(cmd_name, lookup_key);
   _subcommand_list[cmd_name] =
-      ArgParser::Command(cmd_name, cmd_description, cmd_envvar, cmd_arg_num, f, lookup_key);
+      ArgParser::Command(cmd_name, cmd_description, cmd_envvar, cmd_num_args, f, lookup_key);
   return _subcommand_list[cmd_name];
 }
 
@@ -371,7 +372,7 @@ ArgParser::Command::output_option() const
       msg = it.second.short_option + ", ";
     }
     msg += it.first;
-    unsigned num = it.second.arg_num;
+    unsigned num = it.second.num_args;
     if (num != 0) {
       if (num == 1) {
         msg = msg + " <arg>";
@@ -409,15 +410,15 @@ handle_args(
     Arguments &ret,
     AP_StrVec &args,
     std::string const &name,
-    unsigned arg_num,
+    unsigned num_args,
     unsigned &index)
 {
   ArgumentData data;
   ret.append(name, data);
   // handle the args
-  if (arg_num == MORE_THAN_ZERO_ARG_N || arg_num == MORE_THAN_ONE_ARG_N) {
+  if (num_args == MORE_THAN_ZERO_ARG_N || num_args == MORE_THAN_ONE_ARG_N) {
     // infinite arguments
-    if (arg_num == MORE_THAN_ONE_ARG_N && args.size() <= index + 1) {
+    if (num_args == MORE_THAN_ONE_ARG_N && args.size() <= index + 1) {
       return "at least one argument expected by " + name;
     }
     for (unsigned j = index + 1; j < args.size(); j++) {
@@ -427,14 +428,14 @@ handle_args(
     return "";
   }
   // finite number of argument handling
-  for (unsigned j = 0; j < arg_num; j++) {
+  for (unsigned j = 0; j < num_args; j++) {
     if (args.size() < index + j + 2 || args[index + j + 1].empty()) {
-      return std::to_string(arg_num) + " argument(s) expected by " + name;
+      return std::to_string(num_args) + " argument(s) expected by " + name;
     }
     ret.append_arg(name, args[index + j + 1]);
   }
   // erase the used arguments and append the data to the return structure
-  args.erase(args.begin() + index, args.begin() + index + arg_num + 1);
+  args.erase(args.begin() + index, args.begin() + index + num_args + 1);
   index -= 1;
   return "";
 }
@@ -502,7 +503,7 @@ ArgParser::Command::append_option_data(Arguments &ret, AP_StrVec &args, int inde
           cur_option = _option_list.at(short_it->second);
         }
         // handle the arguments
-        std::string err = handle_args(ret, args, cur_option.key, cur_option.arg_num, i);
+        std::string err = handle_args(ret, args, cur_option.key, cur_option.num_args, i);
         if (!err.empty()) {
           help_message(err);
         }
@@ -517,10 +518,11 @@ ArgParser::Command::append_option_data(Arguments &ret, AP_StrVec &args, int inde
   }
   // check for wrong number of arguments for --arg=...
   for (auto const &it : check_map) {
-    unsigned num = _option_list.at(it.first).arg_num;
+    unsigned num = _option_list.at(it.first).num_args;
     if (num != it.second && num < MORE_THAN_ONE_ARG_N) {
       help_message(
-          std::to_string(_option_list.at(it.first).arg_num) + " arguments expected by " + it.first);
+          std::to_string(_option_list.at(it.first).num_args) + " arguments expected by " +
+          it.first);
     }
   }
   // put in the default value of options
@@ -550,7 +552,7 @@ ArgParser::Command::parse(Arguments &ret, AP_StrVec &args)
       if (_f) {
         ret._action = _f;
       }
-      std::string err = handle_args(ret, args, _key, _arg_num, i);
+      std::string err = handle_args(ret, args, _key, _num_args, i);
       if (!err.empty()) {
         help_message(err);
       }

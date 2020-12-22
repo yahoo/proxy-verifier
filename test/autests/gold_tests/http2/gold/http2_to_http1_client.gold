@@ -1,0 +1,26 @@
+``
+``Received an HTTP/2 response for stream id 1:
+- ":status": "200"
+- "content-type": "application/json;charset=utf-8"
+- "content-length": "16"
+- "cache-control": "private"
+- "content-encoding": "gzip"
+- "uuid": "1"
+- "age": "0"
+- "date": "Sat, 16 Mar 2019 01:13:21 GMT"
+
+``
+``Sent the following HTTP/2 headers for stream id 1:
+- ":method": "GET"
+- ":scheme": "https"
+- ":authority": "example.data.com"
+- ":path": "/a/path"
+- "uuid": "1"
+- "accept": "*/*"
+- "accept-language": "en-us"
+- "host": "example.data.com"
+- "accept-encoding": "gzip"
+
+``Starting session "``http2``.yaml"``
+``1 transactions in 1 sessions ``
+``

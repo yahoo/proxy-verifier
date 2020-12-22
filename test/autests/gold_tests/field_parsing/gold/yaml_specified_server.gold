@@ -1,23 +1,35 @@
 ``
-``Listening at 127.0.0.1:4443
-``Listening at 127.0.0.1:8083
 ``Ready with 2 transactions.
 ``Absence Success: Key: "1", Field Name: "x-not-there"
 ``Presence Success: Key: "1", Field Name: "x-test-header", Value: "something"
+``response status 200:
+- "x-test-header": "backAtYou"
+- "uuid": "1"
+- "content-length": "16"
+- "content-type": "text/html"
+
 ``
+``Received an HTTP/1 request with key 1:
 - "host": "example.one"
 - "Accept-Encoding": "identity"
 - "Content-Length": "0"
 - "uuid": "1"
 - "x-test-header": "something"
 
-``Handling request with url: /config/settings.yaml
 ``Presence Violation: Absent. Key: "2", Field Name: "x-not-present"
-``Success: Key: "2", Field Name: "x-another-header", Value: "request"
+``Presence Success: Key: "2", Field Name: "x-another-header", Value: "request"
+``status 200:
+- "x-another-response": "response"
+- "uuid": "2"
+- "content-length": "32"
+- "content-type": "text/html"
+
 ``
+``Received an HTTP/1 request with key 2:
 - "host": "example.one"
 - "Accept-Encoding": "identity"
 - "Content-Length": "0"
 - "uuid": "2"
 - "x-another-header": "request"
+
 ``

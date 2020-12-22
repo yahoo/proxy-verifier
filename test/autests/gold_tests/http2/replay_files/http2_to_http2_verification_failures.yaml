@@ -1,0 +1,67 @@
+meta:
+  version: '1.0'
+sessions:
+- protocol: [ {name: http, version: 2}, {name: tls, version: 1.2, sni: test_sni}, { name: tcp }, {name: ip, version: 4} ]
+
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+    client-request:
+      method: GET
+      scheme: https
+      url: https://example.data.com/a/path
+      version: '1.1'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, example.data.com ]
+        - [ x-deleted-header, this_will_be_deleted ]
+        - [ X-Proxy-Directive, "Delete=%<x-deleted-header%> Insert=%<x-added-header: 3%>" ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-request:
+      # HTTP/2 on the server-side.
+      protocol: [ {name: http, version: 2}, {name: tls, version: 1.2, sni: test_sni}, { name: tcp }, {name: ip, version: 4} ]
+
+      method: GET
+      scheme: ''
+      url: /a/path
+      version: '1.1'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, example.data.com ]
+        - [ x-deleted-header, request, present ]
+        - [ x-added-header, 4, equal ]
+      content:
+        encoding: plain
+        size: 0
+
+    server-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Length, '16' ]
+        - [ x-deleted-header, also_deleted ]
+        - [ X-Proxy-Directive, "Delete=%<x-deleted-header%> Insert=%<x-added-header: abcdefg%>" ]
+      content:
+        encoding: plain
+        size: 16
+
+    proxy-response:
+      status: 200
+      content:
+        encoding: plain
+        size: 16
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Length, '16' ]
+        - [ x-deleted-header, doesnotmatter, present ]
+        - [ x-added-header, lmno, contains ]

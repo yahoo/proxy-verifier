@@ -1,6 +1,17 @@
 ``
-``Responding to request /config/settings.yaml with status 200.
-``Headers:
+``response status 200:
+- "uuid": "1"
+- "x-response-sequence": "third"
+- "x-response-sequence": "second"
+- "x-response-sequence": "first"
+- "content-type": "text/html"
+- "content-length": "16"
+- "x-test-response": "third"
+- "x-test-response": "second"
+- "x-test-response": "first"
+
+``
+``Received an HTTP/1 request with key 1:
 - "Accept-Encoding": "identity"
 - "x-test-request": "first"
 - "x-test-request": "second"

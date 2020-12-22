@@ -1,15 +1,24 @@
 ``
-``Status for key 1: "200"
-``Headers:
+``Sent the following HTTP/1 GET request:
+- "uuid": "1"
+- "host": "example.one"
+
+``
+``Received an HTTP/1 200 response for key 1 with headers:
 - "content-type": "text/html"
 - "content-length": "16"
 - "uuid": "1"
 
+``body of 16 bytes with content: 0000000 0000001 
+``Sent the following HTTP/1 GET request:
+- "uuid": "2"
+- "host": "example.one"
+
 ``
-``Status for key 2: "200"
-``Headers:
+``Received an HTTP/1 200 response for key 2 with headers:
 - "content-type": "text/html"
 - "content-length": "32"
 - "uuid": "2"
 
+``body of 32 bytes with content: 0000000 0000001 0000002 0000003 
 ``

@@ -3,14 +3,19 @@
 ``Listening at 127.0.0.1:8080
 ``Ready with 1 transactions.
 ``
-``Responding to request /a/path with status 200.
-``Headers:
+``Wrote `` in an HTTP/1 response to request with key cb9b4e94-5d42-43d4-8545-320033298ba2-214279439 with response status 200:
+- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
+- "content-length": "12"
+- "content-type": "multipart/form-data;snoopy=123456"
+- "date": "Sat, 16 Mar 2019 01:33:27 GMT"
+- "age": "1"
+- "connection": "keep-alive"
+
+``Received an HTTP/1 request with key cb9b4e94-5d42-43d4-8545-320033298ba2-214279439:
 - "connection": "Keep-Alive"
 - "host": "example.com"
 - "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
 - "content-length": "10"
 - "accept-encoding": "gzip"
 - "content-type": "application/json; charset=utf-8"
-``
-``Handling request with url: /a/path
 ``

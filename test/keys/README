@@ -19,7 +19,7 @@ e is 65537 (0x10001)
 
 
 
-$ openssl req -new -x509 -nodes -days 36000         -key ca-key.pem -out ca.pem
+$ openssl req -new -x509 -nodes -days 36000 -key ca-key.pem -out ca.pem
 You are about to be asked to enter information that will be incorporated
 into your certificate request.
 What you are about to enter is what is called a Distinguished Name or a DN.
@@ -32,7 +32,7 @@ State or Province Name (full name) []:IL
 Locality Name (eg, city) [Default City]:Savoy
 Organization Name (eg, company) [Default Company Ltd]:Yahoo!
 Organizational Unit Name (eg, section) []:TrafficServer
-Common Name (eg, your name or your server's hostname) []:cert_cn
+Common Name (eg, your name or your server's hostname) []:ca.test
 Email Address []:brian.neradt@verizonmedia.com
 
 
@@ -56,7 +56,7 @@ State or Province Name (full name) []:IL
 Locality Name (eg, city) [Default City]:Savoy
 Organization Name (eg, company) [Default Company Ltd]:Yahoo!
 Organizational Unit Name (eg, section) []:TrafficServer
-Common Name (eg, your name or your server's hostname) []:server_cn
+Common Name (eg, your name or your server's hostname) []:server.test
 Email Address []:brian.neradt@verizonmedia.com
 
 Please enter the following 'extra' attributes
@@ -72,6 +72,7 @@ writing RSA key
 
 
 $ openssl x509 -req -in server-req.pem -days 36000 \
+>         -extfile <(printf "subjectAltName=IP:127.0.0.1") \
 >         -CA ca.pem -CAkey ca-key.pem -set_serial 01 -out server-cert.pem
 Signature ok
 subject=/C=US/ST=IL/L=Savoy/O=Yahoo!/OU=TrafficServer/CN=server_cn/emailAddress=brian.neradt@verizonmedia.com
@@ -98,7 +99,7 @@ State or Province Name (full name) []:IL
 Locality Name (eg, city) [Default City]:Savoy
 Organization Name (eg, company) [Default Company Ltd]:Yahoo!
 Organizational Unit Name (eg, section) []:TrafficServer
-Common Name (eg, your name or your server's hostname) []:client_cn
+Common Name (eg, your name or your server's hostname) []:client.test
 Email Address []:brian.neradt@verizonmedia.com
 
 Please enter the following 'extra' attributes
@@ -114,7 +115,14 @@ writing RSA key
 
 
 $ openssl x509 -req -in client-req.pem -days 36000  \
+>         -extfile <(printf "subjectAltName=IP:127.0.0.1") \
 >         -CA ca.pem -CAkey ca-key.pem -set_serial 01 -out client-cert.pem
 Signature ok
 subject=/C=US/ST=IL/L=Savoy/O=Yahoo!/OU=TrafficServer/CN=client_cn/emailAddress=brian.neradt@verizonmedia.com
 Getting CA Private Key
+
+
+cd ../
+cp cert-artifacts/ca.pem .
+cat cert-artifacts/server-key.pem cert-artifacts/server-cert.pem  > server.pem
+cat cert-artifacts/client-key.pem cert-artifacts/client-cert.pem  > client.pem

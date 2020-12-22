@@ -112,7 +112,7 @@ public:
     std::string short_option;  // short option: -a
     std::string description;   // help description
     std::string envvar;        // stored ENV variable
-    unsigned arg_num;          // number of argument expected
+    unsigned num_args;         // number of argument expected
     std::string default_value; // default value of option
     std::string key;           // look-up key
   };
@@ -132,7 +132,7 @@ public:
         std::string const &short_option,
         std::string const &description,
         std::string const &envvar = "",
-        unsigned arg_num = 0,
+        unsigned num_args = 0,
         std::string const &default_value = "",
         std::string const &key = "");
 
@@ -148,7 +148,7 @@ public:
         std::string const &cmd_name,
         std::string const &cmd_description,
         std::string const &cmd_envvar,
-        unsigned cmd_arg_num,
+        unsigned cmd_num_args,
         Function const &f = nullptr,
         std::string const &key = "");
     /** Add an example usage of current command for the help message
@@ -170,7 +170,7 @@ public:
         std::string const &name,
         std::string const &description,
         std::string const &envvar,
-        unsigned arg_num,
+        unsigned num_args,
         Function const &f,
         std::string const &key = "");
     // Helper method for add_option to check the validity of option
@@ -196,7 +196,7 @@ public:
     std::string _description;
 
     // Expected argument number
-    unsigned _arg_num = 0;
+    unsigned _num_args = 0;
     // Stored Env variable
     std::string _envvar;
     // An example usage can be added for the help message
@@ -226,7 +226,7 @@ public:
       std::string const &name,
       std::string const &description,
       std::string const &envvar,
-      unsigned arg_num,
+      unsigned num_args,
       Function const &f);
   ~ArgParser();
 
@@ -238,7 +238,7 @@ public:
       std::string const &short_option,
       std::string const &description,
       std::string const &envvar = "",
-      unsigned arg_num = 0,
+      unsigned num_args = 0,
       std::string const &default_value = "",
       std::string const &key = "");
 
@@ -254,7 +254,7 @@ public:
       std::string const &cmd_name,
       std::string const &cmd_description,
       std::string const &cmd_envvar,
-      unsigned cmd_arg_num,
+      unsigned cmd_num_args,
       Function const &f = nullptr,
       std::string const &key = "");
   // give a defaut command to this parser

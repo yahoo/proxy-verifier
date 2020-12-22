@@ -35,9 +35,15 @@ using swoc::Errata;
 using swoc::TextView;
 using namespace swoc::literals;
 using namespace std::literals;
+using std::this_thread::sleep_until;
+
 namespace chrono = std::chrono;
+using clock_type = std::chrono::system_clock;
+using chrono::duration_cast;
+using chrono::milliseconds;
 
 constexpr auto Transaction_Delay_Cutoff = 10s;
+constexpr auto Poll_Timeout = 5s;
 
 bool Verbose = false;
 
@@ -56,17 +62,46 @@ std::bitset<600> HttpHeader::STATUS_NO_CONTENT;
 RuleCheck::RuleOptions RuleCheck::options;
 RuleCheck::URLRuleOptions RuleCheck::url_rule_options;
 RuleCheck::DuplicateFieldRuleOptions RuleCheck::duplicate_field_options;
-std::unordered_map<std::string, int> TLSSession::_verify_mode_per_sni;
+std::unordered_map<std::string, TLSHandshakeBehavior> TLSSession::_handshake_behavior_per_sni;
 
-static ssize_t send_callback(
+static ssize_t send_nghttp2_data(
     nghttp2_session *session,
     uint8_t const *inputdata,
     size_t length,
     int flags,
     void *user_data);
 
-static ssize_t
-recv_callback(nghttp2_session *session, uint8_t *buf, size_t length, int flags, void *user_data);
+static ssize_t receive_nghttp2_data(
+    nghttp2_session *session,
+    uint8_t *buf,
+    size_t length,
+    int flags,
+    void *user_data,
+    milliseconds timeout);
+
+static ssize_t receive_nghttp2_responses(
+    nghttp2_session *session,
+    uint8_t *buf,
+    size_t length,
+    int flags,
+    void *user_data);
+
+static ssize_t receive_nghttp2_request_headers(
+    nghttp2_session *session,
+    uint8_t *buf,
+    size_t length,
+    int flags,
+    void *user_data,
+    milliseconds timeout);
+
+static ssize_t receive_nghttp2_body(
+    nghttp2_session *session,
+    uint8_t *buf,
+    size_t length,
+    int flags,
+    H2Session *session_data,
+    H2StreamState *stream_state,
+    milliseconds timeout);
 
 namespace
 {
@@ -92,14 +127,6 @@ block_sigpipe()
     zret.errata().error(R"(Could not block SIGPIPE: {})", swoc::bwf::Errno{});
   }
   return zret;
-}
-
-uint64_t
-GetUTimestamp()
-{
-  auto retval = std::chrono::duration_cast<std::chrono::microseconds>(
-      std::chrono::system_clock::now().time_since_epoch());
-  return retval.count();
 }
 
 swoc::Errata
@@ -143,6 +170,27 @@ configure_logging(const std::string_view verbose_argument)
     }
   });
   return errata;
+}
+
+std::string
+get_printable_alpn_string(std::string_view alpn_wire_string)
+{
+  char const *const last_char = &alpn_wire_string.back();
+  std::string printable_alpn;
+  printable_alpn.reserve(alpn_wire_string.size());
+  unsigned short proto_size = 0;
+  for (char const *p = &alpn_wire_string.front(); p <= last_char; ++p) {
+    if (proto_size == 0) {
+      proto_size = (unsigned short)*p;
+    } else {
+      printable_alpn.append(1, *p);
+      --proto_size;
+      if (proto_size == 0 && p != last_char) {
+        printable_alpn.append(1, ',');
+      }
+    }
+  }
+  return printable_alpn;
 }
 
 swoc::Rv<YAML::Node const>
@@ -206,6 +254,26 @@ ReplayFileHandler::parse_verify_mode(YAML::Node const &tls_node)
   return verify_mode;
 }
 
+swoc::Rv<std::string>
+ReplayFileHandler::parse_alpn_protocols_node(YAML::Node const &tls_node)
+{
+  swoc::Rv<std::string> alpn_protocol_string;
+  if (auto alpn_protocols_node{tls_node[YAML_SSN_TLS_ALPN_PROTOCOLS_KEY]}; alpn_protocols_node) {
+    if (!alpn_protocols_node.IsSequence()) {
+      alpn_protocol_string.errata().error(
+          R"(Session has a value for key "{}" that is not a sequence as required.)",
+          YAML_SSN_TLS_ALPN_PROTOCOLS_KEY);
+      return alpn_protocol_string;
+    }
+    for (auto const &protocol : alpn_protocols_node) {
+      std::string_view protocol_view{protocol.Scalar()};
+      alpn_protocol_string.result().append(1, (char)protocol_view.size());
+      alpn_protocol_string.result().append(protocol_view);
+    }
+  }
+  return alpn_protocol_string;
+}
+
 Session::Session() { }
 
 Session::~Session()
@@ -217,10 +285,92 @@ swoc::Rv<ssize_t>
 Session::read(swoc::MemSpan<char> span)
 {
   swoc::Rv<ssize_t> zret{::read(_fd, span.data(), span.size())};
-  if (zret <= 0) {
+  if (zret == 0) {
+    // End of file.
     this->close();
+  } else if (zret < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      auto &&[poll_return, poll_errata] = poll_for_data_on_socket(Poll_Timeout);
+      zret.errata().note(std::move(poll_errata));
+      if (!zret.errata().is_ok()) {
+        zret.errata().note(std::move(poll_errata));
+        zret.errata().error("Failed to poll for data.");
+        this->close();
+      } else if (poll_return > 0) {
+        // Simply repeat the read now that poll says something is ready.
+        return read(span);
+      } else if (poll_return == 0) {
+        zret.errata().error("Poll timed out waiting for content.");
+        this->close();
+      } else if (poll_return < 0) {
+        // Connection was closed. Nothing to do.
+        zret.errata().diag("The peer closed the connection while reading during poll.");
+      }
+    } else if (errno == ECONNRESET) {
+      // The other end closed the connection.
+      zret.errata().diag("The peer closed the connection while reading.");
+      this->close();
+    } else {
+      zret.errata().error("Error reading from socket: {}", swoc::bwf::Errno{});
+    }
   }
   return zret;
+}
+
+swoc::Rv<std::shared_ptr<HttpHeader>>
+Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
+{
+  swoc::Rv<std::shared_ptr<HttpHeader>> zret{nullptr};
+  auto &&[header_bytes_read, read_header_errata] = read_headers(buffer);
+  zret.errata().note(read_header_errata);
+  if (!read_header_errata.is_ok()) {
+    zret.errata().error("Could not read the header.");
+    return zret;
+  }
+
+  _body_offset = header_bytes_read;
+  if (_body_offset == 0) {
+    return zret;
+  }
+
+  zret = std::make_shared<HttpHeader>();
+  auto &hdr = zret.result();
+  hdr->_is_http2 = false;
+  auto received_data = swoc::TextView(buffer.data(), _body_offset);
+  auto &&[parse_result, parse_errata] = hdr->parse_request(received_data);
+  zret.errata().note(parse_errata);
+
+  if (parse_result != HttpHeader::PARSE_OK || !zret.errata().is_ok()) {
+    zret.errata().error(R"(The received request was malformed.)");
+    zret.errata().diag(R"(Received data: {}.)", received_data);
+  }
+  auto const key = hdr->make_key();
+  zret.errata().diag("Received an HTTP/1 request with key {}:\n{}", key, *hdr);
+  return zret;
+}
+
+void
+TLSHandshakeBehavior::set_verify_mode(int verify_mode)
+{
+  _verify_mode = verify_mode;
+}
+
+int
+TLSHandshakeBehavior::get_verify_mode() const
+{
+  return _verify_mode;
+}
+
+void
+TLSHandshakeBehavior::set_alpn_protocols_string(std::string_view alpn_protocols)
+{
+  _alpn_wire_string = alpn_protocols;
+}
+
+std::string_view
+TLSHandshakeBehavior::get_alpn_wire_string() const
+{
+  return _alpn_wire_string;
 }
 
 TLSSession::TLSSession(swoc::TextView const &client_sni, int client_verify_mode)
@@ -242,18 +392,25 @@ TLSSession::read(swoc::MemSpan<char> span)
 {
   errno = 0;
   swoc::Rv<ssize_t> zret{SSL_read(this->_ssl, span.data(), span.size())};
-  const auto ssl_error = (zret <= 0) ? SSL_get_error(_ssl, zret) : 0;
 
-  if ((zret < 0 && ssl_error != SSL_ERROR_WANT_READ)) {
-    zret.errata().error(
-        R"(Read of {} bytes failed. Bytes read: {}, ssl_err: {}, errno: {})",
-        span.size(),
-        zret.result(),
-        swoc::bwf::SSLError{ssl_error},
-        swoc::bwf::Errno{});
-    this->close();
-  } else if (zret == 0) {
-    this->close();
+  if (zret <= 0) {
+    auto const ssl_error = SSL_get_error(get_ssl(), zret);
+    auto &&[poll_return, poll_errata] = poll_for_data_on_ssl_socket(Poll_Timeout, ssl_error);
+    zret.errata().note(std::move(poll_errata));
+    if (poll_return > 0) {
+      // Simply repeat the read now that poll says something is ready.
+      return read(span);
+    } else if (!zret.errata().is_ok()) {
+      zret.errata().error(R"(Failed SSL_read poll for TLS content: {}.)", swoc::bwf::Errno{});
+      this->close();
+    } else if (poll_return == 0) {
+      zret.errata().error(
+          "SSL_read timed out waiting to TLS content after {} milliseconds.",
+          Poll_Timeout);
+      this->close();
+    } else if (poll_return < 0) {
+      this->close();
+    }
   }
   return zret;
 }
@@ -261,7 +418,43 @@ TLSSession::read(swoc::MemSpan<char> span)
 swoc::Rv<ssize_t>
 Session::write(swoc::TextView view)
 {
-  return ::write(_fd, view.data(), view.size());
+  swoc::Rv<ssize_t> zret{0};
+  swoc::TextView remaining = view;
+  while (!remaining.empty()) {
+    if (this->is_closed()) {
+      zret.errata().diag("write failed: session is closed");
+      break;
+    }
+    auto const n = ::write(_fd, remaining.data(), remaining.size());
+    if (n > 0) {
+      remaining = remaining.suffix(remaining.size() - n);
+      zret.result() += n;
+    } else if (n == 0) {
+      zret.errata().error("Write failed to write any bytes to the socket.");
+      break;
+    } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      // Poll on the socket for writeability.
+      auto &&[poll_return, poll_errata] = poll_for_data_on_socket(Poll_Timeout, POLLOUT);
+      zret.errata().note(std::move(poll_errata));
+      if (poll_return > 0) {
+        // The socket is available again for writing. Simply repeat the write.
+        continue;
+      } else if (!zret.errata().is_ok()) {
+        zret.errata().error("Error polling on a socket to write: {}", swoc::bwf::Errno{});
+        break;
+      } else if (poll_return == 0) {
+        zret.errata().error("Timed out waiting to write to a socket.");
+        break;
+      } else if (poll_return < 0) {
+        zret.errata().diag("write failed during poll: session is closed");
+        break;
+      }
+    } else {
+      zret.errata().error("Write failed: {}", swoc::bwf::Errno{});
+      break;
+    }
+  }
+  return zret;
 }
 
 swoc::Rv<ssize_t>
@@ -274,37 +467,48 @@ Session::write(HttpHeader const &hdr)
 
   zret.errata() = hdr.serialize(w);
 
-  if (zret.is_ok()) {
-    zret.result() = write(w.view());
+  if (!zret.is_ok()) {
+    zret.errata().error("Header serialization failed for key: {}", hdr.make_key());
+    return zret;
+  }
 
-    if (zret == static_cast<ssize_t>(w.size())) {
-      zret.result() += write_body(hdr);
-    } else {
-      zret.errata().error(
-          R"(Header write failed with {} of {} bytes written: {}.)",
-          zret.result(),
-          w.size(),
-          swoc::bwf::Errno{});
-    }
+  auto &&[header_bytes_written, header_write_errata] = write(w.view());
+  zret.errata().note(std::move(header_write_errata));
+
+  if (header_bytes_written == static_cast<ssize_t>(w.size())) {
+    zret.result() = header_bytes_written;
+    auto &&[body_bytes_written, body_write_errata] = write_body(hdr);
+    zret.errata().note(std::move(body_write_errata));
+    zret.result() += body_bytes_written;
+  } else {
+    zret.errata().error(
+        R"(Header write for key {} failed with {} of {} bytes written: {}.)",
+        hdr.make_key(),
+        zret.result(),
+        w.size(),
+        swoc::bwf::Errno{});
   }
   return zret;
 }
 
 swoc::Rv<int>
-Session::poll(std::chrono::milliseconds timeout)
+Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
 {
-  if (_fd == -1) {
-    return {0, Errata().diag("Poll called on a closed connection.")};
+  if (is_closed()) {
+    return {-1, Errata().diag("Poll called on a closed connection.")};
   }
-  struct pollfd poll_set[1];
-  int numfds = 1;
-  poll_set[0].fd = _fd;
-  poll_set[0].events = POLLIN;
-  return ::poll(poll_set, numfds, timeout.count());
+  struct pollfd pfd = {.fd = _fd, .events = events, .revents = 0};
+  return ::poll(&pfd, 1, timeout.count());
+}
+
+swoc::Rv<int>
+Session::poll_for_headers(chrono::milliseconds timeout)
+{
+  return poll_for_data_on_socket(timeout);
 }
 
 swoc::Rv<ssize_t>
-Session::read_header(swoc::FixedBufferWriter &w)
+Session::read_headers(swoc::FixedBufferWriter &w)
 {
   swoc::Rv<ssize_t> zret{-1};
   while (w.remaining() > 0) {
@@ -361,10 +565,11 @@ Session::drain_body_internal(
 }
 
 swoc::Rv<size_t>
-Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView initial)
+Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView bytes_read)
 {
   // The number of content body bytes drained. initial contains the body bytes
   // already drained, so we initialize it to that size.
+  swoc::TextView initial{bytes_read.substr(_body_offset)};
   swoc::Rv<size_t> num_drained_body_bytes = initial.size();
   // Check whether we got all the content already. Note that the expected size,
   // which is the expected body size, should not equal the received size if it
@@ -579,7 +784,7 @@ Session::write_body(HttpHeader const &hdr)
   /* Observe that by this point, hdr._content_size will have been adjusted to 0
    * for HEAD requests via update_content_length. */
   auto const message_type_permits_body =
-      (hdr._status == 0 || (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status]));
+      (hdr._is_request || (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status]));
   // Note that zero-length chunked bodies must send a zero-length encoded chunk.
   if (message_type_permits_body && (hdr._content_size > 0 || hdr._chunked_p)) {
     TextView content;
@@ -596,7 +801,9 @@ Session::write_body(HttpHeader const &hdr)
       ChunkCodex codex;
       std::tie(bytes_written, ec) = codex.transmit(*this, content);
     } else {
-      bytes_written = write(content);
+      auto &&[n, write_errata] = write(content);
+      bytes_written.errata().note(write_errata);
+      bytes_written.result() += n;
       ec = std::error_code(errno, std::system_category());
 
       if (!hdr._content_length_p) { // no content-length, must close to signal
@@ -609,7 +816,9 @@ Session::write_body(HttpHeader const &hdr)
       }
     }
 
-    if (bytes_written != static_cast<ssize_t>(hdr._content_size)) {
+    if (bytes_written != static_cast<ssize_t>(hdr._content_size) &&
+        bytes_written != static_cast<ssize_t>(hdr._recorded_content_size))
+    {
       bytes_written.errata().error(
           R"(Body write{} failed for key {} with {} of {} bytes written: {}.)",
           swoc::bwf::If(hdr._chunked_p, " [chunked]"),
@@ -653,27 +862,28 @@ swoc::Errata
 Session::run_transaction(Txn const &json_txn)
 {
   swoc::Errata errata;
-  errata.diag("Running transaction.");
-
-  errata.note(this->write(json_txn._req).errata());
+  auto &&[bytes_written, write_errata] = this->write(json_txn._req);
+  errata.note(std::move(write_errata));
+  errata.diag("Sent the following HTTP/1 {} request:\n{}", json_txn._req._method, json_txn._req);
 
   if (errata.is_ok()) {
-    const auto key{json_txn._req.make_key()};
+    auto const key{json_txn._req.make_key()};
     HttpHeader rsp_hdr_from_wire;
+    rsp_hdr_from_wire._is_response = true;
     swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
     errata.diag("Reading response header.");
 
-    auto read_result{this->read_header(w)};
+    auto read_result{this->read_headers(w)};
     errata.note(read_result);
 
     if (read_result.is_ok()) {
-      ssize_t body_offset{read_result};
-      auto result{rsp_hdr_from_wire.parse_response(TextView(w.data(), body_offset))};
+      _body_offset = read_result;
+      auto result{rsp_hdr_from_wire.parse_response(TextView(w.data(), _body_offset))};
       errata.note(result);
 
       if (result.is_ok()) {
         if (result != HttpHeader::PARSE_OK) {
-          // We don't expect this since read_header loops on reading until we
+          // We don't expect this since read_headers loops on reading until we
           // get HTTP_EOH.
           errata.error(
               R"(Failed to find a well-formed, completed HTTP response: {})",
@@ -684,11 +894,11 @@ Session::run_transaction(Txn const &json_txn)
           errata.diag("100-Continue response. Read another header.");
           rsp_hdr_from_wire = HttpHeader{};
           w.clear();
-          auto read_result{this->read_header(w)};
+          auto read_result{this->read_headers(w)};
 
           if (read_result.is_ok()) {
-            body_offset = read_result;
-            auto result{rsp_hdr_from_wire.parse_response(TextView(w.data(), body_offset))};
+            _body_offset = read_result;
+            auto result{rsp_hdr_from_wire.parse_response(TextView(w.data(), _body_offset))};
 
             if (!result.is_ok()) {
               errata.error(R"(Failed to parse post 100 header.)");
@@ -699,21 +909,24 @@ Session::run_transaction(Txn const &json_txn)
             return errata;
           }
         }
-        errata.diag(R"(Status for key {}: "{}")", key, rsp_hdr_from_wire._status);
-        errata.diag("{}", rsp_hdr_from_wire);
+        errata.diag(
+            "Received an HTTP/1 {} response for key {} with headers:\n{}",
+            rsp_hdr_from_wire._status,
+            key,
+            rsp_hdr_from_wire);
         if (json_txn._rsp._status != 0 && rsp_hdr_from_wire._status != json_txn._rsp._status &&
             (rsp_hdr_from_wire._status != 200 || json_txn._rsp._status != 304) &&
             (rsp_hdr_from_wire._status != 304 || json_txn._rsp._status != 200))
         {
           errata.error(
-              R"(Invalid status expected {} got {}, key={}.)",
+              R"(HTTP/1 Status Violation: expected {} got {}, key={}.)",
               json_txn._rsp._status,
               rsp_hdr_from_wire._status,
               key);
-          // Drain the rest of the body so it's in the buffer to confuse the
+          // Drain the rest of the body so it's not in the buffer to confuse the
           // next transaction.
           auto &&[bytes_drained, drain_errata] =
-              this->drain_body_internal(rsp_hdr_from_wire, json_txn, w.view().substr(body_offset));
+              this->drain_body_internal(rsp_hdr_from_wire, json_txn, w.view());
           errata.note(std::move(drain_errata));
 
           return errata;
@@ -722,7 +935,7 @@ Session::run_transaction(Txn const &json_txn)
           errata.error(R"(Response headers did not match expected response headers.)");
         }
         auto &&[bytes_drained, drain_errata] =
-            this->drain_body_internal(rsp_hdr_from_wire, json_txn, w.view().substr(body_offset));
+            this->drain_body_internal(rsp_hdr_from_wire, json_txn, w.view());
         errata.note(std::move(drain_errata));
 
         if (!errata.is_ok()) {
@@ -740,14 +953,13 @@ Session::run_transaction(Txn const &json_txn)
 
 swoc::Errata
 Session::run_transactions(
-    const std::list<Txn> &txn_list,
+    std::list<Txn> const &txn_list,
     swoc::IPEndpoint const *real_target,
-    float rate_multiplier)
+    double rate_multiplier)
 {
   swoc::Errata session_errata;
 
-  uint64_t firsttime = GetUTimestamp();
-  uint64_t nexttime = 0;
+  auto const first_time = clock_type::now();
   for (auto const &txn : txn_list) {
     swoc::Errata txn_errata;
     if (this->is_closed()) {
@@ -763,26 +975,26 @@ Session::run_transactions(
       }
     }
     if (rate_multiplier != 0) {
-      uint64_t curtime = GetUTimestamp();
-      auto const start_time = txn._start;
-      nexttime = (uint64_t)(rate_multiplier * start_time) + firsttime;
-      if (nexttime > curtime) {
-        usleep(nexttime - curtime);
+      auto const start_offset = txn._start;
+      auto const next_time = (rate_multiplier * start_offset) + first_time;
+      auto current_time = clock_type::now();
+      if (next_time > current_time) {
+        sleep_until(next_time);
       }
     }
-    const auto before = clock_type::now();
+    auto const before = clock_type::now();
     txn_errata.note(this->run_transaction(txn));
-    const auto after = clock_type::now();
+    auto const after = clock_type::now();
     if (!txn_errata.is_ok()) {
       txn_errata.error(R"(Failed HTTP/1 transaction with key={}.)", txn._req.make_key());
     }
 
-    const auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(after - before);
+    auto const elapsed_ms = duration_cast<chrono::milliseconds>(after - before);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
       txn_errata.error(
-          R"(HTTP/1 transaction for key={} took {} milliseconds.)",
+          R"(HTTP/1 transaction for key={} took {}.)",
           txn._req.make_key(),
-          elapsed_ms.count());
+          elapsed_ms);
     }
     session_errata.note(std::move(txn_errata));
   }
@@ -792,26 +1004,73 @@ Session::run_transactions(
 swoc::Rv<ssize_t>
 TLSSession::write(swoc::TextView view)
 {
-  int total_size = view.size();
+  swoc::TextView remaining = view;
   swoc::Rv<ssize_t> num_written = 0;
-  while (num_written < total_size) {
+  static int write_count = 0;
+  ++write_count;
+  while (!remaining.empty()) {
     if (this->is_closed()) {
-      num_written.errata().error("write failed: session is closed");
+      num_written.errata().diag("SSL_write failed: session is closed");
       return num_written;
     }
-    errno = 0;
-    const auto n = SSL_write(this->_ssl, view.data() + num_written, view.size() - num_written);
-    if (n <= 0) {
-      num_written.errata().error(
-          R"(write failed: {}, errno: {})",
-          swoc::bwf::SSLError{},
-          swoc::bwf::Errno{});
-      return num_written;
-    } else {
+    auto const n = SSL_write(this->_ssl, remaining.data(), remaining.size());
+    if (n > 0) {
+      remaining = remaining.suffix(remaining.size() - n);
       num_written.result() += n;
+      continue;
+    } else if (n <= 0) {
+      auto const ssl_error = SSL_get_error(this->_ssl, n);
+      auto &&[poll_return, poll_errata] = poll_for_data_on_ssl_socket(Poll_Timeout, ssl_error);
+      num_written.errata().note(std::move(poll_errata));
+      if (poll_return > 0) {
+        // Poll succeeded. Repeat the attempt to write.
+        continue;
+      } else if (!num_written.errata().is_ok()) {
+        num_written.errata().error(R"(Failed SSL_write: {}.)", swoc::bwf::Errno{});
+        return num_written;
+      } else if (poll_return == 0) {
+        num_written.errata().error("Timed out waiting to SSL_write after: {}.", Poll_Timeout);
+        return num_written;
+      } else if (poll_return < 0) {
+        // Connection closed.
+        num_written.errata().diag("SSL_write failed during poll: session is closed");
+        return num_written;
+      }
     }
   }
   return num_written;
+}
+
+swoc::Rv<int>
+TLSSession::poll_for_data_on_ssl_socket(chrono::milliseconds timeout, int ssl_error)
+{
+  swoc::Rv<int> zret{-1};
+  if (is_closed()) {
+    zret.errata().diag("Poll called on a closed connection.");
+    return zret;
+  }
+  if (ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL) {
+    // Either of these indicates that the peer has closed the connection for
+    // writing and no more data can be read.
+    zret.errata().diag("Poll called on a TLS session closed by the peer.");
+    this->close();
+    return zret;
+  }
+
+  if (ssl_error != SSL_ERROR_WANT_READ && ssl_error != SSL_ERROR_WANT_WRITE) {
+    zret.errata().error(
+        R"(SSL operation failed: {}, errno: {})",
+        swoc::bwf::SSLError{ssl_error},
+        swoc::bwf::Errno{});
+    return zret;
+  }
+  short events = 0;
+  if (ssl_error == SSL_ERROR_WANT_READ) {
+    events = POLLIN;
+  } else if (ssl_error == SSL_ERROR_WANT_WRITE) {
+    events = POLLOUT;
+  }
+  return poll_for_data_on_socket(timeout, events);
 }
 
 swoc::Errata
@@ -834,14 +1093,227 @@ TLSSession::accept()
         get_fd(),
         server_context,
         swoc::bwf::SSLError{});
-  } else {
-    SSL_set_fd(_ssl, get_fd());
-    int retval = SSL_accept(_ssl);
-    if (retval <= 0) {
-      errata.error(R"(Failed SSL_accept {}, {}.)", swoc::bwf::SSLError{}, swoc::bwf::Errno{});
+    return errata;
+  }
+  if (SSL_set_fd(_ssl, get_fd()) == 0) {
+    errata.error(R"(Failed SSL_set_fd: {}.)", swoc::bwf::SSLError{});
+    return errata;
+  }
+  int retval = SSL_accept(_ssl);
+  while (retval < 0) {
+    auto const ssl_error = SSL_get_error(_ssl, retval);
+    // Since there are multiple parts to the handshake, we may have to poll multiple
+    // times to finish the accept.
+    short events = 0;
+    if (ssl_error == SSL_ERROR_WANT_WRITE || ssl_error == SSL_ERROR_WANT_ACCEPT) {
+      events = POLLOUT;
+    } else if (ssl_error == SSL_ERROR_WANT_READ) {
+      events = POLLIN;
+    } else {
+      errata.error(
+          R"(Failed SSL_accept {}, {}.)",
+          swoc::bwf::SSLError{_ssl, retval},
+          swoc::bwf::Errno{});
+      break;
+    }
+    auto &&[poll_return, poll_errata] = poll_for_data_on_socket(Poll_Timeout, events);
+    errata.note(std::move(poll_errata));
+    if (!errata.is_ok()) {
+      errata.error(R"(Failed SSL_accept during poll: {}.)", swoc::bwf::Errno{});
+    } else if (poll_return == 0) {
+      errata.error("Timed out waiting to SSL_accept after {}.", Poll_Timeout);
+      return errata;
+    } else if (poll_return < 0) {
+      // Connection closed.
+      errata.diag("Connection closed during poll for SSL_accept.");
       return errata;
     }
+    // Poll succeeded.
+    retval = SSL_accept(_ssl);
   }
+  errata.diag("Finished accept using TLSSession");
+  return errata;
+}
+
+int *H2Session::process_exit_code = nullptr;
+
+swoc::Rv<int>
+H2Session::poll_for_headers(chrono::milliseconds timeout)
+{
+  if (!_h2_is_negotiated) {
+    return TLSSession::poll_for_headers(timeout);
+  }
+  swoc::Rv<int> zret{-1};
+  auto &&[poll_result, poll_errata] = Session::poll_for_data_on_socket(timeout);
+  zret.errata().note(std::move(poll_errata));
+  if (!zret.errata().is_ok()) {
+    return zret;
+  } else if (poll_result == 0) {
+    return 0;
+  } else if (poll_result < 0) {
+    // Connection closed.
+    close();
+    return -1;
+  }
+  auto const received_bytes =
+      receive_nghttp2_request_headers(this->get_session(), nullptr, 0, 0, this, timeout);
+  if (received_bytes == 0) {
+    // The receive timed out.
+    return 0;
+  }
+  if (is_closed()) {
+    return -1;
+  } else if (this->get_headers_are_available()) {
+    return 1;
+  } else {
+    // The caller will retry.
+    return 0;
+  }
+}
+
+bool
+H2Session::get_headers_are_available() const
+{
+  return _headers_are_available;
+}
+
+bool
+H2Session::get_is_server() const
+{
+  return _is_server;
+}
+
+// static
+void
+H2Session::set_non_zero_exit_status()
+{
+  *H2Session::process_exit_code = 1;
+}
+
+void
+H2Session::record_stream_state(int32_t stream_id, std::shared_ptr<H2StreamState> stream_state)
+{
+  _stream_map[stream_id] = stream_state;
+  _last_added_stream = stream_state;
+}
+
+void
+H2Session::set_headers_are_available(int32_t stream_id)
+{
+  _streams_with_headers.push_back(stream_id);
+  _headers_are_available = true;
+}
+
+swoc::Rv<std::shared_ptr<HttpHeader>>
+H2Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
+{
+  if (!_h2_is_negotiated) {
+    return TLSSession::read_and_parse_request(buffer);
+  }
+  swoc::Rv<std::shared_ptr<HttpHeader>> zret{nullptr};
+  auto const stream_id = _streams_with_headers.front();
+  _streams_with_headers.pop_front();
+  if (_streams_with_headers.empty()) {
+    _headers_are_available = false;
+  }
+  auto stream_map_iter = _stream_map.find(stream_id);
+  if (stream_map_iter == _stream_map.end()) {
+    zret.errata().error("Requested request headers, but none are available.");
+    return zret;
+  }
+  auto &stream_state = stream_map_iter->second;
+  zret = stream_state->_request_from_client;
+  return zret;
+}
+
+swoc::Rv<size_t>
+H2Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView initial)
+{
+  if (!_h2_is_negotiated) {
+    return TLSSession::drain_body(hdr, expected_content_size, initial);
+  }
+  swoc::Rv<size_t> zret{0};
+  auto const key{hdr.make_key()};
+  auto const stream_id = hdr._stream_id;
+  auto stream_map_iter = _stream_map.find(stream_id);
+  if (stream_map_iter == _stream_map.end()) {
+    zret.errata().error("Could not drain HTTP/2 body for an unregistered stream id: {}", stream_id);
+    return zret;
+  }
+  auto &stream_state = stream_map_iter->second;
+  auto const received_bytes = receive_nghttp2_body(
+      this->get_session(),
+      nullptr,
+      expected_content_size,
+      0,
+      this,
+      stream_state.get(),
+      Poll_Timeout);
+  zret.result() = received_bytes;
+  if (received_bytes < 0) {
+    zret.errata().error("Error polling for stream end for transaction with key: {}", key);
+    return zret;
+  } else if (received_bytes == 0) {
+    zret.errata().diag("Empty drained body for transaction with key: {}", key);
+    return zret;
+  }
+
+  zret.result() += stream_state->_received_body_length;
+  auto const received_body_length = stream_state->_received_body_length;
+  if (received_body_length < expected_content_size) {
+    zret.errata().diag(
+        "HTTP/2 Body underrun: received {} bytes of content, expected {}.",
+        received_body_length,
+        expected_content_size);
+  } else if (received_body_length > expected_content_size) {
+    zret.errata().diag(
+        "HTTP/2 Body overrun: received {} bytes of content, expected {}.",
+        received_body_length,
+        expected_content_size);
+  }
+  zret.errata().diag("Drained {} bytes.", stream_state->_received_body_length);
+  return zret;
+}
+
+// Complete the TLS handshake (server-side).
+swoc::Errata
+H2Session::accept()
+{
+  swoc::Errata errata = TLSSession::accept();
+  if (!errata.is_ok()) {
+    errata.error(R"(Failed to accept SSL server object)");
+    return errata;
+  }
+
+  // Check what HTTP protocol was negotiated.
+  unsigned char const *alpn = nullptr;
+  unsigned int alpnlen = 0;
+#ifndef OPENSSL_NO_NEXTPROTONEG
+  SSL_get0_next_proto_negotiated(this->_ssl, &alpn, &alpnlen);
+#endif /* !OPENSSL_NO_NEXTPROTONEG */
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+  if (alpn == nullptr) {
+    SSL_get0_alpn_selected(this->_ssl, &alpn, &alpnlen);
+  }
+#endif /* OPENSSL_VERSION_NUMBER >= 0x10002000L */
+
+  if (alpn != nullptr && alpnlen == 2 && memcmp("h2", alpn, 2) == 0) {
+    errata.diag(R"(Negotiated ALPN: {}, HTTP/2 is negotiated.)", TextView{(char *)alpn, alpnlen});
+    _h2_is_negotiated = true;
+  } else {
+    errata.diag(
+        R"(Negotiated ALPN: {}, HTTP/2 is not negotiated. Assuming HTTP/1)",
+        (alpn == nullptr) ? "none" : TextView{(char *)alpn, alpnlen});
+    _h2_is_negotiated = false;
+    // The rest of the code in this function is for HTTP/2 behavior.
+    return errata;
+  }
+
+  this->server_session_init();
+  errata.diag("Finished accept using H2Session");
+  // Send initial H2 session frames
+  send_connection_settings();
+  send_nghttp2_data(_session, nullptr, 0, 0, this);
   return errata;
 }
 
@@ -864,7 +1336,14 @@ Session::do_connect(swoc::IPEndpoint const *real_target)
         if (0 == ::connect(socket_fd, &real_target->sa, real_target->size())) {
           static const int ONE = 1;
           setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
-          errata.note(this->connect());
+          if (0 == ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
+            errata.note(this->connect());
+          } else {
+            errata.error(
+                R"(Failed to make the client socket non-blocking {}: - {})",
+                *real_target,
+                swoc::bwf::Errno{});
+          }
         } else {
           errata.error(R"(Failed to connect socket {}: - {})", *real_target, swoc::bwf::Errno{});
         }
@@ -916,63 +1395,99 @@ TLSSession::connect(SSL_CTX *client_context)
     SSL_set_verify(_ssl, _client_verify_mode, nullptr /* No verify_callback is passed */);
   }
   int retval = SSL_connect(_ssl);
-  if (retval <= 0) {
-    errata.error(R"(Failed SSL_connect {}, {}.)", swoc::bwf::SSLError{}, swoc::bwf::Errno{});
-    return errata;
+  while (retval < 0) {
+    auto const ssl_error = SSL_get_error(_ssl, retval);
+    // Since there are multiple parts to the handshake, we may have to poll multiple
+    // times to finish the accept.
+    short events = 0;
+    if (ssl_error == SSL_ERROR_WANT_WRITE || ssl_error == SSL_ERROR_WANT_CONNECT) {
+      events = POLLOUT;
+    } else if (ssl_error == SSL_ERROR_WANT_READ) {
+      events = POLLIN;
+    } else {
+      errata.error(
+          R"(Failed SSL_connect {}, {}.)",
+          swoc::bwf::SSLError{_ssl, retval},
+          swoc::bwf::Errno{});
+      break;
+    }
+    auto &&[poll_return, poll_errata] = poll_for_data_on_socket(Poll_Timeout, events);
+    errata.note(std::move(poll_errata));
+    if (!errata.is_ok()) {
+      errata.error("Failed SSL_connect during poll.");
+      return errata;
+    } else if (poll_return < 0) {
+      // Connection closed.
+      errata.error("Connection closed while performing SSL_connect.");
+      close();
+      return errata;
+    } else if (poll_return == 0) {
+      errata.error("Poll timed out for SSL_connect after {}.", Poll_Timeout);
+      return errata;
+    }
+    // Poll succeeded.
+    retval = SSL_connect(_ssl);
   }
-  const auto verify_result = SSL_get_verify_result(_ssl);
+
+  auto const verify_result = SSL_get_verify_result(_ssl);
   errata.diag(
-      R"(Proxy TLS verification result: {}.)",
-      (verify_result == X509_V_OK ? "passed" : "failed"));
+      R"(Proxy TLS verification result: {} ({}).)",
+      verify_result,
+      (verify_result == X509_V_OK ? "X509_V_OK" : "not X509_V_OK"));
   return errata;
 }
 
+// Complete the TLS handshake (client-side).
 swoc::Errata
 H2Session::connect()
 {
   // Complete the TLS handshake
   swoc::Errata errata = super_type::connect(h2_client_context);
-  if (errata.is_ok()) {
-    unsigned char const *alpn = nullptr;
-    unsigned int alpnlen = 0;
+  if (!errata.is_ok()) {
+    return errata;
+  }
+  unsigned char const *alpn = nullptr;
+  unsigned int alpnlen = 0;
 
-    // Make sure we negotiated a H2 session
+  // Make sure we negotiated a H2 session
 #ifndef OPENSSL_NO_NEXTPROTONEG
-    SSL_get0_next_proto_negotiated(this->_ssl, &alpn, &alpnlen);
+  SSL_get0_next_proto_negotiated(this->_ssl, &alpn, &alpnlen);
 #endif /* !OPENSSL_NO_NEXTPROTONEG */
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
-    if (alpn == nullptr) {
-      SSL_get0_alpn_selected(this->_ssl, &alpn, &alpnlen);
-    }
+  if (alpn == nullptr) {
+    SSL_get0_alpn_selected(this->_ssl, &alpn, &alpnlen);
+  }
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10002000L */
 
-    if (alpn == nullptr || alpnlen != 2 || memcmp("h2", alpn, 2) != 0) {
-      errata.error(R"(h2 is not negotiated)");
-      return errata;
-    }
-
-    this->session_init();
-
-    // Send initial H2 session frames
-    send_client_connection_header();
-    send_callback(_session, nullptr, 0, 0, this);
+  if (alpn != nullptr && alpnlen == 2 && memcmp("h2", alpn, 2) == 0) {
+    errata.diag(R"(h2 is negotiated.)");
+    _h2_is_negotiated = true;
+  } else {
+    errata.diag(R"(h2 is not negotiated. Assuming HTTP/1)");
+    _h2_is_negotiated = false;
+    return errata;
   }
+
+  this->client_session_init();
+
+  // Send initial H2 session frames
+  send_connection_settings();
+  send_nghttp2_data(_session, nullptr, 0, 0, this);
   return errata;
 }
 
 swoc::Errata
 H2Session::run_transactions(
-    const std::list<Txn> &txn_list,
+    std::list<Txn> const &txn_list,
     swoc::IPEndpoint const *real_target,
-    float rate_multiplier)
+    double rate_multiplier)
 {
   swoc::Errata errata;
 
-  uint64_t firsttime = GetUTimestamp();
-  uint64_t nexttime = 0;
+  auto const first_time = clock_type::now();
   for (auto const &txn : txn_list) {
     swoc::Errata txn_errata;
-    const auto key{txn._req.make_key()};
+    auto const key{txn._req.make_key()};
     if (this->is_closed()) {
       txn_errata.note(this->do_connect(real_target));
       if (!txn_errata.is_ok()) {
@@ -982,11 +1497,15 @@ H2Session::run_transactions(
       }
     }
     if (rate_multiplier != 0) {
-      uint64_t curtime = GetUTimestamp();
-      auto const start_time = txn._start;
-      nexttime = (uint64_t)(rate_multiplier * start_time) + firsttime;
-      if (nexttime > curtime) {
-        usleep(nexttime - curtime);
+      auto const start_offset = txn._start;
+      auto const next_time = (rate_multiplier * start_offset) + first_time;
+      auto current_time = clock_type::now();
+      auto delay_time = duration_cast<milliseconds>(next_time - current_time);
+      while (delay_time > 0ms) {
+        // Make use of our delay time to read any incoming responses.
+        receive_nghttp2_data(this->get_session(), nullptr, 0, 0, this, delay_time);
+        current_time = clock_type::now();
+        delay_time = duration_cast<milliseconds>(next_time - current_time);
       }
     }
     txn_errata.note(this->run_transaction(txn));
@@ -995,7 +1514,7 @@ H2Session::run_transactions(
     }
     errata.note(std::move(txn_errata));
   }
-  recv_callback(this->get_session(), nullptr, 0, 0, this);
+  receive_nghttp2_responses(this->get_session(), nullptr, 0, 0, this);
   return errata;
 }
 
@@ -1003,13 +1522,9 @@ swoc::Errata
 H2Session::run_transaction(Txn const &txn)
 {
   swoc::Errata errata;
-  errata.diag("Running H2 transaction.");
-
-  // Write the header
-  errata.note(this->write(txn._req).errata());
-
-  errata.diag("wrote header");
-
+  auto &&[bytes_written, write_errata] = this->write(txn._req);
+  errata.note(std::move(write_errata));
+  _last_added_stream->_specified_response = &txn._rsp;
   return errata;
 }
 
@@ -1092,10 +1607,11 @@ client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */)
   /*
    * Retrieve the SNI from the client hello, if provided.
    *
-   * I'm surprised by how complicated this is. SSL_get_servername does not work
-   * in the context of the client hello callback, yet documentation encourages
-   * using this rather than the server name callback. I borrowed the below code
-   * from OpenSSL here:
+   * I'm surprised by how complicated this is. SSL_get_servername, which would
+   * ideally make this easy, does not work in the context of the client hello
+   * callback, yet documentation encourages using the client hello callback
+   * rather than the server name callback. I borrowed the below code from
+   * OpenSSL here:
    *
    * https://codesearch.isocpp.org/actcd19/main/o/openssl/openssl_1.1.1a-1/test/handshake_helper.c
    *
@@ -1146,7 +1662,7 @@ client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */)
   }
   errata.diag(R"(Accepted a TLS connection with an SNI of: {}.)", client_sni);
 
-  const auto verify_mode = TLSSession::get_verify_mode_for_sni(client_sni);
+  auto const verify_mode = TLSSession::get_verify_mode_for_sni(client_sni);
   if (verify_mode == SSL_VERIFY_NONE) {
     return ret;
   }
@@ -1154,7 +1670,7 @@ client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */)
 
   SSL_set_verify(ssl, verify_mode, nullptr /* no callback specified */);
 
-  const auto verify_result = SSL_get_verify_result(ssl);
+  auto const verify_result = SSL_get_verify_result(ssl);
   errata.diag(
       R"(Client TLS verification result for client with SNI {}: {}.)",
       client_sni,
@@ -1321,30 +1837,75 @@ TLSSession::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
 
 // static
 void
-TLSSession::register_sni_for_client_verification(std::string_view sni, int mode)
+TLSSession::register_tls_handshake_behavior(
+    std::string_view sni,
+    TLSHandshakeBehavior &&handshake_behavior)
 {
-  _verify_mode_per_sni.emplace(sni, mode);
+  _handshake_behavior_per_sni.emplace(sni, std::move(handshake_behavior));
 }
 
 // static
 int
 TLSSession::get_verify_mode_for_sni(std::string_view sni)
 {
-  const auto it = _verify_mode_per_sni.find(std::string(sni));
-  if (it == _verify_mode_per_sni.end()) {
+  auto const it = _handshake_behavior_per_sni.find(std::string(sni));
+  if (it == _handshake_behavior_per_sni.end()) {
     return SSL_VERIFY_NONE;
   }
-  return it->second;
+  return it->second.get_verify_mode();
+}
+
+// static
+std::string_view
+TLSSession::get_alpn_protocol_string_for_sni(std::string_view sni)
+{
+  auto const it = _handshake_behavior_per_sni.find(std::string(sni));
+  if (it == _handshake_behavior_per_sni.end()) {
+    return "";
+  }
+  return it->second.get_alpn_wire_string();
 }
 
 static int
 on_begin_headers_callback(
     nghttp2_session * /* session */,
-    nghttp2_frame const * /* frame */,
-    void * /* user_data */)
+    nghttp2_frame const *frame,
+    void *user_data)
 {
   swoc::Errata errata;
-  errata.diag("on_begin_headers_callback");
+  H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
+  int const headers_category = frame->headers.cat;
+  auto const stream_id = frame->hd.stream_id;
+
+  switch (headers_category) {
+  case NGHTTP2_HCAT_REQUEST: {
+    auto stream_state = std::make_shared<H2StreamState>();
+    stream_state->set_stream_id(stream_id);
+    session_data->record_stream_state(stream_id, stream_state);
+    auto &request_headers = stream_state->_request_from_client;
+    request_headers->_contains_pseudo_headers_in_fields_array = true;
+    request_headers->_stream_id = stream_id;
+    break;
+  }
+  case NGHTTP2_HCAT_RESPONSE: {
+    auto stream_map_iter = session_data->_stream_map.find(stream_id);
+    if (stream_map_iter == session_data->_stream_map.end()) {
+      errata.error(
+          "Got HTTP/2 headers for an unregistered stream id of {}. Headers category: {}",
+          stream_id,
+          headers_category);
+      return 0;
+    }
+    auto &stream_state = stream_map_iter->second;
+    auto &response_headers = stream_state->_response_from_server;
+    response_headers->_stream_id = stream_id;
+    response_headers->_contains_pseudo_headers_in_fields_array = true;
+    break;
+  }
+  case NGHTTP2_HCAT_PUSH_RESPONSE:
+  case NGHTTP2_HCAT_HEADERS:
+    errata.error("Got HTTP/2 headers for an unimplemented category: {}", headers_category);
+  }
   return 0;
 }
 
@@ -1352,33 +1913,67 @@ static int
 on_header_callback(
     nghttp2_session * /* session */,
     nghttp2_frame const *frame,
-    uint8_t const *name,
-    size_t namelen,
-    uint8_t const *value,
-    size_t valuelen,
+    nghttp2_rcbuf *name,
+    nghttp2_rcbuf *value,
     uint8_t /* flags */,
     void *user_data)
 {
+  // Be aware that the END_STREAM and END_HEADERS flags are not provided here
+  // by nghttp2.  They instead have to be processed in on_frame_recv_cb.
   swoc::Errata errata;
-  if (frame->headers.cat == NGHTTP2_HCAT_RESPONSE) {
-    H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
-    // See if we are expecting a 100 response
-    //
-    auto iter = session_data->_stream_map.find(frame->hd.stream_id);
-    if (iter != session_data->_stream_map.end()) {
-      if (iter->second->_wait_for_continue) {
-        if (strncmp(reinterpret_cast<char const *>(name), ":status", namelen) == 0 &&
-            strncmp(reinterpret_cast<char const *>(value), "100", valuelen) == 0)
-        {
-          iter->second->_wait_for_continue = false;
-        }
+  int const headers_category = frame->headers.cat;
+  auto const stream_id = frame->hd.stream_id;
+  H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
+  auto stream_map_iter = session_data->_stream_map.find(stream_id);
+  if (stream_map_iter == session_data->_stream_map.end()) {
+    errata.error(
+        "Got HTTP/2 headers for an unregistered stream id of {}. Headers category: {}",
+        stream_id,
+        headers_category);
+    return 0;
+  }
+  auto &stream_state = stream_map_iter->second;
+
+  swoc::TextView name_view = stream_state->register_rcbuf(name);
+  swoc::TextView value_view = stream_state->register_rcbuf(value);
+
+  switch (headers_category) {
+  case NGHTTP2_HCAT_REQUEST: {
+    auto &request_headers = stream_state->_request_from_client;
+    if (name_view == ":method") {
+      request_headers->_method = value_view;
+    } else if (name_view == ":scheme") {
+      request_headers->_scheme = value_view;
+    } else if (name_view == ":authority") {
+      request_headers->_authority = value_view;
+    } else if (name_view == ":path") {
+      request_headers->_path = value_view;
+    }
+    request_headers->_fields_rules->_fields.emplace(name_view, value_view);
+    break;
+  }
+
+  case NGHTTP2_HCAT_RESPONSE: {
+    auto &response_headers = stream_state->_response_from_server;
+    if (name_view == ":status") {
+      response_headers->_status = swoc::svtou(value_view);
+      response_headers->_status_string = std::string(value_view);
+    }
+    response_headers->_fields_rules->_fields.emplace(name_view, value_view);
+    // See if we are expecting a 100 response.
+    if (stream_state->_wait_for_continue) {
+      if (name_view == ":status" && value_view == "100") {
+        // We got our 100 Continue. No need to wait for it anymore.
+        stream_state->_wait_for_continue = false;
       }
     }
+    break;
   }
-  errata.diag(
-      "{}: {}",
-      reinterpret_cast<char const *>(name),
-      reinterpret_cast<char const *>(value));
+  case NGHTTP2_HCAT_PUSH_RESPONSE:
+  case NGHTTP2_HCAT_HEADERS:
+    errata.error("Got HTTP/2 an header for an unimplemented category: {}", headers_category);
+    return 0;
+  }
   return 0;
 }
 
@@ -1386,32 +1981,33 @@ on_header_callback(
  *    to the network. Because we are using libevent bufferevent, we just
  *       write those bytes into bufferevent buffer. */
 static ssize_t
-send_callback(
+send_nghttp2_data(
     nghttp2_session *session,
     uint8_t const * /* inputdata */,
-    size_t length,
+    size_t /* length */,
     int /* flags */,
     void *user_data)
 {
+  Errata errata;
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
-
-  swoc::Errata errata;
-  errata.diag("Need to write {} bytes", length);
   int total_amount_sent = 0;
-  for (;;) {
+  while (true) {
     uint8_t const *data = nullptr;
     ssize_t datalen = nghttp2_session_mem_send(session, &data);
-    if (datalen <= 0) {
+    if (datalen == 0) {
+      // No more data to send.
+      break;
+    } else if (datalen < 0) {
+      errata.error("Failure calling nghttp2_session_mem_send: {}", datalen);
       break;
     }
     int amount_sent = 0;
     while (amount_sent < datalen) {
-      int n = SSL_write(session_data->get_ssl(), data, datalen);
-      amount_sent += n;
-
-      errata.diag("Tried to write {} bytes and wrote {} bytes", datalen, n);
-      if (n <= 0)
+      auto const n = session_data->write(TextView{(char *)data, (size_t)datalen});
+      if (n <= 0) {
         break;
+      }
+      amount_sent += n;
     }
     total_amount_sent += amount_sent;
   }
@@ -1419,34 +2015,206 @@ send_callback(
   return (ssize_t)total_amount_sent;
 }
 
+/**
+ * Receive data on the session for timeout milliseconds.
+ *
+ * @return The number of bytes processes per nghttp2_session_mem_recv (may be
+ * 0), or -1 on error.
+ */
 static ssize_t
-recv_callback(
+receive_nghttp2_data(
     nghttp2_session *session,
     uint8_t * /* buf */,
-    size_t length,
+    size_t /* length */,
+    int /* flags */,
+    void *user_data,
+    milliseconds timeout)
+{
+  H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
+  swoc::Errata errata;
+  unsigned char buffer[10 * 1024];
+
+  if (session_data->is_closed()) {
+    errata.error("Socket closed while waiting for an HTTP/2 resonse.");
+    return -1;
+  }
+  int n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
+  if (n <= 0) {
+    auto const ssl_error = SSL_get_error(session_data->get_ssl(), n);
+    auto &&[poll_return, poll_errata] =
+        session_data->poll_for_data_on_ssl_socket(timeout, ssl_error);
+    errata.note(std::move(poll_errata));
+    if (!errata.is_ok()) {
+      errata.error(R"(Failed SSL_read for HTTP/2 responses during poll: {}.)", swoc::bwf::Errno{});
+      return -1;
+    } else if (poll_return < 0) {
+      session_data->close();
+      errata.error("Socket closed while polling for an HTTP/2 resonse.");
+      return -1;
+    } else if (poll_return == 0) {
+      // Timeout in this context is OK.
+      return 0;
+    }
+    // Poll succeeded. Repeat the attempt to read.
+    n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
+  }
+  if (n <= 0) {
+    auto const ssl_error = SSL_get_error(session_data->get_ssl(), n);
+    if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+      // SSL just wants more data. Not a problem.
+      return 0;
+    } else {
+      // Assume there was an issue.
+      errata.error("SSL_read error in receive_nghttp2_data: {}", swoc::bwf::SSLError{ssl_error});
+      return -1;
+    }
+  }
+
+  // n > 0: Some bytes have been read. Pass that into the nghttp2 system.
+  int rv = nghttp2_session_mem_recv(session_data->get_session(), buffer, (size_t)n);
+  if (rv < 0) {
+    errata.error(
+        "nghttp2_session_mem_recv failed for HTTP/2 responses: {}",
+        nghttp2_strerror((int)rv));
+    return -1;
+  } else if (rv == 0) {
+    return 0;
+  }
+  // opportunity to send any frames like the window_update frame
+  send_nghttp2_data(session, nullptr, 0, 0, user_data);
+  return (ssize_t)rv;
+}
+
+static ssize_t
+receive_nghttp2_responses(
+    nghttp2_session *session,
+    uint8_t * /* buf */,
+    size_t /* length */,
     int /* flags */,
     void *user_data)
 {
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
-  swoc::Errata errata;
-  errata.diag("Try to read up to {} bytes", length);
-  unsigned char buffer[10 * 1024];
   int total_recv = 0;
 
   while (!session_data->_stream_map.empty()) {
+    auto const received_bytes =
+        receive_nghttp2_data(session, nullptr, 0, 0, user_data, Poll_Timeout);
+    if (received_bytes < 0) {
+      break;
+    }
+    total_recv += total_recv;
+  }
+  return (ssize_t)total_recv;
+}
+
+static ssize_t
+receive_nghttp2_request_headers(
+    nghttp2_session *session,
+    uint8_t * /* buf */,
+    size_t /* length */,
+    int /* flags */,
+    void *user_data,
+    milliseconds timeout)
+{
+  H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
+  swoc::Errata errata;
+  unsigned char buffer[10 * 1024];
+  int total_recv = 0;
+
+  auto const start_time = clock_type::now();
+  while (session_data->get_is_server() && !session_data->get_headers_are_available()) {
+    if (start_time - clock_type::now() > timeout) {
+      return 0;
+    }
     int n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
-    errata.diag("Read {} bytes", n);
-    int rv = nghttp2_session_mem_recv(session_data->get_session(), buffer, (size_t)n);
-    errata.diag("Processed {} bytes", rv);
+    while (n <= 0) {
+      auto const ssl_error = SSL_get_error(session_data->get_ssl(), n);
+      auto &&[poll_return, poll_errata] =
+          session_data->poll_for_data_on_ssl_socket(timeout, ssl_error);
+      errata.note(std::move(poll_errata));
+      if (!errata.is_ok()) {
+        errata.error(
+            R"(Failed SSL_read for HTTP/2 request headers during poll: {}.)",
+            swoc::bwf::Errno{});
+        return (ssize_t)total_recv;
+      } else if (poll_return < 0) {
+        session_data->close();
+        return (ssize_t)total_recv;
+      } else if (poll_return == 0) {
+        errata.error("Timed out waiting to SSL_read for HTTP/2 request headers after {}.", timeout);
+        return (ssize_t)total_recv;
+      }
+      // Poll succeeded. Repeat the attempt to read.
+      n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
+    }
+    int rv = nghttp2_session_mem_recv(session, buffer, (size_t)n);
     if (rv < 0) {
-      fprintf(stderr, "error: (nghttp2_session_mem_recv) %s\n", nghttp2_strerror((int)rv));
+      errata.error(
+          "nghttp2_session_mem_recv failed for response headers: {}",
+          nghttp2_strerror((int)rv));
       return -1;
     } else if (rv == 0) {
       return total_recv;
     }
     total_recv += rv;
     // opportunity to send any frames like the window_update frame
-    send_callback(session, nullptr, 0, 0, user_data);
+    send_nghttp2_data(session, nullptr, 0, 0, user_data);
+  }
+  return (ssize_t)total_recv;
+}
+
+static ssize_t
+receive_nghttp2_body(
+    nghttp2_session *session,
+    uint8_t * /* buf */,
+    size_t /* length */,
+    int /* flags */,
+    H2Session *session_data,
+    H2StreamState *stream_state,
+    milliseconds timeout)
+{
+  swoc::Errata errata;
+  unsigned char buffer[10 * 1024];
+  int total_recv = 0;
+
+  auto const start_time = clock_type::now();
+  while (!stream_state->get_stream_has_ended()) {
+    if (clock_type::now() - start_time > timeout) {
+      return 0;
+    }
+    int n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
+    while (n <= 0) {
+      auto const ssl_error = SSL_get_error(session_data->get_ssl(), n);
+      auto &&[poll_return, poll_errata] =
+          session_data->poll_for_data_on_ssl_socket(timeout, ssl_error);
+      errata.note(std::move(poll_errata));
+      if (!errata.is_ok()) {
+        errata.error(
+            R"(Failed SSL_read for HTTP/2 request body during poll: {}.)",
+            swoc::bwf::Errno{});
+        return (ssize_t)total_recv;
+      } else if (poll_return < 0) {
+        session_data->close();
+        return (ssize_t)total_recv;
+      } else if (poll_return == 0) {
+        errata.error("Timed out waiting to SSL_read for HTTP/2 request body after {}.", timeout);
+        return (ssize_t)total_recv;
+      }
+      // Poll succeeded. Repeat the attempt to read.
+      n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
+    }
+    int rv = nghttp2_session_mem_recv(session, buffer, (size_t)n);
+    if (rv < 0) {
+      errata.error(
+          "nghttp2_session_mem_recv failed for request body: {}",
+          nghttp2_strerror((int)rv));
+      return -1;
+    } else if (rv == 0) {
+      return total_recv;
+    }
+    total_recv += rv;
+    // opportunity to send any frames like the window_update frame
+    send_nghttp2_data(session, nullptr, 0, 0, session_data);
   }
   return (ssize_t)total_recv;
 }
@@ -1457,25 +2225,20 @@ on_frame_send_cb(
     nghttp2_frame const * /* frame */,
     void * /* user_data */)
 {
-  swoc::Errata errata;
-  errata.diag("on_frame_send_cb");
   return 0;
 }
 
 static int
-on_frame_recv_cb(
-    nghttp2_session * /* session */,
-    nghttp2_frame const *frame,
-    void * /* user_data */)
+on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, void *user_data)
 {
+  // Note that this is called after the more specific on_begin_headers_callback,
+  // on_header_callback, etc. callbacks are called.
   swoc::Errata errata;
-  errata.diag("on_frame_recv_cb type={}", frame->hd.type);
 
   switch (frame->hd.type) {
   case NGHTTP2_DATA:
-    // Processed the data and send the window update
     break;
-  case NGHTTP2_HEADERS: // Dealt with this in the on_headers callbacks
+  case NGHTTP2_HEADERS:
     break;
   case NGHTTP2_PRIORITY: // Not doing anything here
     break;
@@ -1492,7 +2255,73 @@ on_frame_recv_cb(
   case NGHTTP2_GOAWAY: // Take down the session now
     break;
   }
-
+  auto const flags = frame->hd.flags;
+  // `flags` have to be processed here. They are not communicated via
+  // on_header_callback.
+  if (flags & NGHTTP2_FLAG_END_HEADERS || flags & NGHTTP2_FLAG_END_STREAM) {
+    auto *session_data = reinterpret_cast<H2Session *>(user_data);
+    auto const stream_id = frame->hd.stream_id;
+    if (flags & NGHTTP2_FLAG_END_HEADERS) {
+      session_data->set_headers_are_available(stream_id);
+      auto stream_map_iter = session_data->_stream_map.find(stream_id);
+      if (stream_map_iter != session_data->_stream_map.end()) {
+        H2StreamState &stream_state = *stream_map_iter->second;
+        int const headers_category = frame->headers.cat;
+        if (headers_category == NGHTTP2_HCAT_REQUEST) {
+          auto &request_from_client = stream_state._request_from_client;
+          std::string composed_url{request_from_client->_scheme};
+          if (!composed_url.empty()) {
+            composed_url.append("://");
+          }
+          composed_url.append(request_from_client->_authority);
+          composed_url.append(request_from_client->_path);
+          request_from_client->parse_url(composed_url);
+          errata.diag(
+              "Received an HTTP/2 request for stream id {}:\n{}",
+              stream_id,
+              *request_from_client);
+        } else if (headers_category == NGHTTP2_HCAT_RESPONSE) {
+          auto const &response_from_wire = *stream_state._response_from_server;
+          errata.diag(
+              "Received an HTTP/2 response for stream id {}:\n{}",
+              stream_id,
+              response_from_wire);
+          if (stream_state._key.empty()) {
+            // A server push? Maybe? In theory we can support that but
+            // currently we do not. Emit a warning for now.
+            stream_state._key = response_from_wire.make_key();
+            errata.error(
+                "Incoming HTTP/2 response has no key set from the request. Using key from "
+                "response: {}.",
+                stream_state._key);
+          }
+          auto const &key = stream_state._key;
+          auto const &specified_response = stream_state._specified_response;
+          if (response_from_wire.verify_headers(key, *specified_response->_fields_rules)) {
+            errata.error(R"(HTTP/2 response headers did not match expected response headers.)");
+            session_data->set_non_zero_exit_status();
+          }
+          if (response_from_wire._status != specified_response->_status &&
+              (response_from_wire._status != 200 || specified_response->_status != 304) &&
+              (response_from_wire._status != 304 || specified_response->_status != 200))
+          {
+            errata.error(
+                R"(HTTP/2 Status Violation: expected {} got {}, key={}.)",
+                specified_response->_status,
+                response_from_wire._status,
+                key);
+          }
+        }
+      }
+    }
+    if (flags & NGHTTP2_FLAG_END_STREAM) {
+      auto stream_map_iter = session_data->_stream_map.find(stream_id);
+      if (stream_map_iter != session_data->_stream_map.end()) {
+        H2StreamState &stream_state = *stream_map_iter->second;
+        stream_state.set_stream_has_ended();
+      }
+    }
+  }
   return 0;
 }
 
@@ -1504,21 +2333,22 @@ on_stream_close_cb(
     void *user_data)
 {
   swoc::Errata errata;
-  errata.diag("on_stream_close_cb {}", stream_id);
+  errata.diag("Stream is closed with id: {}", stream_id);
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
   auto iter = session_data->_stream_map.find(stream_id);
   if (iter != session_data->_stream_map.end()) {
     H2StreamState &stream_state = *iter->second;
     auto const &message_start = stream_state._stream_start;
-    const auto message_end = clock_type::now();
-    const auto elapsed_ms =
-        chrono::duration_cast<chrono::milliseconds>(message_end - message_start);
+    auto const message_end = clock_type::now();
+    auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
       errata.error(
-          R"(HTTP/2 transaction in stream having key={} took {} milliseconds.)",
+          R"(HTTP/2 transaction in stream id {} having key={} took {}.)",
+          stream_id,
           stream_state._key,
-          elapsed_ms.count());
+          elapsed_ms);
     }
+    stream_state.set_stream_has_ended();
     session_data->_stream_map.erase(iter);
   }
   return 0;
@@ -1528,53 +2358,133 @@ static int
 on_data_chunk_recv_cb(
     nghttp2_session * /* session */,
     uint8_t /* flags */,
-    int32_t /* stream_id */,
+    int32_t stream_id,
     uint8_t const * /* data */,
     size_t len,
-    void * /* user_data */)
+    void *user_data)
 {
   swoc::Errata errata;
   errata.diag("on_data_chunk_recv_cb {} bytes", len);
+  auto *session_data = reinterpret_cast<H2Session *>(user_data);
+  auto iter = session_data->_stream_map.find(stream_id);
+  if (iter == session_data->_stream_map.end()) {
+    errata.error("Could not find a stream with stream id: {}", stream_id);
+    return 0;
+  }
+  H2StreamState &stream_state = *iter->second;
+  stream_state._received_body_length += len;
   return 0;
 }
 
-H2StreamState::H2StreamState() : _stream_start{clock_type::now()} { }
-
-H2StreamState::H2StreamState(int32_t stream_id)
-  : _stream_id{stream_id}
-  , _stream_start{clock_type::now()}
+H2StreamState::H2StreamState()
+  : _stream_start{clock_type::now()}
+  , _request_from_client{std::make_shared<HttpHeader>()}
+  , _response_from_server{std::make_shared<HttpHeader>()}
 {
+  _request_from_client->_is_http2 = true;
+  _request_from_client->_is_request = true;
+  _response_from_server->_is_http2 = true;
+  _response_from_server->_is_response = true;
 }
 
-H2StreamState::H2StreamState(int32_t stream_id, char *send_body, int send_body_length)
-  : _stream_id(stream_id)
-  , _send_body(send_body)
-  , _send_body_length(send_body_length)
-  , _stream_start{clock_type::now()}
+H2StreamState::~H2StreamState()
 {
+  for (auto rcbuf : _rcbufs_to_free) {
+    nghttp2_rcbuf_decref(rcbuf);
+  }
+  if (_request_nv_headers) {
+    free(_request_nv_headers);
+    _request_nv_headers = nullptr;
+  }
+  if (_response_nv_headers) {
+    free(_response_nv_headers);
+    _response_nv_headers = nullptr;
+  }
+}
+
+void
+H2StreamState::set_stream_has_ended()
+{
+  _stream_has_ended = true;
+}
+
+bool
+H2StreamState::get_stream_has_ended() const
+{
+  return _stream_has_ended;
+}
+
+void
+H2StreamState::set_stream_id(int32_t id)
+{
+  _stream_id = id;
+  if (_request_from_client) {
+    _request_from_client->_stream_id = id;
+  }
+  if (_response_from_server) {
+    _response_from_server->_stream_id = id;
+  }
+}
+
+int32_t
+H2StreamState::get_stream_id() const
+{
+  return _stream_id;
+}
+
+void
+H2StreamState::store_nv_response_headers_to_free(nghttp2_nv *hdrs)
+{
+  _response_nv_headers = hdrs;
+}
+
+void
+H2StreamState::store_nv_request_headers_to_free(nghttp2_nv *hdrs)
+{
+  _request_nv_headers = hdrs;
+}
+
+swoc::TextView
+H2StreamState::register_rcbuf(nghttp2_rcbuf *rcbuf)
+{
+  nghttp2_rcbuf_incref(rcbuf);
+  _rcbufs_to_free.push_back(rcbuf);
+  auto buf = nghttp2_rcbuf_get_buf(rcbuf);
+  return TextView(reinterpret_cast<char *>(buf.base), buf.len);
 }
 
 H2Session::H2Session() : _session{nullptr}, _callbacks{nullptr}, _options{nullptr} { }
 
+H2Session::H2Session(swoc::TextView const &client_sni, int client_verify_mode)
+  : TLSSession(client_sni, client_verify_mode)
+  , _session{nullptr}
+  , _callbacks{nullptr}
+  , _options{nullptr}
+{
+}
+
 H2Session::~H2Session()
 {
   // This is safe to call upon a nullptr. Thus this is appropriate to be called
-  // even if session_init has not been called.
+  // even if client_session_init or server_session_init has not been called.
   nghttp2_session_callbacks_del(_callbacks);
   nghttp2_session_del(_session);
   nghttp2_option_del(_options);
 }
 
-swoc::Rv<ssize_t> H2Session::read(swoc::MemSpan<char> /* span */)
+swoc::Rv<ssize_t>
+H2Session::read(swoc::MemSpan<char> span)
 {
-  swoc::Rv<ssize_t> zret{1};
-  return zret;
+  if (!_h2_is_negotiated) {
+    return TLSSession::read(span);
+  }
+  return swoc::Rv<ssize_t>{1};
 }
 
-swoc::Rv<ssize_t> H2Session::write(swoc::TextView /* data */)
+swoc::Rv<ssize_t>
+H2Session::write(swoc::TextView data)
 {
-  swoc::Rv<ssize_t> zret{1};
-  return zret;
+  return TLSSession::write(data);
 }
 
 ssize_t
@@ -1585,41 +2495,75 @@ data_read_callback(
     size_t length,
     uint32_t *data_flags,
     nghttp2_data_source * /* source */,
-    void * /* user_data */)
+    void *user_data)
 {
+  swoc::Errata errata;
   size_t num_to_copy = 0;
-  H2StreamState *state =
+  H2StreamState *stream_state =
       reinterpret_cast<H2StreamState *>(nghttp2_session_get_stream_user_data(session, stream_id));
-  if (!state->_wait_for_continue) {
-    num_to_copy = std::min(length, state->_send_body_length - state->_send_body_offset);
+  if (stream_state == nullptr) {
+    auto *session_data = reinterpret_cast<H2Session *>(user_data);
+    auto iter = session_data->_stream_map.find(stream_id);
+    if (iter == session_data->_stream_map.end()) {
+      errata.error("Could not find a stream with stream id: {}", stream_id);
+      return 0;
+    }
+    stream_state = iter->second.get();
+  }
+  if (!stream_state->_wait_for_continue) {
+    num_to_copy =
+        std::min(length, stream_state->_send_body_length - stream_state->_send_body_offset);
     if (num_to_copy > 0) {
-      memcpy(buf, state->_send_body + state->_send_body_offset, num_to_copy);
-      state->_send_body_offset += num_to_copy;
+      memcpy(buf, stream_state->_body_to_send + stream_state->_send_body_offset, num_to_copy);
+      stream_state->_send_body_offset += num_to_copy;
     } else {
       num_to_copy = 0;
     }
-    if (state->_send_body_offset >= state->_send_body_length) {
+    if (stream_state->_send_body_offset >= stream_state->_send_body_length) {
       *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     }
   }
+  errata.diag("Writing a {} byte body for stream id: {}", num_to_copy, stream_id);
   return num_to_copy;
 }
 
 swoc::Rv<ssize_t>
 H2Session::write(HttpHeader const &hdr)
 {
-  swoc::Rv<ssize_t> zret{1};
+  if (!_h2_is_negotiated) {
+    return Session::write(hdr);
+  }
+  swoc::Rv<ssize_t> zret{0};
+  int32_t stream_id = 0;
+  int32_t submit_result = 0;
+  H2StreamState *stream_state = nullptr;
+  std::shared_ptr<H2StreamState> new_stream_state{nullptr};
+  if (hdr._is_response) {
+    stream_id = hdr._stream_id;
+    auto stream_map_iter = _stream_map.find(stream_id);
+    if (stream_map_iter == _stream_map.end()) {
+      zret.errata().error("Could not find registered stream for stream id: {}", stream_id);
+      return zret;
+    }
+    stream_state = stream_map_iter->second.get();
+  } else {
+    new_stream_state = std::make_shared<H2StreamState>();
+    stream_state = new_stream_state.get();
+  }
+
   // grab header, send to session
   // pack_headers will convert all the fields in hdr into nghttp2_nv structs
   int hdr_count = 0;
   nghttp2_nv *hdrs = nullptr;
   pack_headers(hdr, hdrs, hdr_count);
+  if (hdr._is_response) {
+    stream_state->store_nv_response_headers_to_free(hdrs);
+  } else {
+    stream_state->store_nv_request_headers_to_free(hdrs);
+  }
 
-  int32_t stream_id = 0;
-  auto stream_state = std::make_unique<H2StreamState>();
   stream_state->_key = hdr.make_key();
-  // Content, need to set up the post body too
-  if (hdr._content_size > 0 || (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status])) {
+  if (hdr._content_size > 0 && (hdr._is_request || !HttpHeader::STATUS_NO_CONTENT[hdr._status])) {
     TextView content;
     if (hdr._content_data) {
       content = TextView{hdr._content_data, hdr._content_size};
@@ -1633,68 +2577,90 @@ H2Session::write(HttpHeader const &hdr)
     data_prd.source.fd = 0;
     data_prd.source.ptr = nullptr;
     data_prd.read_callback = data_read_callback;
-    stream_state->_send_body = content.data();
+    stream_state->_body_to_send = content.data();
     stream_state->_send_body_length = content.size();
-    stream_state->_req = &hdr;
     stream_state->_wait_for_continue = hdr._send_continue;
-    stream_id = nghttp2_submit_request(
-        this->_session,
-        nullptr,
-        hdrs,
-        hdr_count,
-        &data_prd,
-        stream_state.get());
-  } else {
-    stream_id = nghttp2_submit_request(
-        this->_session,
-        nullptr,
-        hdrs,
-        hdr_count,
-        nullptr,
-        stream_state.get());
-    stream_state->_stream_id = stream_id;
+    if (hdr._is_response) {
+      submit_result = nghttp2_submit_response(
+          this->_session,
+          stream_state->get_stream_id(),
+          hdrs,
+          hdr_count,
+          &data_prd);
+    } else {
+      submit_result =
+          nghttp2_submit_request(this->_session, nullptr, hdrs, hdr_count, &data_prd, stream_state);
+    }
+  } else { // Empty body.
+    if (hdr._is_response) {
+      submit_result = nghttp2_submit_response(
+          this->_session,
+          stream_state->get_stream_id(),
+          hdrs,
+          hdr_count,
+          nullptr);
+    } else {
+      submit_result =
+          nghttp2_submit_request(this->_session, nullptr, hdrs, hdr_count, nullptr, stream_state);
+    }
   }
-  zret.errata().diag(R"(Sent stream "{}" with {} headers)", stream_id, hdr_count);
+
+  if (hdr._is_response) {
+    stream_id = stream_state->get_stream_id();
+    if (submit_result < 0) {
+      zret.errata().error(
+          "Submitting an HTTP/2 with stream id {} response failed: {}",
+          stream_id,
+          submit_result);
+    }
+  } else { // request
+    if (submit_result < 0) {
+      zret.errata().error("Submitting an HTTP/2 request failed: {}", submit_result);
+    } else {
+      stream_id = submit_result;
+      stream_state->set_stream_id(stream_id);
+      record_stream_state(stream_id, new_stream_state);
+    }
+    zret.errata().diag("Sent the following HTTP/2 headers for stream id {}:\n{}", stream_id, hdr);
+  }
 
   // Kick off the send logic to put the data on the wire
-  send_callback(_session, nullptr, 0, 0, this);
-  free(hdrs);
+  zret.result() = send_nghttp2_data(_session, nullptr, 0, 0, this);
 
-  _stream_map.insert(std::make_pair(stream_id, std::move(stream_state)));
-
-  return 1;
+  return zret;
 }
 
 swoc::Errata
 H2Session::pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_count)
 {
   swoc::Errata errata;
+  if (!_h2_is_negotiated) {
+    errata.error("Should not be packing headers if h2 is not negotiated.");
+    return errata;
+  }
   hdr_count = hdr._fields_rules->_fields.size();
 
-  if (hdr._status) {
-    hdr_count += 1;
-  } else if (hdr._method) {
-    hdr_count += 4;
-  } else {
-    hdr_count = 0;
-    errata.error(R"(Unable to write header - no status nor method.)");
-    return errata;
+  if (!hdr._contains_pseudo_headers_in_fields_array) {
+    if (hdr._is_response) {
+      hdr_count += 1;
+    } else if (hdr._is_request) {
+      hdr_count += 4;
+    } else {
+      hdr_count = 0;
+      errata.error(R"(Unable to write header: could not determine request/response state.)");
+      return errata;
+    }
   }
 
   nv_hdr = reinterpret_cast<nghttp2_nv *>(malloc(sizeof(nghttp2_nv) * hdr_count));
   int offset = 0;
 
-  if (hdr._status) {
-    // status is unsigned, not a TextView, but only 1 off case so just write the
-    // code here
-    nghttp2_nv status_nv = {
-        const_cast<uint8_t *>((uint8_t *)":status"),
-        (uint8_t *)&hdr._status,
-        sizeof(":status") - 1,
-        sizeof((uint8_t *)&hdr._status) - 1,
-        NGHTTP2_NV_FLAG_NONE};
-    nv_hdr[offset++] = status_nv;
-  } else if (hdr._method) {
+  // nghttp2 requires pseudo header fields to be at the start of the
+  // nv array. Thus we add them here before calling add_fields_to_ngnva
+  // which then skips the pseueo headers if they are in there.
+  if (hdr._is_response) {
+    nv_hdr[offset++] = tv_to_nv(":status", hdr._status_string);
+  } else if (hdr._is_request) {
     // TODO: add error checking and refactor and tolerance for non-required
     // pseudo-headers
     nv_hdr[offset++] = tv_to_nv(":method", hdr._method);
@@ -1713,20 +2679,22 @@ H2Session::tv_to_nv(char const *name, swoc::TextView v)
 {
   nghttp2_nv res;
 
+  // Note: nghttp2 requires the field names to be lowercase if
+  // NGHTTP2_NV_FLAG_NO_COPY_NAME is set. Fortunately we make our stored field
+  // names lower case when we parse them from the yaml replay file.
   res.name = const_cast<uint8_t *>((uint8_t *)name);
   res.value = const_cast<uint8_t *>((uint8_t *)v.data());
   res.namelen = strlen(name);
   res.valuelen = v.length();
-  res.flags = NGHTTP2_NV_FLAG_NONE;
+  res.flags = NGHTTP2_NV_FLAG_NO_COPY_NAME | NGHTTP2_NV_FLAG_NO_COPY_VALUE;
 
   return res;
 }
 
-SSL_CTX *H2Session::h2_server_context = nullptr;
 SSL_CTX *H2Session::h2_client_context = nullptr;
 
 swoc::Errata
-H2Session::send_client_connection_header()
+H2Session::send_connection_settings()
 {
   swoc::Errata errata;
   nghttp2_settings_entry iv[1] = {{NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}};
@@ -1741,32 +2709,56 @@ H2Session::send_client_connection_header()
 }
 
 const unsigned char npn_str[] = {2, 'h', '2', 7, 'h', 't', 't', 'p', '1', '.', '1'};
-int npn_len = 11;
+constexpr int npn_len = sizeof(npn_str);
 
 int
 alpn_select_next_proto_cb(
-    SSL * /* ssl */,
+    SSL *ssl,
     unsigned char const **out,
     unsigned char *outlen,
     unsigned char const *in,
     unsigned int inlen,
     void * /* arg */)
 {
-  if (SSL_select_next_proto(
-          const_cast<unsigned char **>(out),
-          outlen,
-          npn_str,
-          npn_len,
-          in,
-          inlen) == OPENSSL_NPN_NEGOTIATED)
+  /* It's easier to get the SNI here than in the client_hello_callback because
+   * we can use SSL_get_servername here. Per the OpenSSL documentation of
+   * SSL_get_servername:
+   *
+   *    Note that the ClientHello callback occurs before a servername extension
+   *    from the client is processed. The servername, certificate and ALPN
+   *    callbacks occur after a servername extension from the client is
+   *    processed.
+   */
+  char const *sni = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+  unsigned char const *alpn = npn_str;
+  int alpn_len = npn_len;
+
+  if (sni != nullptr) {
+    std::string_view alpn_protocol_string = TLSSession::get_alpn_protocol_string_for_sni(sni);
+    if (!alpn_protocol_string.empty()) {
+      alpn = reinterpret_cast<unsigned char const *>(alpn_protocol_string.data());
+      alpn_len = alpn_protocol_string.size();
+    }
+  }
+
+  swoc::Errata errata;
+  if (SSL_select_next_proto(const_cast<unsigned char **>(out), outlen, alpn, alpn_len, in, inlen) ==
+      OPENSSL_NPN_NEGOTIATED)
   {
+    errata.diag("Negotiated alpn: {}", TextView{(char *)*out, (size_t)*outlen});
     return SSL_TLSEXT_ERR_OK;
+  } else {
+    errata.error(
+        R"(Failed to find a an ALPN match: server ALPN list: "{}", client ALPN list: "{}")",
+        TextView((char *)alpn, (size_t)alpn_len),
+        TextView{(char *)in, (size_t)inlen});
   }
   *out = nullptr;
   *outlen = 0;
   return SSL_TLSEXT_ERR_NOACK;
 }
 
+#ifndef OPENSSL_NO_NEXTPROTONEG
 int
 select_next_proto_cb(
     SSL * /* ssl */,
@@ -1795,7 +2787,17 @@ advertise_next_protocol_cb(
   *outlen = npn_len;
   return SSL_TLSEXT_ERR_OK;
 }
+#endif /* !OPENSSL_NO_NEXTPROTONEG */
 
+// static
+swoc::Errata
+H2Session::init(int *process_exit_code)
+{
+  H2Session::process_exit_code = process_exit_code;
+  return H2Session::init(server_context, h2_client_context);
+}
+
+// static
 swoc::Errata
 H2Session::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
 {
@@ -1805,22 +2807,25 @@ H2Session::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
     return errata;
   }
 
+#ifndef OPENSSL_NO_NEXTPROTONEG
   // Initialize the protocol selection to include H2
   SSL_CTX_set_next_proto_select_cb(client_context, select_next_proto_cb, nullptr);
   SSL_CTX_set_next_protos_advertised_cb(server_context, advertise_next_protocol_cb, nullptr);
+#endif /* !OPENSSL_NO_NEXTPROTONEG */
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
   // Set the protocols the client will advertise
   SSL_CTX_set_alpn_protos(client_context, npn_str, npn_len);
   SSL_CTX_set_alpn_select_cb(server_context, alpn_select_next_proto_cb, nullptr);
 #else
-  Error must be at least openssl 1.0.2
+  static_assert(false, "Error must be at least openssl 1.0.2");
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
+  errata.diag("Finished H2Session::init");
   return errata;
 }
 
 swoc::Errata
-H2Session::session_init()
+H2Session::client_session_init()
 {
   swoc::Errata errata;
 
@@ -1837,14 +2842,15 @@ H2Session::session_init()
   nghttp2_option_set_no_closed_streams(_options, 1);
   nghttp2_option_set_max_deflate_dynamic_table_size(_options, 0);
 
-  nghttp2_session_callbacks_set_on_header_callback(this->_callbacks, on_header_callback);
-
   nghttp2_session_callbacks_set_on_begin_headers_callback(
       this->_callbacks,
       on_begin_headers_callback);
+  nghttp2_session_callbacks_set_on_header_callback2(this->_callbacks, on_header_callback);
 
-  //  nghttp2_session_callbacks_set_send_callback(_callbacks, send_callback);
-  //  nghttp2_session_callbacks_set_recv_callback(_callbacks, recv_callback);
+  // Note that instead of using the nghttp2_session_callbacks_set_send_callback
+  // and nghttp2_session_callbacks_set_recv_callback, we manually drive things
+  // along via our use of nghttp2_session_mem_recv and
+  // nghttp2_session_mem_send.
 
   nghttp2_session_callbacks_set_on_frame_send_callback(this->_callbacks, on_frame_send_cb);
   nghttp2_session_callbacks_set_on_frame_recv_callback(this->_callbacks, on_frame_recv_cb);
@@ -1854,6 +2860,56 @@ H2Session::session_init()
       on_data_chunk_recv_cb);
 
   nghttp2_session_client_new(&this->_session, this->_callbacks, this);
+
+  return errata;
+}
+
+swoc::Errata
+H2Session::server_session_init()
+{
+  swoc::Errata errata;
+  if (!_h2_is_negotiated) {
+    return errata;
+  }
+
+  _is_server = true;
+
+  // Set up the H2 callback methods
+  auto ret = nghttp2_session_callbacks_new(&this->_callbacks);
+  if (0 != ret) {
+    errata.error("nghttp2_session_callbacks_new {}", ret);
+    return errata;
+  }
+
+  if (0 != nghttp2_option_new(&_options)) {
+    errata.error("nghttp2_option_new could not allocate memory.");
+    return errata;
+  }
+  nghttp2_option_set_no_closed_streams(_options, 1);
+  nghttp2_option_set_max_deflate_dynamic_table_size(_options, 0);
+
+  nghttp2_session_callbacks_set_on_header_callback2(this->_callbacks, on_header_callback);
+  nghttp2_session_callbacks_set_on_begin_headers_callback(
+      this->_callbacks,
+      on_begin_headers_callback);
+
+  // Note that instead of using the nghttp2_session_callbacks_set_send_callback
+  // and nghttp2_session_callbacks_set_recv_callback, we manually drive things
+  // along via our use of nghttp2_session_mem_recv and
+  // nghttp2_session_mem_send.
+
+  nghttp2_session_callbacks_set_on_frame_send_callback(this->_callbacks, on_frame_send_cb);
+  nghttp2_session_callbacks_set_on_frame_recv_callback(this->_callbacks, on_frame_recv_cb);
+  nghttp2_session_callbacks_set_on_stream_close_callback(this->_callbacks, on_stream_close_cb);
+  nghttp2_session_callbacks_set_on_data_chunk_recv_callback(
+      this->_callbacks,
+      on_data_chunk_recv_cb);
+
+  ret = nghttp2_session_server_new(&this->_session, this->_callbacks, this);
+  if (0 != ret) {
+    errata.error("nghttp2_session_server_new could not initialize a new session.");
+    return errata;
+  }
 
   return errata;
 }
@@ -2637,12 +3693,12 @@ HttpHeader::serialize(swoc::BufferWriter &w) const
 {
   swoc::Errata errata;
 
-  if (_status) {
+  if (_is_response) {
     w.print("HTTP/{} {} {}{}", _http_version, _status, _reason, HTTP_EOL);
-  } else if (_method) {
+  } else if (_is_request) {
     w.print("{} {} HTTP/{}{}", _method, _url, _http_version, HTTP_EOL);
   } else {
-    errata.error(R"(Unable to write header: no status nor method.)");
+    errata.error(R"(Unable to write header: could not determine request/response state.)");
   }
 
   for (auto const &[name, value] : _fields_rules->_fields) {
@@ -2751,7 +3807,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
       errata.error("Field or rule at {} is not a sequence as required.", node.Mark());
       continue;
     }
-    const auto node_size = node.size();
+    auto const node_size = node.size();
     if (node_size != 2 && node_size != 3) {
       errata.error(
           "Field or rule node at {} is not a sequence of length 2 "
@@ -2812,6 +3868,13 @@ HttpFields::add_fields_to_ngnva(nghttp2_nv *l) const
 {
   int offset = 0;
   for (auto const &[key, value] : _fields) {
+    if (key.starts_with(":")) {
+      // Pseudo header fields are handled specially via the _method, _status
+      // HttpHeader member variables. This provides continuity in
+      // implementation with HTTP/1. In any case, they are added to the vector
+      // independently.
+      continue;
+    }
     l[offset++] = nghttp2_nv{
         const_cast<uint8_t *>((uint8_t *)key.data()),
         const_cast<uint8_t *>((uint8_t *)value.data()),
@@ -2828,8 +3891,15 @@ HttpHeader::parse_url(TextView url)
 
   // URI parsing
   std::size_t scheme_end = url.find("://");
-  std::size_t host_start = scheme_end + 3;            // "://" is 3 characters
+  std::size_t host_start = 0;
+  if (scheme_end != std::string::npos) {
+    host_start = scheme_end + 3; // "://" is 3 characters
+  }
   std::size_t path_start = url.find("/", host_start); // / begins path
+  std::size_t query_start = url.find("?", host_start);
+  std::size_t fragment_start = url.find("#", host_start);
+  std::size_t authority_end = std::min({path_start, query_start, fragment_start});
+
   std::size_t port_start = url.find(":", host_start); // : begins port
   if (port_start > path_start && path_start != std::string::npos) {
     port_start = std::string::npos;
@@ -2837,39 +3907,26 @@ HttpHeader::parse_url(TextView url)
 
   std::size_t host_end = port_start;
   if (port_start == std::string::npos) {
-    host_end = path_start;
+    host_end = authority_end;
   }
-  std::size_t port_end = path_start;
+  std::size_t port_end = authority_end;
   if (port_start != std::string::npos) {
     ++port_start;
-  }
-  if (path_start != std::string::npos) {
-    ++path_start;
   }
 
   if (scheme_end != std::string::npos) {
     uri_scheme = this->localize(url.substr(0, scheme_end));
-    if (host_end != std::string::npos) {
-      uri_host = this->localize(url.substr(host_start, host_end - host_start));
-    }
-    if (port_end != std::string::npos) {
-      uri_port = this->localize(url.substr(port_start, port_end - port_start));
-    } else {
-      port_end = host_end;
-    }
-    uri_authority = this->localize(url.substr(host_start, port_end - host_start));
-  } else {
-    path_start = 0; // assume no scheme or authority
-    port_end = 0;
   }
-  std::size_t query_start = url.find("?", port_end);
-  std::size_t fragment_start = url.find("#", port_end);
-  std::size_t path_end = query_start;
-  if (query_start == std::string::npos) {
-    if (fragment_start == std::string::npos) {
-      path_end = url.length();
-    }
-    path_end = fragment_start;
+  uri_host = this->localize(url.substr(host_start, host_end - host_start));
+  if (port_start != std::string::npos) {
+    uri_port = this->localize(url.substr(port_start, port_end - port_start));
+  } else {
+    port_end = host_end;
+  }
+  uri_authority = this->localize(url.substr(host_start, port_end - host_start));
+  std::size_t path_end = std::min({query_start, fragment_start});
+  if (path_end == std::string::npos) {
+    path_end = url.length();
   }
   std::size_t query_end = fragment_start;
   if (fragment_start == std::string::npos) {
@@ -2905,27 +3962,28 @@ HttpHeader::parse_url(TextView url)
   // Split out the path and scheme for http/2 required headers
   // See rfc3986 section-3.2.
   std::size_t end_scheme = url.find("://");
+  std::size_t start_auth = 0;
   if (end_scheme == std::string::npos) {
-    _path = url;
-    // Scheme, authority, and the like will have to come from the corresponding
-    // YAML nodes.
-    return errata;
+    start_auth = 0;
+  } else {
+    start_auth = end_scheme + 3; // "://" is 3 characters.
+    _scheme = this->localize(url.substr(0, end_scheme));
   }
-  std::size_t start_auth = end_scheme + 3; // "://" is 3 characters.
   std::size_t end_host = start_auth;
-  _scheme = this->localize(url.substr(0, end_scheme));
   // Look for the ':' for the port.
-  std::size_t next_colon = url.find(":", start_auth);
   std::size_t next_slash = url.find("/", start_auth);
-  end_host = std::min(next_colon, next_slash);
+  std::size_t next_query = url.find("?", start_auth);
+  std::size_t next_fragment = url.find("#", start_auth);
+  end_host = std::min({next_slash, next_query, next_fragment});
   if (end_host == std::string::npos) {
-    // No ':' nor '/'. Assume the rest of the string is the host.
+    // No ':' nor '/', '?', or '#'. Assume the rest of the string is the host.
     end_host = url.length();
   }
   _authority = this->localize(url.substr(start_auth, end_host - start_auth));
-  std::size_t start_path = url.find("/", end_host);
-  if (start_path != std::string::npos) {
-    _path = this->localize(url.substr(start_path));
+  // _path is the value used for HTTP/2 ':path' and thus includes everything past
+  // the authority.
+  if (end_host != url.length()) {
+    _path = this->localize(url.substr(end_host));
   }
   return errata;
 }
@@ -2934,6 +3992,115 @@ YamlUrlPart
 HttpHeader::parse_url_part(swoc::TextView name)
 {
   return URL_PART_NAMES[name];
+}
+
+swoc::Errata
+HttpHeader::process_pseudo_headers(YAML::Node const &node)
+{
+  swoc::Errata errata;
+  auto number_of_pseudo_headers = 0;
+  auto pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_METHOD_KEY);
+  if (pseudo_it != _fields_rules->_fields.end()) {
+    if (!_method.empty()) {
+      errata.error(
+          "The {} node is not compatible with the {} pseudo header: {}",
+          YAML_HTTP_METHOD_KEY,
+          YAML_HTTP2_PSEUDO_METHOD_KEY,
+          node.Mark());
+    }
+    _method = pseudo_it->second;
+    ++number_of_pseudo_headers;
+    _is_request = true;
+  }
+  pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_SCHEME_KEY);
+  if (pseudo_it != _fields_rules->_fields.end()) {
+    if (!_scheme.empty()) {
+      errata.error(
+          "The {} node is not compatible with the {} pseudo header: {}",
+          YAML_HTTP_SCHEME_KEY,
+          YAML_HTTP2_PSEUDO_SCHEME_KEY,
+          node.Mark());
+    }
+    _scheme = pseudo_it->second;
+    ++number_of_pseudo_headers;
+    _is_request = true;
+  }
+  pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_AUTHORITY_KEY);
+  if (pseudo_it != _fields_rules->_fields.end()) {
+    auto const host_it = _fields_rules->_fields.find(FIELD_HOST);
+    if (host_it != _fields_rules->_fields.end()) {
+      // We intentionally allow this, even though contrary to spec, to allow the use
+      // of Proxy Verifier to test proxy's handling of this.
+      errata.info(
+          "Contrary to spec, a transaction is specified with both {} and {} header fields: {}",
+          YAML_HTTP2_PSEUDO_AUTHORITY_KEY,
+          FIELD_HOST,
+          node.Mark());
+    } else if (!_authority.empty()) {
+      errata.error(
+          "The {} node is not compatible with the {} pseudo header: {}",
+          YAML_HTTP_URL_KEY,
+          YAML_HTTP2_PSEUDO_AUTHORITY_KEY,
+          node.Mark());
+    }
+    _authority = pseudo_it->second;
+    ++number_of_pseudo_headers;
+    _is_request = true;
+  }
+  pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_PATH_KEY);
+  if (pseudo_it != _fields_rules->_fields.end()) {
+    if (!_path.empty()) {
+      errata.error(
+          "The {} node is not compatible with the {} pseudo header: {}",
+          YAML_HTTP_URL_KEY,
+          YAML_HTTP2_PSEUDO_PATH_KEY,
+          node.Mark());
+    }
+    _path = pseudo_it->second;
+    ++number_of_pseudo_headers;
+    _is_request = true;
+  }
+  pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_STATUS_KEY);
+  if (pseudo_it != _fields_rules->_fields.end()) {
+    if (_status != 0) {
+      errata.error(
+          "The {} node is not compatible with the {} pseudo header: {}",
+          YAML_HTTP_STATUS_KEY,
+          YAML_HTTP2_PSEUDO_STATUS_KEY,
+          node.Mark());
+    }
+    auto const &status_field_value = pseudo_it->second;
+    TextView parsed;
+    auto n = swoc::svtou(status_field_value, &parsed);
+    if (parsed.size() == status_field_value.size() && 0 < n && n <= 599) {
+      _status = n;
+      _status_string = std::to_string(_status);
+    } else {
+      errata.error(
+          R"("{}" pseudo header value "{}" at {} must be an integer in the range [1..599].)",
+          YAML_HTTP2_PSEUDO_STATUS_KEY,
+          status_field_value,
+          node.Mark());
+    }
+    ++number_of_pseudo_headers;
+    _is_response = true;
+  }
+  if (number_of_pseudo_headers > 0) {
+    // Do some sanity checking on the user's pseudo headers, if provided.
+    if (_is_response && number_of_pseudo_headers != 1) {
+      errata.error("Found a mixture of request and response pseudo header fields: {}", node.Mark());
+    }
+    if (_is_request && number_of_pseudo_headers != 4) {
+      errata.error(
+          "Did not find all four required pseudo header fields "
+          "(:method, :scheme, :authority, :path): {}",
+          node.Mark());
+    }
+    // Pseudo header fields currently implies HTTP/2.
+    _http_version = "2";
+    _contains_pseudo_headers_in_fields_array = true;
+  }
+  return errata;
 }
 
 swoc::Errata
@@ -2980,6 +4147,7 @@ HttpHeader::load(YAML::Node const &node)
   }
 
   if (node[YAML_HTTP_STATUS_KEY]) {
+    _is_response = true;
     auto status_node{node[YAML_HTTP_STATUS_KEY]};
     if (status_node.IsScalar()) {
       TextView text{status_node.Scalar()};
@@ -2987,6 +4155,7 @@ HttpHeader::load(YAML::Node const &node)
       auto n = swoc::svtou(text, &parsed);
       if (parsed.size() == text.size() && 0 < n && n <= 599) {
         _status = n;
+        _status_string = std::to_string(_status);
       } else {
         errata.error(
             R"("{}" value "{}" at {} must be an integer in the range [1..599].)",
@@ -3018,6 +4187,7 @@ HttpHeader::load(YAML::Node const &node)
     auto method_node{node[YAML_HTTP_METHOD_KEY]};
     if (method_node.IsScalar()) {
       _method = this->localize(method_node.Scalar());
+      _is_request = true;
     } else {
       errata.error(
           R"("{}" value at {} must be a string.)",
@@ -3069,16 +4239,18 @@ HttpHeader::load(YAML::Node const &node)
     }
   }
 
+  errata.note(this->process_pseudo_headers(node));
+
   if (!_method.empty() && _authority.empty()) {
     // The URL didn't have the authority. Get it from the Host header if it
     // exists.
-    const auto it = _fields_rules->_fields.find(FIELD_HOST);
+    auto const it = _fields_rules->_fields.find(FIELD_HOST);
     if (it != _fields_rules->_fields.end()) {
       _authority = it->second;
     }
   }
 
-  // Do this after header so it can override transfer encoding.
+  // Do this after parsing fields so it can override transfer encoding.
   if (auto content_node{node[YAML_CONTENT_KEY]}; content_node) {
     if (content_node.IsMap()) {
       if (auto xf_node{content_node[YAML_CONTENT_TRANSFER_KEY]}; xf_node) {
@@ -3089,7 +4261,7 @@ HttpHeader::load(YAML::Node const &node)
           _chunked_p = false;
         } else {
           errata.error(
-              R"(Invalid value "{}" for "{}" key at {} in "{}" node at )",
+              R"(Invalid value "{}" for "{}" key at {} in "{}" node at {})",
               xf,
               YAML_CONTENT_TRANSFER_KEY,
               xf_node.Mark(),
@@ -3112,25 +4284,31 @@ HttpHeader::load(YAML::Node const &node)
         TextView content{this->localize(data_node.Scalar(), enc)};
         _content_data = content.data();
         const size_t content_size = content.size();
+        _recorded_content_size = content_size;
         if (_content_length_p) {
           if (_content_size != content_size) {
             errata.diag(
-                R"(Conflicting sizes for "Content-Length", using header value {} instead of data value {}.)",
+                R"(Conflicting sizes for "Content-Length", sending header value {} instead of data value {}.)",
                 _content_size,
                 content_size);
           }
         }
       } else if (auto size_node{content_node[YAML_CONTENT_SIZE_KEY]}; size_node) {
         const size_t content_size = swoc::svtou(size_node.Scalar());
+        _recorded_content_size = content_size;
         // Cross check against previously read content-length header, if any.
         if (_content_length_p) {
           if (_content_size != content_size) {
             errata.diag(
-                R"(Conflicting sizes for "Content-Length", using header value {} instead of rule value {}.)",
+                R"(Conflicting sizes for "Content-Length", sending header value {} instead of rule value {}.)",
                 _content_size,
                 content_size);
           }
         } else if (_chunked_p) {
+          _content_size = content_size;
+        } else if (_is_http2) {
+          // HTTP/2 transactions may, and likely won't, have a Content-Length
+          // header field. And chunked encoding is not allowed in HTTP/2.
           _content_size = content_size;
         }
       } else {
@@ -3344,6 +4522,7 @@ HttpHeader::parse_request(swoc::TextView data)
       _method = first_line.take_prefix_if(&isspace);
       _url = first_line.ltrim_if(&isspace).take_prefix_if(&isspace);
       parse_url(_url);
+      _is_request = true;
 
       while (data) {
         auto field{data.take_prefix_at('\n').rtrim_if(&isspace)};
@@ -3387,6 +4566,14 @@ HttpHeader::parse_response(swoc::TextView data)
       first_line.take_prefix_if(&isspace); // Remove the "HTTP/<version>" prefix.
       auto status{first_line.ltrim_if(&isspace).take_prefix_if(&isspace)};
       _status = swoc::svtou(status);
+      _status_string = std::string(status);
+      _is_response = true;
+
+      if (_status < 1 || _status > 599) {
+        zret.errata().error(
+            "Unexpected response status: expected an integer in the range [1..599], got: {}",
+            _status);
+      }
 
       while (data) {
         auto field{data.take_prefix_at('\n').rtrim_if(&isspace)};
@@ -3437,10 +4624,31 @@ namespace swoc
 BufferWriter &
 bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
 {
-  w.write("Headers:\n"sv);
+  if (h._is_http2) {
+    if (h._status) {
+      w.print(R"(- ":status": "{}"{})", h._status_string, '\n');
+    } else {
+      w.print(R"(- ":method": "{}"{})", h._method, '\n');
+      w.print(R"(- ":scheme": "{}"{})", h._scheme, '\n');
+      w.print(R"(- ":authority": "{}"{})", h._authority, '\n');
+      w.print(R"(- ":path": "{}"{})", h._path, '\n');
+    }
+  } else {
+  }
   for (auto const &[key, value] : h._fields_rules->_fields) {
+    if (key.starts_with(":")) {
+      // Pseudo headers are handled specially above. Do not reprint them here.
+      continue;
+    }
     w.print(R"(- "{}": "{}"{})", key, value, '\n');
   }
+  return w;
+}
+
+BufferWriter &
+bwformat(BufferWriter &w, bwf::Spec const & /* spec */, std::chrono::milliseconds const &s)
+{
+  w.print("{} milliseconds", s.count());
   return w;
 }
 
@@ -3789,8 +4997,6 @@ Resolve_FQDN(swoc::TextView fqdn)
   return zret;
 }
 
-using namespace std::chrono_literals;
-
 void
 ThreadPool::wait_for_work(ThreadInfo *thread_info)
 {
@@ -3843,4 +5049,10 @@ ThreadPool::join_threads()
   for (auto &thread : _allThreads) {
     thread.join();
   }
+}
+
+void
+ThreadPool::set_max_threads(size_t new_max)
+{
+  max_threads = new_max;
 }
