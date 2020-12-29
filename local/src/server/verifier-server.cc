@@ -556,6 +556,11 @@ TF_Accept(int socket_fd, bool do_tls)
       errata.error("Failed to create a socket via accept: {}", swoc::bwf::Errno{});
       continue;
     }
+    static const int ONE = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
+    if (0 != ::fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)) {
+      errata.error("Failed to make the server socket non-blocking: {}", swoc::bwf::Errno{});
+    }
     if (do_tls) {
       // H2Session will figure out the HTTP protocol during the TLS handshake
       // and handle HTTP/1.x or HTTP/2 accordingly.
@@ -567,12 +572,6 @@ TF_Accept(int socket_fd, bool do_tls)
     if (!errata.is_ok()) {
       continue;
     }
-    static const int ONE = 1;
-    setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
-    if (0 != ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
-      errata.error("Failed to make the server socket non-blocking: {}", swoc::bwf::Errno{});
-    }
-
     ServerThreadInfo *thread_info =
         dynamic_cast<ServerThreadInfo *>(Server_Thread_Pool.get_worker());
     if (nullptr == thread_info) {
