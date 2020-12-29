@@ -36,6 +36,7 @@ using swoc::TextView;
 using namespace swoc::literals;
 using namespace std::literals;
 using std::this_thread::sleep_until;
+using std::this_thread::sleep_for;
 
 namespace chrono = std::chrono;
 using clock_type = std::chrono::system_clock;
@@ -390,7 +391,9 @@ TLSSession::~TLSSession()
 swoc::Rv<ssize_t>
 TLSSession::read(swoc::MemSpan<char> span)
 {
-  errno = 0;
+  if (this->is_closed()) {
+    return swoc::Rv<ssize_t>{0};
+  }
   swoc::Rv<ssize_t> zret{SSL_read(this->_ssl, span.data(), span.size())};
 
   if (zret <= 0) {
@@ -1506,6 +1509,7 @@ H2Session::run_transactions(
         receive_nghttp2_data(this->get_session(), nullptr, 0, 0, this, delay_time);
         current_time = clock_type::now();
         delay_time = duration_cast<milliseconds>(next_time - current_time);
+        sleep_for(delay_time);
       }
     }
     txn_errata.note(this->run_transaction(txn));
