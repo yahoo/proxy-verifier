@@ -163,7 +163,7 @@ parse_proxy_provided_certificate(YAML::Node const &tls_node)
     if (proxy_provided_certificate_node.IsScalar()) {
       proxy_provided_certificate = proxy_provided_certificate_node.Scalar() == "true" ? 1 : 0;
     } else {
-      proxy_provided_certificate.errata().error(
+      proxy_provided_certificate.error(
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY);
     }
@@ -191,7 +191,7 @@ parse_request_certificate(YAML::Node const &tls_node)
     if (request_certificate_node.IsScalar()) {
       should_request_certificate = request_certificate_node.Scalar() == "true" ? 1 : 0;
     } else {
-      should_request_certificate.errata().error(
+      should_request_certificate.error(
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY);
     }
