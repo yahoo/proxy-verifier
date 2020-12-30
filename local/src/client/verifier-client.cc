@@ -81,13 +81,13 @@ get_start_time(YAML::Node const &node)
       if (t != 0) {
         return TimePoint(nanoseconds(t));
       } else {
-        zret.errata().error(
+        zret.error(
             R"("{}" node value "{}" that is not a positive integer.)",
             YAML_TIME_START_KEY,
             start_node.Scalar());
       }
     } else {
-      zret.errata().error(R"("{}" key that is not a scalar.)", YAML_TIME_START_KEY);
+      zret.error(R"("{}" key that is not a scalar.)", YAML_TIME_START_KEY);
     }
   }
   return zret;

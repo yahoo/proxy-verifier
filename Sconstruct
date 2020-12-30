@@ -37,7 +37,9 @@ if path_nghttp2 is not None:
   custom_rpath.append(path_nghttp2 + "/lib")
 SetOptionDefault("RPATH",  custom_rpath)
 
-Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc", tag="1.2.13"), package_group="proxy-verifier")
+#Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc", tag="1.2.15"), package_group="proxy-verifier")
+# Temporarily use our branch until Alan merges the Rv::note(Errata) changes into a release.
+Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="bneradt/libswoc", tag="add_rv_note_for_errata"), package_group="proxy-verifier")
 
 Part("local/parts/proxy-verifier.part", package_group="proxy-verifier")
 Part("test/unit_tests/unit_tests.part")
