@@ -16,9 +16,9 @@ Verify correct field verification behavior.
 # Test 1: Verify field verification in a JSON replay file.
 #
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
-client = r.AddClientProcess("client1", "replay_files/various_verification.json", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/various_verification.json", http_ports=[8081], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
+client = r.AddClientProcess("client1", "replay_files/various_verification.json", other_args="--verbose diag")
+server = r.AddServerProcess("server1", "replay_files/various_verification.json", other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
 
 # Verify a success and failure of each validation in the request.
 server.Streams.stdout = Testers.ContainsExpression(
@@ -77,9 +77,9 @@ server.ReturnCode = 1
 # Test 2: Verify field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
-client = r.AddClientProcess("client2", "replay_files/cookie_equal.yaml", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server2", "replay_files/cookie_equal.yaml", http_ports=[8081], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy2", listen_port=8080, server_port=8081)
+client = r.AddClientProcess("client2", "replay_files/cookie_equal.yaml", other_args="--verbose diag")
+server = r.AddServerProcess("server2", "replay_files/cookie_equal.yaml", other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Absence Success: Key: "5", Field Name: "x-not-a-header"',
@@ -116,9 +116,9 @@ server.ReturnCode = 1
 # Test 3: Verify duplicate field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify field verification works for HTTP transaction with duplicate fields")
-client = r.AddClientProcess("client3", "replay_files/duplicate_fields.yaml", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server3", "replay_files/duplicate_fields.yaml", http_ports=[8081], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy3", listen_port=8080, server_port=8081)
+client = r.AddClientProcess("client3", "replay_files/duplicate_fields.yaml", other_args="--verbose diag")
+server = r.AddServerProcess("server3", "replay_files/duplicate_fields.yaml", other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Absence Success: Key: "1", Field Name: "x-not-a-header',

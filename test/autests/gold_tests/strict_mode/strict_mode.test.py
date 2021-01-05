@@ -17,10 +17,11 @@ Verify strict mode functionality.
 #
 r = Test.AddTestRun("Verify strict mode is silent when the fields match.")
 client = r.AddClientProcess("client1", "replay_files/fields_match.json",
-                            http_ports=[8080], other_args="--verbose diag --strict")
+                            other_args="--verbose diag --strict")
 server = r.AddServerProcess("server1", "replay_files/fields_match.json",
-                            http_ports=[8081], other_args="--verbose diag --strict")
-proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
+                            other_args="--verbose diag --strict")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 if Condition.IsPlatform("darwin"):
     proxy.Streams.stdout = "gold/fields_match_proxy.gold_macos"
@@ -40,10 +41,11 @@ server.Streams.stdout = Testers.ExcludesExpression(
 #
 r = Test.AddTestRun("Verify strict mode warns when the fields don't match")
 client = r.AddClientProcess("client2", "replay_files/fields_differ.json",
-                            http_ports=[8082], other_args="--verbose diag --strict")
+                            other_args="--verbose diag --strict")
 server = r.AddServerProcess("server2", "replay_files/fields_differ.json",
-                            http_ports=[8083], other_args="--verbose diag --strict")
-proxy = r.AddProxyProcess("proxy2", listen_port=8082, server_port=8083)
+                            other_args="--verbose diag --strict")
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 if Condition.IsPlatform("darwin"):
     proxy.Streams.stdout = "gold/fields_differ_proxy.gold_macos"

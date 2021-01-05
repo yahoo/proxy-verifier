@@ -17,10 +17,11 @@ Verify correct parsing of a YAML replay files.
 #
 r = Test.AddTestRun("Verify parsing of a YAML-specified replay file")
 client = r.AddClientProcess("client1", "replay_files/yaml_specified.yaml",
-                            http_ports=[8082], other_args="--verbose diag")
+                            other_args="--verbose diag")
 server = r.AddServerProcess("server1", "replay_files/yaml_specified.yaml",
-                            http_ports=[8083], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=8082, server_port=8083)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 
 if Condition.IsPlatform("darwin"):
@@ -41,10 +42,11 @@ server.ReturnCode = 1
 #
 r = Test.AddTestRun("Verify parsing of transaction-level fields")
 client = r.AddClientProcess("client2", "replay_files/transaction_fields.yaml",
-                            http_ports=[8082], other_args="--verbose diag")
+                            other_args="--verbose diag")
 server = r.AddServerProcess("server2", "replay_files/transaction_fields.yaml",
-                            http_ports=[8083], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy2", listen_port=8082, server_port=8083)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 if Condition.IsPlatform("darwin"):
     proxy.Streams.stdout = "gold/transaction_fields_proxy.gold_macos"

@@ -17,11 +17,12 @@ Verify --format argument parsing.
 # so only one transaction will be registered.
 #
 r = Test.AddTestRun('--format "{url}"')
-client = r.AddClientProcess("client1", "unique_by_host.yaml", http_ports=[8080],
+client = r.AddClientProcess("client1", "unique_by_host.yaml",
                             other_args="--verbose diag --format '{url}'")
-server = r.AddServerProcess("server1", "unique_by_host.yaml", http_ports=[8081],
+server = r.AddServerProcess("server1", "unique_by_host.yaml",
                             other_args="--verbose diag --format '{url}'")
-proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 # The client will see each transaction as unique and will send them as such.
 client.Streams.stdout += Testers.ContainsExpression(
@@ -61,11 +62,12 @@ server.ReturnCode = 1
 # Test 2: Verify using the host as a key, which is unique across transactions.
 #
 r = Test.AddTestRun('--format "{field.host}"')
-client = r.AddClientProcess("client2", "unique_by_host.yaml", http_ports=[8080],
+client = r.AddClientProcess("client2", "unique_by_host.yaml",
                             other_args="--verbose diag --format '{field.host}'")
-server = r.AddServerProcess("server2", "unique_by_host.yaml", http_ports=[8081],
+server = r.AddServerProcess("server2", "unique_by_host.yaml",
                             other_args="--verbose diag --format '{field.host}'")
-proxy = r.AddProxyProcess("proxy2", listen_port=8080, server_port=8081)
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         "Parsed 3 transactions",
@@ -95,11 +97,12 @@ server.Streams.stdout += Testers.ContainsExpression(
 # Test 3: Use a more complicated key made up of two specifiers.
 #
 r = Test.AddTestRun('--format "{field.host}/{url}"')
-client = r.AddClientProcess("client3", "unique_by_host.yaml", http_ports=[8080],
+client = r.AddClientProcess("client3", "unique_by_host.yaml",
                             other_args="--verbose diag --format '{field.host}/{url}'")
-server = r.AddServerProcess("server3", "unique_by_host.yaml", http_ports=[8081],
+server = r.AddServerProcess("server3", "unique_by_host.yaml",
                             other_args="--verbose diag --format '{field.host}/{url}'")
-proxy = r.AddProxyProcess("proxy3", listen_port=8080, server_port=8081)
+proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         "Parsed 3 transactions",

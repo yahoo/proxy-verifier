@@ -18,10 +18,11 @@ Verify correct TLS client and server verification behavior.
 #
 r = Test.AddTestRun("Verify parsing of a YAML-specified replay file")
 client = r.AddClientProcess("client1", "replay_files/mtls.yaml",
-                            https_ports=[4443], other_args="--verbose diag")
+                            other_args="--verbose diag")
 server = r.AddServerProcess("server1", "replay_files/mtls.yaml",
-                            https_ports=[4444], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=4443, server_port=4444,
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port,
                           use_ssl=True)
 
 client.Streams.stdout += Testers.ContainsExpression(

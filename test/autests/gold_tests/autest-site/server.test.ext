@@ -10,10 +10,11 @@ Implement the Proxy Verifier test server extension.
 from __future__ import print_function
 from socket_util import create_address_argument
 import os
+from ports import get_port
 
 
-def _configure_server(obj, process, name, replay_dir, use_ipv6=False,
-                      http_ports=[8080], https_ports=[4443],
+def _configure_server(obj, process, name, replay_dir, find_ports=True, use_ipv6=False,
+                      http_ports=None, https_ports=None,
                       ssl_cert='', ca_certs='', other_args=''):
     """
     Configure the provided process to run a verifier-server command.
@@ -40,10 +41,16 @@ def _configure_server(obj, process, name, replay_dir, use_ipv6=False,
     # Configure the verifier-server command line arguments.
     command = "verifier-server run "
 
+    if not http_ports and find_ports:
+        http_ports = [get_port(process, "http_port")]
+
     if http_ports:
         command += "--listen "
         command += create_address_argument(http_ports, use_ipv6)
         command += " "
+
+    if not https_ports and find_ports:
+        https_ports = [get_port(process, "https_port")]
 
     if https_ports:
         command += '--listen-https '
@@ -99,8 +106,8 @@ def _configure_server(obj, process, name, replay_dir, use_ipv6=False,
     process.ReturnCode = 0
 
 
-def MakeServerProcess(test, name, replay_dir, use_ipv6=False,
-                      http_ports=[8080], https_ports=[4443],
+def MakeServerProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
+                      http_ports=None, https_ports=None,
                       ssl_cert='', ca_certs='', other_args=''):
     """
     Create a verifier-server process.
@@ -114,6 +121,12 @@ def MakeServerProcess(test, name, replay_dir, use_ipv6=False,
 
         replay_dir: (path) The directory containing the replay files for the
             server to run with.
+
+        find_ports: (bool) True if the framework should find available ports
+            to listen on for http and https connections if none were specified via
+            http_ports and https_ports.
+
+        use_ipv6: (bool) True if IPv6 localhost should be used, IPv4 otherise.
 
         http_ports: (list of ints) The set of HTTP ports to listen on.
 
@@ -142,14 +155,14 @@ def MakeServerProcess(test, name, replay_dir, use_ipv6=False,
             value could not be derived.
     """
     server = test.Processes.Process(name)
-    _configure_server(test, server, name, replay_dir, use_ipv6,
+    _configure_server(test, server, name, replay_dir, find_ports, use_ipv6,
                       http_ports, https_ports, ssl_cert,
                       ca_certs, other_args)
     return server
 
 
-def AddServerProcess(run, name, replay_dir, use_ipv6=False,
-                     http_ports=[8080], https_ports=[4443],
+def AddServerProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
+                     http_ports=None, https_ports=None,
                      ssl_cert='', ca_certs='', other_args=''):
     """
     Create a verifier-server process and configure it for the given TestRun.
@@ -164,7 +177,7 @@ def AddServerProcess(run, name, replay_dir, use_ipv6=False,
     """
 
     server = run.Processes.Process(name)
-    _configure_server(run, server, name, replay_dir, use_ipv6,
+    _configure_server(run, server, name, replay_dir, find_ports, use_ipv6,
                       http_ports, https_ports, ssl_cert,
                       ca_certs, other_args)
 
