@@ -16,9 +16,9 @@ Verify correct field verification behavior for contains, prefix, and suffix.
 # Test 1: Verify field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
-client = r.AddClientProcess("client1", "replay_files/substr_rules.yaml", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/substr_rules.yaml", http_ports=[8081], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
+client = r.AddClientProcess("client1", "replay_files/substr_rules.yaml", other_args="--verbose diag")
+server = r.AddServerProcess("server1", "replay_files/substr_rules.yaml", other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
 
 server.Streams.stdout += Testers.ContainsExpression(
         'Contains Success: Key: "5", Field Name: "host", Required Value: "le.on", Value: "example.one"',
@@ -71,9 +71,9 @@ server.ReturnCode = 1
 # Test 2: Verify duplicate field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify field verification works for HTTP transaction with duplicate fields")
-client = r.AddClientProcess("client2", "replay_files/substr_rules_duplicate.yaml", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server2", "replay_files/substr_rules_duplicate.yaml", http_ports=[8081], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy2", listen_port=8080, server_port=8081)
+client = r.AddClientProcess("client2", "replay_files/substr_rules_duplicate.yaml", other_args="--verbose diag")
+server = r.AddServerProcess("server2", "replay_files/substr_rules_duplicate.yaml", other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Contains Violation: Absent/Mismatched. Key: "1", Field Name: "set-cookie", Required Values: "AB", Received Values: "ABCD" "EFG"',

@@ -17,11 +17,11 @@ Verify the user can white list transactions with --keys.
 #
 r = Test.AddTestRun("Verify all keys are sent when --keys is not used.")
 client = r.AddClientProcess("client1", "five_transactions.yaml",
-                            http_ports=[8082],
                             other_args="--verbose diag")
 server = r.AddServerProcess("server1", "five_transactions.yaml",
-                            http_ports=[8083], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=8082, server_port=8083)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 for uuid in range(1, 6):
     client.Streams.stdout += Testers.ContainsExpression(
@@ -33,11 +33,11 @@ for uuid in range(1, 6):
 #
 r = Test.AddTestRun("Verify all keys are sent when --keys is not used.")
 client = r.AddClientProcess("client2", "five_transactions.yaml",
-                            http_ports=[8082],
                             other_args="--keys 2 --verbose diag")
 server = r.AddServerProcess("server2", "five_transactions.yaml",
-                            http_ports=[8083], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy2", listen_port=8082, server_port=8083)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         '- "uuid": "2"',
@@ -53,11 +53,11 @@ for uuid in [1, 3, 4, 5, 6]:
 #
 r = Test.AddTestRun("Verify multiple transactions can be sent with --keys.")
 client = r.AddClientProcess("client3", "five_transactions.yaml",
-                            http_ports=[8082],
                             other_args="--keys 3 5 --verbose diag")
 server = r.AddServerProcess("server3", "five_transactions.yaml",
-                            http_ports=[8083], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy3", listen_port=8082, server_port=8083)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 for uuid in [3, 5]:
     client.Streams.stdout += Testers.ContainsExpression(
@@ -75,11 +75,11 @@ for uuid in [1, 2, 4]:
 #
 r = Test.AddTestRun("Verify no transactions are sent if none match the key.")
 client = r.AddClientProcess("client4", "five_transactions.yaml",
-                            http_ports=[8082],
                             other_args="--keys does_not_exist --verbose diag")
 server = r.AddServerProcess("server4", "five_transactions.yaml",
-                            http_ports=[8083], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy4", listen_port=8082, server_port=8083)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy4", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Parsed 0 transactions'.format(uuid),

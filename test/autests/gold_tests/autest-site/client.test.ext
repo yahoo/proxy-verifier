@@ -10,10 +10,11 @@ Implement the Proxy Verifier client extensions.
 from __future__ import print_function
 from socket_util import create_address_argument
 import os
+from ports import get_port
 
 
-def _configure_client(obj, process, name, replay_dir, use_ipv6=False,
-                      http_ports=[8080], https_ports=[4443],
+def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=False,
+                      http_ports=None, https_ports=None,
                       ssl_cert='', ca_certs='', other_args=''):
     """
     Configure the process for running the verifier-client.
@@ -45,9 +46,15 @@ def _configure_client(obj, process, name, replay_dir, use_ipv6=False,
         process.Setup.Copy(replay_dir, run_replay_dir, CopyLogic.SoftFiles)
         command += " {} ".format(run_replay_dir)
 
+    if not http_ports and find_ports:
+        http_ports = [get_port(process, "http_port")]
+
     if http_ports:
         command += create_address_argument(http_ports, use_ipv6)
         command += " "
+
+    if not https_ports and find_ports:
+        https_ports = [get_port(process, "https_port")]
 
     if https_ports:
         command += create_address_argument(https_ports, use_ipv6)
@@ -94,8 +101,8 @@ def _configure_client(obj, process, name, replay_dir, use_ipv6=False,
     process.ReturnCode = 0
 
 
-def MakeClientProcess(test, name, replay_dir, use_ipv6=False,
-                      http_ports=[8080], https_ports=[4443],
+def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
+                      http_ports=None, https_ports=None,
                       ssl_cert='', ca_certs='', other_args=''):
     """
     Create a verifier-client process.
@@ -109,6 +116,10 @@ def MakeClientProcess(test, name, replay_dir, use_ipv6=False,
 
         replay_dir: (path) The directory containing the replay files for the
             client to run with.
+
+        find_ports: (bool) True if the framework should find available ports
+            to listen on for http and https connections if none were specified via
+            http_ports and https_ports.
 
         use_ipv6: (bool) True if IPv6 localhost should be used, IPv4 otherise.
 
@@ -138,13 +149,13 @@ def MakeClientProcess(test, name, replay_dir, use_ipv6=False,
         A verifier-client process.
     """
     client = test.Processes.Process(name)
-    _configure_client(test, client, name, replay_dir, use_ipv6, http_ports,
+    _configure_client(test, client, name, replay_dir, find_ports, use_ipv6, http_ports,
                       https_ports, ssl_cert, ca_certs, other_args)
     return client
 
 
-def AddClientProcess(run, name, replay_dir, use_ipv6=False,
-                     http_ports=[8080], https_ports=[4443],
+def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
+                     http_ports=None, https_ports=None,
                      ssl_cert='', ca_certs='', other_args=''):
     """
     Set the Default process of the test run to a verifier-client Process.
@@ -160,7 +171,7 @@ def AddClientProcess(run, name, replay_dir, use_ipv6=False,
     """
 
     p = run.Processes.Default
-    _configure_client(run, p, name, replay_dir, use_ipv6, http_ports,
+    _configure_client(run, p, name, replay_dir, find_ports, use_ipv6, http_ports,
                       https_ports, ssl_cert, ca_certs, other_args)
     return p
 

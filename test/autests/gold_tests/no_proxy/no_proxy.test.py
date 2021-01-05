@@ -12,10 +12,12 @@ Verify basic --no-proxy functionality.
 '''
 
 r = Test.AddTestRun("Verify no-proxy mode works for a simple HTTP transaction")
-client = r.AddClientProcess("client", "single_transaction.json",
-                            other_args="--no-proxy --verbose diag")
 server = r.AddServerProcess("server", "single_transaction.json",
                             other_args="--verbose diag")
+client = r.AddClientProcess("client", "single_transaction.json",
+                            http_ports=[server.Variables.http_port],
+                            https_ports=[server.Variables.https_port],
+                            other_args="--no-proxy --verbose diag")
 
 client.Streams.stdout = Testers.ContainsExpression(
         'Received an HTTP/1 200 response for .*',
@@ -46,10 +48,12 @@ server.Streams.stdout += Testers.ExcludesExpression(
         "There should be no verification errors because there are none added.")
 
 r = Test.AddTestRun("Verify no-proxy mode works for a simple HTTP/2 transaction")
-client = r.AddClientProcess("client-h2", "h2.yaml",
-                            other_args="--no-proxy --verbose diag")
 server = r.AddServerProcess("server-h2", "h2.yaml",
                             other_args="--verbose diag")
+client = r.AddClientProcess("client-h2", "h2.yaml",
+                            http_ports=[server.Variables.http_port],
+                            https_ports=[server.Variables.https_port],
+                            other_args="--no-proxy --verbose diag")
 
 client.Streams.stdout = Testers.ExcludesExpression(
         'h2 is not negotiated',

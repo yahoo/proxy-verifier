@@ -1,6 +1,6 @@
 ``Configuring logging at level DIAG
-``Listening at 127.0.0.1:4443
-``Listening at 127.0.0.1:8081
+``Listening at 127.0.0.1:``
+``Listening at 127.0.0.1:``
 ``Ready with 1 transactions.
 ``an HTTP/1 response to request with key `` with response status 200:
 - "connection": "keep-alive"

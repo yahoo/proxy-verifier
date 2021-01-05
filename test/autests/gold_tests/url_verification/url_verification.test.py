@@ -16,9 +16,10 @@ Verify correct URL verification behavior.
 # Test 1: Verify field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify URL verification works for a simple HTTP transaction")
-client = r.AddClientProcess("client1", "url_verification.yaml", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server1", "url_verification.yaml", http_ports=[8081], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
+client = r.AddClientProcess("client1", "url_verification.yaml", other_args="--verbose diag")
+server = r.AddServerProcess("server1", "url_verification.yaml", other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 # Verify a success and failure of each validation in the request.
 server.Streams.stdout = Testers.ContainsExpression(

@@ -18,11 +18,11 @@ Verify the user can repeat transactions with --repeat.
 #
 r = Test.AddTestRun("Verify transactions are executed once with no --repeat argument.")
 client = r.AddClientProcess("client1", "replay_files/two_files",
-                            http_ports=[8086],
                             other_args="--verbose diag")
 server = r.AddServerProcess("server1", "replay_files/two_files",
-                            http_ports=[8087], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=8086, server_port=8087)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Parsed 8 transactions',
@@ -36,11 +36,11 @@ client.Streams.stdout += Testers.ContainsExpression(
 #
 r = Test.AddTestRun("Verify transactions are executed once with --repeat 1.")
 client = r.AddClientProcess("client2", "replay_files/two_files",
-                            http_ports=[8086],
                             other_args="--verbose diag --repeat 1")
 server = r.AddServerProcess("server2", "replay_files/two_files",
-                            http_ports=[8087], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy2", listen_port=8086, server_port=8087)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Parsed 8 transactions',
@@ -54,11 +54,11 @@ client.Streams.stdout += Testers.ContainsExpression(
 #
 r = Test.AddTestRun("Verify no transactions are executed with --repeat 0.")
 client = r.AddClientProcess("client3", "replay_files/two_files",
-                            http_ports=[8086],
                             other_args="--verbose diag --repeat 0")
 server = r.AddServerProcess("server3", "replay_files/two_files",
-                            http_ports=[8087], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy3", listen_port=8086, server_port=8087)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Parsed 8 transactions',
@@ -72,11 +72,11 @@ client.Streams.stdout += Testers.ContainsExpression(
 #
 r = Test.AddTestRun("Verify transactions are executed twice with --repeat 2.")
 client = r.AddClientProcess("client4", "replay_files/two_files",
-                            http_ports=[8086],
                             other_args="--verbose diag --repeat 2")
 server = r.AddServerProcess("server4", "replay_files/two_files",
-                            http_ports=[8087], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy4", listen_port=8086, server_port=8087)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy4", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Parsed 8 transactions',
@@ -104,11 +104,11 @@ if Condition.IsPlatform("darwin"):
 #
 r = Test.AddTestRun("Verify transactions are executed ten times with --repeat 10.")
 client = r.AddClientProcess("client5", "replay_files/two_files",
-                            http_ports=[8086],
                             other_args="--verbose diag --repeat 10")
 server = r.AddServerProcess("server5", "replay_files/two_files",
-                            http_ports=[8087], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy5", listen_port=8086, server_port=8087)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy5", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
         'Parsed 8 transactions',

@@ -16,9 +16,12 @@ Verify basic HTTP/1.x functionality.
 # Test 1: Verify correct behavior of a single HTTP transaction.
 #
 r = Test.AddTestRun("Verify HTTP/1 processing of a single HTTP transaction")
-client = r.AddClientProcess("client1", "replay_files/single_transaction.yaml", http_ports=[8080], other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/single_transaction.yaml", http_ports=[8081], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=8080, server_port=8081)
+client = r.AddClientProcess("client1", "replay_files/single_transaction.yaml",
+                            other_args="--verbose diag")
+server = r.AddServerProcess("server1", "replay_files/single_transaction.yaml",
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 
 if Condition.IsPlatform("darwin"):
@@ -43,10 +46,11 @@ server.Streams.stdout += Testers.ExcludesExpression(
 #
 r = Test.AddTestRun("Verify HTTP/1 processing of multiple HTTP transactions")
 client = r.AddClientProcess("client2", "replay_files/multiple_transactions",
-                            http_ports=[8082], other_args="--verbose diag")
+                            other_args="--verbose diag")
 server = r.AddServerProcess("server2", "replay_files/multiple_transactions",
-                            http_ports=[8083], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy2", listen_port=8082, server_port=8083)
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 
 client.Streams.stdout = Testers.ContainsExpression(

@@ -16,10 +16,11 @@ Verify basic HTTP/2 functionality.
 #
 r = Test.AddTestRun("Verify HTTP/2 behavior on client-side only")
 client = r.AddClientProcess("client1", "replay_files/http2_to_http1.yaml",
-                            https_ports=[4443], other_args="--verbose diag")
+                            other_args="--verbose diag")
 server = r.AddServerProcess("server1", "replay_files/http2_to_http1.yaml",
-                            https_ports=[4444], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy1", listen_port=4443, server_port=4444,
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_1=True)
 
 if Condition.IsPlatform("darwin"):
@@ -44,10 +45,11 @@ server.Streams.stdout += Testers.ExcludesExpression(
 #
 r = Test.AddTestRun("Verify HTTP/2 behavior on both the client and server sides")
 client = r.AddClientProcess("client2", "replay_files/http2_to_http2.yaml",
-                            https_ports=[4445], other_args="--verbose diag")
+                            other_args="--verbose diag")
 server = r.AddServerProcess("server2", "replay_files/http2_to_http2.yaml",
-                            https_ports=[4446], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy2", listen_port=4445, server_port=4446,
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
 
 if Condition.IsPlatform("darwin"):
@@ -72,10 +74,11 @@ server.Streams.stdout += Testers.ExcludesExpression(
 #
 r = Test.AddTestRun("Verify HTTP/2 field verification")
 client = r.AddClientProcess("client3", "replay_files/http2_to_http2_verification_failures.yaml",
-                            https_ports=[4447], other_args="--verbose diag")
+                            other_args="--verbose diag")
 server = r.AddServerProcess("server3", "replay_files/http2_to_http2_verification_failures.yaml",
-                            https_ports=[4448], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy3", listen_port=4447, server_port=4448,
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
 
 client.ReturnCode = 1
@@ -101,10 +104,11 @@ server.Streams.stdout += Testers.ContainsExpression(
 #
 r = Test.AddTestRun("Verify HTTP/2 behavior on both the client and server sides")
 client = r.AddClientProcess("client4", "replay_files/set_alpn.yaml",
-                            https_ports=[4447], other_args="--verbose diag")
+                            other_args="--verbose diag")
 server = r.AddServerProcess("server4", "replay_files/set_alpn.yaml",
-                            https_ports=[4448], other_args="--verbose diag")
-proxy = r.AddProxyProcess("proxy4", listen_port=4447, server_port=4448,
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy4", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
 
 # The two sessions race with each other, so don't use a gold file here.
