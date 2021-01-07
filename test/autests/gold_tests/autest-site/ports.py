@@ -50,7 +50,7 @@ def PortOpen(port, address=None):
         True if there is a connection currently listening on the port, False if
         there is no server listening on the port currently.
     """
-    ret = False
+    ret = True
     if address is None:
         address = "localhost"
 
@@ -58,26 +58,28 @@ def PortOpen(port, address=None):
 
     try:
         # Try to connect on that port. If we can connect on it, then someone is
-        # listening on that port and therefore the port is open.
-        s = socket.create_connection(address, timeout=.5)
-        s.close()
-        ret = True
-        host.WriteDebug(
-            'PortOpen',
-            "Connection to port {} succeeded, the port is open, "
-            "and a future connection cannot use it".format(port))
+        # listening on that port and therefore the port is open and not usable
+        # by another application.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(address)
+            # Bind succeeded.
+            host.WriteDebug(
+                'PortOpen',
+                "Bind on port {} succeeded, the port is closed "
+                "(no application is listening on it) "
+                "and thus a future connection can use it".format(port))
+            ret = False
+
     except socket.error:
-        s = None
         host.WriteDebug(
             'PortOpen',
-            "socket error for port {0}, port is closed, "
-            "and therefore a future connection can use it".format(port))
+            "socket error binding on port {0}. "
+            "Assume a future connection cannot use it".format(port))
     except socket.timeout:
-        s = None
         host.WriteDebug(
             'PortOpen',
-            "Timeout error for port {0}, port is closed, "
-            "and therefore a future connection can use it".format(port))
+            "Timeout error binding on port {0}. "
+            "Assume a future connection cannot use it".format(port))
 
     return ret
 
