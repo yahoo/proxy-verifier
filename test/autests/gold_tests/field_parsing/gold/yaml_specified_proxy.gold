@@ -1,18 +1,18 @@
 ``
 GET http://example.one/config/settings.yaml HTTP/1.1
+host: example.one
 x-test-header: something
 uuid: 1
-host: example.one
 
 
 ==== REQUEST BODY ====
 b''
 
 HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
 x-test-header: backAtYou
 uuid: 1
-content-length: 16
-content-type: text/html
 
 
 ==== RESPONSE BODY ====
@@ -20,19 +20,19 @@ b'0000000 0000001 '
 
 Connecting to:``
 GET http://example.one/config/settings.yaml HTTP/1.1
+host: example.one
 x-another-header: request
 uuid: 2
-host: example.one
 
 
 ==== REQUEST BODY ====
 b''
 
 HTTP/1.1 200 OK
+content-type: text/html
+content-length: 32
 x-another-response: response
 uuid: 2
-content-length: 32
-content-type: text/html
 
 
 ==== RESPONSE BODY ====

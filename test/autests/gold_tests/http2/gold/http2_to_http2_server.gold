@@ -5,23 +5,31 @@
 - ":scheme": "https"
 - ":authority": "example.data.com"
 - ":path": "/a/path?q=3"
+- "accept": "*/*"
+- "accept-language": "en-us"
 - "accept-encoding": "gzip"
 - "host": "example.data.com"
-- "accept": "*/*"
-- "uuid": "1"
+- "x-test-duplicate-combined": "first"
+- "x-test-duplicate-combined": "second"
+- "x-test-duplicate-separate": "first"
+- "x-test-duplicate-separate": "second"
 - "content-length": "0"
-- "accept-language": "en-us"
+- "uuid": "1"
 
 ``
 ``in an HTTP/2 response to request with key 1 with response status 200:
 - ":status": "200"
-- "uuid": "1"
-- "age": "0"
-- "date": "Sat, 16 Mar 2019 01:13:21 GMT"
-- "content-encoding": "gzip"
 - "cache-control": "private"
-- "content-length": "16"
+- "content-encoding": "gzip"
 - "content-type": "application/json;charset=utf-8"
+- "content-length": "16"
+- "date": "Sat, 16 Mar 2019 01:13:21 GMT"
+- "age": "0"
+- "x-test-duplicate-combined": "one"
+- "x-test-duplicate-combined": "two"
+- "x-test-duplicate-separate": "one"
+- "x-test-duplicate-separate": "two"
+- "uuid": "1"
 
 ``
 ``Received an HTTP/2 request for stream id 3:
@@ -29,25 +37,25 @@
 - ":scheme": "https"
 - ":authority": "example.data.com"
 - ":path": "/a/path"
-- "x-added-header": "1"
 - "x-request-header": "request"
 - "uuid": "2"
+- "x-added-header": "1"
 
-``Presence Success: Key: "2", Field Name: "x-added-header", Value: "1"
+``Equals Success: Key: "2", Field Name: ":authority", Value: "example.data.com"
 ``Equals Success: Key: "2", Field Name: ":method", Value: "POST"
 ``Equals Success: Key: "2", Field Name: ":scheme", Value: "https"
-``Equals Success: Key: "2", Field Name: ":authority", Value: "example.data.com"
 ``Absence Success: Key: "2", Field Name: "content-length"
+``Presence Success: Key: "2", Field Name: "x-added-header", Value: "1"
 ``Absence Success: Key: "2", Field Name: "x-deleted-header"
 ``Presence Success: Key: "2", Field Name: "x-request-header", Value: "request"
 ``
 ``in an HTTP/2 response to request with key 2 with response status 500:
 - ":status": "500"
-- "uuid": "2"
-- "x-proxy-directive": "Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>"
-- "x-response-header": "response"
 - "x-equal-header": "some_content"
+- "x-response-header": "response"
 - "x-deleted-header2": "this_will_be_deleted"
+- "x-proxy-directive": "Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>"
+- "uuid": "2"
 
 ``
 ``Received an HTTP/2 request for stream id 5:
@@ -61,8 +69,8 @@
 ``
 ``in an HTTP/2 response to request with key 3 with response status 200:
 - ":status": "200"
-- "uuid": "3"
 - "x-response-header": "response"
+- "uuid": "3"
 
 ``
 ``Received an HTTP/2 request for stream id 7:
@@ -76,8 +84,8 @@
 ``
 ``in an HTTP/2 response to request with key 4 with response status 200:
 - ":status": "200"
-- "uuid": "4"
-- "content-length": "0"
 - "x-response-header": "response"
+- "content-length": "0"
+- "uuid": "4"
 
 ``

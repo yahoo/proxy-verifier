@@ -23,11 +23,6 @@ server = r.AddServerProcess("server1", "replay_files/empty_proxy.yaml",
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
-if Condition.IsPlatform("darwin"):
-    proxy.Streams.stdout = "gold/empty_proxy_proxy.gold_macos"
-    client.Streams.stdout = "gold/empty_proxy_client.gold_macos"
-    server.Streams.stdout = "gold/empty_proxy_server.gold_macos"
-else:
-    proxy.Streams.stdout = "gold/empty_proxy_proxy.gold"
-    client.Streams.stdout = "gold/empty_proxy_client.gold"
-    server.Streams.stdout = "gold/empty_proxy_server.gold"
+proxy.Streams.stdout = "gold/empty_proxy_proxy.gold"
+client.Streams.stdout = "gold/empty_proxy_client.gold"
+server.Streams.stdout = "gold/empty_proxy_server.gold"

@@ -1,8 +1,8 @@
 ``
 ``Sent the following HTTP/1 GET request:
-- "uuid": "1"
-- "x-test-request": "request"
 - "host": "example.one"
+- "x-test-request": "request"
+- "uuid": "1"
 
 ``
 ``Received an HTTP/1 200 response for key 1 with headers:

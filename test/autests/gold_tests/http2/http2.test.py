@@ -23,14 +23,9 @@ proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_1=True)
 
-if Condition.IsPlatform("darwin"):
-    proxy.Streams.stdout = "gold/http2_to_http1_proxy.gold_macos"
-    client.Streams.stdout = "gold/http2_to_http1_client.gold_macos"
-    server.Streams.stdout = "gold/http2_to_http1_server.gold_macos"
-else:
-    proxy.Streams.stdout = "gold/http2_to_http1_proxy.gold"
-    client.Streams.stdout = "gold/http2_to_http1_client.gold"
-    server.Streams.stdout = "gold/http2_to_http1_server.gold"
+proxy.Streams.stdout = "gold/http2_to_http1_proxy.gold"
+client.Streams.stdout = "gold/http2_to_http1_client.gold"
+server.Streams.stdout = "gold/http2_to_http1_server.gold"
 
 client.Streams.stdout += Testers.ExcludesExpression(
         "Violation:",
@@ -52,14 +47,9 @@ proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
 
-if Condition.IsPlatform("darwin"):
-    proxy.Streams.stdout = "gold/http2_to_http2_proxy.gold_macos"
-    client.Streams.stdout = "gold/http2_to_http2_client.gold_macos"
-    server.Streams.stdout = "gold/http2_to_http2_server.gold_macos"
-else:
-    proxy.Streams.stdout = "gold/http2_to_http2_proxy.gold"
-    client.Streams.stdout = "gold/http2_to_http2_client.gold"
-    server.Streams.stdout = "gold/http2_to_http2_server.gold"
+proxy.Streams.stdout = "gold/http2_to_http2_proxy.gold"
+client.Streams.stdout = "gold/http2_to_http2_client.gold"
+server.Streams.stdout = "gold/http2_to_http2_server.gold"
 
 client.Streams.stdout += Testers.ExcludesExpression(
         "Violation:",

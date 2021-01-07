@@ -4,25 +4,33 @@
 :scheme: https
 :path: /a/path?q=3
 :authority: example.data.com
-content-length: 0
-uuid: 1
 accept: */*
 accept-language: en-us
-host: example.data.com
 accept-encoding: gzip
+host: example.data.com
+x-test-duplicate-combined: first
+x-test-duplicate-combined: second
+x-test-duplicate-separate: first
+x-test-duplicate-separate: second
+content-length: 0
+uuid: 1
 
 ==== RESPONSE ====
 200 
 
 ==== RESPONSE HEADERS ====
 :status: 200
-uuid: 1
-age: 0
-date: Sat, 16 Mar 2019 01:13:21 GMT
-content-encoding: gzip
 cache-control: private
-content-length: 16
+content-encoding: gzip
 content-type: application/json;charset=utf-8
+content-length: 16
+date: Sat, 16 Mar 2019 01:13:21 GMT
+age: 0
+x-test-duplicate-combined: one
+x-test-duplicate-combined: two
+x-test-duplicate-separate: one
+x-test-duplicate-separate: two
+uuid: 1
 
 ==== RESPONSE BODY ====
 b'0000000 0000001 '
@@ -32,8 +40,8 @@ b'0000000 0000001 '
 :scheme: https
 :path: /a/path
 :authority: example.data.com
-uuid: 2
 x-request-header: request
+uuid: 2
 X-Added-Header: 1
 
 ==== RESPONSE ====
@@ -41,9 +49,9 @@ X-Added-Header: 1
 
 ==== RESPONSE HEADERS ====
 :status: 500
-uuid: 2
-x-response-header: response
 x-equal-header: some_content
+x-response-header: response
+uuid: 2
 x-added-header: 1
 
 ==== RESPONSE BODY ====
@@ -54,16 +62,16 @@ b''
 :scheme: https
 :path: /b/path
 :authority: example.data.com
-uuid: 3
 x-request-header: test_request
+uuid: 3
 
 ==== RESPONSE ====
 200 
 
 ==== RESPONSE HEADERS ====
 :status: 200
-uuid: 3
 x-response-header: response
+uuid: 3
 
 ==== RESPONSE BODY ====
 b''
@@ -73,17 +81,17 @@ b''
 :scheme: https
 :path: /b/path
 :authority: example.data.com
-uuid: 4
 x-request-header: test_request
+uuid: 4
 
 ==== RESPONSE ====
 200 
 
 ==== RESPONSE HEADERS ====
 :status: 200
-uuid: 4
-content-length: 0
 x-response-header: response
+content-length: 0
+uuid: 4
 
 ==== RESPONSE BODY ====
 b''

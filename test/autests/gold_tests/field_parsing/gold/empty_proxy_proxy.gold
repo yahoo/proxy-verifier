@@ -1,18 +1,18 @@
 ``
 GET http://example.one/config/settings.yaml HTTP/1.1
+host: example.one
 x-request: testRequest
 uuid: 1
-host: example.one
 
 
 ==== REQUEST BODY ====
 b''
 
 HTTP/1.1 200 OK
-uuid: 1
-x-response: testResponse
-content-length: 16
 content-type: text/html
+content-length: 16
+x-response: testResponse
+uuid: 1
 
 
 ==== RESPONSE BODY ====

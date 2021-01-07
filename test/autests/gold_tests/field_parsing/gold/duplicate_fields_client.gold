@@ -1,22 +1,22 @@
 ``
 ``Sent the following HTTP/1 GET request:
-- "uuid": "1"
 - "host": "example.one"
-- "x-request-sequence": "second"
-- "x-request-sequence": "first"
-- "x-test-request": "second"
 - "x-test-request": "first"
+- "x-test-request": "second"
+- "x-request-sequence": "first"
+- "x-request-sequence": "second"
+- "uuid": "1"
 
 ``
 ``Received an HTTP/1 200 response for key 1 with headers:
+- "content-type": "text/html"
+- "content-length": "16"
 - "x-test-response": "first"
 - "x-test-response": "second"
 - "x-test-response": "third"
-- "content-length": "16"
-- "content-type": "text/html"
-- "uuid": "1"
 - "x-response-sequence": "first"
 - "x-response-sequence": "second"
 - "x-response-sequence": "third"
+- "uuid": "1"
 
 ``
