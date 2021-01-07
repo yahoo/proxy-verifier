@@ -22,13 +22,8 @@ client = r.AddClientProcess("client1", "replay_files/single_transaction.yaml",
                             use_ipv6=True, http_ports=[server.Variables.http_port],
                             other_args="--no-proxy --verbose diag")
 
-
-if Condition.IsPlatform("darwin"):
-    client.Streams.stdout = "gold/single_transaction_client.gold_macos"
-    server.Streams.stdout = "gold/single_transaction_server.gold_macos"
-else:
-    client.Streams.stdout = "gold/single_transaction_client.gold"
-    server.Streams.stdout = "gold/single_transaction_server.gold"
+client.Streams.stdout = "gold/single_transaction_client.gold"
+server.Streams.stdout = "gold/single_transaction_server.gold"
 
 client.Streams.stdout += Testers.ExcludesExpression(
         "Violation:",

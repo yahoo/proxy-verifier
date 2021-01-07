@@ -1,20 +1,20 @@
 ``
 ``Sent the following HTTP/1 POST request:
-- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
-- "accept-encoding": "gzip"
 - "content-type": "application/json; charset=utf-8"
 - "content-length": "10"
 - "host": "example.com"
 - "connection": "Keep-Alive"
+- "accept-encoding": "gzip"
+- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
 
 ``
 ``Received an HTTP/1 200 response for key cb9b4e94-5d42-43d4-8545-320033298ba2-214279439 with headers:
-- "connection": "keep-alive"
-- "age": "1"
-- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
-- "content-length": "12"
 - "content-type": "multipart/form-data;snoopy=123456"
 - "date": "Sat, 16 Mar 2019 01:33:27 GMT"
+- "age": "1"
+- "connection": "keep-alive"
+- "content-length": "12"
+- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
 
 ``
 ``Connecting via TLS.

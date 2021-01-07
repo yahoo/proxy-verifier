@@ -201,9 +201,7 @@ ReplayFileHandler::parse_for_protocol_node(
 {
   swoc::Rv<YAML::Node const> desired_node = YAML::Node{YAML::NodeType::Undefined};
   if (!protocol_node.IsSequence()) {
-    desired_node.error(
-        "Protocol node at {} is not a sequence as required.",
-        protocol_node.Mark());
+    desired_node.error("Protocol node at {} is not a sequence as required.", protocol_node.Mark());
     return desired_node;
   }
   if (protocol_node.size() == 0) {
@@ -407,9 +405,7 @@ TLSSession::read(swoc::MemSpan<char> span)
       zret.error(R"(Failed SSL_read poll for TLS content: {}.)", swoc::bwf::Errno{});
       this->close();
     } else if (poll_return == 0) {
-      zret.error(
-          "SSL_read timed out waiting to TLS content after {} milliseconds.",
-          Poll_Timeout);
+      zret.error("SSL_read timed out waiting to TLS content after {} milliseconds.", Poll_Timeout);
       this->close();
     } else if (poll_return < 0) {
       this->close();
@@ -762,10 +758,7 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::T
           num_drained_body_bytes.result(),
           expected_content_size);
     }
-    num_drained_body_bytes.diag(
-        "Drained body of {} bytes with content: {}",
-        body.size(),
-        body);
+    num_drained_body_bytes.diag("Drained body of {} bytes with content: {}", body.size(), body);
   }
   return num_drained_body_bytes;
 }
@@ -851,10 +844,7 @@ Session::write_body(HttpHeader const &hdr)
     // will result in the client needing to reconnect more frequently than it
     // would otherwise need to, but we have logic for handling this in
     // run_transaction.
-    bytes_written.diag(
-        "No CL or TE, status {}: closing conection for key {}.",
-        hdr._status,
-        key);
+    bytes_written.diag("No CL or TE, status {}: closing conection for key {}.", hdr._status, key);
     close();
   }
 
@@ -1954,6 +1944,7 @@ on_header_callback(
       request_headers->_path = value_view;
     }
     request_headers->_fields_rules->_fields.emplace(name_view, value_view);
+    request_headers->_fields_rules->_fields_sequence.push_back({name_view, value_view});
     break;
   }
 
@@ -1964,6 +1955,7 @@ on_header_callback(
       response_headers->_status_string = std::string(value_view);
     }
     response_headers->_fields_rules->_fields.emplace(name_view, value_view);
+    response_headers->_fields_rules->_fields_sequence.push_back({name_view, value_view});
     // See if we are expecting a 100 response.
     if (stream_state->_wait_for_continue) {
       if (name_view == ":status" && value_view == "100") {
@@ -3095,7 +3087,7 @@ RuleCheck::options_init()
 
   duplicate_field_options = DuplicateFieldRuleOptions();
   using duplicate_field_function_type =
-      std::shared_ptr<RuleCheck> (*)(swoc::TextView, std::list<swoc::TextView> &&);
+      std::shared_ptr<RuleCheck> (*)(swoc::TextView, std::vector<swoc::TextView> &&);
   duplicate_field_options[swoc::TextView(YAML_RULE_EQUALS)] =
       static_cast<duplicate_field_function_type>(make_equality);
   duplicate_field_options[swoc::TextView(YAML_RULE_PRESENCE)] =
@@ -3145,7 +3137,7 @@ RuleCheck::make_rule_check(
 std::shared_ptr<RuleCheck>
 RuleCheck::make_rule_check(
     swoc::TextView localized_name,
-    std::list<swoc::TextView> &&localized_values,
+    std::vector<swoc::TextView> &&localized_values,
     swoc::TextView rule_type)
 {
   swoc::Errata errata;
@@ -3171,7 +3163,7 @@ RuleCheck::make_equality(YamlUrlPart url_part, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_equality(swoc::TextView name, std::list<swoc::TextView> &&values)
+RuleCheck::make_equality(swoc::TextView name, std::vector<swoc::TextView> &&values)
 {
   return std::shared_ptr<RuleCheck>(new EqualityCheck(name, std::move(values)));
 }
@@ -3189,7 +3181,7 @@ RuleCheck::make_presence(YamlUrlPart url_part, swoc::TextView /* value */)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_presence(swoc::TextView name, std::list<swoc::TextView> && /* values */)
+RuleCheck::make_presence(swoc::TextView name, std::vector<swoc::TextView> && /* values */)
 {
   return std::shared_ptr<RuleCheck>(new PresenceCheck(name, EXPECTS_DUPLICATE_FIELDS));
 }
@@ -3207,7 +3199,7 @@ RuleCheck::make_absence(YamlUrlPart url_part, swoc::TextView /* value */)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_absence(swoc::TextView name, std::list<swoc::TextView> && /* values */)
+RuleCheck::make_absence(swoc::TextView name, std::vector<swoc::TextView> && /* values */)
 {
   return std::shared_ptr<RuleCheck>(new AbsenceCheck(name, EXPECTS_DUPLICATE_FIELDS));
 }
@@ -3225,7 +3217,7 @@ RuleCheck::make_contains(YamlUrlPart url_part, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_contains(swoc::TextView name, std::list<swoc::TextView> &&values)
+RuleCheck::make_contains(swoc::TextView name, std::vector<swoc::TextView> &&values)
 {
   return std::shared_ptr<RuleCheck>(new ContainsCheck(name, std::move(values)));
 }
@@ -3243,7 +3235,7 @@ RuleCheck::make_prefix(YamlUrlPart url_part, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_prefix(swoc::TextView name, std::list<swoc::TextView> &&values)
+RuleCheck::make_prefix(swoc::TextView name, std::vector<swoc::TextView> &&values)
 {
   return std::shared_ptr<RuleCheck>(new PrefixCheck(name, std::move(values)));
 }
@@ -3261,7 +3253,7 @@ RuleCheck::make_suffix(YamlUrlPart url_part, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_suffix(swoc::TextView name, std::list<swoc::TextView> &&values)
+RuleCheck::make_suffix(swoc::TextView name, std::vector<swoc::TextView> &&values)
 {
   return std::shared_ptr<RuleCheck>(new SuffixCheck(name, std::move(values)));
 }
@@ -3280,7 +3272,7 @@ EqualityCheck::EqualityCheck(YamlUrlPart url_part, swoc::TextView value)
   _is_field = false;
 }
 
-EqualityCheck::EqualityCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
+EqualityCheck::EqualityCheck(swoc::TextView name, std::vector<swoc::TextView> &&values)
 {
   _name = name;
   _values = std::move(values);
@@ -3328,7 +3320,7 @@ ContainsCheck::ContainsCheck(YamlUrlPart url_part, swoc::TextView value)
   _is_field = false;
 }
 
-ContainsCheck::ContainsCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
+ContainsCheck::ContainsCheck(swoc::TextView name, std::vector<swoc::TextView> &&values)
 {
   _name = name;
   _values = std::move(values);
@@ -3350,7 +3342,7 @@ PrefixCheck::PrefixCheck(YamlUrlPart url_part, swoc::TextView value)
   _is_field = false;
 }
 
-PrefixCheck::PrefixCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
+PrefixCheck::PrefixCheck(swoc::TextView name, std::vector<swoc::TextView> &&values)
 {
   _name = name;
   _values = std::move(values);
@@ -3372,7 +3364,7 @@ SuffixCheck::SuffixCheck(YamlUrlPart url_part, swoc::TextView value)
   _is_field = false;
 }
 
-SuffixCheck::SuffixCheck(swoc::TextView name, std::list<swoc::TextView> &&values)
+SuffixCheck::SuffixCheck(swoc::TextView name, std::vector<swoc::TextView> &&values)
 {
   _name = name;
   _values = std::move(values);
@@ -3415,7 +3407,7 @@ bool
 EqualityCheck::test(
     swoc::TextView key,
     swoc::TextView name,
-    std::list<swoc::TextView> const &values) const
+    std::vector<swoc::TextView> const &values) const
 {
   swoc::Errata errata;
   if (name.empty()) {
@@ -3472,7 +3464,7 @@ bool
 PresenceCheck::test(
     swoc::TextView key,
     swoc::TextView name,
-    std::list<swoc::TextView> const &values) const
+    std::vector<swoc::TextView> const &values) const
 {
   swoc::Errata errata;
   if (name.empty()) {
@@ -3506,8 +3498,10 @@ AbsenceCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value
 }
 
 bool
-AbsenceCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
-    const
+AbsenceCheck::test(
+    swoc::TextView key,
+    swoc::TextView name,
+    std::vector<swoc::TextView> const &values) const
 {
   swoc::Errata errata;
   if (!name.empty()) {
@@ -3563,8 +3557,10 @@ SubstrCheck::test(swoc::TextView key, swoc::TextView name, swoc::TextView value)
 }
 
 bool
-SubstrCheck::test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
-    const
+SubstrCheck::test(
+    swoc::TextView key,
+    swoc::TextView name,
+    std::vector<swoc::TextView> const &values) const
 {
   swoc::Errata errata;
   if (name.empty() || values.size() != _values.size()) {
@@ -3705,7 +3701,7 @@ HttpHeader::serialize(swoc::BufferWriter &w) const
     errata.error(R"(Unable to write header: could not determine request/response state.)");
   }
 
-  for (auto const &[name, value] : _fields_rules->_fields) {
+  for (auto const &[name, value] : _fields_rules->_fields_sequence) {
     w.write(name).write(": ").write(value).write(HTTP_EOL);
   }
   w.write(HTTP_EOL);
@@ -3713,11 +3709,19 @@ HttpHeader::serialize(swoc::BufferWriter &w) const
   return errata;
 }
 
+HttpFields::HttpFields()
+{
+  _fields_sequence.reserve(num_fields_to_reserve);
+}
+
 void
 HttpFields::merge(HttpFields const &other)
 {
   for (auto const &field : other._fields) {
     _fields.emplace(field.first, field.second);
+  }
+  for (auto const &field : other._fields_sequence) {
+    _fields_sequence.push_back({field.name, field.value});
   }
   for (auto const &rule : other._rules) {
     _rules.emplace(rule.first, rule.second);
@@ -3826,6 +3830,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
       // There's only a single value associated with this field name.
       TextView value{HttpHeader::localize(node[YAML_RULE_DATA_KEY].Scalar())};
       _fields.emplace(name, value);
+      _fields_sequence.push_back({name, value});
       if (node_size == 2 && assume_equality_rule) {
         _rules.emplace(name, RuleCheck::make_equality(name, value));
       } else if (node_size == 3) {
@@ -3842,11 +3847,13 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
     } else if (ValueNode.IsSequence()) {
       // There's a list of values associated with this field. This
       // indicates duplicate fields for the same field name.
-      std::list<TextView> values;
+      std::vector<TextView> values;
+      values.reserve(ValueNode.size());
       for (auto const &value : ValueNode) {
         TextView localized_value{HttpHeader::localize(value.Scalar())};
         values.emplace_back(localized_value);
         _fields.emplace(name, localized_value);
+        _fields_sequence.push_back({name, localized_value});
       }
       if (node_size == 2 && assume_equality_rule) {
         _rules.emplace(name, RuleCheck::make_equality(name, std::move(values)));
@@ -3871,7 +3878,7 @@ void
 HttpFields::add_fields_to_ngnva(nghttp2_nv *l) const
 {
   int offset = 0;
-  for (auto const &[key, value] : _fields) {
+  for (auto const &[key, value] : _fields_sequence) {
     if (key.starts_with(":")) {
       // Pseudo header fields are handled specially via the _method, _status
       // HttpHeader member variables. This provides continuity in
@@ -4359,15 +4366,15 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
     auto field_iter = name_range.first;
     if (rule_check->expects_duplicate_fields()) {
       if (field_iter == name_range.second) {
-        if (!rule_check->test(transaction_key, swoc::TextView(), std::list<TextView>{})) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), std::vector<TextView>{})) {
           // We supply the empty name and value for the absence check which
           // expects this to indicate an absent field.
           issue_exists = true;
         }
       } else {
-        std::list<TextView> values;
+        std::vector<TextView> values;
         while (field_iter != name_range.second) {
-          values.push_back(field_iter->second);
+          values.emplace_back(field_iter->second);
           ++field_iter;
         }
         if (!rule_check->test(transaction_key, name, values)) {
@@ -4538,6 +4545,7 @@ HttpHeader::parse_request(swoc::TextView data)
         value.trim_if(&isspace);
         if (name) {
           _fields_rules->_fields.emplace(name, value);
+          _fields_rules->_fields_sequence.push_back({name, value});
           if (icompare(name, "expect") && icompare(value, "100-continue")) {
             _send_continue = true;
           }
@@ -4589,6 +4597,7 @@ HttpHeader::parse_response(swoc::TextView data)
         value.trim_if(&isspace);
         if (name) {
           _fields_rules->_fields.emplace(name, value);
+          _fields_rules->_fields_sequence.push_back({name, value});
         } else {
           zret = PARSE_ERROR;
           zret.error(R"(Malformed field "{}".)", field);
@@ -4639,7 +4648,7 @@ bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
     }
   } else {
   }
-  for (auto const &[key, value] : h._fields_rules->_fields) {
+  for (auto const &[key, value] : h._fields_rules->_fields_sequence) {
     if (key.starts_with(":")) {
       // Pseudo headers are handled specially above. Do not reprint them here.
       continue;
@@ -4982,10 +4991,7 @@ Resolve_FQDN(swoc::TextView fqdn)
             zret.result().port() = port;
             freeaddrinfo(addrs);
           } else {
-            zret.error(
-                R"(Failed to resolve "{}": {}.)",
-                host_str,
-                swoc::bwf::Errno(result));
+            zret.error(R"(Failed to resolve "{}": {}.)", host_str, swoc::bwf::Errno(result));
           }
         }
       } else {

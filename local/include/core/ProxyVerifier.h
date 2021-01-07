@@ -19,6 +19,7 @@
 #include <thread>
 #include <vector>
 #include <unistd.h>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -262,6 +263,15 @@ struct Hash
   }
 };
 
+struct CaseInsensitiveCompare
+{
+  bool
+  operator()(swoc::TextView const &lhs, swoc::TextView const &rhs) const
+  {
+    return strcasecmp(lhs, rhs) < 0;
+  }
+};
+
 class RuleCheck
 {
   /// References the make_* functions below.
@@ -280,7 +290,7 @@ class RuleCheck
                                           ///< "absence", "contains", "prefix", "or "suffix")
 
   using MakeDuplicateFieldRuleFunction =
-      std::function<std::shared_ptr<RuleCheck>(swoc::TextView, std::list<swoc::TextView> &&)>;
+      std::function<std::shared_ptr<RuleCheck>(swoc::TextView, std::vector<swoc::TextView> &&)>;
   using DuplicateFieldRuleOptions =
       std::unordered_map<swoc::TextView, MakeDuplicateFieldRuleFunction, Hash, Hash>;
   static DuplicateFieldRuleOptions
@@ -336,7 +346,7 @@ public:
    */
   static std::shared_ptr<RuleCheck> make_rule_check(
       swoc::TextView localized_name,
-      std::list<swoc::TextView> &&localized_values,
+      std::vector<swoc::TextView> &&localized_values,
       swoc::TextView rule_type);
 
   /** Generate @a EqualityCheck, invoked by the factory function when the
@@ -366,7 +376,7 @@ public:
    */
   static std::shared_ptr<RuleCheck> make_equality(
       swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+      std::vector<swoc::TextView> &&values);
 
   /** Generate @a PresenceCheck, invoked by the factory function when the
    * "absence" flag is present.
@@ -395,7 +405,7 @@ public:
    */
   static std::shared_ptr<RuleCheck> make_presence(
       swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+      std::vector<swoc::TextView> &&values);
 
   /** Generate @a AbsenceCheck, invoked by the factory function when the
    * "absence" flag is present.
@@ -424,7 +434,7 @@ public:
    */
   static std::shared_ptr<RuleCheck> make_absence(
       swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+      std::vector<swoc::TextView> &&values);
 
   /** Generate @a ContainsCheck, invoked by the factory function when the
    * "contains" flag is present.
@@ -453,7 +463,7 @@ public:
    */
   static std::shared_ptr<RuleCheck> make_contains(
       swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+      std::vector<swoc::TextView> &&values);
 
   /** Generate @a PrefixCheck, invoked by the factory function when the
    * "prefix" flag is present.
@@ -482,7 +492,7 @@ public:
    */
   static std::shared_ptr<RuleCheck> make_prefix(
       swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+      std::vector<swoc::TextView> &&values);
 
   /** Generate @a SuffixCheck, invoked by the factory function when the
    * "suffix" flag is present.
@@ -511,7 +521,7 @@ public:
    */
   static std::shared_ptr<RuleCheck> make_suffix(
       swoc::TextView name,
-      std::list<swoc::TextView> &&values);
+      std::vector<swoc::TextView> &&values);
 
   /** Pure virtual function to test whether the input name and value fulfill the
    * rules for the test
@@ -527,7 +537,7 @@ public:
   virtual bool test(
       swoc::TextView transaction_key,
       swoc::TextView name,
-      const std::list<swoc::TextView> &values) const = 0;
+      const std::vector<swoc::TextView> &values) const = 0;
 
   /** Indicate whether this RuleCheck needs to inspect field values.
    *
@@ -577,7 +587,7 @@ public:
    * @param value The associated values with the target field,
    * that is used with strcasecmp comparisons
    */
-  EqualityCheck(swoc::TextView name, std::list<swoc::TextView> &&values);
+  EqualityCheck(swoc::TextView name, std::vector<swoc::TextView> &&values);
 
   /** Test whether the name and value both match the expected name and value
    * per the values instantiated in construction.
@@ -601,7 +611,7 @@ public:
    * @param values The values of the target field (null if not found)
    * @return Whether the check was successful or not
    */
-  bool test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+  bool test(swoc::TextView key, swoc::TextView name, std::vector<swoc::TextView> const &values)
       const override;
 
   /** Whether this Rule is configured for duplicate fields.
@@ -617,7 +627,7 @@ public:
 
 private:
   swoc::TextView _value;                  ///< Only EqualityChecks require value comparisons.
-  std::list<swoc::TextView> _values;      ///< Only EqualityChecks require value comparisons.
+  std::vector<swoc::TextView> _values;    ///< Only EqualityChecks require value comparisons.
   bool _expects_duplicate_fields = false; ///< Whether the Rule is configured for duplicate fields.
 };
 
@@ -653,7 +663,7 @@ public:
    * @param values (unused) The valuas of the target field (null
    * if not found)
    */
-  bool test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+  bool test(swoc::TextView key, swoc::TextView name, std::vector<swoc::TextView> const &values)
       const override;
 
   /** Whether this Rule is configured for duplicate fields.
@@ -707,7 +717,7 @@ public:
    * @param values (unused) The value of the target field (null
    * if not found)
    */
-  bool test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+  bool test(swoc::TextView key, swoc::TextView name, std::vector<swoc::TextView> const &values)
       const override;
 
   /** Whether this Rule is configured for duplicate fields.
@@ -755,7 +765,7 @@ public:
    * @param values The values of the target field (null if not found)
    * @return Whether the check was successful or not
    */
-  bool test(swoc::TextView key, swoc::TextView name, std::list<swoc::TextView> const &values)
+  bool test(swoc::TextView key, swoc::TextView name, std::vector<swoc::TextView> const &values)
       const override;
 
   /** Returns the name of the test for debug messages, such as "contains"
@@ -768,7 +778,7 @@ public:
 
 protected:
   swoc::TextView _value;                  ///< SubstrChecks require value comparisons.
-  std::list<swoc::TextView> _values;      ///< SubstrChecks require value comparisons.
+  std::vector<swoc::TextView> _values;    ///< SubstrChecks require value comparisons.
   bool _expects_duplicate_fields = false; ///< Whether the Rule is configured for duplicate fields.
 };
 
@@ -799,7 +809,7 @@ public:
    * @param value The associated "contains" values with the target field,
    * that is used with strcasecmp comparisons
    */
-  ContainsCheck(swoc::TextView name, std::list<swoc::TextView> &&values);
+  ContainsCheck(swoc::TextView name, std::vector<swoc::TextView> &&values);
 
   /** Whether this Rule is configured for duplicate fields.
    *
@@ -848,7 +858,7 @@ public:
    * @param value The associated values with the target field,
    * that is used with strcasecmp comparisons
    */
-  PrefixCheck(swoc::TextView name, std::list<swoc::TextView> &&values);
+  PrefixCheck(swoc::TextView name, std::vector<swoc::TextView> &&values);
 
   /** Whether this Rule is configured for duplicate fields.
    *
@@ -897,7 +907,7 @@ public:
    * @param value The associated "suffix" values with the target field,
    * that is used with strcasecmp comparisons
    */
-  SuffixCheck(swoc::TextView name, std::list<swoc::TextView> &&values);
+  SuffixCheck(swoc::TextView name, std::vector<swoc::TextView> &&values);
 
   /** Whether this Rule is configured for duplicate fields.
    *
@@ -923,12 +933,42 @@ class HttpFields
 {
   using self_type = HttpFields;
   /// Contains the RuleChecks for given field names.
-  using Rules = std::unordered_multimap<swoc::TextView, std::shared_ptr<RuleCheck>, Hash, Hash>;
-  using Fields = std::unordered_multimap<swoc::TextView, std::string, Hash, Hash>;
+
+  // For both of these, these must be the ordered multimap because duplicate
+  // field verification requires that we verify the correct order of the field
+  // values.
+  using Rules = std::multimap<swoc::TextView, std::shared_ptr<RuleCheck>, CaseInsensitiveCompare>;
+  using Fields = std::multimap<swoc::TextView, std::string, CaseInsensitiveCompare>;
+
+  struct Field
+  {
+    swoc::TextView name;
+    swoc::TextView value;
+  };
+  using FieldsSequence = std::vector<Field>;
 
 public:
+  HttpFields();
+
   Rules _rules;   ///< Maps field names to functors.
   Fields _fields; ///< Maps field names to values.
+
+  /** The ordered set of fields in which the request or response fields should
+   * be sent as specifed by the YAML replay file, or the ordered fields in the
+   * request or response as received by the Proxy.
+   */
+  FieldsSequence _fields_sequence;
+
+  /** The capacity to reserve up front for _fields_sequnce.
+   *
+   * An analysis of 1.2 million messages from production traffic showed that
+   * 94% of HTTP request and response messages had 30 or less fields.
+   * _fields_sequence is a list of std::string_view tuples, so they are
+   * relatively small. Thus reserving this space ahead of time is a cheap cost
+   * to pay for the potential performance benefit of avoiding reallocations.
+   */
+  static constexpr auto num_fields_to_reserve = 30;
+
   std::vector<std::shared_ptr<RuleCheck>> _url_rules[static_cast<size_t>(
       YamlUrlPart::YamlUrlPartCount)]; ///< Maps URL part names to functors.
   swoc::TextView _url_parts[static_cast<size_t>(

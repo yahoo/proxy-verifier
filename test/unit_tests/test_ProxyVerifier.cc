@@ -143,17 +143,17 @@ TEST_CASE("RuleChecks of non-duplicate fields", "[RuleCheck]")
 TEST_CASE("RuleChecks of duplicate fields", "[RuleCheck]")
 {
   swoc::TextView test_name("testName");
-  std::list<swoc::TextView> expected_values_arg{
+  std::vector<swoc::TextView> expected_values_arg{
       "first_value",
       "second_value",
   };
-  std::list<swoc::TextView> expected_values{
+  std::vector<swoc::TextView> expected_values{
       "first_value",
       "second_value",
   };
   swoc::TextView empty_name;
-  std::list<swoc::TextView> empty_values_arg;
-  std::list<swoc::TextView> empty_values;
+  std::vector<swoc::TextView> empty_values_arg;
+  std::vector<swoc::TextView> empty_values;
 
   RuleCheck::options_init();
 
@@ -194,13 +194,13 @@ TEST_CASE("RuleChecks of duplicate fields", "[RuleCheck]")
     CHECK(equal_check_not_blank->test(key, test_name, expected_values));
 
     // Subsets of the expected values are not enough.
-    std::list<swoc::TextView> subset_values{
+    std::vector<swoc::TextView> subset_values{
         "first_value",
     };
     CHECK_FALSE(equal_check_not_blank->test(key, test_name, subset_values));
 
     // Order matters.
-    std::list<swoc::TextView> re_arranged_values{
+    std::vector<swoc::TextView> re_arranged_values{
         "second_value",
         "first_value",
     };

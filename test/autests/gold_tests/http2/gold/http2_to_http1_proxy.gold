@@ -4,25 +4,25 @@
 :scheme: https
 :path: /a/path
 :authority: example.data.com
-uuid: 1
 accept: */*
 accept-language: en-us
-host: example.data.com
 accept-encoding: gzip
+host: example.data.com
+uuid: 1
 
 ==== RESPONSE ====
 200 OK
 
 ==== RESPONSE HEADERS ====
 :status: 200
-uuid: 1
-connection: keep-alive
-age: 0
-date: Sat, 16 Mar 2019 01:13:21 GMT
-content-encoding: gzip
 cache-control: private
-content-length: 16
+content-encoding: gzip
 content-type: application/json;charset=utf-8
+content-length: 16
+date: Sat, 16 Mar 2019 01:13:21 GMT
+age: 0
+connection: keep-alive
+uuid: 1
 
 ==== RESPONSE BODY ====
 b'0000000 0000001 '

@@ -1,16 +1,16 @@
 ``
 ``status 200:
-- "uuid": "1"
-- "x-response": "testResponse"
-- "content-length": "16"
 - "content-type": "text/html"
+- "content-length": "16"
+- "x-response": "testResponse"
+- "uuid": "1"
 
 ``
 ``Received an HTTP/1 request with key 1:
-- "host": "example.one"
 - "Accept-Encoding": "identity"
 - "Content-Length": "0"
-- "uuid": "1"
+- "host": "example.one"
 - "x-request": "testRequest"
+- "uuid": "1"
 
 ``

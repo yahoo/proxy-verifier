@@ -3,10 +3,10 @@
 ``Listening at [::1]:``
 ``
 ``an HTTP/1 response to request with key 1 with response status 200:
-- "uuid": "1"
-- "x-test-response": "response"
-- "content-length": "16"
 - "content-type": "text/html"
+- "content-length": "16"
+- "x-test-response": "response"
+- "uuid": "1"
 
 ``Request with key 1 passed validation.
 ``Received an HTTP/1 request with key 1:

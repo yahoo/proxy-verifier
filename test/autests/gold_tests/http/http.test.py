@@ -24,14 +24,9 @@ proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 
-if Condition.IsPlatform("darwin"):
-    proxy.Streams.stdout = "gold/single_transaction_proxy.gold_macos"
-    client.Streams.stdout = "gold/single_transaction_client.gold_macos"
-    server.Streams.stdout = "gold/single_transaction_server.gold_macos"
-else:
-    proxy.Streams.stdout = "gold/single_transaction_proxy.gold"
-    client.Streams.stdout = "gold/single_transaction_client.gold"
-    server.Streams.stdout = "gold/single_transaction_server.gold"
+proxy.Streams.stdout = "gold/single_transaction_proxy.gold"
+client.Streams.stdout = "gold/single_transaction_client.gold"
+server.Streams.stdout = "gold/single_transaction_server.gold"
 
 client.Streams.stdout += Testers.ExcludesExpression(
         "Violation:",

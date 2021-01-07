@@ -8,6 +8,7 @@ Implement HTTP/2 proxy behavior in Python.
 #
 
 
+from email.message import EmailMessage as HttpHeaders
 import sys
 import ssl
 import hyper
@@ -18,7 +19,6 @@ import traceback
 
 from proxy_http1 import ProxyRequestHandler
 
-import collections
 import eventlet
 from eventlet.green.OpenSSL import SSL, crypto
 from h2.config import H2Configuration
@@ -111,7 +111,11 @@ class Http2ConnectionManager(object):
         return new_headers
 
     def _send_http1_request_to_server(self, request_headers, req_body, stream_id):
-        request_headers = collections.OrderedDict(request_headers)
+        if not isinstance(request_headers, HttpHeaders):
+            request_headers_message = HttpHeaders()
+            for name, value in request_headers:
+                request_headers_message.add_header(name, value)
+            request_headers = request_headers_message
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         scheme = request_headers[':scheme']
@@ -164,12 +168,15 @@ class Http2ConnectionManager(object):
         if not self.is_h2_to_server:
             raise RuntimeError("Unexpected received non is_h2_to_server in _send_http2_request_to_server")
 
-        request_headers_dict = collections.OrderedDict(request_headers)
-        request_headers_dict = ProxyRequestHandler.filter_headers(request_headers_dict)
-        scheme = request_headers_dict[':scheme']
+        request_headers_message = HttpHeaders()
+        for name, value in request_headers:
+            request_headers_message.add_header(name, value)
+        request_headers = request_headers_message
+        request_headers = ProxyRequestHandler.filter_headers(request_headers)
+        scheme = request_headers[':scheme']
         replay_server = "127.0.0.1:{}".format(self.server_port)
-        method = request_headers_dict[':method']
-        path = request_headers_dict[':path']
+        method = request_headers[':method']
+        path = request_headers[':path']
 
         try:
             origin = (scheme, replay_server, self.client_sni)
@@ -196,7 +203,7 @@ class Http2ConnectionManager(object):
                 self.tls.http_conns[origin] = http2_connection
 
             connection_to_server = self.tls.http_conns[origin]
-            server_stream_id = connection_to_server.request(method, path, req_body, request_headers_dict)
+            server_stream_id = connection_to_server.request(method, path, req_body, request_headers)
             res = connection_to_server.get_response(server_stream_id)
             response_body = res.read(decode_content=False)
         except Exception as e:
@@ -215,8 +222,8 @@ class Http2ConnectionManager(object):
         previous_k = b''
         previous_v = b''
         for k, v in res.headers:
-            if k == previous_k:
-                # This happens with data, which HTTPHeaderMap annoyingly splits
+            if k == b'date' and k == previous_k:
+                # This happens with date, which HTTPHeaderMap annoyingly splits
                 # on the comma:
                 # "Sat, 16 Mar 2019 01:13:21 GMT"
                 #
@@ -227,7 +234,7 @@ class Http2ConnectionManager(object):
                 response_headers = response_headers[0:-1]
             response_headers += ((k, v),)
             previous_k, previous_v = k, v
-        self.print_info(request_headers_dict, req_body, response_headers, response_body, res.status, res.reason)
+        self.print_info(request_headers, req_body, response_headers, response_body, res.status, res.reason)
         return response_headers, response_body
 
     def request_received(self, request_headers, req_body, stream_id):
@@ -244,8 +251,6 @@ class Http2ConnectionManager(object):
         def parse_qsl(s):
             return '\n'.join("%-20s %s" % (k, v) for k, v in urllib.parse.parse_qsl(s, keep_blank_values=True))
 
-        if isinstance(request_headers, list):
-            request_headers = collections.OrderedDict(request_headers)
         print("==== REQUEST HEADERS ====")
         for k, v in request_headers.items():
             print("{}: {}".format(k, v))
@@ -258,8 +263,6 @@ class Http2ConnectionManager(object):
         print(status_line)
 
         print("\n==== RESPONSE HEADERS ====")
-        if isinstance(request_headers, list):
-            response_headers = collections.OrderedDict(response_headers)
         for k, v in response_headers:
             if isinstance(k, bytes):
                 k, v = (k.decode('ascii'), v.decode('ascii'))

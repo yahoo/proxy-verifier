@@ -37,6 +37,9 @@ sessions:
         # upon the :authority pseudo header field. But Proxy Verifier should do both if
         # requested.
         - [ Host, example.data.com ]
+        - [ x-test-duplicate-combined, [ first, second ] ]
+        - [ x-test-duplicate-separate, first ]
+        - [ x-test-duplicate-separate, second ]
         - [ Content-Length, "0" ]
       content:
         encoding: plain
@@ -80,6 +83,8 @@ sessions:
         # Note that the Host field is still sent.
         - [ Host, example.data.com, equal ]
         - [ Content-Length, "0", equal ]
+        - [ x-test-duplicate-combined, [ first, second ], equal ]
+        - [ x-test-duplicate-separate, [ first, second ], equal ]
       content:
         encoding: plain
         size: 0
@@ -95,6 +100,9 @@ sessions:
         - [ Content-Length, '16' ]
         - [ Date, "Sat, 16 Mar 2019 01:13:21 GMT" ]
         - [ Age, '0' ]
+        - [ x-test-duplicate-combined, [ one, two ] ]
+        - [ x-test-duplicate-separate, one ]
+        - [ x-test-duplicate-separate, two ]
       content:
         encoding: plain
         size: 16
@@ -113,6 +121,8 @@ sessions:
         - [ Content-Length, '16', equal ]
         - [ Date, "Sat, 16 Mar 2019 01:13:21 GMT" ]
         - [ Age, '0' ]
+        - [ x-test-duplicate-combined, [ one, two ], equal ]
+        - [ x-test-duplicate-separate, [ one, two ], equal ]
 
   #
   # Do these without a content-length to make sure we handle that correctly.

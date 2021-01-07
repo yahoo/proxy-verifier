@@ -24,14 +24,9 @@ proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 
-if Condition.IsPlatform("darwin"):
-    proxy.Streams.stdout = "gold/yaml_specified_proxy.gold_macos"
-    client.Streams.stdout = "gold/yaml_specified_client.gold_macos"
-    server.Streams.stdout = "gold/yaml_specified_server.gold_macos"
-else:
-    proxy.Streams.stdout = "gold/yaml_specified_proxy.gold"
-    client.Streams.stdout = "gold/yaml_specified_client.gold"
-    server.Streams.stdout = "gold/yaml_specified_server.gold"
+proxy.Streams.stdout = "gold/yaml_specified_proxy.gold"
+client.Streams.stdout = "gold/yaml_specified_client.gold"
+server.Streams.stdout = "gold/yaml_specified_server.gold"
 
 # These expect verification errors.
 client.ReturnCode = 1
@@ -48,11 +43,6 @@ server = r.AddServerProcess("server2", "replay_files/transaction_fields.yaml",
 proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
-if Condition.IsPlatform("darwin"):
-    proxy.Streams.stdout = "gold/transaction_fields_proxy.gold_macos"
-    client.Streams.stdout = "gold/transaction_fields_client.gold_macos"
-    server.Streams.stdout = "gold/transaction_fields_server.gold_macos"
-else:
-    proxy.Streams.stdout = "gold/transaction_fields_proxy.gold"
-    client.Streams.stdout = "gold/transaction_fields_client.gold"
-    server.Streams.stdout = "gold/transaction_fields_server.gold"
+proxy.Streams.stdout = "gold/transaction_fields_proxy.gold"
+client.Streams.stdout = "gold/transaction_fields_client.gold"
+server.Streams.stdout = "gold/transaction_fields_server.gold"

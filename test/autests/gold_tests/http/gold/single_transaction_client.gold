@@ -1,22 +1,22 @@
 ``
-- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119"
-- "x-someid": "fda39dfad1"
-- "x-candy": "cane"
 - "content-length": "399"
+- "content-type": "application/octet-stream"
 - "host": "example.com"
 - "connection": "Keep-Alive"
-- "content-type": "application/octet-stream"
+- "x-candy": "cane"
+- "x-someid": "fda39dfad1"
+- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-226381119"
 
 ``
 ``Received an HTTP/1 200 response for key cb9b4e94-5d42-43d4-8545-320033298ba2-226381119 with headers:
-- "content-length": "0"
-- "content-type": "application/octet-stream"
-- "server": "ATS"
+- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
 - "x-testheader": "from_server_response"
-- "connection": "keep-alive"
+- "content-type": "application/octet-stream"
+- "content-length": "0"
 - "age": "0"
 - "via": "http/1.1 example.data1.com, http/1.1 example.data2.com"
-- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
+- "server": "ATS"
+- "connection": "keep-alive"
 
 ``
 ``Parsed 1 transactions in 1 sessions.

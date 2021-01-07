@@ -1,24 +1,24 @@
 ``
 ``response status 200:
-- "uuid": "1"
-- "x-response-sequence": "third"
-- "x-response-sequence": "second"
-- "x-response-sequence": "first"
 - "content-type": "text/html"
 - "content-length": "16"
-- "x-test-response": "third"
-- "x-test-response": "second"
 - "x-test-response": "first"
+- "x-test-response": "second"
+- "x-test-response": "third"
+- "x-response-sequence": "first"
+- "x-response-sequence": "second"
+- "x-response-sequence": "third"
+- "uuid": "1"
 
 ``
 ``Received an HTTP/1 request with key 1:
 - "Accept-Encoding": "identity"
+- "Content-Length": "0"
+- "host": "example.one"
 - "x-test-request": "first"
 - "x-test-request": "second"
 - "x-request-sequence": "first"
 - "x-request-sequence": "second"
-- "Content-Length": "0"
 - "uuid": "1"
-- "host": "example.one"
 
 ``
