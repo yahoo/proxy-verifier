@@ -208,6 +208,7 @@ public:
 
   swoc::Errata ssn_open(YAML::Node const &node) override;
   swoc::Errata txn_open(YAML::Node const &node) override;
+  swoc::Errata client_request(YAML::Node const &node) override;
   swoc::Errata proxy_request(YAML::Node const &node) override;
   swoc::Errata server_response(YAML::Node const &node) override;
   swoc::Errata apply_to_all_messages(HttpFields const &all_headers) override;
@@ -228,6 +229,7 @@ ServerReplayFileHandler::ServerReplayFileHandler() : _txn{Use_Strict_Checking} {
 void
 ServerReplayFileHandler::reset()
 {
+  _key.clear();
   _txn.~Txn();
   new (&_txn) Txn{Use_Strict_Checking};
 }
@@ -332,10 +334,31 @@ ServerReplayFileHandler::handle_tls_node_directives(
 }
 
 swoc::Errata
+ServerReplayFileHandler::client_request(YAML::Node const &node)
+{
+  HttpHeader client_request;
+  Errata errata = client_request.load(node);
+  auto const key = client_request.make_key();
+  if (key != HttpHeader::KEY_NOT_FOUND) {
+    _key = key;
+  }
+  return errata;
+}
+
+swoc::Errata
 ServerReplayFileHandler::proxy_request(YAML::Node const &node)
 {
   _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
   swoc::Errata errata = _txn._req.load(node);
+  if (_key.empty()) {
+    // This means that the client-request node did not contain the key. This
+    // can be the case if the user specified the uuid in the
+    // "all:headers:fields" node, for instance.
+    auto const key = _txn._req.make_key();
+    if (key != HttpHeader::KEY_NOT_FOUND) {
+      _key = key;
+    }
+  }
   if (!errata.is_ok()) {
     return errata;
   }
@@ -389,14 +412,24 @@ ServerReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
 {
   _txn._req._fields_rules->merge(all_headers);
   _txn._rsp._fields_rules->merge(all_headers);
+  if (_key.empty()) {
+    // This means that the client-request node did not contain the key. This
+    // can be the case if the user specified the uuid in the
+    // "all:headers:fields" node, for instance.
+    auto const key = _txn._req.make_key();
+    if (key != HttpHeader::KEY_NOT_FOUND) {
+      _key = key;
+    }
+  }
   return {};
 }
 
 swoc::Errata
 ServerReplayFileHandler::txn_close()
 {
-  _key = _txn._req.make_key();
-  Transactions.emplace(_key, std::move(_txn));
+  if (!_key.empty()) {
+    Transactions.emplace(_key, std::move(_txn));
+  }
   LoadMutex.unlock();
   this->reset();
   return {};
