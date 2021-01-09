@@ -220,6 +220,7 @@ private:
   swoc::Errata handle_tls_node_directives(YAML::Node const &tls_node, std::string_view sni);
 
 private:
+  YAML::Node const *_ssn_node;
   std::string _key;
   Txn _txn;
 };
@@ -235,8 +236,9 @@ ServerReplayFileHandler::reset()
 }
 
 swoc::Errata
-ServerReplayFileHandler::ssn_open(YAML::Node const & /* node */)
+ServerReplayFileHandler::ssn_open(YAML::Node const &node)
 {
+  _ssn_node = &node;
   return {};
 }
 
@@ -365,10 +367,14 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
   if (!node[YAML_SSN_PROTOCOL_KEY]) {
     return errata;
   }
-  auto const protocol_sequence_node{node[YAML_SSN_PROTOCOL_KEY]};
+  auto protocol_sequence_node{node[YAML_SSN_PROTOCOL_KEY]};
   if (!protocol_sequence_node) {
-    // A protocol sequence description on the server side is optional.
-    return errata;
+    // A protocol sequence description on the server side is optional. If not provided
+    // in the proxy-request, use the one in the session.
+    protocol_sequence_node = (*_ssn_node)[YAML_SSN_PROTOCOL_KEY];
+    if (!protocol_sequence_node) {
+      return errata;
+    }
   }
   auto const tls_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
   if (!tls_node.is_ok()) {
