@@ -4622,12 +4622,12 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
         spot != _hdr._fields_rules->_fields.end()) {
       bwformat(w, spec, spot->second);
     } else {
-      bwformat(w, spec, "*N/A*");
+      bwformat(w, spec, KEY_NOT_FOUND);
     }
   } else if (0 == strcasecmp("url"_tv, name)) {
     bwformat(w, spec, _hdr._url);
   } else {
-    bwformat(w, spec, "*N/A*");
+    bwformat(w, spec, KEY_NOT_FOUND);
   }
   return w;
 }

@@ -1095,6 +1095,9 @@ public:
 
   swoc::Errata serialize(swoc::BufferWriter &w) const;
 
+  static constexpr char const *const KEY_NOT_FOUND = "*N/A*";
+
+  /** Make the key for this transaction per the specified key format. */
   std::string make_key() const;
 
   /** Verify that the fields in 'this' correspond to the provided rules.
