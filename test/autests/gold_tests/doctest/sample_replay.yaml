@@ -1,0 +1,136 @@
+meta:
+    version: '1.0'
+
+sessions:
+
+#
+# First session: since there is no "protocol" node for this session,
+# HTTP/1.1 over TCP (no TLS) is assumed.
+#
+- transactions:
+
+    #
+    # Direct the Proxy Verifier client to send a POST request with a body of
+    # 399 bytes.
+    #
+  - client-request:
+      method: POST
+      url: /pictures/flower.jpeg
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, www.example.com ]
+        - [ Content-Type, application/octet-stream ]
+        - [ Content-Length, '399' ]
+        - [ uuid, first-request ]
+      content:
+        size: 399
+
+    #
+    # Direct the Proxy Verifier server to verify that the request received from
+    # the proxy has a path in the request target that contains "flower.jpeg"
+    # and has the Content-Length field of any value.
+    #
+    proxy-request:
+      url:
+      - [ path, flower.jpeg, contains ]
+
+      headers:
+        fields:
+        - [ Content-Length, '399', present ]
+
+    #
+    # Direct the Proxy Verifier server to reply with a 200 OK response with a body
+    # of 3,432 bytes.
+    #
+    server-response:
+        status: 200
+        reason: OK
+        headers:
+          fields:
+          - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+          - [ Content-Type, application/octet-stream ]
+          - [ Transfer-Encoding, chunked ]
+          - [ Connection, keep-alive ]
+        content:
+          size: 3432
+
+    #
+    # Direct the Proxy Verifier client to verify that it receives a 200 OK from
+    # the proxy with a `Transfer-Encoding: chunked` header field.
+    #
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ Transfer-Encoding, chunked, equal ]
+
+#
+# For the second session, we use a protocol node to configure HTTP/2 using an
+# SNI of # test_sni in the TLS handshake.
+#
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    version: 1.2
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+
+  transactions:
+
+  #
+  # Direct the Proxy Verifier client to send a POST request with a body of
+  # 399 bytes.
+  #
+  - client-request:
+      headers:
+        fields:
+        - [ :method, POST ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ Content-Type, application/octet-stream ]
+        - [ uuid, second-request ]
+      content:
+        size: 399
+
+    #
+    # Direct the Proxy Verifier server to verify that the request received from
+    # the proxy has a path pseudo header field that contains "flower.jpeg"
+    # and has a field "Content-Type: application/octet-stream".
+    #
+    proxy-request:
+      url:
+      - [ path, flower.jpeg, contains ]
+
+      headers:
+        fields:
+        - [ :method, POST ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, flower.jpeg, contains ]
+        - [ Content-Type, application/octet-stream, equal ]
+
+    #
+    # Direct the Proxy Verifier server to reply with a 200 OK response with a body
+    # of 3,432 bytes.
+    #
+    server-response:
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+        - [ Content-Type, application/octet-stream ]
+      content:
+        size: 3432
+
+    #
+    # Direct the Proxy Verifier client to verify that it receives a 200 OK from
+    # the proxy.
+    #
+    proxy-response:
+      status: 200
+

@@ -10,7 +10,6 @@ sessions:
 
     client-request:
       method: POST
-      scheme: http
       url: http://example.com/client.do
       version: '1.1'
       headers:
@@ -43,7 +42,6 @@ sessions:
         - [ X-SomeId, fda39dfad1 ]
         - [ uuid, cb9b4e94-5d42-43d4-8545-320033298ba2-226381119 ]
       method: POST
-      scheme: ''
       url: /proxy.do
       version: '1.1'
 

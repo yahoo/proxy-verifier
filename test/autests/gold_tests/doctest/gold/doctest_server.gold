@@ -1,0 +1,33 @@
+``
+``Ready with 2 transactions.
+``
+``response to request with key first-request with response status 200:
+- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
+- "content-type": "application/octet-stream"
+- "transfer-encoding": "chunked"
+- "connection": "keep-alive"
+
+``
+``Received an HTTP/1 request with key first-request:
+- "Accept-Encoding": "identity"
+- "host": "www.example.com"
+- "content-type": "application/octet-stream"
+- "content-length": "399"
+- "uuid": "first-request"
+
+``
+``Received an HTTP/2 request for stream id 1:
+- ":method": "POST"
+- ":scheme": "https"
+- ":authority": "www.example.com"
+- ":path": "/pictures/flower.jpeg"
+- "content-type": "application/octet-stream"
+- "uuid": "second-request"
+
+``
+``HTTP/2 response to request with key second-request with response status 200:
+- ":status": "200"
+- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
+- "content-type": "application/octet-stream"
+
+``
