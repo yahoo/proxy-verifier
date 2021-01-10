@@ -380,7 +380,7 @@ definition of these various terms):
 
 * `scheme`
 * `host`
-* `port`,
+* `port`
 * `authority` (also known as `net-loc`, the combination of `host` and `port`),
 * `path`
 * `query`
