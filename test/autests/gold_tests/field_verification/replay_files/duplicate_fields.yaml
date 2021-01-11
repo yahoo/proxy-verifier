@@ -29,9 +29,10 @@ sessions:
       headers:
         fields:
         - [ Host, example.one ]
-        - [ X-Test-Request, [ second_data, first_data ], equal ]
-        - [ X-Test-Present, [ alsohere ], absent ]
-        - [ X-Test-Equal, [ theSe, thE, values ], equal ]
+        - [ X-Test-Request, { value: [ second_data, first_data ], as: equal } ]
+        - [ X-Test-Present, { value: [ alsohere ], as: absent } ]
+        - [ X-Test-Equal, { value: [ theSe, thE, values ], as: equal } ]
+        # Verify we support the old sequence, as opposed to map, syntax.
         - [ X-Test-Another, [ who, cares ], present ]
     server-response:
       status: 200
@@ -52,6 +53,6 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-        - [ Set-Cookie, [ ABCD ], equal ]
-        - [ X-Not-A-Header, [ not, here ], absent ]
-        - [ X-Does-Not-Exist, [ also, not, here ], present ]
+        - [ Set-Cookie, { value: [ ABCD ], as: equal } ]
+        - [ X-Not-A-Header, { value: [ not, here ], as: absent } ]
+        - [ X-Does-Not-Exist, { value: [ also, not, here ], as: present } ]

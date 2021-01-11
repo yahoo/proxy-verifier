@@ -2,8 +2,7 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
 
   - client-request:
       version: "1.1"
@@ -25,9 +24,9 @@ sessions:
       headers:
         fields:
         - [ Host, example.one ]
-        - [ X-Test-Request, rEQUESTdATA, equal ]
-        - [ X-Test-Present, "It's there", absent ]
-        - [ Cookie, "V1=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; A3=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; GUC=AQEBAQFeK1JeM0If1wSb; A1S=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; uvts=24ce92ce-6bef-4940-5676-ccce503e26f6; APID=UP53275975-3e1e-11ea-b6a9-0e860b33a8b3; cmp=t=1579898053&j=0; apeaf=userintent%3D%257B%2522tooltipViews%2522%253A3%257D; APIDTS=1579898054; B=3vgt4fpf24ibu&b=3&s=o9", equal ]
+        - [ X-Test-Request, { value: rEQUESTdATA, as: equal } ]
+        - [ X-Test-Present, { value: "It's there", as: absent } ]
+        - [ Cookie, { value: "V1=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; A3=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; GUC=AQEBAQFeK1JeM0If1wSb; A1S=d=AQABBOwAKl4CEHhhMYGPgqPDtrDE-lZJ1EEFEgEBAQFSK14zXgAAAAAA_SMAAAcIfkkiXn6kwz8&S=AQAAAvbDdNlyRU0neZmPg97sQC8; uvts=24ce92ce-6bef-4940-5676-ccce503e26f6; APID=UP53275975-3e1e-11ea-b6a9-0e860b33a8b3; cmp=t=1579898053&j=0; apeaf=userintent%3D%257B%2522tooltipViews%2522%253A3%257D; APIDTS=1579898054; B=3vgt4fpf24ibu&b=3&s=o9", as: equal } ]
         - [ uuid, 5 ]
     server-response:
       status: 200
@@ -38,7 +37,7 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-        - [ Set-Cookie, ABCD, equal ]
+        - [ Set-Cookie, { value: ABCD, as: equal } ]
         - [ uuid, 5 ]
     proxy-response:
       status: 200
@@ -49,7 +48,7 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-        - [ Set-Cookie, ABCD, equal ]
-        - [ X-Not-A-Header, Whatever, absent ]
-        - [ X-Does-Not-Exist, NotHere, present ]
+        - [ Set-Cookie, { value: ABCD, as: equal } ]
+        - [ X-Not-A-Header, { value: Whatever, as: absent } ]
+        - [ X-Does-Not-Exist, { value: NotHere, as: present } ]
         - [ uuid, 5 ]

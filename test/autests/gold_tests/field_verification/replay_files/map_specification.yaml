@@ -2,19 +2,22 @@ meta:
   version: "1.0"
 
 sessions:
-- transactions:
+- protocol: [ { name: tcp }, {name: ip, version: 4} ]
+  transactions:
 
-  - client-request:
+  - all: { headers: { fields: [ [ uuid, 13 ] ] } }
+
+    client-request:
       version: "1.1"
       scheme: "http"
       method: "GET"
-      url: "http://example.one/config/settings.yaml"
+      url: "/config/settings.yaml"
       headers:
         fields:
         - [ Host, example.one ]
         - [ X-Test-Request, RequestData ]
         - [ X-Test-Present, It's there ]
-        - [ uuid, 5 ]
+        - [ uuid, 13 ]
     proxy-request:
       version: "1.1"
       scheme: "http"
@@ -28,7 +31,10 @@ sessions:
         - [ Host, { value: two, as: contains } ]
         - [ X-Test-Request, { value: equest, as: prefix } ]
         - [ X-Test-Present, { value: er, as: suffix } ]
-        - [ uuid, 5 ]
+
+        # absent and present directives should not require a value.
+        - [ X-Test-Absent, { as: absent } ]
+        - [ X-Test-Present, { as: present } ]
     server-response:
       status: 200
       reason: OK
@@ -39,7 +45,6 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
         - [ Set-Cookie, ABCD ]
-        - [ uuid, 5 ]
     proxy-response:
       status: 200
       reason: OK
@@ -47,11 +52,10 @@ sessions:
         size: 16
       headers:
         fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 16 ]
+        # No directive, no verification.
+        - [ Content-Length, {value: who_cares_not_verified } ]
         - [ Content-Type, { value: html, as: contains } ]
         - [ Set-Cookie, { value: ABCDE, as: contains } ]
         - [ X-Not-A-Header, { value: Whatever, as: prefix } ]
         - [ X-Does-Not-Exist, { value: NotHere, as: contains } ]
-        - [ X-Does-Not-Exist, { value: NotHere, as: suffix } ]
-        - [ uuid, 5 ]
+        - [ X-Does-Not-Exist, {value: NotHere, as: suffix } ]

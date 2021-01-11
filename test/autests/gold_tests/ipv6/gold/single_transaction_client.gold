@@ -1,5 +1,6 @@
 ``
 ``Sent the following HTTP/1 GET request:
+- "content-length": "0"
 - "host": "example.one"
 - "x-test-request": "request"
 - "uuid": "1"

@@ -51,15 +51,11 @@ sessions:
       - name: ip
         version: 4
 
-      method: GET
-      scheme: ''
-      url: /a/path
-      version: '2'
       headers:
         encoding: esc_json
         fields:
-        - [ Host, example.data.com, equal ]
-        - [ Content-Length, "0", equal ]
+        - [ Host, { value: example.data.com, as: equal } ]
+        - [ Content-Length, { value: "0", as: equal } ]
       content:
         encoding: plain
         size: 0
@@ -76,13 +72,10 @@ sessions:
 
     proxy-response:
       status: 200
-      content:
-        encoding: plain
-        size: 16
       headers:
         encoding: esc_json
         fields:
-        - [ X-Response-Header, response, equal ]
+        - [ X-Response-Header, { value: response, as: equal } ]
 
   #
   # Remove h2 from the server's ALPN protocol list.
@@ -133,15 +126,11 @@ sessions:
       - name: ip
         version: 4
 
-      method: GET
-      scheme: ''
-      url: /b/path
-      version: '2'
       headers:
         encoding: esc_json
         fields:
-        - [ Host, example.data.com, equal ]
-        - [ Content-Length, "0", equal ]
+        - [ Host, { value: example.data.com, as: equal } ]
+        - [ Content-Length, { value: "0", as: equal } ]
       content:
         encoding: plain
         size: 0
@@ -158,10 +147,7 @@ sessions:
 
     proxy-response:
       status: 200
-      content:
-        encoding: plain
-        size: 16
       headers:
         encoding: esc_json
         fields:
-        - [ X-Response-Header, response2, equal ]
+          - [ X-Response-Header, { value: response2, as: equal } ]

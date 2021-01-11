@@ -2,8 +2,7 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
   - all:
       headers:
         fields:
@@ -17,8 +16,6 @@ sessions:
         fields:
         - [ Host, example.one ]
 
-    proxy-request:
-
     server-response:
       status: 200
       reason: OK
@@ -29,11 +26,8 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
 
-    proxy-response:
 
-
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
   - all:
       headers:
         fields:
@@ -47,8 +41,6 @@ sessions:
         fields:
         - [ Host, example.one ]
 
-    proxy-request:
-
     server-response:
       status: 200
       reason: OK
@@ -59,10 +51,7 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
 
-    proxy-response:
-
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
   - all:
       headers:
         fields:
@@ -76,8 +65,6 @@ sessions:
         fields:
         - [ Host, example.one ]
 
-    proxy-request:
-
     server-response:
       status: 200
       reason: OK
@@ -87,5 +74,3 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-
-    proxy-response:

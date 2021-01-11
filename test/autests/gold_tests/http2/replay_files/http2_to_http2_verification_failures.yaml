@@ -25,19 +25,11 @@ sessions:
         size: 0
 
     proxy-request:
-      # HTTP/2 on the server-side.
-      protocol: [ {name: http, version: 2}, {name: tls, version: 1.2, sni: test_sni}, { name: tcp }, {name: ip, version: 4} ]
-
-      method: GET
-      scheme: ''
-      url: /a/path
-      version: '1.1'
       headers:
         encoding: esc_json
         fields:
-        - [ Host, example.data.com ]
-        - [ x-deleted-header, request, present ]
-        - [ x-added-header, 4, equal ]
+        - [ x-deleted-header, { as: present } ]
+        - [ x-added-header, { value: 4, as: equal } ]
       content:
         encoding: plain
         size: 0
@@ -56,12 +48,8 @@ sessions:
 
     proxy-response:
       status: 200
-      content:
-        encoding: plain
-        size: 16
       headers:
         encoding: esc_json
         fields:
-        - [ Content-Length, '16' ]
-        - [ x-deleted-header, doesnotmatter, present ]
-        - [ x-added-header, lmno, contains ]
+        - [ x-deleted-header, { as: present } ]
+        - [ x-added-header, { value: lmno, as: contains } ]

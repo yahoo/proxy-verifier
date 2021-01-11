@@ -2,8 +2,7 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
   - client-request:
       version: "1.1"
       scheme: "http"
@@ -13,26 +12,8 @@ sessions:
         fields:
         - [ Host, example.one ]
         - [ uuid, 1 ]
-    proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/path/1"
-      headers:
-        fields:
-        - [ Host, example.one ]
-        - [ uuid, 1 ]
+
     server-response:
-      status: 200
-      reason: OK
-      content:
-        size: 16
-      headers:
-        fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 16 ]
-        - [ uuid, 1 ]
-    proxy-response:
       status: 200
       reason: OK
       content:
@@ -52,26 +33,8 @@ sessions:
         fields:
         - [ Host, example.one ]
         - [ uuid, 2 ]
-    proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/path/2"
-      headers:
-        fields:
-        - [ Host, example.one ]
-        - [ uuid, 2 ]
+
     server-response:
-      status: 200
-      reason: OK
-      content:
-        size: 32
-      headers:
-        fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 32 ]
-        - [ uuid, 2 ]
-    proxy-response:
       status: 200
       reason: OK
       content:
@@ -91,26 +54,8 @@ sessions:
         fields:
         - [ Host, example.one ]
         - [ uuid, 3 ]
-    proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/path/3"
-      headers:
-        fields:
-        - [ Host, example.one ]
-        - [ uuid, 3 ]
+
     server-response:
-      status: 200
-      reason: OK
-      content:
-        size: 32
-      headers:
-        fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 32 ]
-        - [ uuid, 3 ]
-    proxy-response:
       status: 200
       reason: OK
       content:
@@ -130,26 +75,8 @@ sessions:
         fields:
         - [ Host, example.one ]
         - [ uuid, 4 ]
-    proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/path/4"
-      headers:
-        fields:
-        - [ Host, example.one ]
-        - [ uuid, 4 ]
+
     server-response:
-      status: 200
-      reason: OK
-      content:
-        size: 32
-      headers:
-        fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 32 ]
-        - [ uuid, 4 ]
-    proxy-response:
       status: 200
       reason: OK
       content:
@@ -169,26 +96,8 @@ sessions:
         fields:
         - [ Host, example.one ]
         - [ uuid, 5 ]
-    proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/path/5"
-      headers:
-        fields:
-        - [ Host, example.one ]
-        - [ uuid, 5 ]
+
     server-response:
-      status: 200
-      reason: OK
-      content:
-        size: 32
-      headers:
-        fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 32 ]
-        - [ uuid, 5 ]
-    proxy-response:
       status: 200
       reason: OK
       content:

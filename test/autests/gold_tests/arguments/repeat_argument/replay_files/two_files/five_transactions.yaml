@@ -2,12 +2,12 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
   - all:
       headers:
         fields:
         - [ uuid, 1 ]
+
     client-request:
       version: "1.1"
       scheme: "http"
@@ -17,8 +17,6 @@ sessions:
         fields:
         - [ Host, example.one ]
 
-    proxy-request:
-
     server-response:
       status: 200
       reason: OK
@@ -29,12 +27,12 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
 
-    proxy-response:
 
   - all:
       headers:
         fields:
         - [ uuid, 2 ]
+
     client-request:
       version: "1.1"
       scheme: "http"
@@ -44,8 +42,6 @@ sessions:
         fields:
         - [ Host, example.one ]
 
-    proxy-request:
-
     server-response:
       status: 200
       reason: OK
@@ -56,12 +52,11 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
 
-    proxy-response:
-
   - all:
       headers:
         fields:
         - [ uuid, 3 ]
+
     client-request:
       version: "1.1"
       scheme: "http"
@@ -71,8 +66,6 @@ sessions:
         fields:
         - [ Host, example.one ]
 
-    proxy-request:
-
     server-response:
       status: 200
       reason: OK
@@ -83,12 +76,11 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
 
-    proxy-response:
-
   - all:
       headers:
         fields:
         - [ uuid, 4 ]
+
     client-request:
       version: "1.1"
       scheme: "http"
@@ -98,8 +90,6 @@ sessions:
         fields:
         - [ Host, example.one ]
 
-    proxy-request:
-
     server-response:
       status: 200
       reason: OK
@@ -110,14 +100,12 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
 
-    proxy-response:
-
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
   - all:
       headers:
         fields:
         - [ uuid, 5 ]
+
     client-request:
       version: "1.1"
       scheme: "http"
@@ -127,8 +115,6 @@ sessions:
         fields:
         - [ Host, example.one ]
 
-    proxy-request:
-
     server-response:
       status: 200
       reason: OK
@@ -138,6 +124,3 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-
-    proxy-response:
-

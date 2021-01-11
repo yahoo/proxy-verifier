@@ -7,7 +7,6 @@ sessions:
 
   - client-request:
       version: "1.1"
-      scheme: "http"
       method: "GET"
       url: "http://example.one:8080/config/settings.yaml?q=3"
       headers:
@@ -18,27 +17,23 @@ sessions:
         - [ X-Proxy-Directive, "SetURL=%<http://example.one:8080/config/settings.yaml?q=3%>" ]
     proxy-request:
       version: "1.1"
-      scheme: "http"
       method: "GET"
       url:
-      - [ host, example.one, equal ]
-      - [ path, config/settings.yaml, equal ]
-      - [ scheme, http, equal ]
-      - [ authority, example.one:8080, equal ]
-      - [ net-loc, example.one:8080, equal ]
-      - [ port, 8, contains ]
-      - [ query, q=3, present ]
-      - [ fragment, F, absent ]
-      - [ host, example.one, present ]
-      - [ path, yaml, contains ]
-      - [ scheme, p, suffix ]
-      - [ port, 8, prefix ]
-      - [ authority, 8080, equal ]
-      - [ fragment, F, equal ]
-      headers:
-        fields:
-        - [ Host, example.one ]
-        - [ uuid, 5 ]
+      - [ host, { value: example.one, as: equal } ]
+      - [ path, { value: config/settings.yaml, as: equal } ]
+      - [ scheme, { value: http, as: equal } ]
+      - [ authority, { value: example.one:8080, as: equal } ]
+      - [ net-loc, { value: example.one:8080, as: equal } ]
+      - [ port, { value: 8, as: contains } ]
+      - [ query, { value: q=3, as: present } ]
+      - [ fragment, { value: F, as: absent } ]
+      - [ host, { value: example.one, as: present } ]
+      - [ path, { value: yaml, as: contains } ]
+      - [ scheme, { value: p, as: suffix } ]
+      - [ port, { value: 8, as: prefix } ]
+      - [ authority, { value: 8080, as: equal } ]
+      - [ fragment, { value: F, as: equal } ]
+
     server-response:
       status: 200
       reason: OK
@@ -48,7 +43,7 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-        - [ Set-Cookie, ABCD, equal ]
+        - [ Set-Cookie, ABCD ]
         - [ uuid, 5 ]
     proxy-response:
       status: 200
@@ -57,6 +52,4 @@ sessions:
         size: 16
       headers:
         fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 16 ]
-        - [ Set-Cookie, ABCD, equal ]
+        - [ Set-Cookie, { value: ABCD, as: equal } ]

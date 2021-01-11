@@ -1,5 +1,7 @@
 meta:
   version: '1.0'
+
+# This file is taken largely from a sample Traffic Dump file.
 sessions:
 - connection-time: 1552705896896003926
   protocol: [ { name: tcp }, {name: ip, version: 4} ]

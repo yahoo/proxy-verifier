@@ -2,7 +2,7 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
+- protocol: [ { name: tcp }, {name: ip, version: 6} ]
   transactions:
   - client-request:
       version: "1.1"
@@ -13,7 +13,9 @@ sessions:
         fields:
         - [ Host, example.one ]
         - [ X-Test-Request, request ]
+        - [ Content-Length, 0 ]
         - [ uuid, 1 ]
+
     proxy-request:
       version: "1.1"
       scheme: "http"
@@ -21,9 +23,11 @@ sessions:
       url: "http://example.one/config/settings.yaml"
       headers:
         fields:
-        - [ Host, example.one ]
-        - [ X-Test-Request, request ]
+        - [ Content-Length, 0 ]
+        - [ Host, { value: example.one, as: equal } ]
+        - [ X-Test-Request, { value: request, as: equal } ]
         - [ uuid, 1 ]
+
     server-response:
       status: 200
       reason: OK
@@ -35,6 +39,7 @@ sessions:
         - [ Content-Length, 16 ]
         - [ X-Test-Response, response ]
         - [ uuid, 1 ]
+
     proxy-response:
       status: 200
       reason: OK
@@ -42,7 +47,4 @@ sessions:
         size: 16
       headers:
         fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 16 ]
-        - [ X-Test-Response, response ]
-        - [ uuid, 1 ]
+        - [ X-Test-Response, { value: response, as: equal } ]

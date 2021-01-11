@@ -2,8 +2,7 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
   - client-request:
       version: "1.1"
       scheme: "http"
@@ -40,7 +39,7 @@ sessions:
         - [ x-test-response, first ]
         - [ x-test-response, second ]
         - [ x-test-response, third ]
-        - [ x-response-sequence, [ first, second, third ] ]
+        - [ x-response-sequence, { value: [ first, second, third ] } ]
         - [ uuid, 1 ]
     proxy-response:
       status: 200

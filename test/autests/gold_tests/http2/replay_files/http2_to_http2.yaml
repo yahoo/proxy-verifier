@@ -59,32 +59,29 @@ sessions:
 
       # URL verification is supported for HTTP/2, with the appropriate fields
       # from :scheme, :authority, and :path used.
-      - [ scheme, https, equal ]
-      - [ host, example.data.com, equal ]
-      - [ path, /a/path, equal ]
-      - [ authority, example.data.com, equal ]
-      - [ net-loc, example.data.com, equal ]
-      - [ query, q=3, present ]
-      - [ query, 3, contains ]
-      - [ fragment, F, absent ]
-      - [ host, example, present ]
-      - [ path, /, prefix ]
-      - [ port, 8, absent ]
+      - [ scheme, { value: https, as: equal } ]
+      - [ host, { value: example.data.com, as: equal } ]
+      - [ path, { value: /a/path, as: equal } ]
+      - [ authority, { value: example.data.com, as: equal } ]
+      - [ net-loc, { value: example.data.com, as: equal } ]
+      - [ query, { value: q=3, as: present } ]
+      - [ query, { value: 3, as: contains } ]
+      - [ fragment, { as: absent } ]
+      - [ host, { as: present } ]
+      - [ path, { value: /, as: prefix } ]
+      - [ port, { as: absent } ]
       headers:
         encoding: esc_json
         fields:
-        - [ :method, GET, equal ]
-        - [ :scheme, https, equal ]
-        - [ :authority, example.data.com, equal ]
-        - [ :path, '/a/path?q=3', equal ]
-        - [ Accept, '*/*' ]
-        - [ Accept-Language, en-us ]
-        - [ Accept-Encoding, gzip ]
+        - [ :method, { value: GET, as: equal } ]
+        - [ :scheme, { value: https, as: equal } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
+        - [ :path, { value: '/a/path?q=3', as: equal } ]
         # Note that the Host field is still sent.
-        - [ Host, example.data.com, equal ]
-        - [ Content-Length, "0", equal ]
-        - [ x-test-duplicate-combined, [ first, second ], equal ]
-        - [ x-test-duplicate-separate, [ first, second ], equal ]
+        - [ Host, { value: example.data.com, as: equal } ]
+        - [ Content-Length, { value: "0", as: equal } ]
+        - [ x-test-duplicate-combined, { value: [ first, second ], as: equal } ]
+        - [ x-test-duplicate-separate, { value: [ first, second ], as: equal } ]
       content:
         encoding: plain
         size: 0
@@ -114,15 +111,11 @@ sessions:
       headers:
         encoding: esc_json
         fields:
-        - [ :status, 200, equal ]
+        - [ :status, { value: 200, as: equal } ]
         - [ Cache-Control, private ]
-        - [ Content-Encoding, gzip ]
-        - [ Content-Type, application/json;charset=utf-8 ]
-        - [ Content-Length, '16', equal ]
-        - [ Date, "Sat, 16 Mar 2019 01:13:21 GMT" ]
-        - [ Age, '0' ]
-        - [ x-test-duplicate-combined, [ one, two ], equal ]
-        - [ x-test-duplicate-separate, [ one, two ], equal ]
+        - [ Content-Length, { value: '16', as: equal } ]
+        - [ x-test-duplicate-combined, { value: [ one, two ], as: equal } ]
+        - [ x-test-duplicate-separate, { value: [ one, two ], as: equal } ]
 
   #
   # Do these without a content-length to make sure we handle that correctly.
@@ -292,25 +285,16 @@ sessions:
         size: 0
 
     proxy-request:
-      # HTTP/2 on the server-side.
-      protocol:
-      - name: http
-        version: 2
-      - name: tls
-        version: 1.2
-        sni: test_sni
-      - name: tcp
-      - name: ip
-        version: 4
+      # The session protocol node should be assumed on the server side.
 
       headers:
         encoding: esc_json
         fields:
-        - [ :method, GET, equal ]
-        - [ :scheme, https, equal ]
-        - [ :authority, example.data.com, equal ]
-        - [ :path, /b/path, equal ]
-        - [ X-Request-Header, test_request, equal ]
+        - [ :method, { value: GET, as: equal } ]
+        - [ :scheme, { value: https, as: equal } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
+        - [ :path, { value: /b/path, as: equal } ]
+        - [ X-Request-Header, { value: test_request, as: equal } ]
       content:
         encoding: plain
         size: 0
@@ -330,9 +314,9 @@ sessions:
       headers:
         encoding: esc_json
         fields:
-        - [ :status, 200, equal ]
-        - [ X-Response-Header, response, equal ]
-        - [ Content-Length, 0, equal ]
+        - [ :status, { value: 200, as: equal } ]
+        - [ X-Response-Header, { value: response, as: equal } ]
+        - [ Content-Length, { value: 0, as: equal } ]
       content:
         encoding: plain
         size: 0

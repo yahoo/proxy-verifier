@@ -33,11 +33,11 @@ sessions:
     #
     proxy-request:
       url:
-      - [ path, flower.jpeg, contains ]
+      - [ path, { value: flower.jpeg, as: contains } ]
 
       headers:
         fields:
-        - [ Content-Length, '399', present ]
+        - [ Content-Length, { value: '399', as: present } ]
 
     #
     # Direct the Proxy Verifier server to reply with a 200 OK response with a body
@@ -63,7 +63,7 @@ sessions:
       status: 200
       headers:
         fields:
-        - [ Transfer-Encoding, chunked, equal ]
+        - [ Transfer-Encoding, { value: chunked, as: equal } ]
 
 #
 # For the second session, we use a protocol node to configure HTTP/2 using an
@@ -104,15 +104,15 @@ sessions:
     #
     proxy-request:
       url:
-      - [ path, flower.jpeg, contains ]
+      - [ path, { value: flower.jpeg, as: contains } ]
 
       headers:
         fields:
         - [ :method, POST ]
         - [ :scheme, https ]
         - [ :authority, www.example.com ]
-        - [ :path, flower.jpeg, contains ]
-        - [ Content-Type, application/octet-stream, equal ]
+        - [ :path,        { value: flower.jpeg,              as: contains } ]
+        - [ Content-Type, { value: application/octet-stream, as: equal } ]
 
     #
     # Direct the Proxy Verifier server to reply with a 200 OK response with a body
@@ -133,4 +133,3 @@ sessions:
     #
     proxy-response:
       status: 200
-
