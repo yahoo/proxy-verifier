@@ -113,3 +113,67 @@ client.Streams.stdout += Testers.ContainsExpression(
 
 client.ReturnCode = 1
 server.ReturnCode = 1
+
+#
+# Test 3: Verify field verification using the map specification syntax.
+#
+r = Test.AddTestRun("Verify field verification works with the map specification syntax")
+client = r.AddClientProcess("client3", "replay_files/map_specification.yaml", other_args="--verbose diag")
+server = r.AddServerProcess("server3", "replay_files/map_specification.yaml", other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Contains Success: Key: "13", Field Name: "host", Required Value: "le.on", Value: "example.one"',
+        'Validation should be happy that "le.on" is in "example.one".')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Prefix Success: Key: "13", Field Name: "x-test-request", Required Value: "Req", Value: "RequestData"',
+        'Validation should be happy that "RequestData" began with "Req".')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Suffix Success: Key: "13", Field Name: "x-test-present", Required Value: "there", Value: "It\'s there"',
+        'Validation should be happy that "It\'s there" ended with "there.')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Contains Violation: Not Found. Key: "13", Field Name: "host", Required Value: "two", Actual Value: "example.one"',
+        'Validation should complain that "two" is not in "example.one".')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Prefix Violation: Not Found. Key: "13", Field Name: "x-test-request", Required Value: "equest", Actual Value: "RequestData"',
+        'Validation should complain that "RequestData" did not begin with "equest".')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Suffix Violation: Not Found. Key: "13", Field Name: "x-test-present", Required Value: "er", Actual Value: "It\'s there"',
+        'Validation should complain that "It\'s there" did not end with "er".')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Absence Success: Key: "13", Field Name: "x-test-absent"',
+        'Validation should be happy that "X-Test-Absent" is not there.')
+
+server.Streams.stdout += Testers.ContainsExpression(
+        'Presence Success: Key: "13", Field Name: "x-test-present", Value: "It\'s there"',
+        'Validation should be happy that "X-Test-Present" is there.')
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Contains Success: Key: "13", Field Name: "content-type", Required Value: "html", Value: "text/html"',
+        'Validation should be happy that "html" is in "text/html".')
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Contains Violation: Not Found. Key: "13", Field Name: "set-cookie", Required Value: "ABCDE", Actual Value: "ABCD"',
+        'Validation should complain that "ABCDE" is not in "ABCD".')
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Prefix Violation: Absent. Key: "13", Field Name: "x-not-a-header", Required Value: "Whatever"',
+        'Validation should complain that "X-Not-A-Header" is missing.')
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Contains Violation: Absent. Key: "13", Field Name: "x-does-not-exist", Required Value: "NotHere"',
+        'Validation should complain that "X-Does-Not-Exist" is missing.')
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Suffix Violation: Absent. Key: "13", Field Name: "x-does-not-exist", Required Value: "NotHere"',
+        'Validation should complain that "X-Does-Not-Exist" is missing.')
+
+client.ReturnCode = 1
+server.ReturnCode = 1
+

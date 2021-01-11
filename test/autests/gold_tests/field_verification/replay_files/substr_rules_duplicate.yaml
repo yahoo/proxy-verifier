@@ -2,8 +2,7 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
   - all:
       headers:
         fields:
@@ -27,12 +26,12 @@ sessions:
       headers:
         fields:
         - [ Host, example.one ]
-        - [ Pref-Cookie, [ AB, EF ], prefix ]
-        - [ Suff-Cookie, [ AB, EF ], suffix ]
-        - [ Set-Cookie, [ G, F ], contains ]
-        - [ Set-Cookie, [ AB, G ], suffix ]
-        - [ Set-Cookie, [ AB, E ], contains ]
-        - [ Set-Cookie, [ A, EFG ], prefix ]
+        - [ Pref-Cookie, { value: [ AB, EF ], as: prefix } ]
+        - [ Suff-Cookie, { value: [ AB, EF ], as: suffix } ]
+        - [ Set-Cookie, { value: [ G, F ], as: contains } ]
+        - [ Set-Cookie, { value: [ AB, G ], as: suffix } ]
+        - [ Set-Cookie, { value: [ AB, E ], as: contains } ]
+        - [ Set-Cookie, { value: [ A, EFG ], as: prefix } ]
     server-response:
       status: 200
       reason: OK
@@ -52,6 +51,6 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
-        - [ Set-Cookie, [ AB ], contains ]
-        - [ Set-Cookie, [ BC, EF ], prefix ]
-        - [ Set-Cookie, [ ABCD, EFG ], suffix ]
+        - [ Set-Cookie, { value: [ AB ], as: contains } ]
+        - [ Set-Cookie, { value: [ BC, EF ], as: prefix } ]
+        - [ Set-Cookie, { value: [ ABCD, EFG ], as: suffix } ]

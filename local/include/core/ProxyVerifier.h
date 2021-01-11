@@ -79,9 +79,12 @@ static const std::string YAML_CONTENT_DATA_KEY{"data"};
 static const std::string YAML_CONTENT_ENCODING_KEY{"encoding"};
 static const std::string YAML_CONTENT_TRANSFER_KEY{"transfer"};
 
-static constexpr size_t YAML_RULE_NAME_KEY{0};
-static constexpr size_t YAML_RULE_DATA_KEY{1};
-static constexpr size_t YAML_RULE_TYPE_KEY{2};
+static constexpr size_t YAML_RULE_KEY_INDEX{0};
+static constexpr size_t YAML_RULE_VALUE_INDEX{1};
+static constexpr size_t YAML_RULE_TYPE_INDEX{2};
+
+static const std::string YAML_RULE_VALUE_MAP_KEY{"value"};
+static const std::string YAML_RULE_TYPE_MAP_KEY{"as"};
 
 static const std::string YAML_RULE_EQUALS{"equal"};
 static const std::string YAML_RULE_PRESENCE{"present"};

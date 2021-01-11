@@ -32,7 +32,7 @@ sessions:
       headers:
         fields:
         - [ Host, host.one ]
-        - [ X-Request, first, equal ]
+        - [ X-Request, { value: first, as: equal } ]
     server-response:
       status: 200
       reason: OK
@@ -52,7 +52,7 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 0 ]
-        - [ X-Response, first, equal ]
+        - [ X-Response, { value: first, as: equal } ]
 
   - all:
       headers:
@@ -76,7 +76,7 @@ sessions:
       headers:
         fields:
         - [ Host, host.two ]
-        - [ X-Request, second, equal ]
+        - [ X-Request, { value: second, as: equal } ]
     server-response:
       status: 200
       reason: OK
@@ -96,7 +96,7 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 0 ]
-        - [ X-Response, two, equal ]
+        - [ X-Response, { value: two, as: equal } ]
 
   - all:
       headers:
@@ -120,7 +120,7 @@ sessions:
       headers:
         fields:
         - [ Host, host.three ]
-        - [ X-Request, third, equal ]
+        - [ X-Request, { value: third, as: equal } ]
     server-response:
       status: 200
       reason: OK
@@ -140,5 +140,4 @@ sessions:
         fields:
         - [ Content-Type, text/html ]
         - [ Content-Length, 0 ]
-        - [ X-Response, three, equal ]
-
+        - [ X-Response, { value: three, as: equal } ]

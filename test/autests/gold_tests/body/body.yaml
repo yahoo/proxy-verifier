@@ -15,7 +15,6 @@ sessions:
 
     client-request:
       version: '1.1'
-      scheme: https
       method: POST
       url: https://example.data.com/a/path
       content:
@@ -30,7 +29,6 @@ sessions:
 
     proxy-request:
       version: '1.1'
-      scheme: ''
       method: POST
       url: "/a/path"
       content:
@@ -38,8 +36,8 @@ sessions:
         size: 48
       headers:
         fields:
-        - [ Transfer-Encoding, chunked, equal ]
-        - [ X-Request, "first_request", equal ]
+        - [ Transfer-Encoding, { value: chunked, as: equal } ]
+        - [ X-Request, { value: "first_request", as: equal } ]
 
     server-response:
       status: 200
@@ -66,10 +64,8 @@ sessions:
       headers:
         encoding: esc_json
         fields:
-        - [ Content-Type, multipart/form-data;snoopy=123456 ]
-        - [ Transfer-Encoding, chunked, equal ]
-        - [ Connection, keep-alive ]
-        - [ X-Response, "first_response", equal ]
+        - [ Transfer-Encoding, { value: chunked, as: equal } ]
+        - [ X-Response, { value: "first_response", as: equal } ]
 
   - all:
       headers:
@@ -78,7 +74,6 @@ sessions:
 
     client-request:
       version: '1.1'
-      scheme: https
       method: POST
       url: https://example.data.com/a/path
       content:
@@ -93,7 +88,6 @@ sessions:
 
     proxy-request:
       version: '1.1'
-      scheme: ''
       method: POST
       url: "/a/path"
       content:
@@ -101,7 +95,7 @@ sessions:
         size: 16
       headers:
         fields:
-        - [ X-Request, "second_request", equal ]
+        - [ X-Request, { value: "second_request", as: equal } ]
 
     server-response:
       status: 200
@@ -126,10 +120,7 @@ sessions:
       headers:
         encoding: esc_json
         fields:
-        - [ Content-Type, multipart/form-data;snoopy=123456 ]
-        - [ Transfer-Encoding, chunked ]
-        - [ Connection, keep-alive ]
-        - [ X-Response, "second_response", equal ]
+        - [ X-Response, { value: "second_response", as: equal } ]
 
   #
   # Verify we can handle a zero-length chunk.
@@ -141,7 +132,6 @@ sessions:
 
     client-request:
       version: '1.1'
-      scheme: https
       method: POST
       url: https://example.data.com/a/path
       content:
@@ -156,7 +146,6 @@ sessions:
 
     proxy-request:
       version: '1.1'
-      scheme: ''
       method: POST
       url: "/a/path"
       content:
@@ -164,8 +153,8 @@ sessions:
         size: 0
       headers:
         fields:
-        - [ X-Request, "second_request", equal ]
-        - [ Transfer-Encoding, chunked, equal ]
+        - [ X-Request, { value: "second_request", as: equal } ]
+        - [ Transfer-Encoding, { value: chunked, as: equal } ]
 
     server-response:
       status: 200
@@ -179,7 +168,7 @@ sessions:
         - [ Content-Type, multipart/form-data;snoopy=123456 ]
         - [ Connection, keep-alive ]
         - [ Transfer-Encoding, chunked ]
-        - [ X-Response, "second_response", equal ]
+        - [ X-Response, "second_response" ]
 
     proxy-response:
       status: 200
@@ -190,7 +179,5 @@ sessions:
       headers:
         encoding: esc_json
         fields:
-        - [ Content-Type, multipart/form-data;snoopy=123456 ]
-        - [ Transfer-Encoding, chunked, equal ]
-        - [ Connection, keep-alive ]
-        - [ X-Response, "second_response", equal ]
+        - [ Transfer-Encoding, { value: chunked, as: equal } ]
+        - [ X-Response, { value: "second_response", as: equal } ]

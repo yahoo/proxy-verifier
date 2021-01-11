@@ -289,23 +289,34 @@ sufficiently demonstrates a typical description of an HTTP field):
 For this client request, Proxy Verifier is directed to create a `Content-Length`
 HTTP field with a value of `399`.
 
-Field verification is specified in a similar manner, but instead of a sequence
-of two values, verification takes a third _directive_ element in the `fields`
-item within a `proxy-request` or `proxy-response` node. Here is an example of a
-`proxy-request` node directing the Verifier server to verify the
-characteristics of the `Content-Length` field received from the proxy:
+Field verification is specified in a similar manner, but the second item in the
+sequence is a map describing how the field should be verified. The map takes a
+`value` item describing the characteristics of the value to verify, if
+applicable, and an `as` item providing a directive describing how the field
+should be verified.  Here is an example of a `proxy-request` node directing the
+Verifier server to verify the characteristics of the `Content-Length` field
+received from the proxy:
 
 ```YAML
   proxy-request:
     headers:
       fields:
-      - [ Content-Length, 399, equal ]
+      - [ Content-Length, { value: 399, as: equal } ]
 ```
 
-In this example, `equal` is the directive for this particular field
-verification, indicating that the Verifier server should verify that the
-proxy's request for this transaction contains a `Content-Length` field
-with the exact value of `399`.
+Observe the following from this verification example:
+
+* As described above, notice that the second entry in the field specification
+  is a map instead of a scalar field value. The Proxy Verifier parser
+  recognizes this map type as providing a verification specification.
+* As with `client-request` and `server-response` field specifications, the
+  first item in the list describes the field name, in this case
+  "Content-Length". This indicates that this verification rule applies to the
+  "Content-Length" HTTP field from the proxy.
+* The directive is specified via the `as` key. In this example, `equal` is the
+  directive for this particular field verification, indicating that the
+  Verifier server should verify that the proxy's request for this transaction
+  contains a `Content-Length` field with the exact value of `399`.
 
 Proxy Verifier supports six field verification directives:
 
@@ -321,46 +332,70 @@ suffix     |  The presence of a field with the specified name with a value *suff
 For all of these field verification behaviors, field names are matched case
 insensitively while field values are matched case sensitively.
 
-Thus the following field specification requests no field verification because it does not include a directive:
+Thus the following field specification requests no field verification because it does not include a directive and the second item in the sequence is a scarlar:
 
 ```YAML
   - [ X-Forwarded-For, 10.10.10.2 ]
 ```
 
+Such non-operative fields can also be specified using the map syntax without an
+`as` item:
+
+```YAML
+  - [ X-Forwarded-For, { value: 10.10.10.2 } ]
+```
+
+Fields like this in `proxy-request` and `proxy-response` nodes are permissible
+by Proxy Verifier's parser even though they have no functional impact (i.e.,
+they do not direct Proxy Verifier's traffic behavior because they are not in
+`client-request` nor `server-response` nodes, and they do not describe any
+verification behavior). Allowing such fields affords the user the ability to
+record the proxy's traffic behavior in situations where field verification is
+not required or desired.  For example, the [Traffic
+Dump](https://docs.trafficserver.apache.org/en/latest/admin-guide/plugins/traffic_dump.en.html)
+Traffic Server plugin records HTTP traffic and uses these proxy HTTP fields to
+indicate what fields were sent by the Traffic Server proxy to the client and
+the server. This can be helpful for analyzing the proxy's behavior via these
+replay files. Thus this proxy traffic recording function can be helpful to the
+user even though Proxy Verifier treats the fields as non-operable.
+
+
 The following demonstrates the `absent` directive which specifies that the HTTP field `X-Forwarded-For` _with any value_ should not have been sent by the proxy:
 
 ```YAML
-  - [ X-Forwarded-For, 10.10.10.2, absent ]
+  - [ X-Forwarded-For, { as: absent } ]
 ```
 
-The following demonstrates the `present` directive which specifies that the HTTP field `X-Forwarded-For` _with any value_ should  have been sent by the proxy:
+The following demonstrates the `present` directive which specifies that the HTTP field `X-Forwarded-For` _with any value_ should have been sent by the proxy:
 
 ```YAML
-  - [ X-Forwarded-For, 10.10.10.2, present ]
+  - [ X-Forwarded-For, { as: present } ]
 ```
+
+Notice that for both the `absent` and the `present` directives, the `value` map item is not relevant and need not be provided and, in fact, will be ignored by Proxy Verifier if it is provided.
 
 The following demonstrates the `equal` directive which specifies that `X-Forwarded-For` should have been received from the proxy with the exact value "10.10.10.2":
 
 ```YAML
-  - [ X-Forwarded-For, 10.10.10.2, equal ]
+  - [ X-Forwarded-For, { value: 10.10.10.2, as: equal } ]
 ```
 
 The following demonstrates the `contains` directive which specifies that `X-Forwarded-For` should have been received from the proxy containing the value "10" at any position in the field value:
 
 ```YAML
-  - [ X-Forwarded-For, 10, contains ]
+  - [ X-Forwarded-For, { value: 10, as: contains } ]
 ```
 
-The following demonstrates the `prefix` directive which specifies that `X-Forwarded-For` should have been received from the proxy with a field value starting  with "1":
+The following demonstrates the `prefix` directive which specifies that `X-Forwarded-For` should have been received from the proxy with a field value starting with "1":
 
 ```YAML
-  - [ X-Forwarded-For, 1, prefix ]
+  - [ X-Forwarded-For, { value: 1, as: prefix } ]
 ```
 
 The following demonstrates the `suffix` directive which specifies that `X-Forwarded-For` should have been received from the proxy with a field value ending with "2":
 
 ```YAML
-  - [ X-Forwarded-For, 2, suffix ]
+  - [ X-Forwarded-For, { value: 2, as: suffix } ]
 ```
 
 ### URL Verification
@@ -394,29 +429,29 @@ For example, consider the following request line:
 
 The request URL in this case is case is
 `http://example.one:8080/path?query=q#Frag`. The Verifier server can be
-configured to verify the various parts of such URLs using any or all of the
-directives explained above for field verification (`equal`, `contains`, etc.).
-Continuing with this example URL, the following uses the `equal` directive
-for each part of the URL, thus verifying that the request URL exactly
-matches the URL given in this example and emitting a verification error
-message if any parts of the URL do not match:
+configured to verify the various parts of such URLs using the same map sytax
+explained above for field verification using any of those same directives
+(`equal`, `contains`, etc.). Continuing with this example URL, the following
+uses the `equal` directive for each part of the URL, thus verifying that the
+request URL exactly matches the URL given in this example and emitting a
+verification error message if any parts of the URL do not match:
 
 ```YAML
   proxy-request:
     url:
-    - [ scheme, http, equal ]
-    - [ host, example.one, equal ]
-    - [ port, 8080, equal ]
-    - [ path, /path, equal ]
-    - [ query, query=q, equal ]
-    - [ fragment, Frag, equal ]
+    - [ scheme,   { value: http,        as: equal } ]
+    - [ host,     { value: example.one, as: equal } ]
+    - [ port,     { value: 8080,        as: equal } ]
+    - [ path,     { value: /path,       as: equal } ]
+    - [ query,    { value: query=q,     as: equal } ]
+    - [ fragment, { value: Frag,        as: equal } ]
 ```
 
-Alternatively, `authority`, with an alias of `net-loc`, can be used. It is the
-combination of the host and port parts:
+Alternatively to `host` and `port`, `authority`, with an alias of `net-loc`, is
+supported, which is the combination of the two:
 
 ```YAML
-  - [ authority, example.one:8080, equal ]
+  - [ authority, { value: example.one:8080, as: equal } ]
 ```
 
 As another example using other directives, consider a request URL of
@@ -426,17 +461,19 @@ following:
 ```YAML
   proxy-request:
     url:
-    - [ scheme, http, absent ]
-    - [ authority, foo, absent ]
-    - [ path, /path/x/y, equal ]
-    - [ query, query=q, equal ]
-    - [ fragment, foo, present ]
+    - [ scheme,    { value: http,      as: absent } ]
+    - [ authority, { value: foo,       as: absent } ]
+    - [ path,      { value: /path/x/y, as: equal } ]
+    - [ query,     { value: query=q,   as: equal } ]
+    - [ fragment,  { value: foo,       as: present } ]
 ```
 
 Note that `scheme` and `authority` parts both use `absent` directives because
-this particular URL just has path, query, and fragment components. The `path`
-and `query` components must match `/path/x/y` and `query=q` exactly because
-they use the `equal` directive. The `fragment` of the URL is verified with the
+this particular URL just has path, query, and fragment components. Thus, with
+this verification specification, if the proxy includes scheme or authority in
+the request target, it will result in a verification failure. The `path` and
+`query` components must match `/path/x/y` and `query=q` exactly because they
+use the `equal` directive. The `fragment` of the URL is verified with the
 `present` directive in this case, indicating that the received URL from the
 proxy only needs to have some fragment of any value to pass this specified
 verification.
@@ -516,11 +553,11 @@ sessions:
     #
     proxy-request:
       url:
-      - [ path, flower.jpeg, contains ]
+      - [ path, { value: flower.jpeg, as: contains } ]
 
       headers:
         fields:
-        - [ Content-Length, '399', present ]
+        - [ Content-Length, { value: '399', as: present } ]
 
     #
     # Direct the Proxy Verifier server to reply with a 200 OK response with a body
@@ -546,7 +583,7 @@ sessions:
       status: 200
       headers:
         fields:
-        - [ Transfer-Encoding, chunked, equal ]
+        - [ Transfer-Encoding, { value: chunked, as: equal } ]
 
 #
 # For the second session, we use a protocol node to configure HTTP/2 using an
@@ -587,15 +624,15 @@ sessions:
     #
     proxy-request:
       url:
-      - [ path, flower.jpeg, contains ]
+      - [ path, { value: flower.jpeg, as: contains } ]
 
       headers:
         fields:
         - [ :method, POST ]
         - [ :scheme, https ]
         - [ :authority, www.example.com ]
-        - [ :path, flower.jpeg, contains ]
-        - [ Content-Type, application/octet-stream, equal ]
+        - [ :path,        { value: flower.jpeg,              as: contains } ]
+        - [ Content-Type, { value: application/octet-stream, as: equal } ]
 
     #
     # Direct the Proxy Verifier server to reply with a 200 OK response with a body

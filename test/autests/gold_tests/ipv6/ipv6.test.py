@@ -22,6 +22,9 @@ client = r.AddClientProcess("client1", "replay_files/single_transaction.yaml",
                             use_ipv6=True, http_ports=[server.Variables.http_port],
                             other_args="--no-proxy --verbose diag")
 
+# Note that this test involves no proxy and, instead, the client talks directly
+# to the server.
+
 client.Streams.stdout = "gold/single_transaction_client.gold"
 server.Streams.stdout = "gold/single_transaction_server.gold"
 

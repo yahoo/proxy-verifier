@@ -58,7 +58,7 @@ std::list<std::shared_ptr<Ssn>> Session_List;
 
 std::deque<swoc::IPEndpoint> Target, Target_Https;
 
-/** Whether the replay-client behaves according to client-request or
+/** Whether the replay-client constructs traffic according to client-request or
  * proxy-request directives.
  *
  * This flag is toggled via the existence or non-existence of the --no-proxy
