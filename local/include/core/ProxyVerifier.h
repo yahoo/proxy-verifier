@@ -1098,10 +1098,37 @@ public:
 
   swoc::Errata serialize(swoc::BufferWriter &w) const;
 
-  static constexpr char const *const KEY_NOT_FOUND = "*N/A*";
+  /** A marker indicating that this transaction's key is not yet set nor derived.
+   */
+  static constexpr char const *const TRANSACTION_KEY_NOT_SET = "*N/A*";
 
-  /** Make the key for this transaction per the specified key format. */
-  std::string make_key() const;
+  /** Set _key for this message via self-inspection (i.e., via URL and field
+   * processing) per the specified key format (see --format). */
+  void derive_key();
+
+  /** Set a key for this message.
+   *
+   * By design this takes precedence over deriving the key from the headers.
+   * That is, setting the key via this function will override any key derived
+   * from the headers via derive_key() and will prevent future calls to
+   * derive_key() from overriding this explicitly set value. We never expect
+   * the derived key (if derivable) and a set key to differ, but be aware of
+   * this precedence behavior when reading the code.
+   *
+   * @param[in] new_key The key to set for this message.
+   */
+  void set_key(swoc::TextView new_key);
+
+  /** Get the key for this message.
+   *
+   * A key can be set via one of two mechanisms:
+   *   1. Implicitly via the header fields during previous header parsing.
+   *   2. Explicitly via set_key.
+   *
+   * @return A key if the header fields describe a key or if the user
+   * previously set a key via set_key, or TRANSACTION_KEY_NOT_SET otherwise.
+   */
+  std::string get_key() const;
 
   /** Verify that the fields in 'this' correspond to the provided rules.
    *
@@ -1109,6 +1136,15 @@ public:
    * @return Whether any rules were violated
    */
   bool verify_headers(swoc::TextView key, HttpFields const &rules_) const;
+
+  /** Add the fields and rules from other into self's _fields_rules.
+   *
+   * @note duplicate field names between this and other will result in
+   * duplicate fields being added.
+   *
+   * @param[in] other The HttpFields from which to add fields and rules.
+   */
+  void merge(HttpFields const &other);
 
   /// Whether this is an HTTP/2 message.
   bool _is_http2 = false;
@@ -1283,6 +1319,9 @@ private:
   /** A convenience boolean for the corresponding parameter to localize_helper.
    */
   static constexpr bool SHOULD_LOWER = true;
+
+  /** The key associated with this HTTP transaction. */
+  std::string _key;
 
   swoc::Errata process_pseudo_headers(YAML::Node const &node);
 

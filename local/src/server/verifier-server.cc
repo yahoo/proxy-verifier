@@ -221,6 +221,16 @@ private:
 
 private:
   YAML::Node const *_ssn_node;
+  YAML::Node const *_txn_node;
+  /** The key for this transaction.
+   *
+   * This can be derived in a variety of ways:
+   *   * From the client-request node.
+   *   * From the proxy-request node.
+   *   * From the all:{headers:{fields:}} node.
+   *
+   * This value tracks the derived key across these methods.
+   */
   std::string _key;
   Txn _txn;
 };
@@ -230,6 +240,8 @@ ServerReplayFileHandler::ServerReplayFileHandler() : _txn{Use_Strict_Checking} {
 void
 ServerReplayFileHandler::reset()
 {
+  _ssn_node = nullptr;
+  _txn_node = nullptr;
   _key.clear();
   _txn.~Txn();
   new (&_txn) Txn{Use_Strict_Checking};
@@ -259,6 +271,7 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
     return errata;
   }
   LoadMutex.lock();
+  _txn_node = &node;
   return {};
 }
 
@@ -340,8 +353,8 @@ ServerReplayFileHandler::client_request(YAML::Node const &node)
 {
   HttpHeader client_request;
   Errata errata = client_request.load(node);
-  auto const key = client_request.make_key();
-  if (key != HttpHeader::KEY_NOT_FOUND) {
+  auto const key = client_request.get_key();
+  if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
     _key = key;
   }
   return errata;
@@ -352,14 +365,9 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
 {
   _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
   swoc::Errata errata = _txn._req.load(node);
-  if (_key.empty()) {
-    // This means that the client-request node did not contain the key. This
-    // can be the case if the user specified the uuid in the
-    // "all:headers:fields" node, for instance.
-    auto const key = _txn._req.make_key();
-    if (key != HttpHeader::KEY_NOT_FOUND) {
-      _key = key;
-    }
+  auto const key = _txn._req.get_key();
+  if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
+    _key = key;
   }
   if (!errata.is_ok()) {
     return errata;
@@ -416,16 +424,11 @@ ServerReplayFileHandler::server_response(YAML::Node const &node)
 swoc::Errata
 ServerReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
 {
-  _txn._req._fields_rules->merge(all_headers);
-  _txn._rsp._fields_rules->merge(all_headers);
-  if (_key.empty()) {
-    // This means that the client-request node did not contain the key. This
-    // can be the case if the user specified the uuid in the
-    // "all:headers:fields" node, for instance.
-    auto const key = _txn._req.make_key();
-    if (key != HttpHeader::KEY_NOT_FOUND) {
-      _key = key;
-    }
+  _txn._req.merge(all_headers);
+  _txn._rsp.merge(all_headers);
+  auto const key = _txn._req.get_key();
+  if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
+    _key = key;
   }
   return {};
 }
@@ -433,7 +436,19 @@ ServerReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
 swoc::Errata
 ServerReplayFileHandler::txn_close()
 {
-  if (!_key.empty()) {
+  swoc::Errata errata;
+  if (_key.empty()) {
+    errata.error(
+        R"(Could not find a key for transaction at "{}":{}.)",
+        _path,
+        _txn_node->Mark().line);
+  } else {
+    // For convenience, we do not require the user to set the key in
+    // server-response nodes. Proxy Verifier functions fine in every way for
+    // this, except for some debug logging which will show TRANSACTION_KEY_NOT_SET
+    // in some places. For this reason make sure the response is aware of the
+    // key.
+    _txn._rsp.set_key(_key);
     Transactions.emplace(_key, std::move(_txn));
   }
   LoadMutex.unlock();
@@ -502,7 +517,7 @@ TF_Serve_Connection(std::thread *t)
       }
       auto const stream_id = req_hdr->_stream_id;
       auto const is_http2 = (stream_id >= 0);
-      auto key{req_hdr->make_key()};
+      auto key{req_hdr->get_key()};
       auto specified_transaction_it{Transactions.find(key)};
 
       if (specified_transaction_it == Transactions.end()) {

@@ -326,15 +326,18 @@ ClientReplayFileHandler::server_response(YAML::Node const &node)
 swoc::Errata
 ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
 {
-  _txn._req._fields_rules->merge(all_headers);
-  _txn._rsp._fields_rules->merge(all_headers);
+  _txn._req.merge(all_headers);
+  _txn._rsp.merge(all_headers);
   return {};
 }
 
 swoc::Errata
 ClientReplayFileHandler::txn_close()
 {
-  const auto &key{_txn._req.make_key()};
+  const auto &key{_txn._req.get_key()};
+  // The user need not specify the key in the server-response node. For logging
+  // purposes, make sure _txn._rsp is aware of the key.
+  _txn._rsp.set_key(key);
   if (Keys_Whitelist.empty() || Keys_Whitelist.count(key) > 0) {
     _ssn->_transactions.emplace_back(std::move(_txn));
   }
