@@ -343,7 +343,7 @@ Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
     zret.error(R"(The received request was malformed.)");
     zret.diag(R"(Received data: {}.)", received_data);
   }
-  auto const key = hdr->make_key();
+  auto const key = hdr->get_key();
   zret.diag("Received an HTTP/1 request with key {}:\n{}", key, *hdr);
   return zret;
 }
@@ -467,7 +467,7 @@ Session::write(HttpHeader const &hdr)
   zret.errata() = hdr.serialize(w);
 
   if (!zret.is_ok()) {
-    zret.error("Header serialization failed for key: {}", hdr.make_key());
+    zret.error("Header serialization failed for key: {}", hdr.get_key());
     return zret;
   }
 
@@ -482,7 +482,7 @@ Session::write(HttpHeader const &hdr)
   } else {
     zret.error(
         R"(Header write for key {} failed with {} of {} bytes written: {}.)",
-        hdr.make_key(),
+        hdr.get_key(),
         zret.result(),
         w.size(),
         swoc::bwf::Errno{});
@@ -768,7 +768,7 @@ Session::write_body(HttpHeader const &hdr)
 {
   swoc::Rv<ssize_t> bytes_written{0};
   std::error_code ec;
-  auto const key = hdr.make_key();
+  auto const key = hdr.get_key();
 
   bytes_written.diag(
       "Transmit {} byte body {}{} for key {}.",
@@ -860,9 +860,13 @@ Session::run_transaction(Txn const &json_txn)
   errata.diag("Sent the following HTTP/1 {} request:\n{}", json_txn._req._method, json_txn._req);
 
   if (errata.is_ok()) {
-    auto const key{json_txn._req.make_key()};
+    auto const key{json_txn._req.get_key()};
     HttpHeader rsp_hdr_from_wire;
     rsp_hdr_from_wire._is_response = true;
+    // The response headers are not required to have the key. For logging
+    // purposes, explicitly make sure it is set with the expected value we have
+    // from the client-request.
+    rsp_hdr_from_wire.set_key(key);
     swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
     errata.diag("Reading response header.");
 
@@ -961,7 +965,7 @@ Session::run_transactions(
       // simply reconnect if the connection was closed.
       txn_errata.note(this->do_connect(real_target));
       if (!txn_errata.is_ok()) {
-        txn_errata.error(R"(Failed to reconnect HTTP/1 key={}.)", txn._req.make_key());
+        txn_errata.error(R"(Failed to reconnect HTTP/1 key={}.)", txn._req.get_key());
         session_errata.note(std::move(txn_errata));
         // If we don't have a valid connection, there's no point in continuing.
         break;
@@ -979,15 +983,12 @@ Session::run_transactions(
     txn_errata.note(this->run_transaction(txn));
     auto const after = clock_type::now();
     if (!txn_errata.is_ok()) {
-      txn_errata.error(R"(Failed HTTP/1 transaction with key={}.)", txn._req.make_key());
+      txn_errata.error(R"(Failed HTTP/1 transaction with key={}.)", txn._req.get_key());
     }
 
     auto const elapsed_ms = duration_cast<chrono::milliseconds>(after - before);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
-      txn_errata.error(
-          R"(HTTP/1 transaction for key={} took {}.)",
-          txn._req.make_key(),
-          elapsed_ms);
+      txn_errata.error(R"(HTTP/1 transaction for key={} took {}.)", txn._req.get_key(), elapsed_ms);
     }
     session_errata.note(std::move(txn_errata));
   }
@@ -1226,7 +1227,7 @@ H2Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc:
     return TLSSession::drain_body(hdr, expected_content_size, initial);
   }
   swoc::Rv<size_t> zret{0};
-  auto const key{hdr.make_key()};
+  auto const key{hdr.get_key()};
   auto const stream_id = hdr._stream_id;
   auto stream_map_iter = _stream_map.find(stream_id);
   if (stream_map_iter == _stream_map.end()) {
@@ -1480,7 +1481,7 @@ H2Session::run_transactions(
   auto const first_time = clock_type::now();
   for (auto const &txn : txn_list) {
     swoc::Errata txn_errata;
-    auto const key{txn._req.make_key()};
+    auto const key{txn._req.get_key()};
     if (this->is_closed()) {
       txn_errata.note(this->do_connect(real_target));
       if (!txn_errata.is_ok()) {
@@ -2264,32 +2265,43 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
         H2StreamState &stream_state = *stream_map_iter->second;
         int const headers_category = frame->headers.cat;
         if (headers_category == NGHTTP2_HCAT_REQUEST) {
-          auto &request_from_client = stream_state._request_from_client;
-          std::string composed_url{request_from_client->_scheme};
+          auto &request_from_client = *stream_state._request_from_client;
+          request_from_client.derive_key();
+          std::string composed_url{request_from_client._scheme};
           if (!composed_url.empty()) {
             composed_url.append("://");
           }
-          composed_url.append(request_from_client->_authority);
-          composed_url.append(request_from_client->_path);
-          request_from_client->parse_url(composed_url);
+          composed_url.append(request_from_client._authority);
+          composed_url.append(request_from_client._path);
+          request_from_client.parse_url(composed_url);
           errata.diag(
               "Received an HTTP/2 request for stream id {}:\n{}",
               stream_id,
-              *request_from_client);
+              request_from_client);
         } else if (headers_category == NGHTTP2_HCAT_RESPONSE) {
-          auto const &response_from_wire = *stream_state._response_from_server;
+          auto &response_from_wire = *stream_state._response_from_server;
           errata.diag(
               "Received an HTTP/2 response for stream id {}:\n{}",
               stream_id,
               response_from_wire);
+          response_from_wire.derive_key();
           if (stream_state._key.empty()) {
             // A server push? Maybe? In theory we can support that but
             // currently we do not. Emit a warning for now.
-            stream_state._key = response_from_wire.make_key();
+            stream_state._key = response_from_wire.get_key();
             errata.error(
                 "Incoming HTTP/2 response has no key set from the request. Using key from "
                 "response: {}.",
                 stream_state._key);
+          } else {
+            // Make sure the key is set and give preference to the associated
+            // request over the content of the response. There shouldn't be a
+            // difference, but if there is, the user has the YAML file with the
+            // request's key in front of them, and identifying that transaction
+            // is more helpful than so some abberant response's key from the
+            // wire. If they are looking into issues, debug logging will show
+            // the fields of both the request and response.
+            response_from_wire.set_key(stream_state._key);
           }
           auto const &key = stream_state._key;
           auto const &specified_response = stream_state._specified_response;
@@ -2559,7 +2571,7 @@ H2Session::write(HttpHeader const &hdr)
     stream_state->store_nv_request_headers_to_free(hdrs);
   }
 
-  stream_state->_key = hdr.make_key();
+  stream_state->_key = hdr.get_key();
   if (hdr._content_size > 0 && (hdr._is_request || !HttpHeader::STATUS_NO_CONTENT[hdr._status])) {
     TextView content;
     if (hdr._content_data) {
@@ -4434,19 +4446,37 @@ HttpHeader::load(YAML::Node const &node)
     }
   }
 
+  // After everything has been read, there should be enough information now to
+  // derive a key.
+  derive_key();
+
   return errata;
 }
 
-std::string
-HttpHeader::make_key() const
+void
+HttpHeader::set_key(TextView new_key)
 {
+  _key = new_key;
+}
+
+std::string
+HttpHeader::get_key() const
+{
+  return _key;
+}
+
+void
+HttpHeader::derive_key()
+{
+  if (_key != TRANSACTION_KEY_NOT_SET) {
+    // Key has already been derived or has been explicitly set by the user.
+    return;
+  }
   swoc::FixedBufferWriter w{nullptr};
-  std::string key;
   Binding binding(*this);
   w.print_n(binding, _key_format);
-  key.resize(w.extent());
-  swoc::FixedBufferWriter{key.data(), key.size()}.print_n(binding, _key_format);
-  return key;
+  _key.resize(w.extent());
+  swoc::FixedBufferWriter{_key.data(), _key.size()}.print_n(binding, _key_format);
 }
 
 // Verify that the fields in 'this' correspond to the provided rules.
@@ -4520,9 +4550,17 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
   return issue_exists;
 }
 
+void
+HttpHeader::merge(HttpFields const &other)
+{
+  _fields_rules->merge(other);
+  derive_key();
+}
+
 HttpHeader::HttpHeader(bool verify_strictly)
   : _fields_rules{std::make_shared<HttpFields>()}
   , _verify_strictly{verify_strictly}
+  , _key{TRANSACTION_KEY_NOT_SET}
 {
 }
 
@@ -4653,6 +4691,7 @@ HttpHeader::parse_request(swoc::TextView data)
           zret.error(R"(Malformed field "{}".)", field);
         }
       }
+      derive_key();
     } else {
       zret = PARSE_ERROR;
       zret.error("Empty first line in request.");
@@ -4702,6 +4741,7 @@ HttpHeader::parse_response(swoc::TextView data)
           zret.error(R"(Malformed field "{}".)", field);
         }
       }
+      derive_key();
     } else {
       zret = PARSE_ERROR;
       zret.error("Empty first line in response.");
@@ -4721,12 +4761,12 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
         spot != _hdr._fields_rules->_fields.end()) {
       bwformat(w, spec, spot->second);
     } else {
-      bwformat(w, spec, KEY_NOT_FOUND);
+      bwformat(w, spec, TRANSACTION_KEY_NOT_SET);
     }
   } else if (0 == strcasecmp("url"_tv, name)) {
     bwformat(w, spec, _hdr._url);
   } else {
-    bwformat(w, spec, KEY_NOT_FOUND);
+    bwformat(w, spec, TRANSACTION_KEY_NOT_SET);
   }
   return w;
 }
