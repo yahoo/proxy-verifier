@@ -20,6 +20,7 @@ Connecting to:``
 GET http://example.one/path/2 HTTP/1.1
 host: example.one
 uuid: 2
+x-in-all-messages: here_i_stand
 
 
 ==== REQUEST BODY ====
@@ -29,6 +30,7 @@ HTTP/1.1 200 OK
 content-type: text/html
 content-length: 32
 uuid: 2
+x-in-all-messages: here_i_stand
 
 
 ==== RESPONSE BODY ====

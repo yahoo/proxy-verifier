@@ -82,9 +82,6 @@ sessions:
         - [ Content-Length, { value: "0", as: equal } ]
         - [ x-test-duplicate-combined, { value: [ first, second ], as: equal } ]
         - [ x-test-duplicate-separate, { value: [ first, second ], as: equal } ]
-      content:
-        encoding: plain
-        size: 0
 
     server-response:
       status: 200
@@ -105,11 +102,7 @@ sessions:
         size: 16
 
     proxy-response:
-      content:
-        encoding: plain
-        size: 16
       headers:
-        encoding: esc_json
         fields:
         - [ :status, { value: 200, as: equal } ]
         - [ Cache-Control, private ]
@@ -157,19 +150,15 @@ sessions:
         version: 4
 
       headers:
-        encoding: esc_json
         fields:
-        - [ :method, POST, equal ]
-        - [ :scheme, https, equal ]
-        - [ :authority, example.data.com, equal ]
+        - [ :method, { value: POST, as: equal } ]
+        - [ :scheme, { value: https, as: equal } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
         - [ :path, /a/path ]
-        - [ X-Request-Header, different_value, present ]
-        - [ X-Added-Header, 2, present ]
-        - [ X-Deleted-Header, 2, absent ]
-        - [ Content-Length, 10, absent ]
-      content:
-        encoding: plain
-        size: 10
+        - [ X-Request-Header, { as: present } ]
+        - [ X-Added-Header, { as: present } ]
+        - [ X-Deleted-Header, { as: absent } ]
+        - [ Content-Length, { as: absent } ]
 
     server-response:
       headers:
@@ -188,14 +177,11 @@ sessions:
       headers:
         encoding: esc_json
         fields:
-        - [ :status, 500, equal ]
-        - [ X-Equal-Header, some_content, equal ]
-        - [ X-Response-Header, response, present ]
-        - [ X-Deleted-Header2, response, absent ]
-        - [ Content-Length, 32, absent ]
-      content:
-        encoding: plain
-        size: 32
+        - [ :status, { value: 500, as: equal } ]
+        - [ X-Equal-Header, { value: some_content, as: equal } ]
+        - [ X-Response-Header, { as: present } ]
+        - [ X-Deleted-Header2, { as: absent } ]
+        - [ Content-Length, { as: absent } ]
 
   #
   # Verify we can handle a response with an empty body.
@@ -233,14 +219,11 @@ sessions:
       headers:
         encoding: esc_json
         fields:
-        - [ :method, GET, equal ]
-        - [ :scheme, https, equal ]
-        - [ :authority, example.data.com, equal ]
-        - [ :path, /b/path, equal ]
-        - [ X-Request-Header, test_request, equal ]
-      content:
-        encoding: plain
-        size: 0
+        - [ :method, { value: GET, as: equal } ]
+        - [ :scheme, { value: https, as: equal } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
+        - [ :path, { value: /b/path, as: equal } ]
+        - [ X-Request-Header, { value: test_request, as: equal } ]
 
     server-response:
       headers:
@@ -256,12 +239,10 @@ sessions:
       headers:
         encoding: esc_json
         fields:
+        # Verify old, sequence-specified verification.
         - [ :status, 200, equal ]
         - [ X-Response-Header, response, equal ]
         - [ Content-Length, 0, absent ]
-      content:
-        encoding: plain
-        size: 0
 
   #
   # Verify we can handle a response with an empty body and a 0 Content-Length.
@@ -295,9 +276,6 @@ sessions:
         - [ :authority, { value: example.data.com, as: equal } ]
         - [ :path, { value: /b/path, as: equal } ]
         - [ X-Request-Header, { value: test_request, as: equal } ]
-      content:
-        encoding: plain
-        size: 0
 
     server-response:
       headers:
@@ -312,11 +290,7 @@ sessions:
 
     proxy-response:
       headers:
-        encoding: esc_json
         fields:
         - [ :status, { value: 200, as: equal } ]
         - [ X-Response-Header, { value: response, as: equal } ]
         - [ Content-Length, { value: 0, as: equal } ]
-      content:
-        encoding: plain
-        size: 0

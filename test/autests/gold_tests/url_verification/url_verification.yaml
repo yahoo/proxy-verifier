@@ -16,8 +16,6 @@ sessions:
         - [ uuid, 5 ]
         - [ X-Proxy-Directive, "SetURL=%<http://example.one:8080/config/settings.yaml?q=3%>" ]
     proxy-request:
-      version: "1.1"
-      method: "GET"
       url:
       - [ host, { value: example.one, as: equal } ]
       - [ path, { value: config/settings.yaml, as: equal } ]
@@ -47,9 +45,6 @@ sessions:
         - [ uuid, 5 ]
     proxy-response:
       status: 200
-      reason: OK
-      content:
-        size: 16
       headers:
         fields:
         - [ Set-Cookie, { value: ABCD, as: equal } ]

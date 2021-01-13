@@ -30,9 +30,6 @@ sessions:
         fields:
         - [ x-deleted-header, { as: present } ]
         - [ x-added-header, { value: 4, as: equal } ]
-      content:
-        encoding: plain
-        size: 0
 
     server-response:
       status: 200

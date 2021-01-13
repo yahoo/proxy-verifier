@@ -3,8 +3,7 @@ meta:
 
 sessions:
 - transactions:
-  - all: { headers: { fields: [[ uuid, 1 ]]}}
-    client-request:
+  - client-request:
       version: "1.1"
       scheme: "http"
       method: "GET"
@@ -13,6 +12,7 @@ sessions:
         fields:
         - [ Host, example.one ]
         - [ X-Request, testRequest ]
+        - [ uuid, 1 ]
 
     server-response:
       status: 200

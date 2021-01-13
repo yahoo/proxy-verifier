@@ -23,8 +23,7 @@ sessions:
         - [ Content-Type, application/octet-stream ]
         - [ Content-Length, '399' ]
         - [ uuid, first-request ]
-      content:
-        size: 399
+      # A "content" node is not needed if a Content-Length field is specified.
 
     #
     # Direct the Proxy Verifier server to verify that the request received from
@@ -52,6 +51,10 @@ sessions:
           - [ Content-Type, application/octet-stream ]
           - [ Transfer-Encoding, chunked ]
           - [ Connection, keep-alive ]
+        # Unlike the request which contains a Content-Length, this response
+        # will require a "content" node to specify the size of the body.
+        # Otherwise Proxy Verifier has no way of knowing how large the response
+        # should be.
         content:
           size: 3432
 

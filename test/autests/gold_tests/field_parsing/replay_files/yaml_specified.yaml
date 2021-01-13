@@ -14,10 +14,6 @@ sessions:
         - [ X-Test-Header, "something" ]
         - [ uuid, 1 ]
     proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/config/settings.yaml"
       headers:
         fields:
         - [ Host, example.one ]
@@ -35,15 +31,11 @@ sessions:
         - [ Content-Length, 16 ]
         - [ X-Test-Header, backAtYou ]
         - [ uuid, 1 ]
+
     proxy-response:
       status: 200
-      reason: OK
-      content:
-        size: 16
       headers:
         fields:
-        - [ Content-Type, text/html ]
-        - [ Content-Length, 16 ]
         - [ X-Test-Header, { value: backAtYou, as: present } ]
         - [ X-Test-Different, { value: something, as: absent } ]
         - [ uuid, 1 ]
@@ -59,13 +51,8 @@ sessions:
         - [ X-Another-Header, "request" ]
         - [ uuid, 2 ]
     proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/config/settings.yaml"
       headers:
         fields:
-        - [ Host, example.one ]
         - [ X-Another-Header, { value: "request", as: present } ]
         - [ X-Not-Present, { value: "request2", as: present } ]
         - [ uuid, 2 ]
@@ -82,9 +69,6 @@ sessions:
         - [ uuid, 2 ]
     proxy-response:
       status: 200
-      reason: OK
-      content:
-        size: 32
       headers:
         fields:
         - [ Content-Type, text/html ]

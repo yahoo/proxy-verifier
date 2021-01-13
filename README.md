@@ -115,6 +115,23 @@ and containing four header fields with a body size of 399 bytes:
         size: 399
 ```
 
+For convenience, if Proxy Verifier detects a Content-Length header, then the
+`content` node stating the size of the body is not required. Thus this can be
+simplified to:
+
+```YAML
+  client-request:
+    method: POST
+    url: /pictures/flower.jpeg
+    version: '1.1'
+    headers:
+      fields:
+      - [ Host, www.example.com ]
+      - [ Content-Type, application/octet-stream ]
+      - [ Content-Length, '399' ]
+      - [ uuid, 1234 ]
+```
+
 For HTTP/2, the protocol describes the initial request line values with pseudo
 header fields. For that protocol, therefore, the user need not specify the
 `method`, `url`, and `version` nodes and would instead specify these values
@@ -131,10 +148,9 @@ an HTTP/2 `client-request` analogous to the HTTP/1 request above (note that the
       - [ :authority, www.example.com ]
       - [ :path, /pictures/flower.jpeg ]
       - [ Content-Type, application/octet-stream ]
-      - [ Content-Length, '399' ]
       - [ uuid, 1234 ]
-      content:
-        size: 399
+    content:
+      size: 399
 ```
 
 `server-response` nodes indicate how the Proxy Verifier server should respond
@@ -208,8 +224,8 @@ example:
       - [ Content-Type, application/octet-stream ]
       - [ Content-Length, '399' ]
       - [ uuid, 1234 ]
-      content:
-        size: 399
+    content:
+      size: 399
 ```
 
 Note the presence of the `uuid` field. A field such as this is sent by the
@@ -323,7 +339,7 @@ Proxy Verifier supports six field verification directives:
 Directive  | Description
 ---------  | ------------
 absent     |  The *absence* of a field with the specified field name.
-present    | The *presence* of a field with the specified field name and having any or no value.
+present    |  The *presence* of a field with the specified field name and having any or no value.
 equal      |  The presence of a field with the specified field name and a value *equal* to the specified value.
 contains   |  The presence of a field with the specified name with a value *containing* the specified value.
 prefix     |  The presence of a field with the specified name with a value *prefixed* with the specified value.
@@ -543,8 +559,7 @@ sessions:
         - [ Content-Type, application/octet-stream ]
         - [ Content-Length, '399' ]
         - [ uuid, first-request ]
-      content:
-        size: 399
+      # A "content" node is not needed if a Content-Length field is specified.
 
     #
     # Direct the Proxy Verifier server to verify that the request received from
@@ -572,6 +587,10 @@ sessions:
           - [ Content-Type, application/octet-stream ]
           - [ Transfer-Encoding, chunked ]
           - [ Connection, keep-alive ]
+        # Unlike the request which contains a Content-Length, this response
+        # will require a "content" node to specify the size of the body.
+        # Otherwise Proxy Verifier has no way of knowing how large the response
+        # should be.
         content:
           size: 3432
 

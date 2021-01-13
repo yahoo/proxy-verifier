@@ -1,0 +1,20 @@
+``
+``Ready with 4 transactions.
+``
+``Negotiated alpn: h2
+``
+``Received an HTTP/2 request for stream id 1:
+- ":method": "GET"
+- ":scheme": "https"
+- ":authority": "data.brian.example.com"
+- ":path": "/some/path"
+- "host": "data.brian.example.com"
+- "content-length": "0"
+- "uuid": "1"
+
+``
+- ":status": "200"
+- "content-length": "0"
+- "uuid": "1"
+
+``

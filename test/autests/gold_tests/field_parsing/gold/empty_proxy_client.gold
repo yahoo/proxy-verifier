@@ -9,7 +9,6 @@
 - "content-type": "text/html"
 - "content-length": "16"
 - "x-response": "testResponse"
-- "uuid": "1"
 
 ``Drained ``: 0000000 0000001 
 ``

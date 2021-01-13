@@ -3,7 +3,6 @@
 - "content-type": "text/html"
 - "content-length": "16"
 - "x-response": "testResponse"
-- "uuid": "1"
 
 ``
 ``Received an HTTP/1 request with key 1:
