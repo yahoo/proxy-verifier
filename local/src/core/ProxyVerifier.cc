@@ -1944,8 +1944,7 @@ on_header_callback(
     } else if (name_view == ":path") {
       request_headers->_path = value_view;
     }
-    request_headers->_fields_rules->_fields.emplace(name_view, value_view);
-    request_headers->_fields_rules->_fields_sequence.push_back({name_view, value_view});
+    request_headers->_fields_rules->add_field(name_view, value_view);
     break;
   }
 
@@ -1955,8 +1954,7 @@ on_header_callback(
       response_headers->_status = swoc::svtou(value_view);
       response_headers->_status_string = std::string(value_view);
     }
-    response_headers->_fields_rules->_fields.emplace(name_view, value_view);
-    response_headers->_fields_rules->_fields_sequence.push_back({name_view, value_view});
+    response_headers->_fields_rules->add_field(name_view, value_view);
     // See if we are expecting a 100 response.
     if (stream_state->_wait_for_continue) {
       if (name_view == ":status" && value_view == "100") {
@@ -3728,6 +3726,13 @@ HttpFields::HttpFields()
 }
 
 void
+HttpFields::add_field(swoc::TextView name, swoc::TextView value)
+{
+  _fields.emplace(name, value);
+  _fields_sequence.push_back({name, value});
+}
+
+void
 HttpFields::merge(HttpFields const &other)
 {
   for (auto const &field : other._fields) {
@@ -3871,8 +3876,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
     if (ValueNode.IsScalar()) {
       // There's only a single value associated with this field name.
       TextView value{HttpHeader::localize(node[YAML_RULE_VALUE_INDEX].Scalar())};
-      _fields.emplace(name, value);
-      _fields_sequence.push_back({name, value});
+      add_field(name, value);
       if (node_size == 2 && assume_equality_rule) {
         _rules.emplace(name, RuleCheck::make_equality(name, value));
       } else if (node_size == 3) {
@@ -3898,8 +3902,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
       for (auto const &value : ValueNode) {
         TextView localized_value{HttpHeader::localize(value.Scalar())};
         values.emplace_back(localized_value);
-        _fields.emplace(name, localized_value);
-        _fields_sequence.push_back({name, localized_value});
+        add_field(name, localized_value);
       }
       if (node_size == 2 && assume_equality_rule) {
         _rules.emplace(name, RuleCheck::make_equality(name, std::move(values)));
@@ -3926,8 +3929,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
       if (auto const field_value_node{ValueNode[YAML_RULE_VALUE_MAP_KEY]}; field_value_node) {
         if (field_value_node.IsScalar()) {
           value = HttpHeader::localize(field_value_node.Scalar());
-          _fields.emplace(name, value);
-          _fields_sequence.push_back({name, value});
+          add_field(name, value);
         } else if (field_value_node.IsSequence()) {
           // Verification is for duplicate fields:
           // -[ set-cookie, { value: [ cookiea, cookieb], as: equal } ]
@@ -3936,8 +3938,7 @@ HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool ass
           for (auto const &value : field_value_node) {
             TextView localized_value{HttpHeader::localize(value.Scalar())};
             values.emplace_back(localized_value);
-            _fields.emplace(name, localized_value);
-            _fields_sequence.push_back({name, localized_value});
+            add_field(name, localized_value);
           }
           if (auto const rule_type_node{ValueNode[YAML_RULE_TYPE_MAP_KEY]}; rule_type_node) {
             TextView rule_type{rule_type_node.Scalar()};
@@ -4681,8 +4682,7 @@ HttpHeader::parse_request(swoc::TextView data)
         auto name{value.take_prefix_at(':')};
         value.trim_if(&isspace);
         if (name) {
-          _fields_rules->_fields.emplace(name, value);
-          _fields_rules->_fields_sequence.push_back({name, value});
+          _fields_rules->add_field(name, value);
           if (icompare(name, "expect") && icompare(value, "100-continue")) {
             _send_continue = true;
           }
@@ -4734,8 +4734,7 @@ HttpHeader::parse_response(swoc::TextView data)
         auto name{value.take_prefix_at(':')};
         value.trim_if(&isspace);
         if (name) {
-          _fields_rules->_fields.emplace(name, value);
-          _fields_rules->_fields_sequence.push_back({name, value});
+          _fields_rules->add_field(name, value);
         } else {
           zret = PARSE_ERROR;
           zret.error(R"(Malformed field "{}".)", field);

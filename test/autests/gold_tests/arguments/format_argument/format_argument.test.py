@@ -157,3 +157,27 @@ server.ReturnCode = 1
 server.Streams.stdout += Testers.ContainsExpression(
         'Could not find a key of format "{field.uuid}" for transaction',
         "There should be a parsing warning that a key was not found for a transaction.")
+
+#
+# Test 6: Verify that the server returns a 404 for an unrecognized key.
+#
+r = Test.AddTestRun('Verify a 404 response for an unrecognized key')
+client = r.AddClientProcess("client6", "uuid1.yaml",
+                            other_args="--verbose diag")
+
+# Notice that the server will be configured to recognize uuid 2, not 1. So when
+# a request with uuid 1 is received, it will not recognize it and should return
+# a 404 (Not Found).
+server = r.AddServerProcess("server6", "uuid2.yaml",
+                            other_args="--verbose diag")
+proxy = r.AddProxyProcess("proxy6", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
+
+server.ReturnCode = 1
+
+client.Streams.stdout += Testers.ContainsExpression(
+        'Received an HTTP/1 404 response',
+        "The client should receive a 404 response for an unrecognized key.")
+server.Streams.stdout += Testers.ContainsExpression(
+        'sending a 404',
+        "The server should send a 404 response for an unrecognized key.")

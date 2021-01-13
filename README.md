@@ -250,6 +250,12 @@ values as the key, as utilized in the examples in this document, but this is
 configurable via the `--format` command line argument. For details see the
 section describing this argument below.
 
+Both the client and the server will fail the YAML parsing phase and exit with a
+non-zero return if either parses a transaction for which they cannot derive a
+key.  If during the traffic processing phase the Verifier server somehow
+receives a request for which it cannot derive a key, it will return a *404 Not
+Found* response and close the connection upon which it received the request.
+
 
 ## Traffic Verification Specification
 
