@@ -114,6 +114,7 @@ public:
 
 private:
   std::shared_ptr<Ssn> _ssn;
+  YAML::Node const *_txn_node = nullptr;
   Txn _txn;
 };
 
@@ -157,6 +158,7 @@ ClientReplayFileHandler::ssn_reset()
 void
 ClientReplayFileHandler::txn_reset()
 {
+  _txn_node = nullptr;
   _txn.~Txn();
   new (&_txn) Txn{Use_Strict_Checking};
 }
@@ -228,6 +230,7 @@ swoc::Errata
 ClientReplayFileHandler::txn_open(YAML::Node const &node)
 {
   swoc::Errata errata;
+  _txn_node = &node;
   _txn._req._is_request = true;
   _txn._rsp._is_response = true;
   if (!node[YAML_CLIENT_REQ_KEY]) {
@@ -334,16 +337,27 @@ ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
 swoc::Errata
 ClientReplayFileHandler::txn_close()
 {
+  swoc::Errata errata;
   const auto &key{_txn._req.get_key()};
-  // The user need not specify the key in the server-response node. For logging
-  // purposes, make sure _txn._rsp is aware of the key.
-  _txn._rsp.set_key(key);
-  if (Keys_Whitelist.empty() || Keys_Whitelist.count(key) > 0) {
-    _ssn->_transactions.emplace_back(std::move(_txn));
+  if (key == HttpHeader::TRANSACTION_KEY_NOT_SET) {
+    // A key cannot be found for this transaction. Fail parsing for this
+    // because this is almost surely not what the user wants.
+    errata.error(
+        R"(Could not find a key of format "{}" for transaction at "{}":{}.)",
+        HttpHeader::_key_format,
+        _path,
+        _txn_node->Mark().line);
+  } else {
+    // The user need not specify the key in the server-response node. For logging
+    // purposes, make sure _txn._rsp is aware of the key.
+    _txn._rsp.set_key(key);
+    if (Keys_Whitelist.empty() || Keys_Whitelist.count(key) > 0) {
+      _ssn->_transactions.emplace_back(std::move(_txn));
+    }
   }
   this->txn_reset();
   LoadMutex.unlock();
-  return {};
+  return errata;
 }
 
 swoc::Errata

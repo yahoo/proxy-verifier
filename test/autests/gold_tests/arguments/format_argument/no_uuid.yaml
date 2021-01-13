@@ -1,0 +1,23 @@
+meta:
+  version: "1.0"
+
+sessions:
+- transactions:
+  - client-request:
+      version: "1.1"
+      method: "GET"
+      url: "/v1/video/search/channel/delain"
+      headers:
+        fields:
+        # Intentionally exclude a uuid field value, the default key.
+        - [ Host, base.ex ]
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 96
+      headers:
+        fields:
+        - [ Content-Type, html/plaintext ]
+        - [ Content-Length, 96 ]

@@ -161,6 +161,17 @@ def MakeServerProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
     return server
 
 
+def AddDefaultServerProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
+                            http_ports=None, https_ports=None,
+                            ssl_cert='', ca_certs='', other_args=''):
+
+    server = run.Processes.Default
+    _configure_server(run, server, name, replay_dir, find_ports, use_ipv6,
+                      http_ports, https_ports, ssl_cert,
+                      ca_certs, other_args)
+    return server
+
+
 def AddServerProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
                      http_ports=None, https_ports=None,
                      ssl_cert='', ca_certs='', other_args=''):
@@ -189,4 +200,5 @@ def AddServerProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
 
 ##########################################################################
 ExtendTest(MakeServerProcess, name="MakeServerProcess")
+ExtendTestRun(AddDefaultServerProcess, name="AddDefaultServerProcess")
 ExtendTestRun(AddServerProcess, name="AddServerProcess")

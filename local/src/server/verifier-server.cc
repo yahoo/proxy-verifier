@@ -220,8 +220,8 @@ private:
   swoc::Errata handle_tls_node_directives(YAML::Node const &tls_node, std::string_view sni);
 
 private:
-  YAML::Node const *_ssn_node;
-  YAML::Node const *_txn_node;
+  YAML::Node const *_ssn_node = nullptr;
+  YAML::Node const *_txn_node = nullptr;
   /** The key for this transaction.
    *
    * This can be derived in a variety of ways:
@@ -439,7 +439,8 @@ ServerReplayFileHandler::txn_close()
   swoc::Errata errata;
   if (_key.empty()) {
     errata.error(
-        R"(Could not find a key for transaction at "{}":{}.)",
+        R"(Could not find a key of format "{}" for transaction at "{}":{}.)",
+        HttpHeader::_key_format,
         _path,
         _txn_node->Mark().line);
   } else {
@@ -453,7 +454,7 @@ ServerReplayFileHandler::txn_close()
   }
   this->reset();
   LoadMutex.unlock();
-  return {};
+  return errata;
 }
 
 void

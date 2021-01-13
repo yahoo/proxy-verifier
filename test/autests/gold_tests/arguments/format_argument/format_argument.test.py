@@ -127,3 +127,33 @@ server.Streams.stdout += Testers.ContainsExpression(
 server.Streams.stdout += Testers.ContainsExpression(
         'Key: "host.one//same/path"',
         "The key should be parsed from the host/url, not the uuid.")
+
+#
+# Test 4: Verify that the client detects when a key is not present in a
+# transaction.
+#
+r = Test.AddTestRun('Verify that the client detects a non-existent key')
+client = r.AddClientProcess("client4", "no_uuid.yaml",
+                            other_args="--verbose diag")
+
+# The client will give a non-zero return code because it found a transaction
+# without a key.
+client.ReturnCode = 1
+client.Streams.stdout += Testers.ContainsExpression(
+        'Could not find a key of format "{field.uuid}" for transaction',
+        "There should be a parsing warning that a key was not found for a transaction.")
+
+#
+# Test 5: Verify that the server detects when a key is not present in a
+# transaction.
+#
+r = Test.AddTestRun('Verify that the server detects a non-existent key')
+server = r.AddDefaultServerProcess("server5", "no_uuid.yaml",
+                                   other_args="--verbose diag")
+
+# The server will give a non-zero return code because it found a transaction
+# without a key.
+server.ReturnCode = 1
+server.Streams.stdout += Testers.ContainsExpression(
+        'Could not find a key of format "{field.uuid}" for transaction',
+        "There should be a parsing warning that a key was not found for a transaction.")
