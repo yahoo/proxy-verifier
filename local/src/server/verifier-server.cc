@@ -502,82 +502,91 @@ TF_Serve_Connection(std::thread *t)
         break;
       }
 
-      swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
-      auto &&[req_hdr, read_header_errata] = thread_info._session->read_and_parse_request(w);
-      thread_errata.note(std::move(read_header_errata));
-      if (!thread_errata.is_ok()) {
-        thread_errata.error("Could not read the header.");
-        Engine::process_exit_code = 1;
-        break;
-      }
-      if (!req_hdr) {
-        // There were no headers to retrieve. This would happen if the client
-        // closed the connection and is not an error.
-        break;
-      }
-      auto const stream_id = req_hdr->_stream_id;
-      auto const is_http2 = (stream_id >= 0);
-      auto key{req_hdr->get_key()};
-      auto specified_transaction_it{Transactions.find(key)};
-
-      if (specified_transaction_it == Transactions.end()) {
-        thread_errata.error(R"(Proxy request with key "{}" not found.)", key);
-        Engine::process_exit_code = 1;
-        break;
-      }
-
-      [[maybe_unused]] auto &[unused_key, specified_transaction] = *specified_transaction_it;
-
-      thread_errata.note(req_hdr->update_content_length(req_hdr->_method));
-      thread_errata.note(req_hdr->update_transfer_encoding());
-
-      // If there is an Expect header with the value of 100-continue, send the
-      // 100-continue response before Reading request body.
-      if (req_hdr->_send_continue) {
-        HttpHeader continue_response = get_continue_response(stream_id);
-        thread_info._session->write(continue_response);
-      }
-
-      if (is_http2 || req_hdr->_content_size || req_hdr->_content_length_p || req_hdr->_chunked_p) {
-        if (req_hdr->_chunked_p) {
-          req_hdr->_content_size = specified_transaction._req._content_size;
-        }
-        auto &&[bytes_drained, drain_errata] =
-            thread_info._session->drain_body(*req_hdr, req_hdr->_content_size, w.view());
-        thread_errata.note(std::move(drain_errata));
-
+      // Loop through all received requests
+      int num_requests = 0;
+      while (true) {
+        swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
+        auto &&[req_hdr, read_header_errata] = thread_info._session->read_and_parse_request(w);
+        thread_errata.note(std::move(read_header_errata));
         if (!thread_errata.is_ok()) {
-          thread_errata.error("Failed to drain the request body for key: {}.", key);
+          if (num_requests > 0) {
+            // Processed all the requests
+          } else {
+            thread_errata.error("Could not read the header.");
+            Engine::process_exit_code = 1;
+          }
           break;
         }
+        if (!req_hdr) {
+          // There were no headers to retrieve. This would happen if the client
+          // closed the connection and is not an error.
+          break;
+        }
+        num_requests++;
+        auto const stream_id = req_hdr->_stream_id;
+        auto const is_http2 = (stream_id >= 0);
+        auto key{req_hdr->get_key()};
+        auto specified_transaction_it{Transactions.find(key)};
+
+        if (specified_transaction_it == Transactions.end()) {
+          thread_errata.error(R"(Proxy request with key "{}" not found.)", key);
+          Engine::process_exit_code = 1;
+          break;
+        }
+
+        [[maybe_unused]] auto &[unused_key, specified_transaction] = *specified_transaction_it;
+
+        thread_errata.note(req_hdr->update_content_length(req_hdr->_method));
+        thread_errata.note(req_hdr->update_transfer_encoding());
+
+        // If there is an Expect header with the value of 100-continue, send the
+        // 100-continue response before Reading request body.
+        if (req_hdr->_send_continue) {
+          HttpHeader continue_response = get_continue_response(stream_id);
+          thread_info._session->write(continue_response);
+        }
+
+        if (is_http2 || req_hdr->_content_size || req_hdr->_content_length_p || req_hdr->_chunked_p) {
+          if (req_hdr->_chunked_p) {
+            req_hdr->_content_size = specified_transaction._req._content_size;
+          }
+          auto &&[bytes_drained, drain_errata] =
+              thread_info._session->drain_body(*req_hdr, req_hdr->_content_size, w.view());
+          thread_errata.note(std::move(drain_errata));
+
+          if (!thread_errata.is_ok()) {
+            thread_errata.error("Failed to drain the request body for key: {}.", key);
+            break;
+          }
+        }
+        if (req_hdr->verify_headers(key, *specified_transaction._req._fields_rules)) {
+          thread_errata.error(R"(Request headers did not match expected request headers.)");
+          Engine::process_exit_code = 1;
+        } else {
+          thread_errata.diag(R"(Request with key {} passed validation.)", key);
+        }
+        // Responses to HEAD requests may have a non-zero Content-Length
+        // but will never have a body. update_content_length adjusts
+        // expectations so the body is not written for responses to such
+        // requests.
+        specified_transaction._rsp.update_content_length(req_hdr->_method);
+        if (is_http2) {
+          specified_transaction._rsp._is_http2 = true;
+          specified_transaction._rsp._stream_id = stream_id;
+        }
+        auto &&[bytes_written, write_errata] =
+            thread_info._session->write(specified_transaction._rsp);
+        thread_errata.note(std::move(write_errata));
+        thread_errata.diag(
+            "Wrote {} bytes in an {}{} response to request with key {} "
+            "with response status {}:\n{}",
+            bytes_written,
+            swoc::bwf::If(is_http2, "HTTP/2"),
+            swoc::bwf::If(!is_http2, "HTTP/1"),
+            key,
+            specified_transaction._rsp._status,
+            specified_transaction._rsp);
       }
-      if (req_hdr->verify_headers(key, *specified_transaction._req._fields_rules)) {
-        thread_errata.error(R"(Request headers did not match expected request headers.)");
-        Engine::process_exit_code = 1;
-      } else {
-        thread_errata.diag(R"(Request with key {} passed validation.)", key);
-      }
-      // Responses to HEAD requests may have a non-zero Content-Length
-      // but will never have a body. update_content_length adjusts
-      // expectations so the body is not written for responses to such
-      // requests.
-      specified_transaction._rsp.update_content_length(req_hdr->_method);
-      if (is_http2) {
-        specified_transaction._rsp._is_http2 = true;
-        specified_transaction._rsp._stream_id = stream_id;
-      }
-      auto &&[bytes_written, write_errata] =
-          thread_info._session->write(specified_transaction._rsp);
-      thread_errata.note(std::move(write_errata));
-      thread_errata.diag(
-          "Wrote {} bytes in an {}{} response to request with key {} "
-          "with response status {}:\n{}",
-          bytes_written,
-          swoc::bwf::If(is_http2, "HTTP/2"),
-          swoc::bwf::If(!is_http2, "HTTP/1"),
-          key,
-          specified_transaction._rsp._status,
-          specified_transaction._rsp);
     }
 
     // cleanup and get ready for another session.

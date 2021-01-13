@@ -1212,7 +1212,7 @@ H2Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
   }
   auto stream_map_iter = _stream_map.find(stream_id);
   if (stream_map_iter == _stream_map.end()) {
-    zret.error("Requested request headers, but none are available.");
+    zret.error("Requested request headers, but none are available. stream id: {}", stream_id);
     return zret;
   }
   auto &stream_state = stream_map_iter->second;
@@ -2373,7 +2373,7 @@ on_data_chunk_recv_cb(
     void *user_data)
 {
   swoc::Errata errata;
-  errata.diag("on_data_chunk_recv_cb {} bytes", len);
+  errata.diag("on_data_chunk_recv_cb {} bytes, stream id: {}", len, stream_id);
   auto *session_data = reinterpret_cast<H2Session *>(user_data);
   auto iter = session_data->_stream_map.find(stream_id);
   if (iter == session_data->_stream_map.end()) {
