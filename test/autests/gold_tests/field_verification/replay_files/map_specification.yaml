@@ -2,14 +2,10 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
+- transactions:
 
-  - all: { headers: { fields: [ [ uuid, 13 ] ] } }
-
-    client-request:
+  - client-request:
       version: "1.1"
-      scheme: "http"
       method: "GET"
       url: "/config/settings.yaml"
       headers:
@@ -18,11 +14,8 @@ sessions:
         - [ X-Test-Request, RequestData ]
         - [ X-Test-Present, It's there ]
         - [ uuid, 13 ]
+
     proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/config/settings.yaml"
       headers:
         fields:
         - [ Host, { value: le.on, as: contains } ]
@@ -35,6 +28,7 @@ sessions:
         # absent and present directives should not require a value.
         - [ X-Test-Absent, { as: absent } ]
         - [ X-Test-Present, { as: present } ]
+
     server-response:
       status: 200
       reason: OK
@@ -45,11 +39,8 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
         - [ Set-Cookie, ABCD ]
+
     proxy-response:
-      status: 200
-      reason: OK
-      content:
-        size: 16
       headers:
         fields:
         # No directive, no verification.

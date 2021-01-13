@@ -5,16 +5,15 @@
 - "host": "example.com"
 - "connection": "Keep-Alive"
 - "accept-encoding": "gzip"
-- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
+- "uuid": "1"
 
 ``
-``Received an HTTP/1 200 response for key cb9b4e94-5d42-43d4-8545-320033298ba2-214279439 with headers:
+``Received an HTTP/1 200 response for key 1 with headers:
 - "content-type": "multipart/form-data;snoopy=123456"
 - "date": "Sat, 16 Mar 2019 01:33:27 GMT"
 - "age": "1"
 - "connection": "keep-alive"
 - "content-length": "12"
-- "uuid": "cb9b4e94-5d42-43d4-8545-320033298ba2-214279439"
 
 ``
 ``Connecting via TLS.

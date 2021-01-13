@@ -15,6 +15,7 @@
 - "content-type": "text/html"
 - "content-length": "32"
 - "uuid": "2"
+- "x-in-all-messages": "here_i_stand"
 
 ``
 ``Received an HTTP/1 request with key 2:
@@ -22,5 +23,6 @@
 - "Content-Length": "0"
 - "host": "example.one"
 - "uuid": "2"
+- "x-in-all-messages": "here_i_stand"
 
 ``

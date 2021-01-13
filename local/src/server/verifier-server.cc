@@ -257,6 +257,7 @@ ServerReplayFileHandler::ssn_open(YAML::Node const &node)
 swoc::Errata
 ServerReplayFileHandler::txn_open(YAML::Node const &node)
 {
+  LoadMutex.lock();
   _txn._req._is_request = true;
   _txn._rsp._is_response = true;
   Errata errata;
@@ -270,7 +271,6 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
   if (!errata.is_ok()) {
     return errata;
   }
-  LoadMutex.lock();
   _txn_node = &node;
   return {};
 }
@@ -451,8 +451,8 @@ ServerReplayFileHandler::txn_close()
     _txn._rsp.set_key(_key);
     Transactions.emplace(_key, std::move(_txn));
   }
-  LoadMutex.unlock();
   this->reset();
+  LoadMutex.unlock();
   return {};
 }
 

@@ -1,6 +1,11 @@
 meta:
   version: '1.0'
 
+#
+# Be aware that this whole test is written for --no-proxy, meaning that
+# the proxy-request nodes are read for the transaction data.
+#
+
 sessions:
   - protocol:
       - name: http
@@ -35,7 +40,6 @@ sessions:
             - name: ip
               version: '4'
 
-          version: '2'
           scheme: https
           method: GET
           url: /some/path
@@ -49,9 +53,7 @@ sessions:
             size: 0
 
         server-response:
-          version: '2'
           status: 200
-          reason: OK
           headers:
             encoding: esc_json
             fields:
@@ -80,7 +82,6 @@ sessions:
             - name: ip
               version: '4'
 
-          version: '2'
           scheme: https
           method: GET
           url: /some/path2
@@ -94,9 +95,7 @@ sessions:
             size: 0
 
         server-response:
-          version: '2'
           status: 200
-          reason: OK
           headers:
             encoding: esc_json
             fields:
@@ -138,7 +137,6 @@ sessions:
             - name: ip
               version: '4'
 
-          version: '2'
           scheme: https
           method: POST
           url: /some/path3
@@ -152,16 +150,14 @@ sessions:
             size: 8
 
         server-response:
-          version: '2'
           status: 404
-          reason: "Not Found"
           headers:
             encoding: esc_json
             fields:
               - [ Content-Length, 8 ]
           content:
             encoding: plain
-            size: 0
+            size: 8
 
       #
       # Test 4: 32 byte POST with a 200 response.
@@ -183,7 +179,6 @@ sessions:
             - name: ip
               version: '4'
 
-          version: '2'
           scheme: https
           method: POST
           url: /some/path4
@@ -197,9 +192,7 @@ sessions:
             size: 32
 
         server-response:
-          version: '2'
           status: 200
-          reason: OK
           headers:
             encoding: esc_json
             fields:

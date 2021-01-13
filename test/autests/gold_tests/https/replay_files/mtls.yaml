@@ -4,8 +4,7 @@ meta:
 sessions:
 - protocol: [ {name: tls, version: 1.2, sni: bob}, { name: tcp }, {name: ip, version: 4} ]
   transactions:
-  - all: { headers: { fields: [[ uuid, 1 ]]}}
-    client-request:
+  - client-request:
       version: "1.1"
       scheme: "https"
       method: "GET"
@@ -13,6 +12,7 @@ sessions:
       headers:
         fields:
         - [ Host, example.one ]
+        - [ uuid, 1 ]
 
     proxy-request:
       protocol: [ {name: tls, version: 1.2, sni: bob, proxy-provided-certificate: true}, { name: tcp }, {name: ip, version: 4} ]

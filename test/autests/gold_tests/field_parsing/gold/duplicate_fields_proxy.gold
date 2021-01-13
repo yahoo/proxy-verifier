@@ -20,7 +20,6 @@ x-test-response: third
 x-response-sequence: first
 x-response-sequence: second
 x-response-sequence: third
-uuid: 1
 
 
 ==== RESPONSE BODY ====

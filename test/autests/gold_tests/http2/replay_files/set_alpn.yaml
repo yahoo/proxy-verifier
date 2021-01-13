@@ -52,13 +52,9 @@ sessions:
         version: 4
 
       headers:
-        encoding: esc_json
         fields:
         - [ Host, { value: example.data.com, as: equal } ]
         - [ Content-Length, { value: "0", as: equal } ]
-      content:
-        encoding: plain
-        size: 0
 
     server-response:
       status: 200
@@ -73,7 +69,6 @@ sessions:
     proxy-response:
       status: 200
       headers:
-        encoding: esc_json
         fields:
         - [ X-Response-Header, { value: response, as: equal } ]
 
@@ -131,9 +126,6 @@ sessions:
         fields:
         - [ Host, { value: example.data.com, as: equal } ]
         - [ Content-Length, { value: "0", as: equal } ]
-      content:
-        encoding: plain
-        size: 0
 
     server-response:
       status: 200
@@ -148,6 +140,5 @@ sessions:
     proxy-response:
       status: 200
       headers:
-        encoding: esc_json
         fields:
           - [ X-Response-Header, { value: response2, as: equal } ]

@@ -6,7 +6,6 @@ sessions:
 
   - client-request:
       version: "1.1"
-      scheme: "http"
       method: "GET"
       url: "http://example.one/config/settings.yaml"
       headers:
@@ -15,11 +14,8 @@ sessions:
         - [ X-Test-Request, RequestData ]
         - [ X-Test-Present, It's there ]
         - [ uuid, 5 ]
+
     proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/config/settings.yaml"
       headers:
         fields:
         - [ Host, { value: le.on, as: contains } ]
@@ -29,6 +25,7 @@ sessions:
         - [ X-Test-Request, { value: equest, as: prefix } ]
         - [ X-Test-Present, { value: er, as: suffix } ]
         - [ uuid, 5 ]
+
     server-response:
       status: 200
       reason: OK
@@ -40,11 +37,9 @@ sessions:
         - [ Content-Length, 16 ]
         - [ Set-Cookie, ABCD ]
         - [ uuid, 5 ]
+
     proxy-response:
       status: 200
-      reason: OK
-      content:
-        size: 16
       headers:
         fields:
         - [ Content-Type, text/html ]

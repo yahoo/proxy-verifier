@@ -13,12 +13,14 @@
 ``Sent the following HTTP/1 GET request:
 - "host": "example.one"
 - "uuid": "2"
+- "x-in-all-messages": "here_i_stand"
 
 ``
 ``Received an HTTP/1 200 response for key 2 with headers:
 - "content-type": "text/html"
 - "content-length": "32"
 - "uuid": "2"
+- "x-in-all-messages": "here_i_stand"
 
 ``body of 32 bytes with content: 0000000 0000001 0000002 0000003 
 ``

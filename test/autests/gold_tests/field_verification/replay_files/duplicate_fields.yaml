@@ -2,16 +2,10 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip, version: 4} ]
-  transactions:
-  - all:
-      headers:
-        fields:
-        - [ uuid, 1 ]
+- transactions:
 
-    client-request:
+  - client-request:
       version: "1.1"
-      scheme: "http"
       method: "GET"
       url: "http://example.one/config/settings.yaml"
       headers:
@@ -21,11 +15,9 @@ sessions:
         - [ X-Test-Present, [ also, here ] ]
         - [ X-Test-Equal, [ theSe, thE, values ] ]
         - [ X-Test-Another, [ sOme, valuEs ] ]
+        - [ uuid, 1 ]
+
     proxy-request:
-      version: "1.1"
-      scheme: "http"
-      method: "GET"
-      url: "http://example.one/config/settings.yaml"
       headers:
         fields:
         - [ Host, example.one ]
@@ -34,6 +26,7 @@ sessions:
         - [ X-Test-Equal, { value: [ theSe, thE, values ], as: equal } ]
         # Verify we support the old sequence, as opposed to map, syntax.
         - [ X-Test-Another, [ who, cares ], present ]
+
     server-response:
       status: 200
       reason: OK
@@ -44,11 +37,9 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
         - [ Set-Cookie, [ ABCD, EFG ] ]
+
     proxy-response:
       status: 200
-      reason: OK
-      content:
-        size: 16
       headers:
         fields:
         - [ Content-Type, text/html ]

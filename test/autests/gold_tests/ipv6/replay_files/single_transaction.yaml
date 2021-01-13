@@ -4,7 +4,9 @@ meta:
 sessions:
 - protocol: [ { name: tcp }, {name: ip, version: 6} ]
   transactions:
-  - client-request:
+  - all: { headers: { fields: [ [ uuid, 1 ] ] } }
+
+    client-request:
       version: "1.1"
       scheme: "http"
       method: "GET"
@@ -14,7 +16,6 @@ sessions:
         - [ Host, example.one ]
         - [ X-Test-Request, request ]
         - [ Content-Length, 0 ]
-        - [ uuid, 1 ]
 
     proxy-request:
       version: "1.1"
@@ -26,7 +27,6 @@ sessions:
         - [ Content-Length, 0 ]
         - [ Host, { value: example.one, as: equal } ]
         - [ X-Test-Request, { value: request, as: equal } ]
-        - [ uuid, 1 ]
 
     server-response:
       status: 200
@@ -38,7 +38,6 @@ sessions:
         - [ Content-Type, text/html ]
         - [ Content-Length, 16 ]
         - [ X-Test-Response, response ]
-        - [ uuid, 1 ]
 
     proxy-response:
       status: 200

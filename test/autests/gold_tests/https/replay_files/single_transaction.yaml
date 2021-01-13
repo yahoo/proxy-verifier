@@ -5,12 +5,8 @@ meta:
 sessions:
 - protocol: [ {name: http, version: 1.1}, {name: tls, version: 1.2, sni: test_sni}, { name: tcp }, {name: ip, version: 4} ]
   transactions:
-  - all:
-      headers:
-        fields:
-        - [ uuid, cb9b4e94-5d42-43d4-8545-320033298ba2-214279439 ]
 
-    client-request:
+  - client-request:
       version: '1.1'
       scheme: https
       method: POST
@@ -26,22 +22,7 @@ sessions:
         - [ Host, example.com ]
         - [ Connection, Keep-Alive ]
         - [ Accept-Encoding, gzip ]
-
-    proxy-request:
-      version: '1.1'
-      scheme: ''
-      method: POST
-      url: "/a/path"
-      content:
-        encoding: plain
-        size: 10
-      headers:
-        encoding: esc_json
-        fields:
-        - [ Content-Type, application/json; charset=utf-8 ]
-        - [ Content-Length, '10' ]
-        - [ Host, example.com ]
-        - [ Accept-Encoding, gzip ]
+        - [ uuid, 1 ]
 
     server-response:
       status: 200
@@ -55,21 +36,5 @@ sessions:
         - [ Content-Type, multipart/form-data;snoopy=123456 ]
         - [ Date, "Sat, 16 Mar 2019 01:33:27 GMT" ]
         - [ Age, '1' ]
-        - [ Connection, keep-alive ]
-        - [ Content-Length, '12' ]
-
-    proxy-response:
-      status: 200
-      reason: OK
-      content:
-        encoding: plain
-        size: 12
-      headers:
-        encoding: esc_json
-        fields:
-        - [ Content-Type, multipart/form-data;snoopy=123456 ]
-        - [ Date, "Sat, 16 Mar 2019 01:33:27 GMT" ]
-        - [ Age, '2' ]
-        - [ Transfer-Encoding, chunked ]
         - [ Connection, keep-alive ]
         - [ Content-Length, '12' ]
