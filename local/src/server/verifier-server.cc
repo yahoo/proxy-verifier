@@ -83,12 +83,39 @@ HttpHeader
 get_continue_response(int32_t stream_id = -1)
 {
   HttpHeader response;
+  response._is_response = true;
   response._status = 100;
+  response._status_string = "100";
   response._http_version = "1.1";
   response._reason = "continue";
   if (stream_id >= 0) {
+    response._is_http2 = true;
+    // _http_version and _reason are not used in HTTP/2, so don't worry about
+    // them because they won't be used.
     response._stream_id = stream_id;
   }
+  return response;
+}
+
+HttpHeader
+get_not_found_response(int32_t stream_id = -1)
+{
+  HttpHeader response;
+  response._is_response = true;
+  response._status = 404;
+  response._status_string = "404";
+  if (stream_id >= 0) {
+    response._is_http2 = true;
+    // _http_version and _reason are not used in HTTP/2, so don't worry about
+    // them because they won't be used.
+    response._stream_id = stream_id;
+  } else {
+    response._http_version = "1.1";
+    response._reason = "Not Found";
+  }
+  static const std::string field_name = "Content-Length";
+  static const std::string field_value = "0";
+  response._fields_rules->add_field(field_name, field_value);
   return response;
 }
 
@@ -522,8 +549,12 @@ TF_Serve_Connection(std::thread *t)
       auto specified_transaction_it{Transactions.find(key)};
 
       if (specified_transaction_it == Transactions.end()) {
-        thread_errata.error(R"(Proxy request with key "{}" not found.)", key);
+        thread_errata.error(R"(Proxy request with key "{}" not found, sending a 404.)", key);
         Engine::process_exit_code = 1;
+        HttpHeader not_found_response = get_not_found_response(stream_id);
+        not_found_response.update_content_length(req_hdr->_method);
+        thread_info._session->write(not_found_response);
+        // This will end the loop and eventually drop the connection.
         break;
       }
 

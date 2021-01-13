@@ -977,6 +977,13 @@ public:
   swoc::TextView _url_parts[static_cast<size_t>(
       YamlUrlPart::YamlUrlPartCount)]; ///< Maps URL part names to values.
 
+  /** Add an HTTP field to the set of fields.
+   *
+   * @param[in] name The field name for the new field.
+   * @param[in] value The field value for the new field.
+   */
+  void add_field(swoc::TextView name, swoc::TextView value);
+
   /** Add the field and rules from other into self.
    *
    * @note duplicate field names between this and other will result in
