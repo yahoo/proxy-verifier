@@ -1149,12 +1149,12 @@ H2Session::poll_for_headers(chrono::milliseconds timeout)
     close();
     return -1;
   }
-  auto const received_bytes =
+  //auto const received_bytes =
       receive_nghttp2_request_headers(this->get_session(), nullptr, 0, 0, this, timeout);
-  if (received_bytes == 0) {
+/*  if (received_bytes == 0) {
     // The receive timed out.
     return 0;
-  }
+  } */
   if (is_closed()) {
     return -1;
   } else if (this->get_headers_are_available()) {
@@ -1205,6 +1205,10 @@ H2Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
     return TLSSession::read_and_parse_request(buffer);
   }
   swoc::Rv<std::shared_ptr<HttpHeader>> zret{nullptr};
+  if (_streams_with_headers.empty()) {
+    zret.error("Empty streams_with_headers");
+    return zret;
+  }
   auto const stream_id = _streams_with_headers.front();
   _streams_with_headers.pop_front();
   if (_streams_with_headers.empty()) {
@@ -2259,7 +2263,9 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
     auto *session_data = reinterpret_cast<H2Session *>(user_data);
     auto const stream_id = frame->hd.stream_id;
     if (flags & NGHTTP2_FLAG_END_HEADERS) {
-      session_data->set_headers_are_available(stream_id);
+      if (flags & NGHTTP2_FLAG_END_STREAM) {
+        session_data->set_headers_are_available(stream_id);
+      }
       auto stream_map_iter = session_data->_stream_map.find(stream_id);
       if (stream_map_iter != session_data->_stream_map.end()) {
         H2StreamState &stream_state = *stream_map_iter->second;
@@ -2366,7 +2372,7 @@ on_stream_close_cb(
 static int
 on_data_chunk_recv_cb(
     nghttp2_session * /* session */,
-    uint8_t /* flags */,
+    uint8_t flags,
     int32_t stream_id,
     uint8_t const * /* data */,
     size_t len,
@@ -2382,6 +2388,10 @@ on_data_chunk_recv_cb(
   }
   H2StreamState &stream_state = *iter->second;
   stream_state._received_body_length += len;
+  if (flags & NGHTTP2_FLAG_END_STREAM) {
+    errata.diag("on_data_chunk_recv_cb End of data for stream {}", stream_id);
+    session_data->set_headers_are_available(stream_id);
+  }
   return 0;
 }
 

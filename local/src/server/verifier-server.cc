@@ -492,7 +492,8 @@ TF_Serve_Connection(std::thread *t)
       thread_errata.note(poll_errata);
       if (poll_return == 0) {
         // Poll timed out. Loop back around.
-        continue;
+        continue; 
+        // Continue to see if anything got added to the ready queue
       } else if (!poll_errata.is_ok()) {
         thread_errata.error("Poll failed: {}", swoc::bwf::Errno{});
         break;
