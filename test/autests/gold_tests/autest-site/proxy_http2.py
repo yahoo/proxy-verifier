@@ -23,7 +23,7 @@ import eventlet
 from eventlet.green.OpenSSL import SSL, crypto
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import RequestReceived, DataReceived
+from h2.events import StreamEnded, RequestReceived, DataReceived
 
 
 class WrapSSSLContext(ssl.SSLContext):
@@ -47,6 +47,13 @@ class WrapSSSLContext(ssl.SSLContext):
         return super().wrap_socket(sock, *args, **kwargs)
 
 
+class RequestInfo(object):
+    def __init__(self, stream_id):
+        self._body_bytes = None
+        self._headers = None
+        self._stream_id = stream_id
+
+
 class Http2ConnectionManager(object):
     timeout = 5
     """
@@ -59,6 +66,7 @@ class Http2ConnectionManager(object):
         self.sock = sock
         self.listening_conn = H2Connection(config=listening_config)
         self.is_h2_to_server = h2_to_server
+        self.request_infos = {}
 
     def run_forever(self):
         self.listening_conn.initiate_connection()
@@ -85,16 +93,29 @@ class Http2ConnectionManager(object):
             # None for a header's only request. Otherwise, if it is b'', it
             # expects that there is some body and doesn't end the stream
             # correctly.
-            data = None
             for event in events:
-                if isinstance(event, DataReceived):
-                    if data is None:
-                        data = b''
-                    data += event.data
+                if not hasattr(event, 'stream_id'):
+                    # All the frame types interesting to us have a stream id.
+                    # Flow control frames aren't important to us.
+                    continue
+                stream_id = event.stream_id
+                if stream_id in self.request_infos:
+                    request_info = self.request_infos[stream_id]
+                else:
+                    self.request_infos[stream_id] = RequestInfo(stream_id)
+                    request_info = self.request_infos[stream_id]
 
-            for event in events:
+                if isinstance(event, DataReceived):
+                    if request_info._body_bytes is None:
+                        request_info._body_bytes = b''
+                    request_info._body_bytes += event.data
+
                 if isinstance(event, RequestReceived):
-                    self.request_received(event.headers, data, event.stream_id)
+                    request_info._headers = event.headers
+
+                if isinstance(event, StreamEnded):
+                    self.request_received(request_info._headers, request_info._body_bytes, stream_id)
+                    del self.request_infos[stream_id]
 
             self.sock.sendall(self.listening_conn.data_to_send())
 
