@@ -44,6 +44,9 @@ x-request-header: request
 uuid: 2
 X-Added-Header: 1
 
+==== REQUEST BODY ====
+b'0000000 00'
+
 ==== RESPONSE ====
 500 
 
@@ -55,7 +58,7 @@ uuid: 2
 x-added-header: 1
 
 ==== RESPONSE BODY ====
-b''
+b'0000000 0000001 0000002 0000003 '
 
 ==== REQUEST HEADERS ====
 :method: GET

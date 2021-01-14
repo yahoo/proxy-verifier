@@ -240,10 +240,13 @@ public:
   swoc::Errata server_response(YAML::Node const &node) override;
   swoc::Errata apply_to_all_messages(HttpFields const &all_headers) override;
   swoc::Errata txn_close() override;
+  swoc::Errata ssn_close() override;
 
-  void reset();
+  void txn_reset();
+  void ssn_reset();
 
 private:
+  swoc::Errata handle_protocol_node(YAML::Node const &proxy_request_node);
   swoc::Errata handle_tls_node_directives(YAML::Node const &tls_node, std::string_view sni);
 
 private:
@@ -265,13 +268,18 @@ private:
 ServerReplayFileHandler::ServerReplayFileHandler() : _txn{Use_Strict_Checking} { }
 
 void
-ServerReplayFileHandler::reset()
+ServerReplayFileHandler::txn_reset()
 {
-  _ssn_node = nullptr;
   _txn_node = nullptr;
   _key.clear();
   _txn.~Txn();
   new (&_txn) Txn{Use_Strict_Checking};
+}
+
+void
+ServerReplayFileHandler::ssn_reset()
+{
+  _ssn_node = nullptr;
 }
 
 swoc::Errata
@@ -388,29 +396,34 @@ ServerReplayFileHandler::client_request(YAML::Node const &node)
 }
 
 swoc::Errata
-ServerReplayFileHandler::proxy_request(YAML::Node const &node)
+ServerReplayFileHandler::handle_protocol_node(YAML::Node const &proxy_request_node)
 {
-  _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-  swoc::Errata errata = _txn._req.load(node);
-  auto const key = _txn._req.get_key();
-  if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
-    _key = key;
-  }
-  if (!errata.is_ok()) {
-    return errata;
-  }
-  if (!node[YAML_SSN_PROTOCOL_KEY]) {
-    return errata;
-  }
-  auto protocol_sequence_node{node[YAML_SSN_PROTOCOL_KEY]};
-  if (!protocol_sequence_node) {
-    // A protocol sequence description on the server side is optional. If not provided
-    // in the proxy-request, use the one in the session.
+  swoc::Errata errata;
+  // A protocol sequence description on the server side is optional. If not
+  // provided in the proxy-request, use the one in the session if it exists.
+  YAML::Node protocol_sequence_node;
+  if (proxy_request_node[YAML_SSN_PROTOCOL_KEY]) {
+    protocol_sequence_node = proxy_request_node[YAML_SSN_PROTOCOL_KEY];
+  } else if ((*_ssn_node)[YAML_SSN_PROTOCOL_KEY]) {
     protocol_sequence_node = (*_ssn_node)[YAML_SSN_PROTOCOL_KEY];
-    if (!protocol_sequence_node) {
-      return errata;
-    }
+  } else {
+    // There is no session-level nor transaction level protocol node to
+    // process.
+    return errata;
   }
+
+  auto const http_node =
+      parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_HTTP_NAME);
+  if (!http_node.is_ok()) {
+    errata.note(std::move(http_node.errata()));
+    return errata;
+  }
+  if (http_node.result().IsDefined() &&
+      http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
+    _txn._req._is_http2 = true;
+    _txn._rsp._is_http2 = true;
+  }
+
   auto const tls_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
   if (!tls_node.is_ok()) {
     errata.note(std::move(tls_node.errata()));
@@ -433,6 +446,30 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
   if (!handle_errata.is_ok()) {
     errata.note(std::move(handle_errata));
     return errata;
+  }
+  return errata;
+}
+
+swoc::Errata
+ServerReplayFileHandler::proxy_request(YAML::Node const &node)
+{
+  swoc::Errata errata;
+
+  // Process the protocol stack because that adjusts expectations for how to
+  // load the fields (such as whether this is HTTP/2).
+  errata.note(handle_protocol_node(node));
+  if (!errata.is_ok()) {
+    return errata;
+  }
+
+  _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+  errata.note(_txn._req.load(node));
+  if (!errata.is_ok()) {
+    return errata;
+  }
+  auto const key = _txn._req.get_key();
+  if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
+    _key = key;
   }
   return errata;
 }
@@ -479,9 +516,16 @@ ServerReplayFileHandler::txn_close()
     _txn._rsp.set_key(_key);
     Transactions.emplace(_key, std::move(_txn));
   }
-  this->reset();
+  this->txn_reset();
   LoadMutex.unlock();
   return errata;
+}
+
+swoc::Errata
+ServerReplayFileHandler::ssn_close()
+{
+  this->ssn_reset();
+  return {};
 }
 
 void
@@ -570,7 +614,10 @@ TF_Serve_Connection(std::thread *t)
         thread_info._session->write(continue_response);
       }
 
-      if (is_http2 || req_hdr->_content_size || req_hdr->_content_length_p || req_hdr->_chunked_p) {
+      // HTTP/2 transactions are processed on a stream basis, and the body is never needed
+      // to be independantly drained.
+      if (!is_http2 &&
+          (req_hdr->_content_size || req_hdr->_content_length_p || req_hdr->_chunked_p)) {
         if (req_hdr->_chunked_p) {
           req_hdr->_content_size = specified_transaction._req._content_size;
         }

@@ -1786,11 +1786,11 @@ public:
    */
   swoc::TextView register_rcbuf(nghttp2_rcbuf *rcbuf);
 
-  /** Indicate that the stream has ended. */
-  void set_stream_has_ended();
+  /** Indicate that the stream has closed. */
+  void set_stream_has_closed();
 
-  /** Return whether this stream has ended. */
-  bool get_stream_has_ended() const;
+  /** Return whether this stream has closed. */
+  bool get_stream_has_closed() const;
 
   /** Set the stream_id for this and the appropriate members. */
   void set_stream_id(int32_t id);
@@ -1822,7 +1822,7 @@ public:
 private:
   int32_t _stream_id = -1;
   std::deque<nghttp2_rcbuf *> _rcbufs_to_free;
-  bool _stream_has_ended = false;
+  bool _stream_has_closed = false;
   nghttp2_nv *_request_nv_headers = nullptr;
   nghttp2_nv *_response_nv_headers = nullptr;
 };
@@ -1838,6 +1838,12 @@ public:
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
   swoc::Rv<ssize_t> write(HttpHeader const &hdr) override;
 
+  /** For HTTP/2, we read on the socket until an entire stream is done.
+   *
+   * For HTTP/1, we first read headers to get the Content-Length or other
+   * header information to direct reading the body. For HTTP/2, this isn't
+   * an issue because bodies are explicitly framed.
+   */
   swoc::Rv<int> poll_for_headers(std::chrono::milliseconds timeout) override;
   swoc::Rv<std::shared_ptr<HttpHeader>> read_and_parse_request(swoc::FixedBufferWriter &w) override;
   swoc::Rv<size_t> drain_body(
@@ -1864,15 +1870,15 @@ public:
     return _session;
   }
 
-  /** Indicate that a stream has completed its HEADERS frame.
+  /** Indicate that the stream has ended (received the END_STREAM flag).
    *
-   * @param[in] stream_id The stream identifier which has completed its HEADERS
-   * frame.
+   * @param[in] stream_id The stream identifier for which the end stream has
+   * been processed.
    */
-  void set_headers_are_available(int32_t stream_id);
+  void set_stream_has_ended(int32_t stream_id);
 
-  /// Whether headers have been received.
-  bool get_headers_are_available() const;
+  /// Whether an entire stream has been received and is ready for processing.
+  bool get_a_stream_has_ended() const;
 
   /// Return whether this session is for a listening server.
   bool get_is_server() const;
@@ -1914,8 +1920,7 @@ private:
   nghttp2_option *_options = nullptr;
   bool _h2_is_negotiated = false;
 
-  bool _headers_are_available = false;
-  std::deque<int32_t> _streams_with_headers;
+  std::deque<int32_t> _ended_streams;
   std::shared_ptr<H2StreamState> _last_added_stream;
 
 #ifndef OPENSSL_NO_NEXTPROTONEG

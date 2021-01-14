@@ -87,21 +87,12 @@ static ssize_t receive_nghttp2_responses(
     int flags,
     void *user_data);
 
-static ssize_t receive_nghttp2_request_headers(
+static ssize_t receive_nghttp2_request(
     nghttp2_session *session,
     uint8_t *buf,
     size_t length,
     int flags,
     void *user_data,
-    milliseconds timeout);
-
-static ssize_t receive_nghttp2_body(
-    nghttp2_session *session,
-    uint8_t *buf,
-    size_t length,
-    int flags,
-    H2Session *session_data,
-    H2StreamState *stream_state,
     milliseconds timeout);
 
 namespace
@@ -1137,6 +1128,9 @@ H2Session::poll_for_headers(chrono::milliseconds timeout)
   if (!_h2_is_negotiated) {
     return TLSSession::poll_for_headers(timeout);
   }
+  if (this->get_a_stream_has_ended()) {
+    return 1;
+  }
   swoc::Rv<int> zret{-1};
   auto &&[poll_result, poll_errata] = Session::poll_for_data_on_socket(timeout);
   zret.note(std::move(poll_errata));
@@ -1150,25 +1144,19 @@ H2Session::poll_for_headers(chrono::milliseconds timeout)
     return -1;
   }
   auto const received_bytes =
-      receive_nghttp2_request_headers(this->get_session(), nullptr, 0, 0, this, timeout);
+      receive_nghttp2_request(this->get_session(), nullptr, 0, 0, this, timeout);
   if (received_bytes == 0) {
     // The receive timed out.
     return 0;
   }
   if (is_closed()) {
     return -1;
-  } else if (this->get_headers_are_available()) {
+  } else if (this->get_a_stream_has_ended()) {
     return 1;
   } else {
     // The caller will retry.
     return 0;
   }
-}
-
-bool
-H2Session::get_headers_are_available() const
-{
-  return _headers_are_available;
 }
 
 bool
@@ -1191,11 +1179,16 @@ H2Session::record_stream_state(int32_t stream_id, std::shared_ptr<H2StreamState>
   _last_added_stream = stream_state;
 }
 
-void
-H2Session::set_headers_are_available(int32_t stream_id)
+bool
+H2Session::get_a_stream_has_ended() const
 {
-  _streams_with_headers.push_back(stream_id);
-  _headers_are_available = true;
+  return !_ended_streams.empty();
+}
+
+void
+H2Session::set_stream_has_ended(int32_t stream_id)
+{
+  _ended_streams.push_back(stream_id);
 }
 
 swoc::Rv<std::shared_ptr<HttpHeader>>
@@ -1205,14 +1198,15 @@ H2Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
     return TLSSession::read_and_parse_request(buffer);
   }
   swoc::Rv<std::shared_ptr<HttpHeader>> zret{nullptr};
-  auto const stream_id = _streams_with_headers.front();
-  _streams_with_headers.pop_front();
-  if (_streams_with_headers.empty()) {
-    _headers_are_available = false;
-  }
+
+  // This function should only be called after poll_for_headers() says there is
+  // a finished stream.
+  assert(!_ended_streams.empty());
+  auto const stream_id = _ended_streams.front();
+  _ended_streams.pop_front();
   auto stream_map_iter = _stream_map.find(stream_id);
   if (stream_map_iter == _stream_map.end()) {
-    zret.error("Requested request headers, but none are available.");
+    zret.error("Requested request headers for stream id {}, but none are available.", stream_id);
     return zret;
   }
   auto &stream_state = stream_map_iter->second;
@@ -1226,47 +1220,9 @@ H2Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc:
   if (!_h2_is_negotiated) {
     return TLSSession::drain_body(hdr, expected_content_size, initial);
   }
-  swoc::Rv<size_t> zret{0};
-  auto const key{hdr.get_key()};
-  auto const stream_id = hdr._stream_id;
-  auto stream_map_iter = _stream_map.find(stream_id);
-  if (stream_map_iter == _stream_map.end()) {
-    zret.error("Could not drain HTTP/2 body for an unregistered stream id: {}", stream_id);
-    return zret;
-  }
-  auto &stream_state = stream_map_iter->second;
-  auto const received_bytes = receive_nghttp2_body(
-      this->get_session(),
-      nullptr,
-      expected_content_size,
-      0,
-      this,
-      stream_state.get(),
-      Poll_Timeout);
-  zret.result() = received_bytes;
-  if (received_bytes < 0) {
-    zret.error("Error polling for stream end for transaction with key: {}", key);
-    return zret;
-  } else if (received_bytes == 0) {
-    zret.diag("Empty drained body for transaction with key: {}", key);
-    return zret;
-  }
-
-  zret.result() += stream_state->_received_body_length;
-  auto const received_body_length = stream_state->_received_body_length;
-  if (received_body_length < expected_content_size) {
-    zret.diag(
-        "HTTP/2 Body underrun: received {} bytes of content, expected {}.",
-        received_body_length,
-        expected_content_size);
-  } else if (received_body_length > expected_content_size) {
-    zret.diag(
-        "HTTP/2 Body overrun: received {} bytes of content, expected {}.",
-        received_body_length,
-        expected_content_size);
-  }
-  zret.diag("Drained {} bytes.", stream_state->_received_body_length);
-  return zret;
+  // For HTTP/2, we process entire streams once they are ended. Therefore there
+  // is never body to drain.
+  return {0};
 }
 
 // Complete the TLS handshake (server-side).
@@ -2103,7 +2059,7 @@ receive_nghttp2_responses(
 }
 
 static ssize_t
-receive_nghttp2_request_headers(
+receive_nghttp2_request(
     nghttp2_session *session,
     uint8_t * /* buf */,
     size_t /* length */,
@@ -2117,7 +2073,7 @@ receive_nghttp2_request_headers(
   int total_recv = 0;
 
   auto const start_time = clock_type::now();
-  while (session_data->get_is_server() && !session_data->get_headers_are_available()) {
+  while (session_data->get_is_server() && !session_data->get_a_stream_has_ended()) {
     if (start_time - clock_type::now() > timeout) {
       return 0;
     }
@@ -2154,62 +2110,6 @@ receive_nghttp2_request_headers(
     total_recv += rv;
     // opportunity to send any frames like the window_update frame
     send_nghttp2_data(session, nullptr, 0, 0, user_data);
-  }
-  return (ssize_t)total_recv;
-}
-
-static ssize_t
-receive_nghttp2_body(
-    nghttp2_session *session,
-    uint8_t * /* buf */,
-    size_t /* length */,
-    int /* flags */,
-    H2Session *session_data,
-    H2StreamState *stream_state,
-    milliseconds timeout)
-{
-  swoc::Errata errata;
-  unsigned char buffer[10 * 1024];
-  int total_recv = 0;
-
-  auto const start_time = clock_type::now();
-  while (!stream_state->get_stream_has_ended()) {
-    if (clock_type::now() - start_time > timeout) {
-      return 0;
-    }
-    int n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
-    while (n <= 0) {
-      auto const ssl_error = SSL_get_error(session_data->get_ssl(), n);
-      auto &&[poll_return, poll_errata] =
-          session_data->poll_for_data_on_ssl_socket(timeout, ssl_error);
-      errata.note(std::move(poll_errata));
-      if (!errata.is_ok()) {
-        errata.error(
-            R"(Failed SSL_read for HTTP/2 request body during poll: {}.)",
-            swoc::bwf::Errno{});
-        return (ssize_t)total_recv;
-      } else if (poll_return < 0) {
-        session_data->close();
-        return (ssize_t)total_recv;
-      } else if (poll_return == 0) {
-        errata.error("Timed out waiting to SSL_read for HTTP/2 request body after {}.", timeout);
-        return (ssize_t)total_recv;
-      }
-      // Poll succeeded. Repeat the attempt to read.
-      n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
-    }
-    int rv = nghttp2_session_mem_recv(session, buffer, (size_t)n);
-    if (rv < 0) {
-      errata.error(
-          "nghttp2_session_mem_recv failed for request body: {}",
-          nghttp2_strerror((int)rv));
-      return -1;
-    } else if (rv == 0) {
-      return total_recv;
-    }
-    total_recv += rv;
-    // opportunity to send any frames like the window_update frame
-    send_nghttp2_data(session, nullptr, 0, 0, session_data);
   }
   return (ssize_t)total_recv;
 }
@@ -2256,77 +2156,77 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
   if (flags & NGHTTP2_FLAG_END_HEADERS || flags & NGHTTP2_FLAG_END_STREAM) {
     auto *session_data = reinterpret_cast<H2Session *>(user_data);
     auto const stream_id = frame->hd.stream_id;
+    auto stream_map_iter = session_data->_stream_map.find(stream_id);
+    if (stream_map_iter == session_data->_stream_map.end()) {
+      // Nothing to do if this is not in our stream map.
+      return 0;
+    }
     if (flags & NGHTTP2_FLAG_END_HEADERS) {
-      session_data->set_headers_are_available(stream_id);
-      auto stream_map_iter = session_data->_stream_map.find(stream_id);
-      if (stream_map_iter != session_data->_stream_map.end()) {
-        H2StreamState &stream_state = *stream_map_iter->second;
-        int const headers_category = frame->headers.cat;
-        if (headers_category == NGHTTP2_HCAT_REQUEST) {
-          auto &request_from_client = *stream_state._request_from_client;
-          request_from_client.derive_key();
-          std::string composed_url{request_from_client._scheme};
-          if (!composed_url.empty()) {
-            composed_url.append("://");
-          }
-          composed_url.append(request_from_client._authority);
-          composed_url.append(request_from_client._path);
-          request_from_client.parse_url(composed_url);
-          errata.diag(
-              "Received an HTTP/2 request for stream id {}:\n{}",
-              stream_id,
-              request_from_client);
-        } else if (headers_category == NGHTTP2_HCAT_RESPONSE) {
-          auto &response_from_wire = *stream_state._response_from_server;
-          errata.diag(
-              "Received an HTTP/2 response for stream id {}:\n{}",
-              stream_id,
-              response_from_wire);
-          response_from_wire.derive_key();
-          if (stream_state._key.empty()) {
-            // A server push? Maybe? In theory we can support that but
-            // currently we do not. Emit a warning for now.
-            stream_state._key = response_from_wire.get_key();
-            errata.error(
-                "Incoming HTTP/2 response has no key set from the request. Using key from "
-                "response: {}.",
-                stream_state._key);
-          } else {
-            // Make sure the key is set and give preference to the associated
-            // request over the content of the response. There shouldn't be a
-            // difference, but if there is, the user has the YAML file with the
-            // request's key in front of them, and identifying that transaction
-            // is more helpful than so some abberant response's key from the
-            // wire. If they are looking into issues, debug logging will show
-            // the fields of both the request and response.
-            response_from_wire.set_key(stream_state._key);
-          }
-          auto const &key = stream_state._key;
-          auto const &specified_response = stream_state._specified_response;
-          if (response_from_wire.verify_headers(key, *specified_response->_fields_rules)) {
-            errata.error(R"(HTTP/2 response headers did not match expected response headers.)");
-            session_data->set_non_zero_exit_status();
-          }
-          if (specified_response->_status != 0 &&
-              response_from_wire._status != specified_response->_status &&
-              (response_from_wire._status != 200 || specified_response->_status != 304) &&
-              (response_from_wire._status != 304 || specified_response->_status != 200))
-          {
-            errata.error(
-                R"(HTTP/2 Status Violation: expected {} got {}, key={}.)",
-                specified_response->_status,
-                response_from_wire._status,
-                key);
-          }
+      H2StreamState &stream_state = *stream_map_iter->second;
+      int const headers_category = frame->headers.cat;
+      if (headers_category == NGHTTP2_HCAT_REQUEST) {
+        auto &request_from_client = *stream_state._request_from_client;
+        request_from_client.derive_key();
+        stream_state._key = request_from_client.get_key();
+        std::string composed_url{request_from_client._scheme};
+        if (!composed_url.empty()) {
+          composed_url.append("://");
+        }
+        composed_url.append(request_from_client._authority);
+        composed_url.append(request_from_client._path);
+        request_from_client.parse_url(composed_url);
+        errata.diag(
+            "Received an HTTP/2 request for stream id {}:\n{}",
+            stream_id,
+            request_from_client);
+      } else if (headers_category == NGHTTP2_HCAT_RESPONSE) {
+        auto &response_from_wire = *stream_state._response_from_server;
+        errata.diag(
+            "Received an HTTP/2 response for stream id {}:\n{}",
+            stream_id,
+            response_from_wire);
+        response_from_wire.derive_key();
+        if (stream_state._key.empty()) {
+          // A response for which we didn't process the request, presumably. A
+          // server push? Maybe? In theory we can support that but currently we
+          // do not. Emit a warning for now.
+          stream_state._key = response_from_wire.get_key();
+          errata.error(
+              "Incoming HTTP/2 response has no key set from the request. Using key from "
+              "response: {}.",
+              stream_state._key);
+        } else {
+          // Make sure the key is set and give preference to the associated
+          // request over the content of the response. There shouldn't be a
+          // difference, but if there is, the user has the YAML file with the
+          // request's key in front of them, and identifying that transaction
+          // is more helpful than so some abberant response's key from the
+          // wire. If they are looking into issues, debug logging will show
+          // the fields of both the request and response.
+          response_from_wire.set_key(stream_state._key);
+        }
+        auto const &key = stream_state._key;
+        auto const &specified_response = stream_state._specified_response;
+        if (response_from_wire.verify_headers(key, *specified_response->_fields_rules)) {
+          errata.error(R"(HTTP/2 response headers did not match expected response headers.)");
+          session_data->set_non_zero_exit_status();
+        }
+        if (specified_response->_status != 0 &&
+            response_from_wire._status != specified_response->_status &&
+            (response_from_wire._status != 200 || specified_response->_status != 304) &&
+            (response_from_wire._status != 304 || specified_response->_status != 200))
+        {
+          errata.error(
+              R"(HTTP/2 Status Violation: expected {} got {}, key={}.)",
+              specified_response->_status,
+              response_from_wire._status,
+              key);
         }
       }
     }
     if (flags & NGHTTP2_FLAG_END_STREAM) {
-      auto stream_map_iter = session_data->_stream_map.find(stream_id);
-      if (stream_map_iter != session_data->_stream_map.end()) {
-        H2StreamState &stream_state = *stream_map_iter->second;
-        stream_state.set_stream_has_ended();
-      }
+      // We already verified above that this is in our _stream_map.
+      session_data->set_stream_has_ended(stream_id);
     }
   }
   return 0;
@@ -2355,7 +2255,7 @@ on_stream_close_cb(
           stream_state._key,
           elapsed_ms);
     }
-    stream_state.set_stream_has_ended();
+    stream_state.set_stream_has_closed();
     session_data->_stream_map.erase(iter);
   }
   return 0;
@@ -2366,12 +2266,11 @@ on_data_chunk_recv_cb(
     nghttp2_session * /* session */,
     uint8_t /* flags */,
     int32_t stream_id,
-    uint8_t const * /* data */,
+    uint8_t const *data,
     size_t len,
     void *user_data)
 {
   swoc::Errata errata;
-  errata.diag("on_data_chunk_recv_cb {} bytes", len);
   auto *session_data = reinterpret_cast<H2Session *>(user_data);
   auto iter = session_data->_stream_map.find(stream_id);
   if (iter == session_data->_stream_map.end()) {
@@ -2380,6 +2279,13 @@ on_data_chunk_recv_cb(
   }
   H2StreamState &stream_state = *iter->second;
   stream_state._received_body_length += len;
+  errata.diag(
+      "Drained HTTP/2 body for transaction with key: {}, stream id: {} "
+      "of {} bytes with content: {}",
+      stream_state._key,
+      stream_id,
+      len,
+      TextView(reinterpret_cast<char const *>(data), len));
   return 0;
 }
 
@@ -2410,15 +2316,15 @@ H2StreamState::~H2StreamState()
 }
 
 void
-H2StreamState::set_stream_has_ended()
+H2StreamState::set_stream_has_closed()
 {
-  _stream_has_ended = true;
+  _stream_has_closed = true;
 }
 
 bool
-H2StreamState::get_stream_has_ended() const
+H2StreamState::get_stream_has_closed() const
 {
-  return _stream_has_ended;
+  return _stream_has_closed;
 }
 
 void
