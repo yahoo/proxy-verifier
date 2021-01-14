@@ -17,7 +17,7 @@
 // more than zero arguments
 constexpr unsigned MORE_THAN_ZERO_ARG_N = ~0;
 // more than one arguments
-constexpr unsigned MORE_THAN_ONE_ARG_N = ~0 - 1;
+constexpr unsigned MORE_THAN_ONE_ARG_N = ~0u - 1u;
 // customizable indent for help message
 constexpr int INDENT_ONE = 32;
 constexpr int INDENT_TWO = 46;

@@ -4772,6 +4772,8 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
 
 namespace swoc
 {
+inline namespace SWOC_VERSION_NS
+{
 BufferWriter &
 bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
 {
@@ -4843,6 +4845,7 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error)
   }
   return w;
 }
+} // namespace SWOC_VERSION_NS
 } // namespace swoc
 
 /** RAII for managing the handler's file. */

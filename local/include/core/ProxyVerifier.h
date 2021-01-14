@@ -170,6 +170,8 @@ std::string get_printable_alpn_string(std::string_view alpn_wire_string);
 
 namespace swoc
 {
+inline namespace SWOC_VERSION_NS
+{
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const &h);
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, std::chrono::milliseconds const &s);
 
@@ -191,6 +193,7 @@ struct SSLError
 } // namespace bwf
 
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error);
+} // namespace SWOC_VERSION_NS
 } // namespace swoc
 
 /**
@@ -1590,6 +1593,14 @@ public:
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   /** @see Session::write */
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
+  /** @see Session::write */
+  swoc::Rv<ssize_t>
+  write(HttpHeader const &hdr) override
+  {
+    // The base Session::write will serialize the header then polymorphically
+    // call the TLSSession::write(TextView) version.
+    return Session::write(hdr);
+  }
 
   /** Poll until there is data on the socket after an SSL operation fails.
    *
