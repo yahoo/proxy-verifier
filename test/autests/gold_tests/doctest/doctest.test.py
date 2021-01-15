@@ -1,23 +1,44 @@
 '''
-Verify the sample replay file from the README.
+Verify the example replay file from the README.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
+import os
+from os.path import dirname
+
 Test.Summary = '''
-Verify the sample replay file from the README.
+Verify the example replay file from the README.
 '''
 
 #
-# Test 1: Verify correct behavior of a single client-side HTTP/2 transaction.
+# Test 1: Verify that we're testing with the example replay file
+# that is in the README.
 #
-r = Test.AddTestRun(" Verify the sample replay file from the README.")
-client = r.AddClientProcess("client", "sample_replay.yaml",
+r = Test.AddTestRun("Verify the tested replay file is in README.md.")
+verifier_script = 'verify_example_replay_contents.py'
+repo_dir = dirname(dirname(dirname(Test.TestRoot)))
+readme_path = os.path.join(repo_dir, 'README.md')
+example_yaml = 'example_replay.yaml'
+r.Processes.Default.Setup.Copy(verifier_script)
+r.Processes.Default.Setup.Copy(example_yaml)
+
+r.Processes.Default.Command = f'python3 {verifier_script} {example_yaml} {readme_path}'
+r.ReturnCode = 0
+r.Streams.stdout += Testers.ContainsExpression(
+        'Good',
+        f'The contents of {example_yaml} should be in {readme_path}')
+
+#
+# Test 2: Verify correct behavior of a single client-side HTTP/2 transaction.
+#
+r = Test.AddTestRun("Verify the example replay file from the README.")
+client = r.AddClientProcess("client", example_yaml,
                             other_args="--verbose diag")
-server = r.AddServerProcess("server", "sample_replay.yaml",
+server = r.AddServerProcess("server", example_yaml,
                             other_args="--verbose diag")
 
 # The test proxy is not featureful enough to handle both HTTP/1 and HTTP/2
