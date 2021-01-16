@@ -17,7 +17,9 @@ Table of Contents
    * [Table of Contents](#table-of-contents)
    * [Proxy Verifier](#proxy-verifier)
       * [Traffic Replay Specification](#traffic-replay-specification)
-         * [Server Response Lookup](#server-response-lookup)
+         * [HTTP Specification](#http-specification)
+            * [Server Response Lookup](#server-response-lookup)
+         * [Protocol Specification](#protocol-specification)
       * [Traffic Verification Specification](#traffic-verification-specification)
          * [Field Verification](#field-verification)
          * [URL Verification](#url-verification)
@@ -56,6 +58,8 @@ Proxy Verifier supports the HTTP replay of the following protocols:
 * IPv4 and IPv6
 
 ## Traffic Replay Specification
+
+### HTTP Specification
 
 Proxy Verifier traffic behavior is specified via YAML files. The behavior for
 each connection is specified under the top-most `sessions:` node, the value of
@@ -203,7 +207,7 @@ therefore, would look like the following:
       size: 3432
 ```
 
-### Server Response Lookup
+#### Server Response Lookup
 
 The `client-request` and `server-response` nodes are all that is required to
 direct Proxy Verifier's replay of a transaction. The next section will describe
@@ -256,6 +260,85 @@ key.  If during the traffic processing phase the Verifier server somehow
 receives a request for which it cannot derive a key, it will return a *404 Not
 Found* response and close the connection upon which it received the request.
 
+### Protocol Specification
+
+The above discussed the replay YAML nodes that describe how Proxy Verifier will
+craft HTTP layer traffic. This section discusses how the user specifies the
+lower layer protocols used to transport this HTTP traffic.
+
+As stated above, each HTTP session is described as an item under the `sessions`
+node sequence. Each session takes a map. HTTP transactions are described under
+the `transactions` key described above. In addition to `transactions`, a
+session also takes an optional `protocol` node. This node takes an ordered
+sequence of maps, where each item in the sequence describes the characteristics
+of a protocol layer.  The sequence is expected to be ordered from higher layer
+protocols (such as HTTP and TLS) to lower layer protocols (such as IP).
+
+Here is an example protocol node along with `sessions` and `transactions`
+nodes provided to give some context:
+
+```YAML
+sessions:
+
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+  # ...
+```
+
+Note again how the `protocol` node is under the `sessions` node which takes a
+sequence of sessions. This sample shows the start of a single session that, in
+this case, provides a protocol description via a `protocol` key. This same
+session also has a truncated set of transactions that will be specified under
+the `transactions` key. Looking further at the `protocol` node, observe that
+this session has four layers described for it: http, tls, tcp, and ip. The
+`http` node specifies that the session should use the HTTP/2 protocol. The
+`tls` node specifies that the client should use an SNI of "test\_sni" in the
+TLS client hello handshake. Further, this should be transported over TCP on IP.
+
+The following nodes are supported for `protocol`:
+
+| Name   | Node                         | Supported Values    | Description
+| -----  |--------                      | ----------------    | -----------
+| http   |                              |                     |
+|        | version                      | {1, 2}              | Whether to use HTTP/1 or HTTP/2.
+| tls    |                              |                     |
+|        | sni                          | string              | The SNI to send in the TLS handshake.
+|        | request-certificate          | boolean             | Whether the client or server should request a certificate from the proxy.
+|        | proxy-provided-certificate   | boolean             | This directs the same behavior as the request-certificate directive. This alias is helpful when the node describes what happened in the past, such as in the context of a replay file specified by [Traffic Dump](https://docs.trafficserver.apache.org/en/latest/admin-guide/plugins/traffic_dump.en.html).
+|        | verify-mode                  | {0-15}              | The value to pass directly to OpenSSL's `SSL_set_verify` to control peer verification in the TLS handshake. This allows fine grained control over TLS verification behavior.  `0` corresponds with SSL_VERIFY_NONE, `1` corresponds with SSL_VERIFY_PEER, `2` corresponds with SSL_VERIFY_FAIL_IF_NO_PEER_CERT, `4` corresponds with SSL_VERIFY_CLIENT_ONCE, and `8` corresponds with SSL_VERIFY_POST_HANDSHAKE. Any bitwise OR'd value of these values can be provided. For details about their behavior, see OpenSSL's [SSL_verify_cb](https://www.openssl.org/docs/man1.1.1/man3/SSL_verify_cb.html) documentation.
+|        | alpn-protocols               | sequence of strings | This specifies the server's protocol list used in ALPN selection. See OpenSSL's [SSL_select_next_proto](https://www.openssl.org/docs/man1.0.2/man3/SSL_select_next_proto.html) documentation for details.
+| tcp    |                              |                     |
+| ip     |                              |                     |
+
+
+The following protocol specification features are not currently implemented:
+
+* HTTP/2 is only supported over TLS. Proxy Verifier uses ALPN in the TLS
+  handshake to negotiate HTTP/2 with the proxy.  HTTP/2 upgrade from HTTP/1
+  without TLS is not supported.
+* The user cannot supply a TLS version to negotiate for the handshake.
+  Currently, if the TLS node is present, Proxy Verifier will use the highest
+  TLS version it can negotiate with the peer. This is OpenSSL's default
+  behavior. An enhancement request to support A TLS version specification
+  feature request is recorded in issue
+  [101](https://github.com/yahoo/proxy-verifier/issues/101).
+* Similarly, the user cannot specify whether to use IPv4 or IPv6 via an
+  `ip:version` node.  Proxy Verifier can test IPv6, but it does so via the user
+  passing IPv6 addresses on the commandline. It would be nice if individual
+  sessions can be marked for IPv4 or IPv6. An IP version feature request is
+  recorded in issue [100](https://github.com/yahoo/proxy-verifier/issues/100).
+* Only TCP is supported. There have been recent discussions about adding
+  HTTP/3 support, which is over UDP, but work for that has not yet started.
+
+If there is no `protocol` node specified, then Proxy Verifier will default to
+establishing an HTTP/1 connection over TCP (no TLS).
 
 ## Traffic Verification Specification
 
@@ -618,11 +701,9 @@ sessions:
   - name: http
     version: 2
   - name: tls
-    version: 1.2
     sni: test_sni
   - name: tcp
   - name: ip
-    version: 4
 
   transactions:
 

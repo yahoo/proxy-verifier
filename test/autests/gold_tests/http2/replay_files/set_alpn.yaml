@@ -9,11 +9,9 @@ sessions:
   - name: http
     version: 2
   - name: tls
-    version: 1.2
     sni: test_sni_with_h2
   - name: tcp
   - name: ip
-    version: 4
 
   transactions:
   - all:
@@ -41,7 +39,6 @@ sessions:
       - name: http
         version: 2
       - name: tls
-        version: 1.2
         sni: test_sni_with_h2
         #
         # *** NOTE "h2" is in this list.
@@ -49,7 +46,6 @@ sessions:
         alpn-protocols: [ "h2", "http/1.1", "http1.1" ]
       - name: tcp
       - name: ip
-        version: 4
 
       headers:
         fields:
@@ -79,11 +75,9 @@ sessions:
   - name: http
     version: 2
   - name: tls
-    version: 1.2
     sni: test_sni_no_h2
   - name: tcp
   - name: ip
-    version: 4
 
   transactions:
   - all:
@@ -111,7 +105,6 @@ sessions:
       - name: http
         version: 2
       - name: tls
-        version: 1.2
         sni: test_sni_no_h2
         #
         # *** NOTE "h2" is not in this list.
@@ -119,7 +112,6 @@ sessions:
         alpn-protocols: [ "http/1.1", "http1.1" ]
       - name: tcp
       - name: ip
-        version: 4
 
       headers:
         encoding: esc_json

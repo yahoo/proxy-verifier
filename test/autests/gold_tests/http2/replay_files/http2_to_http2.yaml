@@ -5,11 +5,9 @@ sessions:
   - name: http
     version: 2
   - name: tls
-    version: 1.2
     sni: test_sni
   - name: tcp
   - name: ip
-    version: 4
 
   transactions:
 
@@ -51,11 +49,9 @@ sessions:
       - name: http
         version: 2
       - name: tls
-        version: 1.2
         sni: test_sni
       - name: tcp
       - name: ip
-        version: 4
 
       # URL verification is supported for HTTP/2, with the appropriate fields
       # from :scheme, :authority, and :path used.
@@ -143,11 +139,9 @@ sessions:
       - name: http
         version: 2
       - name: tls
-        version: 1.2
         sni: test_sni
       - name: tcp
       - name: ip
-        version: 4
 
       headers:
         fields:
@@ -210,11 +204,9 @@ sessions:
       - name: http
         version: 2
       - name: tls
-        version: 1.2
         sni: test_sni
       - name: tcp
       - name: ip
-        version: 4
 
       headers:
         encoding: esc_json

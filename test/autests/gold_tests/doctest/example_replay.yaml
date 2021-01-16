@@ -76,11 +76,9 @@ sessions:
   - name: http
     version: 2
   - name: tls
-    version: 1.2
     sni: test_sni
   - name: tcp
   - name: ip
-    version: 4
 
   transactions:
 

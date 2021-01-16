@@ -4,7 +4,7 @@ meta:
 # This file is taken largely from a sample Traffic Dump file.
 sessions:
 - connection-time: 1552705896896003926
-  protocol: [ { name: tcp }, {name: ip, version: 4} ]
+  protocol: [ { name: tcp }, {name: ip} ]
 
   transactions:
   - start-time: 1552705896896042340
