@@ -11,13 +11,11 @@ sessions:
       - name: http
         version: '2'
       - name: tls
-        version: TLSv1.3
         sni: data.brian.example.com
         proxy-verify-mode: 0
         proxy-provided-cert: true
       - name: tcp
       - name: ip
-        version: '4'
 
     transactions:
       #
@@ -32,13 +30,11 @@ sessions:
             - name: http
               version: '2'
             - name: tls
-              version: TLSv1.2
               sni: data.brian.example.com
               proxy-verify-mode: 1
               proxy-provided-cert: false
             - name: tcp
             - name: ip
-              version: '4'
 
           scheme: https
           method: GET
@@ -74,13 +70,11 @@ sessions:
             - name: http
               version: '2'
             - name: tls
-              version: TLSv1.2
               sni: data.brian.example.com
               proxy-verify-mode: 1
               proxy-provided-cert: false
             - name: tcp
             - name: ip
-              version: '4'
 
           scheme: https
           method: GET
@@ -108,13 +102,11 @@ sessions:
       - name: http
         version: '2'
       - name: tls
-        version: TLSv1.3
         sni: data.brian.example.com
         proxy-verify-mode: 0
         proxy-provided-cert: true
       - name: tcp
       - name: ip
-        version: '4'
 
     transactions:
       #
@@ -129,13 +121,11 @@ sessions:
             - name: http
               version: '2'
             - name: tls
-              version: TLSv1.2
               sni: data.brian.example.com
               proxy-verify-mode: 1
               proxy-provided-cert: false
             - name: tcp
             - name: ip
-              version: '4'
 
           scheme: https
           method: POST
@@ -171,13 +161,11 @@ sessions:
             - name: http
               version: '2'
             - name: tls
-              version: TLSv1.2
               sni: data.brian.example.com
               proxy-verify-mode: 1
               proxy-provided-cert: false
             - name: tcp
             - name: ip
-              version: '4'
 
           scheme: https
           method: POST
