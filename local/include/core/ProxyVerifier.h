@@ -1811,6 +1811,13 @@ public:
   size_t _received_body_length = 0;
   bool _wait_for_continue = false;
   std::string _key;
+  /** The composed URL parts from :method, :authority, and :path pseudo headers
+   * from the request.
+   *
+   * This is stored in this object to persist its storage because parse_url
+   * assigns from this string TextViews.
+   */
+  std::string _composed_url;
   std::chrono::time_point<std::chrono::system_clock> _stream_start;
   HttpHeader const *_specified_response = nullptr;
 
