@@ -2168,7 +2168,7 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
         auto &request_from_client = *stream_state._request_from_client;
         request_from_client.derive_key();
         stream_state._key = request_from_client.get_key();
-        auto& composed_url = stream_state._composed_url;
+        auto &composed_url = stream_state._composed_url;
         composed_url = request_from_client._scheme;
         if (!composed_url.empty()) {
           composed_url.append("://");
