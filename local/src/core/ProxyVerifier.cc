@@ -1546,7 +1546,20 @@ Session::init(int num_transactions)
 swoc::Errata
 TLSSession::init()
 {
-  return TLSSession::init(server_context, client_context);
+  SSL_load_error_strings();
+  SSL_library_init();
+  Errata errata = TLSSession::client_init(client_context);
+  errata.note(TLSSession::server_init(server_context));
+  errata.diag("Finished TLSSession::init");
+  return errata;
+}
+
+// static
+void
+TLSSession::terminate()
+{
+  TLSSession::terminate(client_context);
+  TLSSession::terminate(server_context);
 }
 
 static int
@@ -1760,12 +1773,22 @@ TLSSession::configure_certificates(SSL_CTX *&context)
 
 // static
 swoc::Errata
-TLSSession::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
+TLSSession::client_init(SSL_CTX *&client_context)
 {
   swoc::Errata errata;
-  SSL_load_error_strings();
-  SSL_library_init();
+  client_context = SSL_CTX_new(TLS_client_method());
+  if (!client_context) {
+    errata.error(R"(Failed to create client_context: {}.)", swoc::bwf::SSLError{});
+    return errata;
+  }
+  errata.note(configure_certificates(client_context));
+  return errata;
+}
 
+swoc::Errata
+TLSSession::server_init(SSL_CTX *&server_context)
+{
+  swoc::Errata errata;
   server_context = SSL_CTX_new(TLS_server_method());
   if (!server_context) {
     errata.error(R"(Failed to create server_context: {}.)", swoc::bwf::SSLError{});
@@ -1777,13 +1800,15 @@ TLSSession::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
    * for dynamic server behavior (such as requesting a client cert). */
   SSL_CTX_set_client_hello_cb(server_context, client_hello_callback, nullptr);
 
-  client_context = SSL_CTX_new(TLS_client_method());
-  if (!client_context) {
-    errata.error(R"(Failed to create client_context: {}.)", swoc::bwf::SSLError{});
-    return errata;
-  }
-  errata.note(configure_certificates(client_context));
   return errata;
+}
+
+// static
+void
+TLSSession::terminate(SSL_CTX *&context)
+{
+  SSL_CTX_free(context);
+  context = nullptr;
 }
 
 // static
@@ -2708,14 +2733,26 @@ swoc::Errata
 H2Session::init(int *process_exit_code)
 {
   H2Session::process_exit_code = process_exit_code;
-  return H2Session::init(server_context, h2_client_context);
+  Errata errata = H2Session::client_init(h2_client_context);
+  errata.note(H2Session::server_init(server_context));
+  errata.diag("Finished H2Session::init");
+  return errata;
+}
+
+// static
+void
+H2Session::terminate()
+{
+  // H2Session uses the same context as TLSSession::server_context, which is
+  // cleaned up via TLSSession::init().
+  return H2Session::terminate(h2_client_context);
 }
 
 // static
 swoc::Errata
-H2Session::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
+H2Session::client_init(SSL_CTX *&client_context)
 {
-  swoc::Errata errata = super_type::init(server_context, client_context);
+  swoc::Errata errata = super_type::client_init(client_context);
 
   if (!errata.is_ok()) {
     return errata;
@@ -2724,18 +2761,45 @@ H2Session::init(SSL_CTX *&server_context, SSL_CTX *&client_context)
 #ifndef OPENSSL_NO_NEXTPROTONEG
   // Initialize the protocol selection to include H2
   SSL_CTX_set_next_proto_select_cb(client_context, select_next_proto_cb, nullptr);
-  SSL_CTX_set_next_protos_advertised_cb(server_context, advertise_next_protocol_cb, nullptr);
 #endif /* !OPENSSL_NO_NEXTPROTONEG */
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
   // Set the protocols the client will advertise
   SSL_CTX_set_alpn_protos(client_context, npn_str, npn_len);
+#else
+  static_assert(false, "Error must be at least openssl 1.0.2");
+#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
+  return errata;
+}
+
+// static
+swoc::Errata
+H2Session::server_init(SSL_CTX *&server_context)
+{
+  swoc::Errata errata;
+  // H2Session uses TLSSession::server_context which is already initialized via
+  // TLSSession::init. Thus there is no need to call
+  // TLSSession::server_session_init() here.
+
+#ifndef OPENSSL_NO_NEXTPROTONEG
+  // Initialize the protocol selection to include H2
+  SSL_CTX_set_next_protos_advertised_cb(server_context, advertise_next_protocol_cb, nullptr);
+#endif /* !OPENSSL_NO_NEXTPROTONEG */
+
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+  // Set the protocols the server will negotiate.
   SSL_CTX_set_alpn_select_cb(server_context, alpn_select_next_proto_cb, nullptr);
 #else
   static_assert(false, "Error must be at least openssl 1.0.2");
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
-  errata.diag("Finished H2Session::init");
   return errata;
+}
+
+// static
+void
+H2Session::terminate(SSL_CTX *&client_context)
+{
+  super_type::terminate(client_context);
 }
 
 swoc::Errata

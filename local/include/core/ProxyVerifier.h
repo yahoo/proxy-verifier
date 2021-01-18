@@ -1635,7 +1635,7 @@ public:
 
   // static members
   static swoc::Errata init();
-  static swoc::Errata init(SSL_CTX *&server_context, SSL_CTX *&client_context);
+  static void terminate();
 
   /** Register the TLS handshake verification mode of the server per the SNI.
    *
@@ -1721,6 +1721,10 @@ public:
   static swoc::file::path ca_certificate_dir;
 
 protected:
+  static swoc::Errata client_init(SSL_CTX *&client_context);
+  static swoc::Errata server_init(SSL_CTX *&server_context);
+  static void terminate(SSL_CTX *&context);
+
   /** A helper file to configure a host certificate.
    *
    * @param[in] cert_path The path to a directory with private and public key
@@ -1860,8 +1864,8 @@ public:
 
   swoc::Errata accept() override;
   swoc::Errata connect() override;
-  static swoc::Errata init(SSL_CTX *&server_context, SSL_CTX *&client_context);
   static swoc::Errata init(int *process_exit_code);
+  static void terminate();
   swoc::Errata client_session_init();
   swoc::Errata server_session_init();
   swoc::Errata send_connection_settings();
@@ -1904,6 +1908,11 @@ public:
 public:
   /// A mapping from stream_id to H2StreamState.
   std::unordered_map<int32_t, std::shared_ptr<H2StreamState>> _stream_map;
+
+protected:
+  static swoc::Errata client_init(SSL_CTX *&client_context);
+  static swoc::Errata server_init(SSL_CTX *&server_context);
+  static void terminate(SSL_CTX *&client_context);
 
 private:
   /** Populate an nghttp2 vector from the information in an HttpHeader instance.
