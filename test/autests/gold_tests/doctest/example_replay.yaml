@@ -101,7 +101,7 @@ sessions:
     #
     # Direct the Proxy Verifier server to verify that the request received from
     # the proxy has a path pseudo header field that contains "flower.jpeg"
-    # and has a field "Content-Type: image/jpeg"
+    # and has a field "Content-Type: image/jpeg".
     #
     proxy-request:
       url:
