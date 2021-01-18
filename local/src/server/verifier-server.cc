@@ -829,7 +829,8 @@ Engine::command_run()
           }
         }
         if (errata.is_ok()) {
-          errata = H2Session::init(&process_exit_code);
+          errata.note(TLSSession::init());
+          errata.note(H2Session::init(&process_exit_code));
         }
       } else {
         errata.error(
@@ -839,13 +840,13 @@ Engine::command_run()
       }
     }
 
-    errata = Load_Replay_Directory(
+    errata.note(Load_Replay_Directory(
         swoc::file::path{args[0]},
         [](swoc::file::path const &file) -> swoc::Errata {
           ServerReplayFileHandler handler;
           return Load_Replay_File(file, handler);
         },
-        10);
+        10));
 
     if (!errata.is_ok()) {
       process_exit_code = 1;
@@ -900,6 +901,8 @@ Engine::command_run()
   Accept_Threads.clear();
   Server_Thread_Pool.join_threads();
 
+  TLSSession::terminate();
+  H2Session::terminate();
   exit(Engine::process_exit_code);
 }
 

@@ -718,6 +718,9 @@ Engine::command_run()
       n_txn / static_cast<double>(n_ssn),
       replay_duration.count(),
       n_txn / static_cast<double>(replay_duration.count()));
+
+  TLSSession::terminate();
+  H2Session::terminate();
 };
 
 int
