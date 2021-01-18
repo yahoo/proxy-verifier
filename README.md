@@ -57,23 +57,68 @@ Proxy Verifier supports the HTTP replay of the following protocols:
 * HTTP and HTTP over TLS
 * IPv4 and IPv6
 
+Broadly speaking, Proxy Verifier is designed to address two proxy testing
+needs:
+
+* **Traffic correctness testing**: In this context Proxy Verifier can be used
+  in manual or automated end to end tests to verify correct behavior of the
+  details of generally a small number of transactions. [Transaction
+  Box](https://github.com/SolidWallOfCode/txn_box) is an example of a tool that
+  relies entirely on Proxy Verifier for its automated end to end tests (see its
+  [autest](https://github.com/SolidWallOfCode/txn_box/tree/master/test/autest)
+  directory).
+* **Production simulation testing**: In this context, Proxy Verifier is used in
+  an isolated lab environment configured as much like a production environment
+  as possible. The Verifier client and server are provided replay files as
+  input that are either auto generated or collected via a tool like [Traffic
+  Dump](https://docs.trafficserver.apache.org/en/latest/admin-guide/plugins/traffic_dump.en.html)
+  from an actual production environment. Proxy verifier then replays this
+  production-like traffic against the proxy under test. Proxy Verifier can
+  replay such traffic at rates over 10k requests per second. Here are some
+  examples where this use of Proxy Verifier can be helpful:
+
+  * Safely testing experimental versions of a patch.
+  * Running diagnostic versions of the proxy that may not be performant enough
+    for the production environment. Debug, Valgrind, and ASan builds are
+    examples of build configurations whose resultant proxy performance may be
+    impossible to run in production but can be run safely in the production
+    simulation via Proxy Verifier.
+  * Performance comparison across versions of the proxy. Since Proxy Verifier
+    replays the traffic for the same set of replay files consistently across
+    runs, different versions of the proxy can be compared with regard to their
+    performance against the same replay dataset. This affords the ability to
+    compare detect performance improvement or degradation across versions of the
+    proxy.
+
+It should be noted that when using Proxy Verifier in a production simulation
+environment, the proxy will be receiving traffic from the client that looks
+like production traffic. Thus, by design, the HTTP request targets and Host
+header fields will reference actual production servers. It will be important to
+configure the proxy under test to direct these requests not to the actual
+production servers but to the Proxy Verifier server or servers.  The way this
+is achieved will depend upon the proxy. One way to accomplish this is to
+configure the production environment with a test DNS server such as
+[MicroDNS](https://bitbucket.org/autestsuite/microdns/src/master/) configured
+to resolve all host names to the Proxy Verifier server or servers in the
+production simulation environment.
+
 ## Traffic Replay Specification
 
 ### HTTP Specification
 
 Proxy Verifier traffic behavior is specified via YAML files. The behavior for
-each connection is specified under the top-most `sessions:` node, the value of
+each connection is specified under the top-most `sessions` node, the value of
 which is a sequence where each item in the sequence describes the
 characteristics of each connection. For each session the protocol stack can be
-specified via the `protocol:` node. This node describes the protocol
-characteristics of the connection: what version of HTTP to use, whether to use
-TLS and and what the characteristics of the TLS handshake should be, and
-whether to use IPv4 or IPv6. In the absence of a `protocol:` node the default
-protocol is HTTP/1 over IPv4.  Each session is run in parallel by the
-verifier-client.
+specified via the `protocol` node. This node describes the protocol
+characteristics of the connection such as what version of HTTP to use, whether
+to use TLS and what the characteristics of the TLS handshake should be.  In
+the absence of a `protocol` node the default protocol is HTTP/1 over TCP.
+See [Protocol Specification](#protocol-specification) below for details about the
+`protocol` node.  Each session is run in parallel by the verifier-client. 
 
-In addition to the protocol specification, each session in the `sessions:`
-sequence contains a `transactions:` node. This itself is a sequence of
+In addition to protocol specification, each session in the `sessions`
+sequence contains a `transactions` node. This itself is a sequence of
 transactions that should be replayed for the associated session. Within each
 transaction, Proxy Verifier's traffic replay behavior is specified in the
 `client-request` and `server-response` nodes. `client-request` nodes are used
@@ -81,9 +126,10 @@ by the Proxy Verifier client and tell it what kind of HTTP requests it should
 generate. `server-response` nodes are used by the Proxy Verifier server to
 indicate what HTTP responses it should generate. Proxy traffic verification
 behavior is described in the `proxy-request` and `proxy-response` nodes which
-will be covered in the following section. For HTTP/1, these transactions are
-run in sequence for each session; for HTTP/2, the transactions are run in
-parallel.
+will be covered in [Traffic Verification
+Specification](#traffic-verification-specification). For HTTP/1, these
+transactions are run in sequence for each session; for HTTP/2, the transactions
+are run in parallel.
 
 For HTTP/1 requests, `client-request` has a map as a value which contains each of
 the following key/value YAML nodes:
@@ -95,10 +141,10 @@ the following key/value YAML nodes:
 1. `headers`: This takes a `fields` node which has, as a value, a sequence of
    HTTP fields. Each field is itself a sequence of two values: the name of the
    field and the value for the field.
-1. Finally, the size of the request body is specified via the `content` node
-   which itself takes a map as a value. This map will contain an item with
-   `size` as its name which maps to an integer describing how many bytes the body
-   should be.
+1. `content`: This specifies the number of bytes to send. It takes a map as a
+   value. This map will contain an item with `size` as its name which maps to
+   an integer describing how many bytes the body should be. An auto-generated
+   body of this many bytes will be sent to the client.
 
 Here's an example of a `client-request` node describing an HTTP/1.1 POST
 request with a request target of `/pictures/flower.jpeg`
@@ -112,7 +158,7 @@ and containing four header fields with a body size of 399 bytes:
     headers:
       fields:
       - [ Host, www.example.com ]
-      - [ Content-Type, application/octet-stream ]
+      - [ Content-Type, image/jpeg ]
       - [ Content-Length, '399' ]
       - [ uuid, 1234 ]
     content:
@@ -131,7 +177,7 @@ simplified to:
     headers:
       fields:
       - [ Host, www.example.com ]
-      - [ Content-Type, application/octet-stream ]
+      - [ Content-Type, image/jpeg ]
       - [ Content-Length, '399' ]
       - [ uuid, 1234 ]
 ```
@@ -151,7 +197,7 @@ an HTTP/2 `client-request` analogous to the HTTP/1 request above (note that the
       - [ :scheme, https ]
       - [ :authority, www.example.com ]
       - [ :path, /pictures/flower.jpeg ]
-      - [ Content-Type, application/octet-stream ]
+      - [ Content-Type, image/jpeg ]
       - [ uuid, 1234 ]
     content:
       size: 399
@@ -176,7 +222,7 @@ fields, and a body of size 3,432 bytes:
     headers:
       fields:
       - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
-      - [ Content-Type, application/octet-stream ]
+      - [ Content-Type, image/jpeg ]
       - [ Transfer-Encoding, chunked ]
       - [ Connection, keep-alive ]
     content:
@@ -202,7 +248,7 @@ therefore, would look like the following:
       fields:
       - [ :status, 200 ]
       - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
-      - [ Content-Type, application/octet-stream ]
+      - [ Content-Type, image/jpeg ]
     content:
       size: 3432
 ```
@@ -211,7 +257,7 @@ therefore, would look like the following:
 
 The `client-request` and `server-response` nodes are all that is required to
 direct Proxy Verifier's replay of a transaction. The next section will describe
-how to specify proxy transaction behavior via the `proxy-request` and
+how to specify proxy transaction verification behavior via the `proxy-request` and
 `proxy-response` nodes. Before proceeding to that, however, it is valuable to
 understand how the Verifier server decides which response to send for any given
 request it receives.  Consider again the `client-request` node in the preceding
@@ -225,7 +271,7 @@ example:
       - [ :scheme, https ]
       - [ :authority, www.example.com ]
       - [ :path, /pictures/flower.jpeg ]
-      - [ Content-Type, application/octet-stream ]
+      - [ Content-Type, image/jpeg ]
       - [ Content-Length, '399' ]
       - [ uuid, 1234 ]
     content:
@@ -331,8 +377,7 @@ The following protocol specification features are not currently implemented:
   [101](https://github.com/yahoo/proxy-verifier/issues/101).
 * Similarly, the user cannot specify whether to use IPv4 or IPv6 via an
   `ip:version` node.  Proxy Verifier can test IPv6, but it does so via the user
-  passing IPv6 addresses on the commandline. It would be nice if individual
-  sessions can be marked for IPv4 or IPv6. An IP version feature request is
+  passing IPv6 addresses on the commandline. An IP version feature request is
   recorded in issue [100](https://github.com/yahoo/proxy-verifier/issues/100).
 * Only TCP is supported. There have been recent discussions about adding
   HTTP/3 support, which is over UDP, but work for that has not yet started.
@@ -645,7 +690,7 @@ sessions:
       headers:
         fields:
         - [ Host, www.example.com ]
-        - [ Content-Type, application/octet-stream ]
+        - [ Content-Type, image/jpeg ]
         - [ Content-Length, '399' ]
         - [ uuid, first-request ]
       # A "content" node is not needed if a Content-Length field is specified.
@@ -673,7 +718,7 @@ sessions:
         headers:
           fields:
           - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
-          - [ Content-Type, application/octet-stream ]
+          - [ Content-Type, image/jpeg ]
           - [ Transfer-Encoding, chunked ]
           - [ Connection, keep-alive ]
         # Unlike the request which contains a Content-Length, this response
@@ -718,7 +763,7 @@ sessions:
         - [ :scheme, https ]
         - [ :authority, www.example.com ]
         - [ :path, /pictures/flower.jpeg ]
-        - [ Content-Type, application/octet-stream ]
+        - [ Content-Type, image/jpeg ]
         - [ uuid, second-request ]
       content:
         size: 399
@@ -726,7 +771,7 @@ sessions:
     #
     # Direct the Proxy Verifier server to verify that the request received from
     # the proxy has a path pseudo header field that contains "flower.jpeg"
-    # and has a field "Content-Type: application/octet-stream".
+    # and has a field "Content-Type: image/jpeg
     #
     proxy-request:
       url:
@@ -737,8 +782,8 @@ sessions:
         - [ :method, POST ]
         - [ :scheme, https ]
         - [ :authority, www.example.com ]
-        - [ :path,        { value: flower.jpeg,              as: contains } ]
-        - [ Content-Type, { value: application/octet-stream, as: equal } ]
+        - [ :path,        { value: flower.jpeg, as: contains } ]
+        - [ Content-Type, { value: image/jpeg,  as: equal } ]
 
     #
     # Direct the Proxy Verifier server to reply with a 200 OK response with a body
@@ -749,7 +794,7 @@ sessions:
         fields:
         - [ :status, 200 ]
         - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
-        - [ Content-Type, application/octet-stream ]
+        - [ Content-Type, image/jpeg ]
       content:
         size: 3432
 
