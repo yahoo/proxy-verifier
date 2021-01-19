@@ -22,6 +22,8 @@ constexpr unsigned MORE_THAN_ONE_ARG_N = ~0u - 1u;
 constexpr int INDENT_ONE = 32;
 constexpr int INDENT_TWO = 46;
 
+const std::string Proxy_Verifier_Version = "1.14.2";
+
 namespace ts
 {
 using AP_StrVec = std::vector<std::string>;
