@@ -16,7 +16,7 @@ Verify --format argument parsing.
 # Test 1: Test with the URL as a key. This is not unique across transactions,
 # so only one transaction will be registered.
 #
-r = Test.AddTestRun('--format "{url}"')
+r = Test.AddTestRun('--format "{url}" against transactions unique by Host')
 client = r.AddClientProcess("client1", "unique_by_host.yaml",
                             other_args="--verbose diag --format '{url}'")
 server = r.AddServerProcess("server1", "unique_by_host.yaml",
@@ -24,7 +24,9 @@ server = r.AddServerProcess("server1", "unique_by_host.yaml",
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
-# The client will see each transaction as unique and will send them as such.
+# The client will always see each transaction as unique and will send them as
+# such. It does not record keys to detect duplicates, it just stores
+# transactions in a list.
 client.Streams.stdout += Testers.ContainsExpression(
         "Parsed 3 transactions",
         "Three transactions should be parsed by the client.")
@@ -181,3 +183,23 @@ client.Streams.stdout += Testers.ContainsExpression(
 server.Streams.stdout += Testers.ContainsExpression(
         'sending a 404',
         "The server should send a 404 response for an unrecognized key.")
+
+#
+# Test 7: Verify that --format "{url}" can successfully differentiate
+# transactions that are only unique by URL.
+#
+r = Test.AddTestRun('--format "{url}" against transactions unique by URL')
+client = r.AddClientProcess("client7", "unique_by_url.yaml",
+                            other_args="--verbose diag --format '{url}'")
+server = r.AddServerProcess("server7", "unique_by_url.yaml",
+                            other_args="--verbose diag --format '{url}'")
+proxy = r.AddProxyProcess("proxy7", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
+
+client.Streams.stdout += Testers.ContainsExpression(
+        "Parsed 3 transactions",
+        "Three transactions should be parsed by the client.")
+
+server.Streams.stdout += Testers.ContainsExpression(
+        "Ready with 3 transactions",
+        "Three transactions should be parsed by the server.")
