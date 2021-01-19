@@ -121,7 +121,7 @@ ArgParser::Command::help_message(std::string_view err) const
 void
 ArgParser::Command::version_message() const
 {
-  std::cout << "Version 1.0 of Replay Client" << std::endl;
+  std::cout << "Version " << Proxy_Verifier_Version << " of Proxy Verifier" << std::endl;
   exit(0);
 }
 
