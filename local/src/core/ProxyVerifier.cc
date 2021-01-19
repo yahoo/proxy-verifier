@@ -4734,7 +4734,11 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
       bwformat(w, spec, TRANSACTION_KEY_NOT_SET);
     }
   } else if (0 == strcasecmp("url"_tv, name)) {
-    bwformat(w, spec, _hdr._url);
+    if (_hdr._url.empty()) {
+      bwformat(w, spec, TRANSACTION_KEY_NOT_SET);
+    } else {
+      bwformat(w, spec, _hdr._url);
+    }
   } else {
     bwformat(w, spec, TRANSACTION_KEY_NOT_SET);
   }

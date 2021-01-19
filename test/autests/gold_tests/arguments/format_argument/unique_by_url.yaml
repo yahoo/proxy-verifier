@@ -1,0 +1,98 @@
+meta:
+  version: "1.0"
+
+#
+# This assumes that --format {url} is used. uuid and host fields are all the #
+# same, so if something is wrong with {url} as a key, Proxy Verifier will
+# incorrectly only find one transaction.
+#
+sessions:
+- transactions:
+  - client-request:
+      version: "1.1"
+      method: "GET"
+      url: "/path/1"
+      headers:
+        fields:
+        - [ Host, same.host.com ]
+        - [ uuid, 1 ]
+        - [ X-Request, first ]
+        - [ Content-Length, 0 ]
+    proxy-request:
+      headers:
+        fields:
+        - [ X-Request, { value: first, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ uuid, 1 ]
+        - [ Content-Length, 0 ]
+        - [ X-Response, first ]
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ X-Response, { value: first, as: equal } ]
+
+  - client-request:
+      version: "1.1"
+      method: "GET"
+      url: "/path/2"
+      headers:
+        fields:
+        - [ Host, same.host.com ]
+        - [ uuid, 1 ]
+        - [ X-Request, second ]
+        - [ Content-Length, 0 ]
+    proxy-request:
+      headers:
+        fields:
+        - [ X-Request, { value: second, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ uuid, 1 ]
+        - [ Content-Length, 0 ]
+        - [ X-Response, second ]
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ X-Response, { value: second, as: equal } ]
+
+
+  - client-request:
+      version: "1.1"
+      method: "GET"
+      url: "/path/3"
+      headers:
+        fields:
+        - [ Host, same.host.com ]
+        - [ uuid, 1 ]
+        - [ X-Request, third ]
+        - [ Content-Length, 0 ]
+    proxy-request:
+      headers:
+        fields:
+        - [ X-Request, { value: third, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ uuid, 1 ]
+        - [ Content-Length, 0 ]
+        - [ X-Response, third ]
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ X-Response, { value: third, as: equal } ]
+
