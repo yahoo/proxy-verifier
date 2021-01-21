@@ -213,8 +213,7 @@ class RuleCheck
                               ///< given rule type ("equals", "presence", "absence",
                               ///< "contains", "prefix", "or "suffix")
 
-  using MakeURLRuleFunction =
-      std::function<std::shared_ptr<RuleCheck>(UrlPart, swoc::TextView)>;
+  using MakeURLRuleFunction = std::function<std::shared_ptr<RuleCheck>(UrlPart, swoc::TextView)>;
   using URLRuleOptions = std::unordered_map<swoc::TextView, MakeURLRuleFunction, Hash, Hash>;
   static URLRuleOptions url_rule_options; ///< Returns function to construct a RuleCheck child class
                                           ///< for a given URL rule type ("equals", "presence",
@@ -900,10 +899,10 @@ public:
    */
   static constexpr auto num_fields_to_reserve = 30;
 
-  std::vector<std::shared_ptr<RuleCheck>> _url_rules[static_cast<size_t>(
-      UrlPart::UrlPartCount)]; ///< Maps URL part names to functors.
-  swoc::TextView _url_parts[static_cast<size_t>(
-      UrlPart::UrlPartCount)]; ///< Maps URL part names to values.
+  std::vector<std::shared_ptr<RuleCheck>>
+      _url_rules[static_cast<size_t>(UrlPart::UrlPartCount)]; ///< Maps URL part names to functors.
+  swoc::TextView
+      _url_parts[static_cast<size_t>(UrlPart::UrlPartCount)]; ///< Maps URL part names to values.
 
   /** Add an HTTP field to the set of fields.
    *

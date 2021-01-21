@@ -527,10 +527,12 @@ YamlParser::parsing_is_done()
   Errata errata;
   auto parsing_duration = ClockType::now() - _parsing_start_time;
   if (parsing_duration > 10s) {
-    errata.info("Replay file parsing took: {} seconds.",
+    errata.info(
+        "Replay file parsing took: {} seconds.",
         duration_cast<seconds>(parsing_duration).count());
   } else {
-    errata.info("Replay file parsing took: {} milliseconds.",
+    errata.info(
+        "Replay file parsing took: {} milliseconds.",
         duration_cast<milliseconds>(parsing_duration).count());
   }
   return errata;
@@ -869,10 +871,7 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
 }
 
 Errata
-YamlParser::load_replay_files(
-    swoc::file::path const &path,
-    loader_t loader,
-    int n_threads)
+YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int n_threads)
 {
   Errata errata;
   errata.note(parsing_is_started());

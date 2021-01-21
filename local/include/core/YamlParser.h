@@ -246,10 +246,8 @@ public:
    *
    * @return Any errata from parsing the file.
    */
-  static swoc::Errata load_replay_files(
-      swoc::file::path const &path,
-      loader_t loader,
-      int n_threads = 10);
+  static swoc::Errata
+  load_replay_files(swoc::file::path const &path, loader_t loader, int n_threads = 10);
 
   /** Populate an HTTP message from a YAML node.
    *
@@ -309,10 +307,8 @@ private:
    *
    * @return Any errata from parsing the node.
    */
-  static swoc::Errata parse_url_rules(
-      YAML::Node const &url_rules,
-      HttpFields &fields,
-      bool assume_equality_rule);
+  static swoc::Errata
+  parse_url_rules(YAML::Node const &url_rules, HttpFields &fields, bool assume_equality_rule);
 
 private:
   using ClockType = std::chrono::system_clock;
