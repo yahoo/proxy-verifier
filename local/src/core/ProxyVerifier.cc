@@ -1,12 +1,11 @@
 /** @file
  * Common implementation for Proxy Verifier
  *
- * Copyright 2020, Verizon Media
+ * Copyright 2021, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "core/ProxyVerifier.h"
-#include "core/yaml_util.h"
 
 #include <algorithm>
 #include <cassert>
@@ -39,7 +38,7 @@ using std::this_thread::sleep_until;
 using std::this_thread::sleep_for;
 
 namespace chrono = std::chrono;
-using clock_type = std::chrono::system_clock;
+using ClockType = std::chrono::system_clock;
 using chrono::duration_cast;
 using chrono::milliseconds;
 
@@ -50,14 +49,8 @@ bool Verbose = false;
 
 using MSG_BUFF = swoc::LocalBufferWriter<1024>;
 
-bool HttpHeader::_frozen = false;
-swoc::MemArena HttpHeader::_arena{8000};
-HttpHeader::NameSet HttpHeader::_names;
 std::string HttpHeader::_key_format{"{field.uuid}"};
 swoc::MemSpan<char> HttpHeader::_content;
-swoc::TextView HttpHeader::FIELD_CONTENT_LENGTH;
-swoc::TextView HttpHeader::FIELD_TRANSFER_ENCODING;
-swoc::TextView HttpHeader::FIELD_HOST;
 std::bitset<600> HttpHeader::STATUS_NO_CONTENT;
 
 RuleCheck::RuleOptions RuleCheck::options;
@@ -183,85 +176,6 @@ get_printable_alpn_string(std::string_view alpn_wire_string)
     }
   }
   return printable_alpn;
-}
-
-swoc::Rv<YAML::Node const>
-ReplayFileHandler::parse_for_protocol_node(
-    YAML::Node const &protocol_node,
-    std::string_view protocol_name)
-{
-  swoc::Rv<YAML::Node const> desired_node = YAML::Node{YAML::NodeType::Undefined};
-  if (!protocol_node.IsSequence()) {
-    desired_node.error("Protocol node at {} is not a sequence as required.", protocol_node.Mark());
-    return desired_node;
-  }
-  if (protocol_node.size() == 0) {
-    desired_node.error("Protocol node at {} is an empty sequence.", protocol_node.Mark());
-    return desired_node;
-  }
-  for (auto const &protocol_element : protocol_node) {
-    if (!protocol_element.IsMap()) {
-      desired_node.error("Protocol element at {} is not a map.", protocol_element.Mark());
-      return desired_node;
-    }
-    if (protocol_element[YAML_SSN_PROTOCOL_NAME].Scalar() != protocol_name) {
-      continue;
-    }
-    return swoc::Rv<YAML::Node const>{protocol_element};
-  }
-  return desired_node;
-}
-
-swoc::Rv<std::string>
-ReplayFileHandler::parse_sni(YAML::Node const &tls_node)
-{
-  swoc::Rv<std::string> sni;
-  if (auto sni_node{tls_node[YAML_SSN_TLS_SNI_KEY]}; sni_node) {
-    if (sni_node.IsScalar()) {
-      sni.result() = sni_node.Scalar();
-    } else {
-      sni.error(
-          R"(Session has a value for key "{}" that is not a scalar as required.)",
-          YAML_SSN_TLS_SNI_KEY);
-    }
-  }
-  return sni;
-}
-
-swoc::Rv<int>
-ReplayFileHandler::parse_verify_mode(YAML::Node const &tls_node)
-{
-  swoc::Rv<int> verify_mode{-1};
-  if (auto tls_verify_mode{tls_node[YAML_SSN_TLS_VERIFY_MODE_KEY]}; tls_verify_mode) {
-    if (tls_verify_mode.IsScalar()) {
-      verify_mode = std::stoi(tls_verify_mode.Scalar());
-    } else {
-      verify_mode.error(
-          R"(Session has a value for key "{}" that is not a scalar as required.)",
-          YAML_SSN_TLS_SNI_KEY);
-    }
-  }
-  return verify_mode;
-}
-
-swoc::Rv<std::string>
-ReplayFileHandler::parse_alpn_protocols_node(YAML::Node const &tls_node)
-{
-  swoc::Rv<std::string> alpn_protocol_string;
-  if (auto alpn_protocols_node{tls_node[YAML_SSN_TLS_ALPN_PROTOCOLS_KEY]}; alpn_protocols_node) {
-    if (!alpn_protocols_node.IsSequence()) {
-      alpn_protocol_string.error(
-          R"(Session has a value for key "{}" that is not a sequence as required.)",
-          YAML_SSN_TLS_ALPN_PROTOCOLS_KEY);
-      return alpn_protocol_string;
-    }
-    for (auto const &protocol : alpn_protocols_node) {
-      std::string_view protocol_view{protocol.Scalar()};
-      alpn_protocol_string.result().append(1, (char)protocol_view.size());
-      alpn_protocol_string.result().append(protocol_view);
-    }
-  }
-  return alpn_protocol_string;
 }
 
 Session::Session() { }
@@ -947,7 +861,7 @@ Session::run_transactions(
 {
   swoc::Errata session_errata;
 
-  auto const first_time = clock_type::now();
+  auto const first_time = ClockType::now();
   for (auto const &txn : txn_list) {
     swoc::Errata txn_errata;
     if (this->is_closed()) {
@@ -965,14 +879,14 @@ Session::run_transactions(
     if (rate_multiplier != 0) {
       auto const start_offset = txn._start;
       auto const next_time = (rate_multiplier * start_offset) + first_time;
-      auto current_time = clock_type::now();
+      auto current_time = ClockType::now();
       if (next_time > current_time) {
         sleep_until(next_time);
       }
     }
-    auto const before = clock_type::now();
+    auto const before = ClockType::now();
     txn_errata.note(this->run_transaction(txn));
-    auto const after = clock_type::now();
+    auto const after = ClockType::now();
     if (!txn_errata.is_ok()) {
       txn_errata.error(R"(Failed HTTP/1 transaction with key={}.)", txn._req.get_key());
     }
@@ -1434,7 +1348,7 @@ H2Session::run_transactions(
 {
   swoc::Errata errata;
 
-  auto const first_time = clock_type::now();
+  auto const first_time = ClockType::now();
   for (auto const &txn : txn_list) {
     swoc::Errata txn_errata;
     auto const key{txn._req.get_key()};
@@ -1449,12 +1363,12 @@ H2Session::run_transactions(
     if (rate_multiplier != 0) {
       auto const start_offset = txn._start;
       auto const next_time = (rate_multiplier * start_offset) + first_time;
-      auto current_time = clock_type::now();
+      auto current_time = ClockType::now();
       auto delay_time = duration_cast<milliseconds>(next_time - current_time);
       while (delay_time > 0ms) {
         // Make use of our delay time to read any incoming responses.
         receive_nghttp2_data(this->get_session(), nullptr, 0, 0, this, delay_time);
-        current_time = clock_type::now();
+        current_time = ClockType::now();
         delay_time = duration_cast<milliseconds>(next_time - current_time);
         sleep_for(delay_time);
       }
@@ -2097,9 +2011,9 @@ receive_nghttp2_request(
   unsigned char buffer[10 * 1024];
   int total_recv = 0;
 
-  auto const start_time = clock_type::now();
+  auto const start_time = ClockType::now();
   while (session_data->get_is_server() && !session_data->get_a_stream_has_ended()) {
-    if (start_time - clock_type::now() > timeout) {
+    if (start_time - ClockType::now() > timeout) {
       return 0;
     }
     int n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
@@ -2272,7 +2186,7 @@ on_stream_close_cb(
   if (iter != session_data->_stream_map.end()) {
     H2StreamState &stream_state = *iter->second;
     auto const &message_start = stream_state._stream_start;
-    auto const message_end = clock_type::now();
+    auto const message_end = ClockType::now();
     auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
       errata.error(
@@ -2316,7 +2230,7 @@ on_data_chunk_recv_cb(
 }
 
 H2StreamState::H2StreamState()
-  : _stream_start{clock_type::now()}
+  : _stream_start{ClockType::now()}
   , _request_from_client{std::make_shared<HttpHeader>()}
   , _response_from_server{std::make_shared<HttpHeader>()}
 {
@@ -3009,10 +2923,6 @@ ChunkCodex::transmit(Session &session, swoc::TextView data, size_t chunk_size)
 void
 HttpHeader::global_init()
 {
-  FIELD_CONTENT_LENGTH = localize_lower("Content-Length"_tv);
-  FIELD_TRANSFER_ENCODING = localize_lower("Transfer-Encoding"_tv);
-  FIELD_HOST = localize_lower("Host"_tv);
-
   STATUS_NO_CONTENT[100] = true;
   STATUS_NO_CONTENT[204] = true;
   STATUS_NO_CONTENT[304] = true;
@@ -3043,44 +2953,44 @@ RuleCheck::options_init()
   // std::functions. We have to help out the compiler, therefore, via casting
   // to the correct function type.
   using single_field_function_type = std::shared_ptr<RuleCheck> (*)(swoc::TextView, swoc::TextView);
-  options[swoc::TextView(YAML_RULE_EQUALS)] =
+  options[swoc::TextView(VERIFICATION_DIRECTIVE_EQUALS)] =
       static_cast<single_field_function_type>(make_equality);
-  options[swoc::TextView(YAML_RULE_PRESENCE)] =
+  options[swoc::TextView(VERIFICATION_DIRECTIVE_PRESENCE)] =
       static_cast<single_field_function_type>(make_presence);
-  options[swoc::TextView(YAML_RULE_ABSENCE)] =
+  options[swoc::TextView(VERIFICATION_DIRECTIVE_ABSENCE)] =
       static_cast<single_field_function_type>(make_absence);
-  options[swoc::TextView(YAML_RULE_CONTAINS)] =
+  options[swoc::TextView(VERIFICATION_DIRECTIVE_CONTAINS)] =
       static_cast<single_field_function_type>(make_contains);
-  options[swoc::TextView(YAML_RULE_PREFIX)] = static_cast<single_field_function_type>(make_prefix);
-  options[swoc::TextView(YAML_RULE_SUFFIX)] = static_cast<single_field_function_type>(make_suffix);
+  options[swoc::TextView(VERIFICATION_DIRECTIVE_PREFIX)] = static_cast<single_field_function_type>(make_prefix);
+  options[swoc::TextView(VERIFICATION_DIRECTIVE_SUFFIX)] = static_cast<single_field_function_type>(make_suffix);
 
   url_rule_options = URLRuleOptions();
-  using url_function_type = std::shared_ptr<RuleCheck> (*)(YamlUrlPart, swoc::TextView);
-  url_rule_options[swoc::TextView(YAML_RULE_EQUALS)] =
+  using url_function_type = std::shared_ptr<RuleCheck> (*)(UrlPart, swoc::TextView);
+  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_EQUALS)] =
       static_cast<url_function_type>(make_equality);
-  url_rule_options[swoc::TextView(YAML_RULE_PRESENCE)] =
+  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_PRESENCE)] =
       static_cast<url_function_type>(make_presence);
-  url_rule_options[swoc::TextView(YAML_RULE_ABSENCE)] =
+  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_ABSENCE)] =
       static_cast<url_function_type>(make_absence);
-  url_rule_options[swoc::TextView(YAML_RULE_CONTAINS)] =
+  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_CONTAINS)] =
       static_cast<url_function_type>(make_contains);
-  url_rule_options[swoc::TextView(YAML_RULE_PREFIX)] = static_cast<url_function_type>(make_prefix);
-  url_rule_options[swoc::TextView(YAML_RULE_SUFFIX)] = static_cast<url_function_type>(make_suffix);
+  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_PREFIX)] = static_cast<url_function_type>(make_prefix);
+  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_SUFFIX)] = static_cast<url_function_type>(make_suffix);
 
   duplicate_field_options = DuplicateFieldRuleOptions();
   using duplicate_field_function_type =
       std::shared_ptr<RuleCheck> (*)(swoc::TextView, std::vector<swoc::TextView> &&);
-  duplicate_field_options[swoc::TextView(YAML_RULE_EQUALS)] =
+  duplicate_field_options[swoc::TextView(VERIFICATION_DIRECTIVE_EQUALS)] =
       static_cast<duplicate_field_function_type>(make_equality);
-  duplicate_field_options[swoc::TextView(YAML_RULE_PRESENCE)] =
+  duplicate_field_options[swoc::TextView(VERIFICATION_DIRECTIVE_PRESENCE)] =
       static_cast<duplicate_field_function_type>(make_presence);
-  duplicate_field_options[swoc::TextView(YAML_RULE_ABSENCE)] =
+  duplicate_field_options[swoc::TextView(VERIFICATION_DIRECTIVE_ABSENCE)] =
       static_cast<duplicate_field_function_type>(make_absence);
-  duplicate_field_options[swoc::TextView(YAML_RULE_CONTAINS)] =
+  duplicate_field_options[swoc::TextView(VERIFICATION_DIRECTIVE_CONTAINS)] =
       static_cast<duplicate_field_function_type>(make_contains);
-  duplicate_field_options[swoc::TextView(YAML_RULE_PREFIX)] =
+  duplicate_field_options[swoc::TextView(VERIFICATION_DIRECTIVE_PREFIX)] =
       static_cast<duplicate_field_function_type>(make_prefix);
-  duplicate_field_options[swoc::TextView(YAML_RULE_SUFFIX)] =
+  duplicate_field_options[swoc::TextView(VERIFICATION_DIRECTIVE_SUFFIX)] =
       static_cast<duplicate_field_function_type>(make_suffix);
 }
 
@@ -3102,7 +3012,7 @@ RuleCheck::make_rule_check(
 
 std::shared_ptr<RuleCheck>
 RuleCheck::make_rule_check(
-    YamlUrlPart url_part,
+    UrlPart url_part,
     swoc::TextView localized_value,
     swoc::TextView rule_type)
 {
@@ -3139,7 +3049,7 @@ RuleCheck::make_equality(swoc::TextView name, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_equality(YamlUrlPart url_part, swoc::TextView value)
+RuleCheck::make_equality(UrlPart url_part, swoc::TextView value)
 {
   return std::shared_ptr<RuleCheck>(new EqualityCheck(url_part, value));
 }
@@ -3157,7 +3067,7 @@ RuleCheck::make_presence(swoc::TextView name, swoc::TextView /* value */)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_presence(YamlUrlPart url_part, swoc::TextView /* value */)
+RuleCheck::make_presence(UrlPart url_part, swoc::TextView /* value */)
 {
   return std::shared_ptr<RuleCheck>(new PresenceCheck(url_part));
 }
@@ -3175,7 +3085,7 @@ RuleCheck::make_absence(swoc::TextView name, swoc::TextView /* value */)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_absence(YamlUrlPart url_part, swoc::TextView /* value */)
+RuleCheck::make_absence(UrlPart url_part, swoc::TextView /* value */)
 {
   return std::shared_ptr<RuleCheck>(new AbsenceCheck(url_part));
 }
@@ -3193,7 +3103,7 @@ RuleCheck::make_contains(swoc::TextView name, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_contains(YamlUrlPart url_part, swoc::TextView value)
+RuleCheck::make_contains(UrlPart url_part, swoc::TextView value)
 {
   return std::shared_ptr<RuleCheck>(new ContainsCheck(url_part, value));
 }
@@ -3211,7 +3121,7 @@ RuleCheck::make_prefix(swoc::TextView name, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_prefix(YamlUrlPart url_part, swoc::TextView value)
+RuleCheck::make_prefix(UrlPart url_part, swoc::TextView value)
 {
   return std::shared_ptr<RuleCheck>(new PrefixCheck(url_part, value));
 }
@@ -3229,7 +3139,7 @@ RuleCheck::make_suffix(swoc::TextView name, swoc::TextView value)
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_suffix(YamlUrlPart url_part, swoc::TextView value)
+RuleCheck::make_suffix(UrlPart url_part, swoc::TextView value)
 {
   return std::shared_ptr<RuleCheck>(new SuffixCheck(url_part, value));
 }
@@ -3247,7 +3157,7 @@ EqualityCheck::EqualityCheck(swoc::TextView name, swoc::TextView value)
   _is_field = true;
 }
 
-EqualityCheck::EqualityCheck(YamlUrlPart url_part, swoc::TextView value)
+EqualityCheck::EqualityCheck(UrlPart url_part, swoc::TextView value)
 {
   _name = URL_PART_NAMES[url_part];
   _value = value;
@@ -3269,7 +3179,7 @@ PresenceCheck::PresenceCheck(swoc::TextView name, bool expects_duplicate_fields)
   _is_field = true;
 }
 
-PresenceCheck::PresenceCheck(YamlUrlPart url_part)
+PresenceCheck::PresenceCheck(UrlPart url_part)
 {
   _name = URL_PART_NAMES[url_part];
   _is_field = false;
@@ -3282,7 +3192,7 @@ AbsenceCheck::AbsenceCheck(swoc::TextView name, bool expects_duplicate_fields)
   _is_field = true;
 }
 
-AbsenceCheck::AbsenceCheck(YamlUrlPart url_part)
+AbsenceCheck::AbsenceCheck(UrlPart url_part)
 {
   _name = URL_PART_NAMES[url_part];
   _is_field = false;
@@ -3295,7 +3205,7 @@ ContainsCheck::ContainsCheck(swoc::TextView name, swoc::TextView value)
   _is_field = true;
 }
 
-ContainsCheck::ContainsCheck(YamlUrlPart url_part, swoc::TextView value)
+ContainsCheck::ContainsCheck(UrlPart url_part, swoc::TextView value)
 {
   _name = URL_PART_NAMES[url_part];
   _value = value;
@@ -3317,7 +3227,7 @@ PrefixCheck::PrefixCheck(swoc::TextView name, swoc::TextView value)
   _is_field = true;
 }
 
-PrefixCheck::PrefixCheck(YamlUrlPart url_part, swoc::TextView value)
+PrefixCheck::PrefixCheck(UrlPart url_part, swoc::TextView value)
 {
   _name = URL_PART_NAMES[url_part];
   _value = value;
@@ -3339,7 +3249,7 @@ SuffixCheck::SuffixCheck(swoc::TextView name, swoc::TextView value)
   _is_field = true;
 }
 
-SuffixCheck::SuffixCheck(YamlUrlPart url_part, swoc::TextView value)
+SuffixCheck::SuffixCheck(UrlPart url_part, swoc::TextView value)
 {
   _name = URL_PART_NAMES[url_part];
   _value = value;
@@ -3717,246 +3627,6 @@ HttpFields::merge(HttpFields const &other)
   }
 }
 
-swoc::Errata
-HttpFields::parse_url_rules(YAML::Node const &url_rules_node, bool assume_equality_rule)
-{
-  swoc::Errata errata;
-
-  for (auto const &node : url_rules_node) {
-    if (!node.IsSequence()) {
-      errata.error("URL rule at {} is not a sequence as required.", node.Mark());
-      continue;
-    }
-    const auto node_size = node.size();
-    if (node_size != 2 && node_size != 3) {
-      errata.error(
-          "URL rule node at {} is not a sequence of length 2 "
-          "or 3 as required.",
-          node.Mark());
-      continue;
-    }
-
-    TextView part_name{HttpHeader::localize_lower(node[YAML_RULE_KEY_INDEX].Scalar())};
-    YamlUrlPart part_id = HttpHeader::parse_url_part(part_name);
-    if (part_id == YamlUrlPart::Error) {
-      errata.error("URL rule node at {} has an invalid URL part.", node.Mark());
-      continue;
-    }
-    const YAML::Node ValueNode{node[YAML_RULE_VALUE_INDEX]};
-    if (ValueNode.IsScalar()) {
-      // There's only a single value associated with this URL part.
-      TextView value{HttpHeader::localize(node[YAML_RULE_VALUE_INDEX].Scalar())};
-      if (node_size == 2 && assume_equality_rule) {
-        _url_rules[static_cast<size_t>(part_id)].push_back(
-            RuleCheck::make_equality(part_id, value));
-      } else if (node_size == 3) {
-        // Contains a verification rule.
-        TextView rule_type{node[YAML_RULE_TYPE_INDEX].Scalar()};
-        std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(part_id, value, rule_type);
-        if (!tester) {
-          errata.error(
-              "URL rule node at {} does not have a valid directive ({})",
-              node.Mark(),
-              rule_type);
-          continue;
-        } else {
-          _url_rules[static_cast<size_t>(part_id)].push_back(tester);
-        }
-      }
-      // No error reported if incorrect length
-    } else if (ValueNode.IsMap()) {
-      // Verification is specified as a map, such as:
-      // - [ path, { value: config/settings.yaml, as: equal } ]
-      TextView value;
-      if (auto const url_value_node{ValueNode[YAML_RULE_VALUE_MAP_KEY]}; url_value_node) {
-        value = HttpHeader::localize(url_value_node.Scalar());
-      }
-      if (!ValueNode[YAML_RULE_TYPE_MAP_KEY]) {
-        // No verification directive was specified.
-        if (assume_equality_rule) {
-          _url_rules[static_cast<size_t>(part_id)].push_back(
-              RuleCheck::make_equality(part_id, value));
-        }
-        continue;
-      }
-      TextView rule_type{ValueNode[YAML_RULE_TYPE_MAP_KEY].Scalar()};
-      std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(part_id, value, rule_type);
-      if (!tester) {
-        errata.error(
-            "URL rule node at {} does not have a valid directive ({})",
-            node.Mark(),
-            rule_type);
-        continue;
-      } else {
-        _url_rules[static_cast<size_t>(part_id)].push_back(tester);
-      }
-    } else if (ValueNode.IsSequence()) {
-      errata.error("URL rule node at {} has multiple values, which is not allowed.", node.Mark());
-      continue;
-    }
-  }
-  return errata;
-}
-
-swoc::Errata
-HttpFields::parse_global_rules(YAML::Node const &node)
-{
-  swoc::Errata errata;
-
-  if (auto rules_node{node[YAML_FIELDS_KEY]}; rules_node) {
-    if (rules_node.IsSequence()) {
-      if (rules_node.size() > 0) {
-        auto result{this->parse_fields_and_rules(rules_node, !ASSUME_EQUALITY_RULE)};
-        if (!result.is_ok()) {
-          errata.error("Failed to parse fields and rules at {}", node.Mark());
-          errata.note(std::move(result));
-        }
-      } else {
-        errata.info(R"(Fields and rules node at {} is an empty list.)", rules_node.Mark());
-      }
-    } else {
-      errata.info(R"(Fields and rules node at {} is not a sequence.)", rules_node.Mark());
-    }
-  } else {
-    errata.info(R"(Node at {} is missing a fields node.)", node.Mark());
-  }
-  return errata;
-}
-
-swoc::Errata
-HttpFields::parse_fields_and_rules(YAML::Node const &fields_rules_node, bool assume_equality_rule)
-{
-  swoc::Errata errata;
-
-  for (auto const &node : fields_rules_node) {
-    if (!node.IsSequence()) {
-      errata.error("Field or rule at {} is not a sequence as required.", node.Mark());
-      continue;
-    }
-    auto const node_size = node.size();
-    if (node_size != 2 && node_size != 3) {
-      errata.error(
-          "Field or rule node at {} is not a sequence of length 2 "
-          "or 3 as required.",
-          node.Mark());
-      continue;
-    }
-
-    TextView name{HttpHeader::localize_lower(node[YAML_RULE_KEY_INDEX].Scalar())};
-    const YAML::Node ValueNode{node[YAML_RULE_VALUE_INDEX]};
-    if (ValueNode.IsScalar()) {
-      // There's only a single value associated with this field name.
-      TextView value{HttpHeader::localize(node[YAML_RULE_VALUE_INDEX].Scalar())};
-      add_field(name, value);
-      if (node_size == 2 && assume_equality_rule) {
-        _rules.emplace(name, RuleCheck::make_equality(name, value));
-      } else if (node_size == 3) {
-        // Contains a verification rule.
-        // -[ Host, example.com, equal ]
-        TextView rule_type{node[YAML_RULE_TYPE_INDEX].Scalar()};
-        std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(name, value, rule_type);
-        if (!tester) {
-          errata.error(
-              "Field rule at {} does not have a valid directive ({})",
-              node.Mark(),
-              rule_type);
-          continue;
-        } else {
-          _rules.emplace(name, tester);
-        }
-      }
-    } else if (ValueNode.IsSequence()) {
-      // There's a list of values associated with this field. This
-      // indicates duplicate fields for the same field name.
-      std::vector<TextView> values;
-      values.reserve(ValueNode.size());
-      for (auto const &value : ValueNode) {
-        TextView localized_value{HttpHeader::localize(value.Scalar())};
-        values.emplace_back(localized_value);
-        add_field(name, localized_value);
-      }
-      if (node_size == 2 && assume_equality_rule) {
-        _rules.emplace(name, RuleCheck::make_equality(name, std::move(values)));
-      } else if (node_size == 3) {
-        // Contains a verification rule.
-        // -[ set-cookie, [ first-cookie, second-cookie ], present ]
-        TextView rule_type{node[YAML_RULE_TYPE_INDEX].Scalar()};
-        std::shared_ptr<RuleCheck> tester =
-            RuleCheck::make_rule_check(name, std::move(values), rule_type);
-        if (!tester) {
-          errata.error(
-              "Field rule at {} does not have a valid directive ({})",
-              node.Mark(),
-              rule_type);
-          continue;
-        } else {
-          _rules.emplace(name, tester);
-        }
-      }
-    } else if (ValueNode.IsMap()) {
-      // Verification is specified as a map, such as:
-      // -[ Host, { value: example.com, as: equal } ]
-      TextView value;
-      if (auto const field_value_node{ValueNode[YAML_RULE_VALUE_MAP_KEY]}; field_value_node) {
-        if (field_value_node.IsScalar()) {
-          value = HttpHeader::localize(field_value_node.Scalar());
-          add_field(name, value);
-        } else if (field_value_node.IsSequence()) {
-          // Verification is for duplicate fields:
-          // -[ set-cookie, { value: [ cookiea, cookieb], as: equal } ]
-          std::vector<TextView> values;
-          values.reserve(ValueNode.size());
-          for (auto const &value : field_value_node) {
-            TextView localized_value{HttpHeader::localize(value.Scalar())};
-            values.emplace_back(localized_value);
-            add_field(name, localized_value);
-          }
-          if (auto const rule_type_node{ValueNode[YAML_RULE_TYPE_MAP_KEY]}; rule_type_node) {
-            TextView rule_type{rule_type_node.Scalar()};
-            std::shared_ptr<RuleCheck> tester =
-                RuleCheck::make_rule_check(name, std::move(values), rule_type);
-            if (!tester) {
-              errata.error(
-                  "Field rule at {} does not have a valid directive ({})",
-                  node.Mark(),
-                  rule_type);
-              continue;
-            } else {
-              _rules.emplace(name, tester);
-            }
-          } else {
-            // No verification directive was specified.
-            if (assume_equality_rule) {
-              _rules.emplace(name, RuleCheck::make_equality(name, std::move(values)));
-            }
-          }
-          continue;
-        }
-      }
-      if (auto const rule_type_node{ValueNode[YAML_RULE_TYPE_MAP_KEY]}; rule_type_node) {
-        TextView rule_type{rule_type_node.Scalar()};
-        std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(name, value, rule_type);
-        if (!tester) {
-          errata.error(
-              "Field rule at {} does not have a valid directive ({})",
-              node.Mark(),
-              rule_type);
-          continue;
-        } else {
-          _rules.emplace(name, tester);
-        }
-      } else {
-        // No verification directive was specified.
-        if (assume_equality_rule) {
-          _rules.emplace(name, RuleCheck::make_equality(name, value));
-        }
-        continue;
-      }
-    }
-  }
-  return errata;
-}
-
 void
 HttpFields::add_fields_to_ngnva(nghttp2_nv *l) const
 {
@@ -4009,15 +3679,15 @@ HttpHeader::parse_url(TextView url)
   }
 
   if (scheme_end != std::string::npos) {
-    uri_scheme = this->localize(url.substr(0, scheme_end));
+    uri_scheme = url.substr(0, scheme_end);
   }
-  uri_host = this->localize(url.substr(host_start, host_end - host_start));
+  uri_host = url.substr(host_start, host_end - host_start);
   if (port_start != std::string::npos) {
-    uri_port = this->localize(url.substr(port_start, port_end - port_start));
+    uri_port = url.substr(port_start, port_end - port_start);
   } else {
     port_end = host_end;
   }
-  uri_authority = this->localize(url.substr(host_start, port_end - host_start));
+  uri_authority = url.substr(host_start, port_end - host_start);
   std::size_t path_end = std::min({query_start, fragment_start});
   if (path_end == std::string::npos) {
     path_end = url.length();
@@ -4035,22 +3705,22 @@ HttpHeader::parse_url(TextView url)
   }
 
   if (path_start != std::string::npos) {
-    uri_path = this->localize(url.substr(path_start, path_end - path_start));
+    uri_path = url.substr(path_start, path_end - path_start);
   }
   if (query_start != std::string::npos) {
-    uri_query = this->localize(url.substr(query_start, query_end - query_start));
+    uri_query = url.substr(query_start, query_end - query_start);
   }
   if (fragment_start != std::string::npos) {
-    uri_fragment = this->localize(url.substr(fragment_start, fragment_end - fragment_start));
+    uri_fragment = url.substr(fragment_start, fragment_end - fragment_start);
   }
 
-  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Scheme)] = uri_scheme;
-  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Host)] = uri_host;
-  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Port)] = uri_port;
-  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Authority)] = uri_authority;
-  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Path)] = uri_path;
-  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Query)] = uri_query;
-  _fields_rules->_url_parts[static_cast<size_t>(YamlUrlPart::Fragment)] = uri_fragment;
+  _fields_rules->_url_parts[static_cast<size_t>(UrlPart::Scheme)] = uri_scheme;
+  _fields_rules->_url_parts[static_cast<size_t>(UrlPart::Host)] = uri_host;
+  _fields_rules->_url_parts[static_cast<size_t>(UrlPart::Port)] = uri_port;
+  _fields_rules->_url_parts[static_cast<size_t>(UrlPart::Authority)] = uri_authority;
+  _fields_rules->_url_parts[static_cast<size_t>(UrlPart::Path)] = uri_path;
+  _fields_rules->_url_parts[static_cast<size_t>(UrlPart::Query)] = uri_query;
+  _fields_rules->_url_parts[static_cast<size_t>(UrlPart::Fragment)] = uri_fragment;
 
   // Non-URI parsing
   // Split out the path and scheme for http/2 required headers
@@ -4061,7 +3731,7 @@ HttpHeader::parse_url(TextView url)
     start_auth = 0;
   } else {
     start_auth = end_scheme + 3; // "://" is 3 characters.
-    _scheme = this->localize(url.substr(0, end_scheme));
+    _scheme = url.substr(0, end_scheme);
   }
   std::size_t end_host = start_auth;
   // Look for the ':' for the port.
@@ -4073,356 +3743,19 @@ HttpHeader::parse_url(TextView url)
     // No ':' nor '/', '?', or '#'. Assume the rest of the string is the host.
     end_host = url.length();
   }
-  _authority = this->localize(url.substr(start_auth, end_host - start_auth));
+  _authority = url.substr(start_auth, end_host - start_auth);
   // _path is the value used for HTTP/2 ':path' and thus includes everything past
   // the authority.
   if (end_host != url.length()) {
-    _path = this->localize(url.substr(end_host));
+    _path = url.substr(end_host);
   }
   return errata;
 }
 
-YamlUrlPart
+UrlPart
 HttpHeader::parse_url_part(swoc::TextView name)
 {
   return URL_PART_NAMES[name];
-}
-
-swoc::Errata
-HttpHeader::process_pseudo_headers(YAML::Node const &node)
-{
-  swoc::Errata errata;
-  auto number_of_pseudo_headers = 0;
-  auto pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_METHOD_KEY);
-  if (pseudo_it != _fields_rules->_fields.end()) {
-    if (!_method.empty()) {
-      errata.error(
-          "The {} node is not compatible with the {} pseudo header: {}",
-          YAML_HTTP_METHOD_KEY,
-          YAML_HTTP2_PSEUDO_METHOD_KEY,
-          node.Mark());
-    }
-    _method = pseudo_it->second;
-    ++number_of_pseudo_headers;
-    _is_request = true;
-  }
-  pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_SCHEME_KEY);
-  if (pseudo_it != _fields_rules->_fields.end()) {
-    if (!_scheme.empty()) {
-      errata.error(
-          "The {} node is not compatible with the {} pseudo header: {}",
-          YAML_HTTP_SCHEME_KEY,
-          YAML_HTTP2_PSEUDO_SCHEME_KEY,
-          node.Mark());
-    }
-    _scheme = pseudo_it->second;
-    ++number_of_pseudo_headers;
-    _is_request = true;
-  }
-  pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_AUTHORITY_KEY);
-  if (pseudo_it != _fields_rules->_fields.end()) {
-    auto const host_it = _fields_rules->_fields.find(FIELD_HOST);
-    if (host_it != _fields_rules->_fields.end()) {
-      // We intentionally allow this, even though contrary to spec, to allow the use
-      // of Proxy Verifier to test proxy's handling of this.
-      errata.info(
-          "Contrary to spec, a transaction is specified with both {} and {} header fields: {}",
-          YAML_HTTP2_PSEUDO_AUTHORITY_KEY,
-          FIELD_HOST,
-          node.Mark());
-    } else if (!_authority.empty()) {
-      errata.error(
-          "The {} node is not compatible with the {} pseudo header: {}",
-          YAML_HTTP_URL_KEY,
-          YAML_HTTP2_PSEUDO_AUTHORITY_KEY,
-          node.Mark());
-    }
-    _authority = pseudo_it->second;
-    ++number_of_pseudo_headers;
-    _is_request = true;
-  }
-  pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_PATH_KEY);
-  if (pseudo_it != _fields_rules->_fields.end()) {
-    if (!_path.empty()) {
-      errata.error(
-          "The {} node is not compatible with the {} pseudo header: {}",
-          YAML_HTTP_URL_KEY,
-          YAML_HTTP2_PSEUDO_PATH_KEY,
-          node.Mark());
-    }
-    _path = pseudo_it->second;
-    ++number_of_pseudo_headers;
-    _is_request = true;
-  }
-  pseudo_it = _fields_rules->_fields.find(YAML_HTTP2_PSEUDO_STATUS_KEY);
-  if (pseudo_it != _fields_rules->_fields.end()) {
-    if (_status != 0) {
-      errata.error(
-          "The {} node is not compatible with the {} pseudo header: {}",
-          YAML_HTTP_STATUS_KEY,
-          YAML_HTTP2_PSEUDO_STATUS_KEY,
-          node.Mark());
-    }
-    auto const &status_field_value = pseudo_it->second;
-    TextView parsed;
-    auto n = swoc::svtou(status_field_value, &parsed);
-    if (parsed.size() == status_field_value.size() && 0 < n && n <= 599) {
-      _status = n;
-      _status_string = std::to_string(_status);
-    } else {
-      errata.error(
-          R"("{}" pseudo header value "{}" at {} must be an integer in the range [1..599].)",
-          YAML_HTTP2_PSEUDO_STATUS_KEY,
-          status_field_value,
-          node.Mark());
-    }
-    ++number_of_pseudo_headers;
-    _is_response = true;
-  }
-  if (number_of_pseudo_headers > 0) {
-    // Do some sanity checking on the user's pseudo headers, if provided.
-    if (_is_response && number_of_pseudo_headers != 1) {
-      errata.error("Found a mixture of request and response pseudo header fields: {}", node.Mark());
-    }
-    if (_is_request && number_of_pseudo_headers != 4) {
-      errata.error(
-          "Did not find all four required pseudo header fields "
-          "(:method, :scheme, :authority, :path): {}",
-          node.Mark());
-    }
-    // Pseudo header fields currently implies HTTP/2.
-    _http_version = "2";
-    _contains_pseudo_headers_in_fields_array = true;
-  }
-  return errata;
-}
-
-swoc::Errata
-HttpHeader::load(YAML::Node const &node)
-{
-  swoc::Errata errata;
-
-  if (node[YAML_HTTP_VERSION_KEY]) {
-    _http_version = this->localize_lower(node[YAML_HTTP_VERSION_KEY].Scalar());
-  } else {
-    _http_version = "1.1";
-  }
-  if (node[YAML_HTTP2_KEY]) {
-    auto http2_node{node[YAML_HTTP2_KEY]};
-    if (http2_node.IsMap()) {
-      if (http2_node[YAML_HTTP_STREAM_ID_KEY]) {
-        auto http_stream_id_node{http2_node[YAML_HTTP_STREAM_ID_KEY]};
-        if (http_stream_id_node.IsScalar()) {
-          TextView text{http_stream_id_node.Scalar()};
-          TextView parsed;
-          auto n = swoc::svtou(text, &parsed);
-          if (parsed.size() == text.size() && 0 < n) {
-            _stream_id = n;
-          } else {
-            errata.error(
-                R"("{}" value "{}" at {} must be a positive integer.)",
-                YAML_HTTP_STREAM_ID_KEY,
-                text,
-                http_stream_id_node.Mark());
-          }
-        } else {
-          errata.error(
-              R"("{}" at {} must be a positive integer.)",
-              YAML_HTTP_STREAM_ID_KEY,
-              http_stream_id_node.Mark());
-        }
-      }
-    } else {
-      errata.error(
-          R"("{}" value at {} must be a map of HTTP/2 values.)",
-          YAML_HTTP2_KEY,
-          http2_node.Mark());
-    }
-  }
-
-  if (node[YAML_HTTP_STATUS_KEY]) {
-    _is_response = true;
-    auto status_node{node[YAML_HTTP_STATUS_KEY]};
-    if (status_node.IsScalar()) {
-      TextView text{status_node.Scalar()};
-      TextView parsed;
-      auto n = swoc::svtou(text, &parsed);
-      if (parsed.size() == text.size() && 0 < n && n <= 599) {
-        _status = n;
-        _status_string = std::to_string(_status);
-      } else {
-        errata.error(
-            R"("{}" value "{}" at {} must be an integer in the range [1..599].)",
-            YAML_HTTP_STATUS_KEY,
-            text,
-            status_node.Mark());
-      }
-    } else {
-      errata.error(
-          R"("{}" value at {} must be an integer in the range [1..599].)",
-          YAML_HTTP_STATUS_KEY,
-          status_node.Mark());
-    }
-  }
-
-  if (node[YAML_HTTP_REASON_KEY]) {
-    auto reason_node{node[YAML_HTTP_REASON_KEY]};
-    if (reason_node.IsScalar()) {
-      _reason = this->localize(reason_node.Scalar());
-    } else {
-      errata.error(
-          R"("{}" value at {} must be a string.)",
-          YAML_HTTP_REASON_KEY,
-          reason_node.Mark());
-    }
-  }
-
-  if (node[YAML_HTTP_METHOD_KEY]) {
-    auto method_node{node[YAML_HTTP_METHOD_KEY]};
-    if (method_node.IsScalar()) {
-      _method = this->localize(method_node.Scalar());
-      _is_request = true;
-    } else {
-      errata.error(
-          R"("{}" value at {} must be a string.)",
-          YAML_HTTP_REASON_KEY,
-          method_node.Mark());
-    }
-  }
-
-  if (node[YAML_HTTP_URL_KEY]) {
-    auto url_node{node[YAML_HTTP_URL_KEY]};
-    if (url_node.IsScalar()) {
-      _url = this->localize(url_node.Scalar());
-      this->parse_url(_url);
-    } else if (url_node.IsSequence()) {
-      _fields_rules->parse_url_rules(url_node, _verify_strictly);
-    } else {
-      errata.error(
-          R"("{}" value at {} must be a string or sequence.)",
-          YAML_HTTP_URL_KEY,
-          url_node.Mark());
-    }
-  }
-
-  if (node[YAML_HTTP_SCHEME_KEY]) {
-    auto scheme_node{node[YAML_HTTP_SCHEME_KEY]};
-    if (scheme_node.IsScalar()) {
-      _scheme = this->localize(scheme_node.Scalar());
-    } else {
-      errata.error(
-          R"("{}" value at {} must be a string.)",
-          YAML_HTTP_SCHEME_KEY,
-          scheme_node.Mark());
-    }
-  }
-
-  if (node[YAML_HDR_KEY]) {
-    auto hdr_node{node[YAML_HDR_KEY]};
-    if (hdr_node[YAML_FIELDS_KEY]) {
-      auto field_list_node{hdr_node[YAML_FIELDS_KEY]};
-      swoc::Errata result =
-          _fields_rules->parse_fields_and_rules(field_list_node, _verify_strictly);
-      if (result.is_ok()) {
-        errata.note(this->update_content_length(_method));
-        errata.note(this->update_transfer_encoding());
-      } else {
-        errata.error("Failed to parse response at {}", node.Mark());
-        errata.note(std::move(result));
-      }
-    }
-  }
-
-  errata.note(this->process_pseudo_headers(node));
-
-  if (!_method.empty() && _authority.empty()) {
-    // The URL didn't have the authority. Get it from the Host header if it
-    // exists.
-    auto const it = _fields_rules->_fields.find(FIELD_HOST);
-    if (it != _fields_rules->_fields.end()) {
-      _authority = it->second;
-    }
-  }
-
-  // Do this after parsing fields so it can override transfer encoding.
-  if (auto content_node{node[YAML_CONTENT_KEY]}; content_node) {
-    if (content_node.IsMap()) {
-      if (auto xf_node{content_node[YAML_CONTENT_TRANSFER_KEY]}; xf_node) {
-        TextView xf{xf_node.Scalar()};
-        if (0 == strcasecmp("chunked"_tv, xf)) {
-          _chunked_p = true;
-        } else if (0 == strcasecmp("plain"_tv, xf)) {
-          _chunked_p = false;
-        } else {
-          errata.error(
-              R"(Invalid value "{}" for "{}" key at {} in "{}" node at {})",
-              xf,
-              YAML_CONTENT_TRANSFER_KEY,
-              xf_node.Mark(),
-              YAML_CONTENT_KEY,
-              content_node.Mark());
-        }
-      }
-      if (auto data_node{content_node[YAML_CONTENT_DATA_KEY]}; data_node) {
-        Encoding enc{Encoding::TEXT};
-        if (auto enc_node{content_node[YAML_CONTENT_ENCODING_KEY]}; enc_node) {
-          TextView text{enc_node.Scalar()};
-          if (0 == strcasecmp("uri"_tv, text)) {
-            enc = Encoding::URI;
-          } else if (0 == strcasecmp("plain"_tv, text)) {
-            enc = Encoding::TEXT;
-          } else {
-            errata.error(R"(Unknown encoding "{}" at {}.)", text, enc_node.Mark());
-          }
-        }
-        TextView content{this->localize(data_node.Scalar(), enc)};
-        _content_data = content.data();
-        const size_t content_size = content.size();
-        _recorded_content_size = content_size;
-        if (_content_length_p) {
-          if (_content_size != content_size) {
-            errata.diag(
-                R"(Conflicting sizes for "Content-Length", sending header value {} instead of data value {}.)",
-                _content_size,
-                content_size);
-          }
-        }
-      } else if (auto size_node{content_node[YAML_CONTENT_SIZE_KEY]}; size_node) {
-        const size_t content_size = swoc::svtou(size_node.Scalar());
-        _recorded_content_size = content_size;
-        // Cross check against previously read content-length header, if any.
-        if (_content_length_p) {
-          if (_content_size != content_size) {
-            errata.diag(
-                R"(Conflicting sizes for "Content-Length", sending header value {} instead of rule value {}.)",
-                _content_size,
-                content_size);
-          }
-        } else if (_chunked_p) {
-          _content_size = content_size;
-        } else if (_is_http2) {
-          // HTTP/2 transactions may, and likely won't, have a Content-Length
-          // header field. And chunked encoding is not allowed in HTTP/2.
-          _content_size = content_size;
-        }
-      } else {
-        errata.error(
-            R"("{}" node at {} does not have a "{}" or "{}" key as required.)",
-            YAML_CONTENT_KEY,
-            node.Mark(),
-            YAML_CONTENT_SIZE_KEY,
-            YAML_CONTENT_DATA_KEY);
-      }
-    } else {
-      errata.error(R"("{}" node at {} is not a map.)", YAML_CONTENT_KEY, content_node.Mark());
-    }
-  }
-
-  // After everything has been read, there should be enough information now to
-  // derive a key.
-  derive_key();
-
-  return errata;
 }
 
 void
@@ -4512,7 +3845,7 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
           issue_exists = true;
         }
       } else {
-        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<YamlUrlPart>(i)], value))
+        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<UrlPart>(i)], value))
         {
           issue_exists = true;
         }
@@ -4534,80 +3867,6 @@ HttpHeader::HttpHeader(bool verify_strictly)
   , _verify_strictly{verify_strictly}
   , _key{TRANSACTION_KEY_NOT_SET}
 {
-}
-
-swoc::TextView
-HttpHeader::localize(char const *text)
-{
-  return self_type::localize_helper(TextView{text, strlen(text) + 1}, !SHOULD_LOWER);
-}
-
-swoc::TextView
-HttpHeader::localize_lower(char const *text)
-{
-  return self_type::localize_lower(TextView{text, strlen(text) + 1});
-}
-
-swoc::TextView
-HttpHeader::localize(TextView text)
-{
-  return HttpHeader::localize_helper(text, !SHOULD_LOWER);
-}
-
-swoc::TextView
-HttpHeader::localize_lower(TextView text)
-{
-  // _names.find() does a case insensitive lookup, so cache lookup via _names
-  // only should be used for case-insensitive localization. It's value applies
-  // to well-known, common strings such as HTTP headers.
-  auto spot = _names.find(text);
-  if (spot != _names.end()) {
-    return *spot;
-  }
-  return HttpHeader::localize_helper(text, SHOULD_LOWER);
-}
-
-swoc::TextView
-HttpHeader::localize_helper(TextView text, bool should_lower)
-{
-  if (!_frozen) {
-    auto span{_arena.alloc(text.size()).rebind<char>()};
-    if (should_lower) {
-      std::transform(text.begin(), text.end(), span.begin(), &tolower);
-    } else {
-      std::copy(text.begin(), text.end(), span.begin());
-    }
-    TextView local{span.data(), text.size()};
-    if (should_lower) {
-      _names.insert(local);
-    }
-    return local;
-  }
-  return text;
-}
-
-swoc::TextView
-HttpHeader::localize(TextView text, Encoding enc)
-{
-  if (Encoding::URI == enc) {
-    auto span{_arena.require(text.size()).remnant().rebind<char>()};
-    auto spot = text.begin(), limit = text.end();
-    char *dst = span.begin();
-    while (spot < limit) {
-      if (*spot == '%' &&
-          (spot + 1 < limit && isxdigit(spot[1]) && (spot + 2 < limit && isxdigit(spot[2]))))
-      {
-        *dst++ = swoc::svto_radix<16>(TextView{spot + 1, spot + 3});
-        spot += 3;
-      } else {
-        *dst++ = *spot++;
-      }
-    }
-    TextView text{span.data(), dst};
-    _arena.alloc(text.size());
-    return text;
-  }
-  return self_type::localize(text);
 }
 
 bool
@@ -4822,217 +4081,6 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error)
 }
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
-
-/** RAII for managing the handler's file. */
-struct HandlerOpener
-{
-public:
-  swoc::Errata errata;
-
-public:
-  HandlerOpener(ReplayFileHandler &handler, swoc::file::path const &path) : _handler(handler)
-  {
-    errata.note(_handler.file_open(path));
-  }
-  ~HandlerOpener()
-  {
-    errata.note(_handler.file_close());
-  }
-
-private:
-  ReplayFileHandler &_handler;
-};
-
-swoc::Errata
-Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler)
-{
-  HandlerOpener opener(handler, path);
-  auto errata = opener.errata;
-  if (!errata.is_ok()) {
-    return errata;
-  }
-  std::error_code ec;
-  std::string content{swoc::file::load(path, ec)};
-  if (ec.value()) {
-    errata.error(R"(Error loading "{}": {})", path, ec);
-    return errata;
-  }
-  YAML::Node root;
-  auto global_fields_rules = std::make_shared<HttpFields>();
-  try {
-    root = YAML::Load(content);
-    yaml_merge(root);
-  } catch (std::exception const &ex) {
-    errata.error(R"(Exception: {} in "{}".)", ex.what(), path);
-  }
-  if (!errata.is_ok()) {
-    return errata;
-  }
-  if (root[YAML_META_KEY]) {
-    auto meta_node{root[YAML_META_KEY]};
-    if (meta_node[YAML_GLOBALS_KEY]) {
-      auto globals_node{meta_node[YAML_GLOBALS_KEY]};
-      // Path not passed to later calls than Load_Replay_File.
-      errata.note(global_fields_rules->parse_global_rules(globals_node));
-    }
-  } else {
-    errata.info(R"(No meta node ("{}") at "{}":{}.)", YAML_META_KEY, path, root.Mark().line);
-  }
-  handler.global_config = VerificationConfig{global_fields_rules};
-  if (!root[YAML_SSN_KEY]) {
-    errata.error(R"(No sessions list ("{}") at "{}":{}.)", YAML_META_KEY, path, root.Mark().line);
-    return errata;
-  }
-  auto ssn_list_node{root[YAML_SSN_KEY]};
-  if (!ssn_list_node.IsSequence()) {
-    errata.error(
-        R"("{}" value at "{}":{} is not a sequence.)",
-        YAML_SSN_KEY,
-        path,
-        ssn_list_node.Mark());
-    return errata;
-  }
-  if (ssn_list_node.size() == 0) {
-    errata.diag(R"(Session list at "{}":{} is an empty list.)", path, ssn_list_node.Mark().line);
-    return errata;
-  }
-  for (auto const &ssn_node : ssn_list_node) {
-    // HeaderRules ssn_rules = global_rules;
-    auto session_errata{handler.ssn_open(ssn_node)};
-    if (!session_errata.is_ok()) {
-      errata.note(std::move(session_errata));
-      errata.error(R"(Failure opening session at "{}":{}.)", path, ssn_node.Mark().line);
-      continue;
-    }
-    if (!ssn_node[YAML_TXN_KEY]) {
-      errata.error(
-          R"(Session at "{}":{} has no "{}" key.)",
-          path,
-          ssn_node.Mark().line,
-          YAML_TXN_KEY);
-      continue;
-    }
-    auto txn_list_node{ssn_node[YAML_TXN_KEY]};
-    if (!txn_list_node.IsSequence()) {
-      session_errata.error(
-          R"(Transaction list at {} in session at {} in "{}" is not a list.)",
-          txn_list_node.Mark(),
-          ssn_node.Mark(),
-          path);
-    }
-    if (txn_list_node.size() == 0) {
-      session_errata.info(
-          R"(Transaction list at {} in session at {} in "{}" is an empty list.)",
-          txn_list_node.Mark(),
-          ssn_node.Mark(),
-          path);
-    }
-    for (auto const &txn_node : txn_list_node) {
-      // HeaderRules txn_rules = ssn_rules;
-      auto txn_errata = handler.txn_open(txn_node);
-      if (!txn_errata.is_ok()) {
-        session_errata.error(R"(Could not open transaction at {} in "{}".)", txn_node.Mark(), path);
-      }
-      HttpFields all_fields;
-      if (auto all_node{txn_node[YAML_ALL_MESSAGES_KEY]}; all_node) {
-        if (auto headers_node{all_node[YAML_HDR_KEY]}; headers_node) {
-          txn_errata.note(all_fields.parse_global_rules(headers_node));
-        }
-      }
-      if (auto creq_node{txn_node[YAML_CLIENT_REQ_KEY]}; creq_node) {
-        txn_errata.note(handler.client_request(creq_node));
-      }
-      if (auto preq_node{txn_node[YAML_PROXY_REQ_KEY]}; preq_node) { // global_rules appears to be
-                                                                     // being copied
-        txn_errata.note(handler.proxy_request(preq_node));
-      }
-      if (auto ursp_node{txn_node[YAML_SERVER_RSP_KEY]}; ursp_node) {
-        txn_errata.note(handler.server_response(ursp_node));
-      }
-      if (auto prsp_node{txn_node[YAML_PROXY_RSP_KEY]}; prsp_node) {
-        txn_errata.note(handler.proxy_response(prsp_node));
-      }
-      if (!all_fields._fields.empty()) {
-        txn_errata.note(handler.apply_to_all_messages(all_fields));
-      }
-      txn_errata.note(handler.txn_close());
-      if (!txn_errata.is_ok()) {
-        txn_errata.error(R"(Failure with transaction at {} in "{}".)", txn_node.Mark(), path);
-      }
-      session_errata.note(std::move(txn_errata));
-    }
-    session_errata.note(handler.ssn_close());
-    errata.note(std::move(session_errata));
-  }
-  return errata;
-}
-
-swoc::Errata
-Load_Replay_Directory(
-    swoc::file::path const &path,
-    swoc::Errata (*loader)(swoc::file::path const &),
-    int n_threads)
-{
-  swoc::Errata errata;
-  std::mutex local_mutex;
-  std::error_code ec;
-
-  dirent **elements = nullptr;
-
-  auto stat{swoc::file::status(path, ec)};
-  if (ec) {
-    return Errata().error(R"(Invalid test directory "{}": [{}])", path, ec);
-  } else if (swoc::file::is_regular_file(stat)) {
-    return loader(path);
-  } else if (!swoc::file::is_dir(stat)) {
-    return Errata().error(R"("{}" is not a file or a directory.)", path);
-  }
-
-  if (0 == chdir(path.c_str())) {
-    int n_sessions = scandir(
-        ".",
-        &elements,
-        [](dirent const *entry) -> int {
-          auto extension = swoc::TextView{entry->d_name, strlen(entry->d_name)}.suffix_at('.');
-          return 0 == strcasecmp(extension, "json") || 0 == strcasecmp(extension, "yaml");
-        },
-        &alphasort);
-    if (n_sessions > 0) {
-      std::atomic<int> idx{0};
-      swoc::MemSpan<dirent *> entries{elements, static_cast<size_t>(n_sessions)};
-
-      // Lambda suitable to spawn in a thread to load files.
-      auto load_wrapper = [&]() -> void {
-        size_t k = 0;
-        while ((k = idx++) < entries.count()) {
-          auto result = (*loader)(swoc::file::path{entries[k]->d_name});
-          std::lock_guard<std::mutex> lock(local_mutex);
-          errata.note(result);
-        }
-      };
-
-      errata.info("Loading {} replay files.", n_sessions);
-      std::vector<std::thread> threads;
-      threads.reserve(n_threads);
-      for (int tidx = 0; tidx < n_threads; ++tidx) {
-        threads.emplace_back(load_wrapper);
-      }
-      for (std::thread &thread : threads) {
-        thread.join();
-      }
-      for (int i = 0; i < n_sessions; i++) {
-        free(elements[i]);
-      }
-      free(elements);
-
-    } else {
-      errata.error(R"(No replay files found in "{}".)", path);
-    }
-  } else {
-    errata.error(R"(Failed to access directory "{}": {}.)", path, swoc::bwf::Errno{});
-  }
-  return errata;
-}
 
 swoc::Errata
 parse_ips(std::string arg, std::deque<swoc::IPEndpoint> &target)
