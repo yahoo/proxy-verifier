@@ -1,15 +1,18 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2020, Verizon Media
+ * Copyright 2021, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #pragma once
 
+#include "case_insensitive_utils.h"
+
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <list>
 #include <memory>
 #include <nghttp2/nghttp2.h>
 #include <openssl/err.h>
@@ -21,9 +24,6 @@
 #include <unistd.h>
 #include <map>
 #include <unordered_map>
-#include <unordered_set>
-
-#include "yaml-cpp/yaml.h"
 
 #include "swoc/BufferWriter.h"
 #include "swoc/Errata.h"
@@ -31,69 +31,10 @@
 #include "swoc/MemArena.h"
 #include "swoc/TextView.h"
 #include "swoc/bwf_base.h"
-#include "swoc/ext/HashFNV.h"
 #include "swoc/swoc_file.h"
 #include "swoc/swoc_ip.h"
 
-// Definitions of keys in the CONFIG files.
-// These need to be @c std::string or the node look up will construct a @c
-// std::string.
-static const std::string YAML_META_KEY{"meta"};
-static const std::string YAML_GLOBALS_KEY{"global-field-rules"};
-static const std::string YAML_SSN_KEY{"sessions"};
-static const std::string YAML_TIME_START_KEY{"connection-time"};
-static const std::string YAML_SSN_PROTOCOL_KEY{"protocol"};
-static const std::string YAML_SSN_PROTOCOL_NAME{"name"};
-static const std::string YAML_SSN_PROTOCOL_VERSION{"version"};
-static const std::string YAML_SSN_PROTOCOL_TLS_NAME{"tls"};
-static const std::string YAML_SSN_PROTOCOL_HTTP_NAME{"http"};
-static const std::string YAML_SSN_TLS_SNI_KEY{"sni"};
-static const std::string YAML_SSN_TLS_ALPN_PROTOCOLS_KEY{"alpn-protocols"};
-static const std::string YAML_SSN_TLS_VERIFY_MODE_KEY{"verify-mode"};
-static const std::string YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY{"request-certificate"};
-static const std::string YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY{"proxy-provided-certificate"};
-static const std::string YAML_TXN_KEY{"transactions"};
-static const std::string YAML_CLIENT_REQ_KEY{"client-request"};
-static const std::string YAML_PROXY_REQ_KEY{"proxy-request"};
-static const std::string YAML_SERVER_RSP_KEY{"server-response"};
-static const std::string YAML_PROXY_RSP_KEY{"proxy-response"};
-static const std::string YAML_ALL_MESSAGES_KEY{"all"};
-static const std::string YAML_HDR_KEY{"headers"};
-static const std::string YAML_FIELDS_KEY{"fields"};
-static const std::string YAML_HTTP_VERSION_KEY{"version"};
-static const std::string YAML_HTTP_STATUS_KEY{"status"};
-static const std::string YAML_HTTP_REASON_KEY{"reason"};
-static const std::string YAML_HTTP_METHOD_KEY{"method"};
-static const std::string YAML_HTTP_SCHEME_KEY{"scheme"};
-static const std::string YAML_HTTP2_KEY{"http2"};
-static const std::string YAML_HTTP2_PSEUDO_METHOD_KEY{":method"};
-static const std::string YAML_HTTP2_PSEUDO_SCHEME_KEY{":scheme"};
-static const std::string YAML_HTTP2_PSEUDO_AUTHORITY_KEY{":authority"};
-static const std::string YAML_HTTP2_PSEUDO_PATH_KEY{":path"};
-static const std::string YAML_HTTP2_PSEUDO_STATUS_KEY{":status"};
-static const std::string YAML_HTTP_STREAM_ID_KEY{"stream-id"};
-static const std::string YAML_HTTP_URL_KEY{"url"};
-static const std::string YAML_CONTENT_KEY{"content"};
-static const std::string YAML_CONTENT_SIZE_KEY{"size"};
-static const std::string YAML_CONTENT_DATA_KEY{"data"};
-static const std::string YAML_CONTENT_ENCODING_KEY{"encoding"};
-static const std::string YAML_CONTENT_TRANSFER_KEY{"transfer"};
-
-static constexpr size_t YAML_RULE_KEY_INDEX{0};
-static constexpr size_t YAML_RULE_VALUE_INDEX{1};
-static constexpr size_t YAML_RULE_TYPE_INDEX{2};
-
-static const std::string YAML_RULE_VALUE_MAP_KEY{"value"};
-static const std::string YAML_RULE_TYPE_MAP_KEY{"as"};
-
-static const std::string YAML_RULE_EQUALS{"equal"};
-static const std::string YAML_RULE_PRESENCE{"present"};
-static const std::string YAML_RULE_ABSENCE{"absent"};
-static const std::string YAML_RULE_CONTAINS{"contains"};
-static const std::string YAML_RULE_PREFIX{"prefix"};
-static const std::string YAML_RULE_SUFFIX{"suffix"};
-
-enum class YamlUrlPart {
+enum class UrlPart {
   Scheme,
   Host,
   Port,
@@ -102,26 +43,33 @@ enum class YamlUrlPart {
   Query,
   Fragment,
   Error,
-  YamlUrlPartCount = Error
+  UrlPartCount = Error
 };
 
-static const std::string YAML_URL_SCHEME{"scheme"};
-static const std::string YAML_URL_HOST{"host"};
-static const std::string YAML_URL_PORT{"port"};
-static const std::string YAML_URL_AUTHORITY{"net-loc"};
-static const std::string YAML_URL_PATH{"path"};
-static const std::string YAML_URL_QUERY{"query"};
-static const std::string YAML_URL_FRAGMENT{"fragment"};
+static const std::string VERIFICATION_DIRECTIVE_EQUALS{"equal"};
+static const std::string VERIFICATION_DIRECTIVE_PRESENCE{"present"};
+static const std::string VERIFICATION_DIRECTIVE_ABSENCE{"absent"};
+static const std::string VERIFICATION_DIRECTIVE_CONTAINS{"contains"};
+static const std::string VERIFICATION_DIRECTIVE_PREFIX{"prefix"};
+static const std::string VERIFICATION_DIRECTIVE_SUFFIX{"suffix"};
 
-static const swoc::Lexicon<YamlUrlPart> URL_PART_NAMES{
-    {{YamlUrlPart::Scheme, {YAML_URL_SCHEME}},
-     {YamlUrlPart::Host, {YAML_URL_HOST}},
-     {YamlUrlPart::Port, {YAML_URL_PORT}},
-     {YamlUrlPart::Authority, {YAML_URL_AUTHORITY, "authority"}},
-     {YamlUrlPart::Path, {YAML_URL_PATH}},
-     {YamlUrlPart::Query, {YAML_URL_QUERY}},
-     {YamlUrlPart::Fragment, {YAML_URL_FRAGMENT}}},
-    {YamlUrlPart::Error}};
+static const std::string URL_PART_SCHEME{"scheme"};
+static const std::string URL_PART_HOST{"host"};
+static const std::string URL_PART_PORT{"port"};
+static const std::string URL_PART_AUTHORITY{"net-loc"};
+static const std::string URL_PART_PATH{"path"};
+static const std::string URL_PART_QUERY{"query"};
+static const std::string URL_PART_FRAGMENT{"fragment"};
+
+static const swoc::Lexicon<UrlPart> URL_PART_NAMES{
+    {{UrlPart::Scheme, {URL_PART_SCHEME}},
+     {UrlPart::Host, {URL_PART_HOST}},
+     {UrlPart::Port, {URL_PART_PORT}},
+     {UrlPart::Authority, {URL_PART_AUTHORITY, "authority"}},
+     {UrlPart::Path, {URL_PART_PATH}},
+     {UrlPart::Query, {URL_PART_QUERY}},
+     {UrlPart::Fragment, {URL_PART_FRAGMENT}}},
+    {UrlPart::Error}};
 
 static constexpr size_t MAX_HDR_SIZE = 131072; // Max our ATS is configured for
 static constexpr size_t MAX_DRAIN_BUFFER_SIZE = 1 << 20;
@@ -255,29 +203,6 @@ BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError con
  * Session::run_transaction verifies that the proxy returns the expected
  * response status code as recorded in the replay file.
  */
-struct Hash
-{
-  swoc::Hash64FNV1a::value_type
-  operator()(swoc::TextView view) const
-  {
-    return swoc::Hash64FNV1a{}.hash_immediate(swoc::transform_view_of(&tolower, view));
-  }
-  bool
-  operator()(swoc::TextView const &lhs, swoc::TextView const &rhs) const
-  {
-    return 0 == strcasecmp(lhs, rhs);
-  }
-};
-
-struct CaseInsensitiveCompare
-{
-  bool
-  operator()(swoc::TextView const &lhs, swoc::TextView const &rhs) const
-  {
-    return strcasecmp(lhs, rhs) < 0;
-  }
-};
-
 class RuleCheck
 {
   /// References the make_* functions below.
@@ -289,7 +214,7 @@ class RuleCheck
                               ///< "contains", "prefix", "or "suffix")
 
   using MakeURLRuleFunction =
-      std::function<std::shared_ptr<RuleCheck>(YamlUrlPart, swoc::TextView)>;
+      std::function<std::shared_ptr<RuleCheck>(UrlPart, swoc::TextView)>;
   using URLRuleOptions = std::unordered_map<swoc::TextView, MakeURLRuleFunction, Hash, Hash>;
   static URLRuleOptions url_rule_options; ///< Returns function to construct a RuleCheck child class
                                           ///< for a given URL rule type ("equals", "presence",
@@ -345,7 +270,7 @@ public:
    * a value TextView for the rule to compare inputs to
    */
   static std::shared_ptr<RuleCheck>
-  make_rule_check(YamlUrlPart url_part, swoc::TextView localized_value, swoc::TextView rule_type);
+  make_rule_check(UrlPart url_part, swoc::TextView localized_value, swoc::TextView rule_type);
 
   /**
    * @param values The values of the field. This should be localized.
@@ -375,7 +300,7 @@ public:
    * @return A pointer to the EqualityCheck instance generated, holding key and
    * value TextViews for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_equality(YamlUrlPart url_part, swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_equality(UrlPart url_part, swoc::TextView value);
 
   /**
    * @param values The list of values to expect in the response.
@@ -404,7 +329,7 @@ public:
    * @return A pointer to the Presence instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_presence(YamlUrlPart url_part, swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_presence(UrlPart url_part, swoc::TextView value);
 
   /**
    * @param values (unused) The list of values specified in the YAML node.
@@ -433,7 +358,7 @@ public:
    * @return A pointer to the AbsenceCheck instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_absence(YamlUrlPart url_part, swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_absence(UrlPart url_part, swoc::TextView value);
 
   /**
    * @param values (unused) The list of values specified in the YAML node.
@@ -462,7 +387,7 @@ public:
    * @return A pointer to the ContainsCheck instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_contains(YamlUrlPart url_part, swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_contains(UrlPart url_part, swoc::TextView value);
 
   /**
    * @param values The list of values to expect in the response.
@@ -491,7 +416,7 @@ public:
    * @return A pointer to the PrefixCheck instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_prefix(YamlUrlPart url_part, swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_prefix(UrlPart url_part, swoc::TextView value);
 
   /**
    * @param values The list of values to expect in the response.
@@ -520,7 +445,7 @@ public:
    * @return A pointer to the SuffixCheck instance generated, holding a name
    * TextView for the rule to compare inputs to
    */
-  static std::shared_ptr<RuleCheck> make_suffix(YamlUrlPart url_part, swoc::TextView value);
+  static std::shared_ptr<RuleCheck> make_suffix(UrlPart url_part, swoc::TextView value);
 
   /**
    * @param values (unused) The list of values specified in the YAML node.
@@ -585,7 +510,7 @@ public:
    * @param value The associated value with the target URL part,
    * that is used with strcasecmp comparisons
    */
-  EqualityCheck(YamlUrlPart url_part, swoc::TextView value);
+  EqualityCheck(UrlPart url_part, swoc::TextView value);
 
   /** Construct @a EqualityCheck with a given name and set of expected values.
    *
@@ -652,7 +577,7 @@ public:
    *
    * @param part The ID of the target URL part
    */
-  PresenceCheck(YamlUrlPart url_part);
+  PresenceCheck(UrlPart url_part);
 
   /** Test whether the name matches the expected name. Reports errors in verbose
    * mode.
@@ -705,7 +630,7 @@ public:
    * @param expects_duplicate_fields Whether the rule should be configured for
    * duplicate fields.
    */
-  AbsenceCheck(YamlUrlPart url_part);
+  AbsenceCheck(UrlPart url_part);
 
   /** Test whether the name is null (does not match the expected name). Reports
    * errors in verbose mode.
@@ -807,7 +732,7 @@ public:
    * @param value The associated value with the target URL part,
    * that is used with strcasecmp comparisons
    */
-  ContainsCheck(YamlUrlPart url_part, swoc::TextView value);
+  ContainsCheck(UrlPart url_part, swoc::TextView value);
 
   /** Construct @a ContainsCheck with a given name and set of "contains" values.
    *
@@ -856,7 +781,7 @@ public:
    * @param value The associated value with the target URL part,
    * that is used with strcasecmp comparisons
    */
-  PrefixCheck(YamlUrlPart url_part, swoc::TextView value);
+  PrefixCheck(UrlPart url_part, swoc::TextView value);
 
   /** Construct @a PrefixCheck with a given name and set of expected values.
    *
@@ -905,7 +830,7 @@ public:
    * @param value The associated value with the target URL part,
    * that is used with strcasecmp comparisons
    */
-  SuffixCheck(YamlUrlPart url_part, swoc::TextView value);
+  SuffixCheck(UrlPart url_part, swoc::TextView value);
 
   /** Construct @a SuffixCheck with a given name and set of expected values.
    *
@@ -976,9 +901,9 @@ public:
   static constexpr auto num_fields_to_reserve = 30;
 
   std::vector<std::shared_ptr<RuleCheck>> _url_rules[static_cast<size_t>(
-      YamlUrlPart::YamlUrlPartCount)]; ///< Maps URL part names to functors.
+      UrlPart::UrlPartCount)]; ///< Maps URL part names to functors.
   swoc::TextView _url_parts[static_cast<size_t>(
-      YamlUrlPart::YamlUrlPartCount)]; ///< Maps URL part names to values.
+      UrlPart::UrlPartCount)]; ///< Maps URL part names to values.
 
   /** Add an HTTP field to the set of fields.
    *
@@ -996,54 +921,6 @@ public:
    */
   void merge(self_type const &other);
 
-  /** Parse a node holding as an attribute an individual field array of rules.
-   * Used for URL rules only, otherwise use parse_fields_and_rules.
-   *
-   * @param[in] node YAML Node with Fields attribute holding array of rules.
-   * @param[in] assume_equality_rule Whether to assume an equality rule in the
-   *   absence of another verification rule.
-   *
-   *   For example:
-   *     node:
-   *       url:
-   *       - [ host, example.one, equal ]
-   *       - [ path, config/settings.yaml, equal ]
-   *       - [ scheme, http, equal ]
-   *
-   * @return swoc::Errata holding any encountered errors
-   */
-  swoc::Errata parse_url_rules(YAML::Node const &node, bool assume_equality_rule);
-
-  /** Parse a node holding as an attribute an individual field array of rules.
-   * Used instead of parse_fields_and_rules on nodes like global_rules_node.
-   * Calls parse_fields_and_rules.
-   *
-   * @param[in] node YAML Node with Fields attribute holding array of rules.
-   *
-   *   For example:
-   *     node:
-   *       fields:
-   *         - [ X-Test-Header, 23 ]
-   *
-   * @return swoc::Errata holding any encountered errors
-   */
-  swoc::Errata parse_global_rules(YAML::Node const &node);
-
-  /** Parse an individual array of fields and rules.
-   *
-   * @param[in] node Array of fields and rules in YAML node format
-   *
-   *   For example:
-   *       fields:
-   *         - [ X-Test-Header, 23 ]
-   *
-   * @param[in] assume_equality_rule Whether to assume an equality rule in the
-   *   absence of another verification rule.
-   * @return swoc::Errata holding any encountered errors
-   */
-  swoc::Errata parse_fields_and_rules(YAML::Node const &node, bool assume_equality_rule);
-  static constexpr bool ASSUME_EQUALITY_RULE = true;
-
   /** Convert _fields into nghttp2_nv and add them to the vector provided
    *
    * This assumes that the pseudo header fields are handled separately.  If
@@ -1057,19 +934,10 @@ public:
   friend class HttpHeader;
 };
 
-struct VerificationConfig
-{
-  std::shared_ptr<HttpFields> txn_rules;
-};
-
 class HttpHeader
 {
   using self_type = HttpHeader;
   using TextView = swoc::TextView;
-
-  //  using NameSet = std::unordered_set<TextView, std::hash<std::string_view>>;
-
-  using NameSet = std::unordered_set<swoc::TextView, Hash, Hash>;
 
 public:
   /// Parsing results.
@@ -1081,9 +949,8 @@ public:
 
   /// Important header fields.
   /// @{
-  static TextView FIELD_CONTENT_LENGTH;
-  static TextView FIELD_TRANSFER_ENCODING;
-  static TextView FIELD_HOST;
+  static constexpr swoc::TextView FIELD_CONTENT_LENGTH = "content-length";
+  static constexpr swoc::TextView FIELD_TRANSFER_ENCODING = "transfer-encoding";
   /// @}
 
   /// Mark which status codes have no content by default.
@@ -1095,10 +962,9 @@ public:
   HttpHeader(self_type &&that) = default;
   self_type &operator=(self_type &&that) = default;
 
-  swoc::Errata load(YAML::Node const &node);
   swoc::Errata parse_url(TextView url);
 
-  static YamlUrlPart parse_url_part(TextView name);
+  static UrlPart parse_url_part(TextView name);
 
   swoc::Rv<ParseResult> parse_request(TextView data);
   swoc::Rv<ParseResult> parse_response(TextView data);
@@ -1233,15 +1099,14 @@ public:
   /// Format string to generate a key from a transaction.
   static std::string _key_format;
 
-  /// String localization frozen?
-  static bool _frozen;
-
   static void set_max_content_length(size_t n);
 
   static void global_init();
 
   /// Precomputed content buffer.
   static swoc::MemSpan<char> _content;
+
+  bool _verify_strictly;
 
 protected:
   class Binding : public swoc::bwf::NameBinding
@@ -1266,87 +1131,9 @@ protected:
     HttpHeader const &_hdr;
   };
 
-public:
-  /** Convert @a text to a localized view.
-   *
-   * In the context of Proxy Verifier, localization is the process by which
-   * references to memory in one region are copied to a memory arena. This is
-   * used during configuration processing to take configuration node strings,
-   * the memory of which will be freed after processing the config, and copy
-   * those strings into an arena which can be used during the processing of
-   * HTTP transactions later in the program's lifetime.
-   *
-   * That being the case, these localization functions should only be used
-   * while processing the configuration files and not after.
-   *
-   * @param[in] text Text to localize.
-   * @return The localized view, or @a text if localization is frozen and @a
-   * text is not found.
-   *
-   * @a text will be localized if string localization is not frozen, or @a text
-   * is already localized.
-   */
-  static TextView localize(TextView text);
-  static TextView localize(char const *text);
-
-  /** Convert @a name to a localized view converted to lower case characters.
-   *
-   * These should be used to case-insensitive common strings, such as HTTP
-   * headers. In addition to storing case-insensitively, this also stores the
-   * values in a cache to save space.
-   *
-   * @see localize documentation for parameter descriptions.
-   */
-  static TextView localize_lower(TextView text);
-  static TextView localize_lower(char const *text);
-
-protected:
-  /// Encoding for input text.
-  enum class Encoding {
-    TEXT, ///< Plain text, no encoding.
-    URI   //< URI encoded.
-  };
-
-  /** Convert @a name to a localized view.
-   *
-   * @param name Text to localize.
-   * @param enc Type of decoding to perform before localization.
-   * @return The localized view, or @a name if localization is frozen and @a
-   * name is not found.
-   *
-   * @a name will be localized if string localization is not frozen, or @a name
-   * is already localized. @a enc specifies the text is encoded and needs to be
-   * decoded before localization.
-   */
-  static TextView localize(TextView text, Encoding enc);
-
-  static NameSet _names;
-  static swoc::MemArena _arena;
-
-  bool _verify_strictly;
-
 private:
-  /** A convenience boolean for the corresponding parameter to localize_helper.
-   */
-  static constexpr bool SHOULD_LOWER = true;
-
   /** The key associated with this HTTP transaction. */
   std::string _key;
-
-  swoc::Errata process_pseudo_headers(YAML::Node const &node);
-
-  /** Convert @a text to a localized view.
-   *
-   * @param[in] text Text to localize.
-   * @param[in] should_lower Whether text should be converted to lower case
-   *   letters.
-   * @return The localized view, or @a text if localization is frozen and @a
-   * text is not found.
-   *
-   * @a text will be localized if string localization is not frozen, or @a text
-   * is already localized.
-   */
-  static TextView localize_helper(TextView text, bool should_lower);
 };
 
 struct Txn
@@ -1364,8 +1151,8 @@ struct Ssn
   swoc::file::path _path;
   unsigned _line_no = 0;
 
-  using clock_type = std::chrono::system_clock;
-  using TimePoint = std::chrono::time_point<clock_type, std::chrono::nanoseconds>;
+  using ClockType = std::chrono::system_clock;
+  using TimePoint = std::chrono::time_point<ClockType, std::chrono::nanoseconds>;
   TimePoint _start; ///< Start time at which the session began.
 
   /// The desired length of time in ms to replay this session.
@@ -2018,145 +1805,6 @@ protected:
     FINAL ///< Terminating (size zero) chunk parsed.
   } _state = State::INIT;
 };
-
-// YAML support utilities.
-namespace swoc
-{
-inline BufferWriter &
-bwformat(BufferWriter &w, bwf::Spec const & /* spec */, YAML::Mark const &mark)
-{
-  return w.print("line {}", mark.line);
-}
-} // namespace swoc
-
-/** Protocol class for loading a replay file.
- * The client and server are expected subclass this an provide an
- * implementation.
- */
-class ReplayFileHandler
-{
-public:
-  ReplayFileHandler() = default;
-  virtual ~ReplayFileHandler() = default;
-
-  /** The rules associated with YAML_GLOBALS_KEY. */
-  VerificationConfig global_config;
-
-  virtual swoc::Errata
-  file_open(swoc::file::path const &path)
-  {
-    _path = path.string();
-    return {};
-  }
-  virtual swoc::Errata
-  file_close()
-  {
-    return {};
-  }
-  virtual swoc::Errata
-  ssn_open(YAML::Node const & /* node */)
-  {
-    return {};
-  }
-  virtual swoc::Errata
-  ssn_close()
-  {
-    return {};
-  }
-
-  /** Open the transaction node.
-   *
-   * @param node Transaction node.
-   * @return Errors, if any.
-   *
-   * This is required to do any base validation of the transaction such as
-   * verifying required keys.
-   */
-  virtual swoc::Errata
-  txn_open(YAML::Node const & /* node */)
-  {
-    return {};
-  }
-
-  virtual swoc::Errata
-  txn_close()
-  {
-    return {};
-  }
-  virtual swoc::Errata
-  client_request(YAML::Node const & /* node */)
-  {
-    return {};
-  }
-  virtual swoc::Errata
-  proxy_request(YAML::Node const & /* node */)
-  {
-    return {};
-  }
-  virtual swoc::Errata
-  server_response(YAML::Node const & /* node */)
-  {
-    return {};
-  }
-  virtual swoc::Errata
-  proxy_response(YAML::Node const & /* node */)
-  {
-    return {};
-  }
-  virtual swoc::Errata
-  apply_to_all_messages(HttpFields const & /* all_headers */)
-  {
-    return {};
-  }
-
-protected:
-  /** Parse the "protocol" node for the requested protocol.
-   *
-   * Keep in mind that the "protocol" node is the protocol stack containing a
-   * set of protocol descriptions, such as "tcp", "tls", etc.
-   *
-   * @param[in] protocol_node The "protocol" node from which to search for a
-   * specified protocol node.
-   *
-   * @para[in] protocol_name The key for the protocol node to return.
-   *
-   * @return The protocol node or a node whose type is "YAML::NodeType::Undefined"
-   * if the node did not exist in the protocol map.
-   */
-  static swoc::Rv<YAML::Node const> parse_for_protocol_node(
-      YAML::Node const &protocol_node,
-      std::string_view protocol_name);
-
-  /** Parse a "tls" node for an "sni" key and return the value.
-   *
-   * @param[in] tls_node The tls node from which to parse the SNI.
-   *
-   * @return The SNI from the "tls" node or empty string if it doesn't exist.
-   */
-  static swoc::Rv<std::string> parse_sni(YAML::Node const &tls_node);
-
-  /** Parse a "tls" node for the given verify-mode node value.
-   *
-   * @param[in] tls_node The tls node from which to parse the verify-mode.
-   *
-   * @return The value of verify-mode, or -1 if it doesn't exist.
-   */
-  static swoc::Rv<int> parse_verify_mode(YAML::Node const &tls_node);
-
-  static swoc::Rv<std::string> parse_alpn_protocols_node(YAML::Node const &tls_node);
-
-protected:
-  /** The replay file associated with this handler.
-   */
-  swoc::file::path _path;
-};
-
-swoc::Errata Load_Replay_File(swoc::file::path const &path, ReplayFileHandler &handler);
-
-swoc::Errata Load_Replay_Directory(
-    swoc::file::path const &path,
-    swoc::Errata (*loader)(swoc::file::path const &),
-    int n_threads = 10);
 
 swoc::Errata parse_ips(std::string arg, std::deque<swoc::IPEndpoint> &target);
 swoc::Errata resolve_ips(std::string arg, std::deque<swoc::IPEndpoint> &target);

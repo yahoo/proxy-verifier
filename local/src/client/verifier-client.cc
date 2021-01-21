@@ -1,12 +1,13 @@
 /** @file
  * Implement the Proxy Verifier client.
  *
- * Copyright 2020, Verizon Media
+ * Copyright 2021, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "core/ArgParser.h"
 #include "core/ProxyVerifier.h"
+#include "core/YamlParser.h"
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
@@ -41,8 +42,8 @@ using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::milliseconds;
 using std::chrono::nanoseconds;
-using clock_type = std::chrono::system_clock;
-using TimePoint = std::chrono::time_point<clock_type, nanoseconds>;
+using ClockType = std::chrono::system_clock;
+using TimePoint = std::chrono::time_point<ClockType, nanoseconds>;
 using std::this_thread::sleep_for;
 
 /** Whether to verify each response against the corresponding proxy-response
@@ -274,7 +275,7 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
   swoc::Errata errata;
   if (!Use_Proxy_Request_Directives) {
     _txn._req._is_http2 = _ssn->is_h2;
-    errata.note(_txn._req.load(node));
+    errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
       errata.error(R"(client-request node without a method at "{}":{}.)", _path, node.Mark().line);
     }
@@ -288,7 +289,7 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
   swoc::Errata errata;
   if (Use_Proxy_Request_Directives) {
     _txn._req._is_http2 = _ssn->is_h2;
-    errata.note(_txn._req.load(node));
+    errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
       errata.error(R"(proxy-request node without a method at "{}":{}.)", _path, node.Mark().line);
     }
@@ -304,7 +305,7 @@ ClientReplayFileHandler::proxy_response(YAML::Node const &node)
     // client-request directives and there is a proxy.
     _txn._rsp._is_http2 = _ssn->is_h2;
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-    return _txn._rsp.load(node);
+    return YamlParser::populate_http_message(node, _txn._rsp);
   }
   return {};
 }
@@ -318,7 +319,7 @@ ClientReplayFileHandler::server_response(YAML::Node const &node)
     // with the server and should expect the server's responses.
     _txn._rsp._is_http2 = _ssn->is_h2;
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-    errata.note(_txn._rsp.load(node));
+    errata.note(YamlParser::populate_http_message(node, _txn._rsp));
     if (_txn._rsp._status == 0) {
       errata.error(R"(server-response node without a status at "{}":{})", _path, node.Mark().line);
     }
@@ -533,11 +534,11 @@ Engine::command_run()
   }
 
   errata.info(R"(Loading replay data from "{}".)", args[0]);
-  errata.note(Load_Replay_Directory(
+  errata.note(YamlParser::load_replay_files(
       swoc::file::path{args[0]},
       [](swoc::file::path const &file) -> swoc::Errata {
         ClientReplayFileHandler handler;
-        return Load_Replay_File(file, handler);
+        return YamlParser::load_replay_file(file, handler);
       },
       10));
   if (!errata.is_ok()) {
@@ -550,10 +551,6 @@ Engine::command_run()
     return ssn1->_start < ssn2->_start;
   });
 
-  // After this, any string expected to be localized that isn't is an error,
-  // so lock down the local string storage to avoid locking and report an
-  // error instead if not found.
-  HttpHeader::_frozen = true;
   size_t max_content_length = 0;
   int transaction_count = 0;
   for (auto ssn : Session_List) {
@@ -671,18 +668,18 @@ Engine::command_run()
     repeat_count = 1;
   }
 
-  auto replay_start_time = clock_type::now();
+  auto replay_start_time = ClockType::now();
   unsigned n_ssn = 0;
   unsigned n_txn = 0;
   for (int i = 0; i < repeat_count; i++) {
-    auto const this_iteration_start_time = clock_type::now();
+    auto const this_iteration_start_time = ClockType::now();
     for (auto ssn : Session_List) {
       if (use_sleep_time) {
         sleep_for(sleep_time);
         // Transactions will be run with no rate limiting.
       } else if (rate_multiplier != 0) {
         ssn->_rate_multiplier = rate_multiplier;
-        auto const curtime = clock_type::now();
+        auto const curtime = ClockType::now();
         auto const start_offset = ssn->_start - recording_start_time;
         auto const nexttime = (rate_multiplier * start_offset) + this_iteration_start_time;
         if (nexttime > curtime) {
@@ -709,7 +706,7 @@ Engine::command_run()
   Shutdown_Flag = true;
   Client_Thread_Pool.join_threads();
 
-  auto replay_duration = duration_cast<milliseconds>(clock_type::now() - replay_start_time);
+  auto replay_duration = duration_cast<milliseconds>(ClockType::now() - replay_start_time);
   errata.info(
       "{} transactions in {} sessions (reuse {:.2f}) in {} milliseconds ({:.3f} / "
       "millisecond).",

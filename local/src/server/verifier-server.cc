@@ -1,7 +1,7 @@
 /** @file
  * Implement the Proxy Verifier server.
  *
- * Copyright 2020, Verizon Media
+ * Copyright 2021, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include "core/ArgParser.h"
+#include "core/YamlParser.h"
 #include "core/ProxyVerifier.h"
 #include "swoc/BufferWriter.h"
 #include "swoc/Errata.h"
@@ -387,7 +388,7 @@ swoc::Errata
 ServerReplayFileHandler::client_request(YAML::Node const &node)
 {
   HttpHeader client_request;
-  Errata errata = client_request.load(node);
+  Errata errata = YamlParser::populate_http_message(node, client_request);
   auto const key = client_request.get_key();
   if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
     _key = key;
@@ -463,7 +464,7 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
   }
 
   _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-  errata.note(_txn._req.load(node));
+  errata.note(YamlParser::populate_http_message(node, _txn._req));
   if (!errata.is_ok()) {
     return errata;
   }
@@ -478,7 +479,7 @@ swoc::Errata
 ServerReplayFileHandler::server_response(YAML::Node const &node)
 {
   swoc::Errata errata;
-  errata.note(_txn._rsp.load(node));
+  errata.note(YamlParser::populate_http_message(node, _txn._rsp));
   if (_txn._rsp._status == 0) {
     errata.error(R"(server-response without a status at "{}":{}.)", _path, node.Mark().line);
   }
@@ -840,11 +841,11 @@ Engine::command_run()
       }
     }
 
-    errata.note(Load_Replay_Directory(
+    errata.note(YamlParser::load_replay_files(
         swoc::file::path{args[0]},
         [](swoc::file::path const &file) -> swoc::Errata {
           ServerReplayFileHandler handler;
-          return Load_Replay_File(file, handler);
+          return YamlParser::load_replay_file(file, handler);
         },
         10));
 
@@ -854,10 +855,6 @@ Engine::command_run()
     }
     Session::init(Transactions.size());
 
-    // After this, any string expected to be localized that isn't is an error,
-    // so lock down the local string storage to avoid runtime locking and report
-    // an error instead if not found.
-    HttpHeader::_frozen = true;
     size_t max_content_length = 0;
     for (auto const &[key, txn] : Transactions) {
       if (txn._rsp._content_data == nullptr) { // don't check responses with literal content.
