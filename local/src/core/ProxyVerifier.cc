@@ -2961,8 +2961,10 @@ RuleCheck::options_init()
       static_cast<single_field_function_type>(make_absence);
   options[swoc::TextView(VERIFICATION_DIRECTIVE_CONTAINS)] =
       static_cast<single_field_function_type>(make_contains);
-  options[swoc::TextView(VERIFICATION_DIRECTIVE_PREFIX)] = static_cast<single_field_function_type>(make_prefix);
-  options[swoc::TextView(VERIFICATION_DIRECTIVE_SUFFIX)] = static_cast<single_field_function_type>(make_suffix);
+  options[swoc::TextView(VERIFICATION_DIRECTIVE_PREFIX)] =
+      static_cast<single_field_function_type>(make_prefix);
+  options[swoc::TextView(VERIFICATION_DIRECTIVE_SUFFIX)] =
+      static_cast<single_field_function_type>(make_suffix);
 
   url_rule_options = URLRuleOptions();
   using url_function_type = std::shared_ptr<RuleCheck> (*)(UrlPart, swoc::TextView);
@@ -2974,8 +2976,10 @@ RuleCheck::options_init()
       static_cast<url_function_type>(make_absence);
   url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_CONTAINS)] =
       static_cast<url_function_type>(make_contains);
-  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_PREFIX)] = static_cast<url_function_type>(make_prefix);
-  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_SUFFIX)] = static_cast<url_function_type>(make_suffix);
+  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_PREFIX)] =
+      static_cast<url_function_type>(make_prefix);
+  url_rule_options[swoc::TextView(VERIFICATION_DIRECTIVE_SUFFIX)] =
+      static_cast<url_function_type>(make_suffix);
 
   duplicate_field_options = DuplicateFieldRuleOptions();
   using duplicate_field_function_type =
@@ -3845,8 +3849,7 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
           issue_exists = true;
         }
       } else {
-        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<UrlPart>(i)], value))
-        {
+        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<UrlPart>(i)], value)) {
           issue_exists = true;
         }
       }
