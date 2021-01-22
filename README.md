@@ -11,6 +11,7 @@ gh-md-toc README.md
 Then copy and paste the output here.
 -->
 
+
 Table of Contents
 =================
 
@@ -20,6 +21,7 @@ Table of Contents
          * [HTTP Specification](#http-specification)
             * [Server Response Lookup](#server-response-lookup)
          * [Protocol Specification](#protocol-specification)
+         * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
       * [Traffic Verification Specification](#traffic-verification-specification)
          * [Field Verification](#field-verification)
          * [URL Verification](#url-verification)
@@ -384,6 +386,58 @@ The following protocol specification features are not currently implemented:
 
 If there is no `protocol` node specified, then Proxy Verifier will default to
 establishing an HTTP/1 connection over TCP (no TLS).
+
+### Session and Transaction Delay Specification
+
+A user can also stipulate per `session` and/or per `client-request` delays to
+be inserted by the Verifier client during the replay of traffic. This is done
+via the `delay` node which takes a unit-specified duration for the associated
+delay.  During traffic replay, the delay is inserted before the associated
+session is established or before the client request is sent.  Proxy Verifier
+recognizes the following time duration units for the `delay` node:
+
+Unit Suffix | Meaning
+----------- | -------
+s           | seconds
+ms          | milliseconds
+us          | microseconds
+
+Here is a sample replay file snippet that specifies a 2 second delay before
+establishing the first session and a 15 millisecond delay before sending the
+first client request in that session.
+
+```YAML
+sessions:
+- delay: 2s
+
+  transactions:
+
+    client-request:
+      delay: 15ms
+
+      method: POST
+      url: /a/path.jpeg
+      version: '1.1'
+      headers:
+        fields:
+        - [ Content-Length, '399' ]
+        - [ Content-Type, image/jpeg ]
+        - [ Host, example.com ]
+        - [ uuid, 1 ]
+```
+
+Be aware of the following characteristics of the `delay` node:
+
+* `delay` is currently only interpreted and used by the Verifier client in
+`client-request` nodes. A server delay is not currently specifiable. Please
+file a ticket if server-side delay specification would be helpful.
+* Notice that Proxy Verifier supports microsecond level delay granularity, and
+does indeed faithfully insert delays at the appropriate times during replay
+with that precision of time. Be aware, however, that for the vast majority of
+networks anything more precise than a millisecond will not generally be useful.
+
+See also [--rate &lt;requests/second&gt;](#--rate-requestssecond) below for
+rate specification of transactions.
 
 ## Traffic Verification Specification
 
@@ -1077,11 +1131,25 @@ any verification issues against every field specified in the replay file.
 
 #### --rate \<requests/second\>
 
-By default, the client will replay the transactions in the replay file as fast
-as possible. If the user desires to configure the client to replay the
-transactions at a particular rate, they can provide the `--rate` argument. The
-argument takes the number of requests per second the client will attempt to
-send requests at.
+By default, the client will replay the session and transactions in the replay
+files as fast as possible. If the user desires to configure the client to
+replay the transactions at a particular rate, they can provide the `--rate`
+argument. This argument takes the number of requests per second the client will
+attempt to send requests at.
+
+Note session and transaction timing data can be specified in the replay files.
+These are provided via `start-time` nodes for each `session` and `transaction`.
+`start-time` takes as a value the number of nanoseconds since Unix epoch (or
+whatever other time of reference observed by all `start-time` nodes in the set
+of replay files being run) associated for that session or transaction. With
+this timing information, if `--rate` is provided, Proxy Verifier simply scales
+the relative time deltas between sessions and transactions that appropriately
+achieves the desired transaction rate. [Traffic
+Dump](https://docs.trafficserver.apache.org/en/latest/admin-guide/plugins/traffic_dump.en.html)
+records such timing information when it writes replay files.  In the absence of
+`start-time` nodes, Proxy Verifier will attempt to apply an appropriate uniform
+delay across the sessions and transactions to achieve the specified `--rate`
+value.
 
 This is a client-side only option.
 

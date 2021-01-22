@@ -25,6 +25,11 @@
 class HttpFields;
 class HttpHeader;
 
+// Delay specification units.
+static const std::string MICROSECONDS_SUFFIX{"us"};
+static const std::string MILLISECONDS_SUFFIX{"ms"};
+static const std::string SECONDS_SUFFIX{"s"};
+
 // Definitions of keys in the CONFIG files.
 // These need to be @c std::string or the node look up will construct a @c
 // std::string.
@@ -32,6 +37,7 @@ static const std::string YAML_META_KEY{"meta"};
 static const std::string YAML_GLOBALS_KEY{"global-field-rules"};
 static const std::string YAML_SSN_KEY{"sessions"};
 static const std::string YAML_TIME_START_KEY{"connection-time"};
+static const std::string YAML_TIME_DELAY_KEY{"delay"};
 static const std::string YAML_SSN_PROTOCOL_KEY{"protocol"};
 static const std::string YAML_SSN_PROTOCOL_NAME{"name"};
 static const std::string YAML_SSN_PROTOCOL_VERSION{"version"};
@@ -89,6 +95,16 @@ bwformat(BufferWriter &w, bwf::Spec const & /* spec */, YAML::Mark const &mark)
   return w.print("line {}", mark.line);
 }
 } // namespace swoc
+
+/** Interpret a chrono delay specified from a string.
+ *
+ * This function interprets the value as specified in a YAML_TIME_DELAY_KEY.
+ *
+ * @param[in] delay A string representation of a delay, e.g., "10s" or "10us".
+ *
+ * @return The interpreted version of the delay.
+ */
+swoc::Rv<std::chrono::microseconds> interpret_delay_string(swoc::TextView delay);
 
 struct VerificationConfig
 {
