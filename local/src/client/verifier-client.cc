@@ -94,6 +94,23 @@ get_start_time(YAML::Node const &node)
   return zret;
 }
 
+swoc::Rv<microseconds>
+get_delay_time(YAML::Node const &node)
+{
+  swoc::Rv<microseconds> zret;
+  if (node[YAML_TIME_DELAY_KEY]) {
+    auto delay_node{node[YAML_TIME_DELAY_KEY]};
+    if (delay_node.IsScalar()) {
+      auto &&[delay, delay_errata] = interpret_delay_string(delay_node.Scalar());
+      zret.note(std::move(delay_errata));
+      zret = delay;
+    } else {
+      zret.error(R"("{}" key that is not a scalar.)", YAML_TIME_DELAY_KEY);
+    }
+  }
+  return zret;
+}
+
 class ClientReplayFileHandler : public ReplayFileHandler
 {
 public:
@@ -212,17 +229,31 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
   }
 
   if (node[YAML_TIME_START_KEY]) {
-    auto const start_time = get_start_time(node);
-    if (!start_time.is_ok()) {
-      errata.note(std::move(start_time.errata()));
+    auto &&[start_time, start_time_errata] = get_start_time(node);
+    if (!start_time_errata.is_ok()) {
+      errata.note(std::move(start_time_errata));
       errata.error(
-          R"(Session at "{}":{} has a bad "{}" key.)",
+          R"(Session at "{}":{} has a bad "{}" key value.)",
           _path,
           _ssn->_line_no,
           YAML_TIME_START_KEY);
       return errata;
     }
     _ssn->_start = start_time;
+  }
+
+  if (node[YAML_TIME_DELAY_KEY]) {
+    auto &&[delay_time, delay_errata] = get_delay_time(node);
+    if (!delay_errata.is_ok()) {
+      errata.note(std::move(delay_errata));
+      errata.error(
+          R"(Session at "{}":{} has a bad "{}" key value.)",
+          _path,
+          _ssn->_line_no,
+          YAML_TIME_DELAY_KEY);
+      return errata;
+    }
+    _ssn->_user_specified_delay_duration = delay_time;
   }
   return errata;
 }
@@ -245,17 +276,17 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
     return errata;
   }
   if (node[YAML_TIME_START_KEY]) {
-    auto const transaction_start_time = get_start_time(node);
-    if (!transaction_start_time.is_ok()) {
-      errata.note(std::move(transaction_start_time.errata()));
+    auto &&[transaction_start_time, start_time_errata] = get_start_time(node);
+    if (!start_time_errata.is_ok()) {
+      errata.note(std::move(start_time_errata));
       errata.error(
-          R"(Transaction at "{}":{} has a bad "{}" key.)",
+          R"(Transaction at "{}":{} has a bad "{}" key value.)",
           _path,
           node.Mark().line,
           YAML_TIME_START_KEY);
       return errata;
     }
-    if (transaction_start_time.result() < _ssn->_start) {
+    if (transaction_start_time < _ssn->_start) {
       // Maybe the mechanisms used to measure session start and transaction
       // count are different and for some reason the session start time is
       // recorded as later than the transaction start. For our purposes, this
@@ -263,8 +294,9 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
       // the earliest transaction.
       _ssn->_start = transaction_start_time;
     }
-    _txn._start = transaction_start_time.result() - _ssn->_start;
+    _txn._start = transaction_start_time - _ssn->_start;
   }
+
   LoadMutex.lock();
   return errata;
 }
@@ -279,6 +311,20 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
     if (_txn._req._method.empty()) {
       errata.error(R"(client-request node without a method at "{}":{}.)", _path, node.Mark().line);
     }
+
+    if (node[YAML_TIME_DELAY_KEY]) {
+      auto &&[delay_time, delay_errata] = get_delay_time(node);
+      if (!delay_errata.is_ok()) {
+        errata.note(std::move(delay_errata));
+        errata.error(
+            R"(Session at "{}":{} has a bad "{}" key value.)",
+            _path,
+            _ssn->_line_no,
+            YAML_TIME_DELAY_KEY);
+        return errata;
+      }
+      _txn._user_specified_delay_duration = delay_time;
+    }
   }
   return errata;
 }
@@ -292,6 +338,20 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
     errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
       errata.error(R"(proxy-request node without a method at "{}":{}.)", _path, node.Mark().line);
+    }
+
+    if (node[YAML_TIME_DELAY_KEY]) {
+      auto &&[delay_time, delay_errata] = get_delay_time(node);
+      if (!delay_errata.is_ok()) {
+        errata.note(std::move(delay_errata));
+        errata.error(
+            R"(Session at "{}":{} has a bad "{}" key value.)",
+            _path,
+            _ssn->_line_no,
+            YAML_TIME_DELAY_KEY);
+        return errata;
+      }
+      _txn._user_specified_delay_duration = delay_time;
     }
   }
   return errata;
@@ -674,7 +734,9 @@ Engine::command_run()
   for (int i = 0; i < repeat_count; i++) {
     auto const this_iteration_start_time = ClockType::now();
     for (auto ssn : Session_List) {
-      if (use_sleep_time) {
+      if (ssn->_user_specified_delay_duration > 0us) {
+        sleep_for(ssn->_user_specified_delay_duration);
+      } else if (use_sleep_time) {
         sleep_for(sleep_time);
         // Transactions will be run with no rate limiting.
       } else if (rate_multiplier != 0) {

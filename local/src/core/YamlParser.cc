@@ -27,13 +27,45 @@ using namespace swoc::literals;
 using namespace std::literals;
 
 using std::chrono::duration_cast;
-using std::chrono::milliseconds;
-using std::chrono::nanoseconds;
 using std::chrono::seconds;
+using std::chrono::milliseconds;
+using std::chrono::microseconds;
+using std::chrono::nanoseconds;
 using ClockType = std::chrono::system_clock;
 using TimePoint = std::chrono::time_point<ClockType, nanoseconds>;
 
 TimePoint YamlParser::_parsing_start_time{};
+
+swoc::Rv<microseconds>
+interpret_delay_string(TextView src)
+{
+  auto delay = src;
+  delay = delay.trim_if(&isspace);
+  auto delay_digits = delay.clip_prefix_of(&isdigit);
+  if (delay_digits.empty()) {
+    return {0us, Errata().error(R"(No digits found for delay specification: "{}")", src)};
+  }
+  auto const raw_delay_number = swoc::svtou(delay_digits);
+
+  // The digits prefix was clipped from delay above via clip_prefix_of.
+  auto delay_suffix = delay;
+  delay_suffix = delay_suffix.trim_if(&isspace);
+  if (delay_suffix.empty()) {
+    return {0us, Errata().error(R"(No unit found for delay specification: "{}")", src)};
+  }
+
+  if (delay_suffix == MICROSECONDS_SUFFIX) {
+    return microseconds{raw_delay_number};
+  } else if (delay_suffix == MILLISECONDS_SUFFIX) {
+    return duration_cast<microseconds>(milliseconds{raw_delay_number});
+  } else if (delay_suffix == SECONDS_SUFFIX) {
+    return duration_cast<microseconds>(seconds{raw_delay_number});
+  }
+  return {
+      0us,
+      Errata()
+          .error(R"(Unrecognized unit, "{}", for delay specification: "{}")", delay_suffix, src)};
+}
 
 Errata
 YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)

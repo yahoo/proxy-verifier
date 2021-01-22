@@ -1140,8 +1140,11 @@ struct Txn
   Txn(bool verify_strictly) : _req{verify_strictly}, _rsp{verify_strictly} { }
 
   std::chrono::nanoseconds _start; ///< The delay since the beginning of the session.
-  HttpHeader _req;                 ///< Request to send.
-  HttpHeader _rsp;                 ///< Rules for response to expect.
+
+  /// How long the user said to delay for this transaction.
+  std::chrono::microseconds _user_specified_delay_duration{0};
+  HttpHeader _req; ///< Request to send.
+  HttpHeader _rsp; ///< Rules for response to expect.
 };
 
 struct Ssn
@@ -1153,6 +1156,9 @@ struct Ssn
   using ClockType = std::chrono::system_clock;
   using TimePoint = std::chrono::time_point<ClockType, std::chrono::nanoseconds>;
   TimePoint _start; ///< Start time at which the session began.
+
+  /// How long the user said to delay for this session.
+  std::chrono::microseconds _user_specified_delay_duration{0};
 
   /// The desired length of time in ms to replay this session.
   double _rate_multiplier = 0.0;

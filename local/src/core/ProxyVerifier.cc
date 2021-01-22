@@ -876,7 +876,9 @@ Session::run_transactions(
         break;
       }
     }
-    if (rate_multiplier != 0) {
+    if (txn._user_specified_delay_duration > 0us) {
+      sleep_for(txn._user_specified_delay_duration);
+    } else if (rate_multiplier != 0) {
       auto const start_offset = txn._start;
       auto const next_time = (rate_multiplier * start_offset) + first_time;
       auto current_time = ClockType::now();
@@ -1360,16 +1362,29 @@ H2Session::run_transactions(
         break;
       }
     }
-    if (rate_multiplier != 0) {
-      auto const start_offset = txn._start;
-      auto const next_time = (rate_multiplier * start_offset) + first_time;
+    if (rate_multiplier != 0 || txn._user_specified_delay_duration > 0us) {
+      std::chrono::duration<double, std::micro> delay_time = 0ms;
       auto current_time = ClockType::now();
-      auto delay_time = duration_cast<milliseconds>(next_time - current_time);
-      while (delay_time > 0ms) {
+      auto next_time = current_time + delay_time;
+      if (txn._user_specified_delay_duration > 0us) {
+        delay_time = txn._user_specified_delay_duration;
+        next_time = current_time + delay_time;
+      } else {
+        auto const start_offset = txn._start;
+        next_time = (rate_multiplier * start_offset) + first_time;
+        delay_time = next_time - current_time;
+      }
+      while (delay_time > 0us) {
         // Make use of our delay time to read any incoming responses.
-        receive_nghttp2_data(this->get_session(), nullptr, 0, 0, this, delay_time);
+        receive_nghttp2_data(
+            this->get_session(),
+            nullptr,
+            0,
+            0,
+            this,
+            duration_cast<milliseconds>(delay_time));
         current_time = ClockType::now();
-        delay_time = duration_cast<milliseconds>(next_time - current_time);
+        delay_time = next_time - current_time;
         sleep_for(delay_time);
       }
     }
