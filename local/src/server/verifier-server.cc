@@ -824,7 +824,7 @@ Engine::command_run()
         if (ca_certs_arg.size() >= 1) {
           errata.note(TLSSession::configure_ca_cert(ca_certs_arg[0]));
           if (!errata.is_ok()) {
-            errata.error(R"(Invalid ca-certs path "{}")", cert_arg[0]);
+            errata.error(R"(Invalid ca-certs path "{}")", ca_certs_arg[0]);
             process_exit_code = 1;
             return;
           }
