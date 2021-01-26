@@ -16,10 +16,8 @@ Verify correct handling of duplicate fields in a message.
 # Test 1: Verify correct behavior when there are duplicate HTTP fields.
 #
 r = Test.AddTestRun("Verify correct handling of duplicate fields in a message.")
-client = r.AddClientProcess("client1", "replay_files/duplicate_fields.yaml",
-                            other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/duplicate_fields.yaml",
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client1", "replay_files/duplicate_fields.yaml")
+server = r.AddServerProcess("server1", "replay_files/duplicate_fields.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 

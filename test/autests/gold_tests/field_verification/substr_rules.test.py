@@ -16,8 +16,8 @@ Verify correct field verification behavior for contains, prefix, and suffix.
 # Test 1: Verify field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
-client = r.AddClientProcess("client1", "replay_files/substr_rules.yaml", other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/substr_rules.yaml", other_args="--verbose diag")
+client = r.AddClientProcess("client1", "replay_files/substr_rules.yaml")
+server = r.AddServerProcess("server1", "replay_files/substr_rules.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
 
 server.Streams.stdout += Testers.ContainsExpression(
@@ -71,8 +71,8 @@ server.ReturnCode = 1
 # Test 2: Verify duplicate field verification in a YAML replay file.
 #
 r = Test.AddTestRun("Verify field verification works for HTTP transaction with duplicate fields")
-client = r.AddClientProcess("client2", "replay_files/substr_rules_duplicate.yaml", other_args="--verbose diag")
-server = r.AddServerProcess("server2", "replay_files/substr_rules_duplicate.yaml", other_args="--verbose diag")
+client = r.AddClientProcess("client2", "replay_files/substr_rules_duplicate.yaml")
+server = r.AddServerProcess("server2", "replay_files/substr_rules_duplicate.yaml")
 proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
@@ -118,8 +118,8 @@ server.ReturnCode = 1
 # Test 3: Verify field verification using the map specification syntax.
 #
 r = Test.AddTestRun("Verify field verification works with the map specification syntax")
-client = r.AddClientProcess("client3", "replay_files/map_specification.yaml", other_args="--verbose diag")
-server = r.AddServerProcess("server3", "replay_files/map_specification.yaml", other_args="--verbose diag")
+client = r.AddClientProcess("client3", "replay_files/map_specification.yaml")
+server = r.AddServerProcess("server3", "replay_files/map_specification.yaml")
 proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
 
 server.Streams.stdout += Testers.ContainsExpression(

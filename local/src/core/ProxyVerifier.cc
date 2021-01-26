@@ -4101,41 +4101,41 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error)
 } // namespace swoc
 
 swoc::Errata
-parse_ips(std::string arg, std::deque<swoc::IPEndpoint> &target)
+parse_ips(std::string addresses, std::deque<swoc::IPEndpoint> &targets)
 {
   swoc::Errata errata;
   size_t offset = 0;
   size_t new_offset = 0;
   while (offset != std::string::npos) {
-    new_offset = arg.find(',', offset);
-    std::string name = arg.substr(offset, new_offset - offset);
+    new_offset = addresses.find(',', offset);
+    std::string name = addresses.substr(offset, new_offset - offset);
     offset = new_offset != std::string::npos ? new_offset + 1 : new_offset;
     swoc::IPEndpoint addr;
     if (!addr.parse(name)) {
       errata.error(R"("{}" is not a valid IP address.)", name);
       return errata;
     }
-    target.push_back(addr);
+    targets.push_back(addr);
   }
   return errata;
 }
 
 swoc::Errata
-resolve_ips(std::string arg, std::deque<swoc::IPEndpoint> &target)
+resolve_ips(std::string hostnames, std::deque<swoc::IPEndpoint> &targets)
 {
   swoc::Errata errata;
   size_t offset = 0;
   size_t new_offset = 0;
   while (offset != std::string::npos) {
-    new_offset = arg.find(',', offset);
-    std::string name = arg.substr(offset, new_offset - offset);
+    new_offset = hostnames.find(',', offset);
+    std::string name = hostnames.substr(offset, new_offset - offset);
     offset = new_offset != std::string::npos ? new_offset + 1 : new_offset;
     auto &&[tmp_target, result] = Resolve_FQDN(name);
     if (!result.is_ok()) {
       errata.error(R"("{}" is not a valid IP address.)", name);
       return errata;
     }
-    target.push_back(tmp_target);
+    targets.push_back(tmp_target);
   }
   return errata;
 }

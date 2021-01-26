@@ -36,10 +36,8 @@ r.Streams.stdout += Testers.ContainsExpression(
 # Test 2: Verify correct behavior of a single client-side HTTP/2 transaction.
 #
 r = Test.AddTestRun("Verify the example replay file from the README.")
-client = r.AddClientProcess("client", example_yaml,
-                            other_args="--verbose diag")
-server = r.AddServerProcess("server", example_yaml,
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client", example_yaml)
+server = r.AddServerProcess("server", example_yaml)
 
 # The test proxy is not featureful enough to handle both HTTP/1 and HTTP/2
 # traffic. Thankfully this is easily addressed by running a separate process

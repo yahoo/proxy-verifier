@@ -57,7 +57,45 @@ std::mutex LoadMutex;
 
 std::list<std::shared_ptr<Ssn>> Session_List;
 
-std::deque<swoc::IPEndpoint> Target, Target_Https;
+struct TargetSelector
+{
+  /** Round robin retrieval of HTTP addresses. */
+  swoc::IPEndpoint const *
+  get_http_target()
+  {
+    if (http_targets.empty()) {
+      return nullptr;
+    }
+    auto const *http_target = &http_targets[http_target_index];
+    if (++http_target_index >= http_targets.size()) {
+      http_target_index = 0;
+    }
+    return http_target;
+  }
+
+  /** Round robin retrieval of HTTPS addresses. */
+  swoc::IPEndpoint const *
+  get_https_target()
+  {
+    if (https_targets.empty()) {
+      return nullptr;
+    }
+    auto const *https_target = &https_targets[https_target_index];
+    if (++https_target_index >= https_targets.size()) {
+      https_target_index = 0;
+    }
+    return https_target;
+  }
+
+  std::deque<swoc::IPEndpoint> http_targets;
+  std::deque<swoc::IPEndpoint> https_targets;
+
+private:
+  size_t http_target_index = 0;
+  size_t https_target_index = 0;
+};
+
+TargetSelector Target_Selector;
 
 /** Whether the replay-client constructs traffic according to client-request or
  * proxy-request directives.
@@ -452,14 +490,6 @@ struct Engine
   ts::ArgParser parser;    ///< Command line argument parser.
   ts::Arguments arguments; ///< Results from argument parsing.
 
-  static constexpr swoc::TextView COMMAND_RUN{"run"};
-  static constexpr swoc::TextView COMMAND_RUN_ARGS{
-      "Arguments:\n"
-      "\t<dir>: Directory containing replay files.\n"
-      "\t<upstream http>: hostname and port for http requests. Can be a comma "
-      "seprated list\n"
-      "\t<upstream https>: hostname and port for https requests. Can be a "
-      "comma separated list "};
   void command_run();
 
   /// The process return code with which to exit.
@@ -469,7 +499,7 @@ struct Engine
 int Engine::process_exit_code = 0;
 
 void
-Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint const &target_https)
+Run_Session(Ssn const &ssn, TargetSelector &target_selector)
 {
   swoc::Errata errata;
   std::unique_ptr<Session> session;
@@ -482,17 +512,34 @@ Run_Session(Ssn const &ssn, swoc::IPEndpoint const &target, swoc::IPEndpoint con
       ssn.is_h2 ? "h2" : (ssn.is_tls ? "https" : "http"));
 
   if (ssn.is_h2) {
-    session = std::make_unique<H2Session>(ssn._client_sni, ssn._client_verify_mode);
-    real_target = &target_https;
-    errata.diag("Connecting via HTTP/2 over TLS.");
+    real_target = target_selector.get_https_target();
+    if (real_target == nullptr) {
+      errata.error("Could not replay an HTTP/2 session because no HTTPS ports are provided.");
+    } else {
+      session = std::make_unique<H2Session>(ssn._client_sni, ssn._client_verify_mode);
+      errata.diag("Connecting via HTTP/2 over TLS.");
+    }
   } else if (ssn.is_tls) {
-    session = std::make_unique<TLSSession>(ssn._client_sni, ssn._client_verify_mode);
-    real_target = &target_https;
-    errata.diag("Connecting via TLS.");
+    real_target = target_selector.get_https_target();
+    if (real_target == nullptr) {
+      errata.error("Could not replay an HTTPS session because no HTTPS ports are provided.");
+    } else {
+      session = std::make_unique<TLSSession>(ssn._client_sni, ssn._client_verify_mode);
+      errata.diag("Connecting via TLS.");
+    }
   } else {
-    session = std::make_unique<Session>();
-    real_target = &target;
-    errata.diag("Connecting via HTTP.");
+    real_target = target_selector.get_http_target();
+    if (real_target == nullptr) {
+      errata.error("Could not replay an HTTP session because no HTTP ports are provided.");
+    } else {
+      session = std::make_unique<Session>();
+      errata.diag("Connecting via HTTP.");
+    }
+  }
+
+  if (real_target == nullptr) {
+    Engine::process_exit_code = 1;
+    return;
   }
 
   errata.note(session->do_connect(real_target));
@@ -510,19 +557,13 @@ TF_Client(std::thread *t)
 {
   ClientThreadInfo thread_info;
   thread_info._thread = t;
-  size_t target_index = 0;
-  size_t target_https_index = 0;
 
   while (!Shutdown_Flag) {
     thread_info._ssn = nullptr;
     Client_Thread_Pool.wait_for_work(&thread_info);
 
     if (thread_info._ssn != nullptr) {
-      Run_Session(*thread_info._ssn, Target[target_index], Target_Https[target_https_index]);
-      if (++target_index >= Target.size())
-        target_index = 0;
-      if (++target_https_index >= Target_Https.size())
-        target_https_index = 0;
+      Run_Session(*thread_info._ssn, Target_Selector);
     }
   }
 }
@@ -533,8 +574,8 @@ Engine::command_run()
   auto args{arguments.get("run")};
   swoc::Errata errata;
 
-  if (args.size() < 3) {
-    errata.error(R"(Not enough arguments for "{}" command.\n{})", COMMAND_RUN, COMMAND_RUN_ARGS);
+  if (args.size() < 1) {
+    errata.error(R"("run" command requires a directory path as an argument.)");
     process_exit_code = 1;
     return;
   }
@@ -550,15 +591,28 @@ Engine::command_run()
     Use_Strict_Checking = true;
   }
 
-  errata.note(resolve_ips(args[1], Target));
-  if (!errata.is_ok()) {
+  auto server_addr_http_arg{arguments.get("connect-http")};
+  auto server_addr_https_arg{arguments.get("connect-https")};
+  if (!server_addr_http_arg && !server_addr_https_arg) {
+    errata.error(R"(Must provide either "--connect-http" and/or "--connect-https" arguments")");
     process_exit_code = 1;
     return;
   }
-  errata.note(resolve_ips(args[2], Target_Https));
-  if (!errata.is_ok()) {
-    process_exit_code = 1;
-    return;
+
+  if (server_addr_http_arg) {
+    errata.note(resolve_ips(server_addr_http_arg[0], Target_Selector.http_targets));
+    if (!errata.is_ok()) {
+      process_exit_code = 1;
+      return;
+    }
+  }
+
+  if (server_addr_https_arg) {
+    errata.note(resolve_ips(server_addr_https_arg[0], Target_Selector.https_targets));
+    if (!errata.is_ok()) {
+      process_exit_code = 1;
+      return;
+    }
   }
 
   auto key_format_arg{arguments.get("format")};
@@ -813,11 +867,25 @@ main(int /* argc */, char const *argv[])
 
   engine.parser
       .add_command(
-          Engine::COMMAND_RUN.data(),
-          Engine::COMMAND_RUN_ARGS.data(),
+          "run",
+          "run <path>: the file path or directory containing replay file(s).",
           "",
-          MORE_THAN_ONE_ARG_N,
+          1,
           [&]() -> void { engine.command_run(); })
+      .add_option(
+          "--connect-http",
+          "",
+          "HTTP address and port to connect on. Can be a comma separated list.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--connect-https",
+          "",
+          "TLS address and port to connect on. Can be a comma separated list.",
+          "",
+          1,
+          "")
       .add_option("--no-proxy", "", "Use proxy data instead of client data.")
       .add_option(
           "--repeat",

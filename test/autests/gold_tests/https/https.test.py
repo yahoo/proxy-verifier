@@ -12,8 +12,13 @@ Verify basic HTTPS functionality.
 '''
 
 r = Test.AddTestRun("Verify processing of a simple HTTPS transaction")
-client = r.AddClientProcess("client1", "replay_files/single_transaction.yaml", other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/single_transaction.yaml", other_args="--verbose diag")
+
+# Add configure_http=False to verify ATS client and server work when the http
+# optional arguments are not provided.
+client = r.AddClientProcess("client1", "replay_files/single_transaction.yaml",
+                            configure_http=False)
+server = r.AddServerProcess("server1", "replay_files/single_transaction.yaml",
+                            configure_http=False)
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port, use_ssl=True)
 

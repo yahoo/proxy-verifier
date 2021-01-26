@@ -12,8 +12,8 @@ Verify basic HTTPS functionality.
 '''
 
 r = Test.AddTestRun("Verify bodies can be read correctly.")
-client = r.AddClientProcess("client1", "body.yaml", other_args="--verbose diag")
-server = r.AddServerProcess("server1", "body.yaml", other_args="--verbose diag")
+client = r.AddClientProcess("client1", "body.yaml")
+server = r.AddServerProcess("server1", "body.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port, use_ssl=True)
 
