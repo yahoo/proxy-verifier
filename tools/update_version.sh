@@ -35,7 +35,7 @@ old_version=$(\
 
 # Go back: the file paths are relative to the user's current working directory.
 cd - 2>&1 > /dev/null
-sed -i='' "s/${old_version}/${new_version}/g" "${parts_file}"
-sed -i='' "s/${old_version}/${new_version}/g" "${src_file}"
+sed -i'.bak' "s/${old_version}/${new_version}/g" "${parts_file}"  && rm "${parts_file}.bak"
+sed -i'.bak' "s/${old_version}/${new_version}/g" "${src_file}" && rm "${src_file}.bak"
 
 echo "Do not forget to run the \"version_argument\" AuTest."
