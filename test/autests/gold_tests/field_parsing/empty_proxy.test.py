@@ -16,10 +16,8 @@ Verify correct handling of empty proxy nodes.
 # Test 1: Verify correct handling of empty proxy-request and response nodes.
 #
 r = Test.AddTestRun("Verify correct handling of empty proxy nodes")
-client = r.AddClientProcess("client1", "replay_files/empty_proxy.yaml",
-                            other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/empty_proxy.yaml",
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client1", "replay_files/empty_proxy.yaml")
+server = r.AddServerProcess("server1", "replay_files/empty_proxy.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 

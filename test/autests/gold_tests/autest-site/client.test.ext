@@ -14,8 +14,8 @@ from ports import get_port
 
 
 def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=False,
-                      http_ports=None, https_ports=None,
-                      ssl_cert='', ca_certs='', other_args=''):
+                      configure_http=True, configure_https=True, http_ports=None, https_ports=None,
+                      ssl_cert='', ca_certs='', verbose=True, other_args=''):
     """
     Configure the process for running the verifier-client.
 
@@ -46,17 +46,19 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
         process.Setup.Copy(replay_dir, run_replay_dir, CopyLogic.SoftFiles)
         command += " {} ".format(run_replay_dir)
 
-    if not http_ports and find_ports:
+    if configure_http and find_ports and not http_ports:
         http_ports = [get_port(process, "http_port")]
 
     if http_ports:
+        command += "--connect-http "
         command += create_address_argument(http_ports, use_ipv6)
         command += " "
 
-    if not https_ports and find_ports:
+    if configure_https and find_ports and not https_ports:
         https_ports = [get_port(process, "https_port")]
 
     if https_ports:
+        command += "--connect-https "
         command += create_address_argument(https_ports, use_ipv6)
         command += " "
 
@@ -94,6 +96,9 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
                 process.Setup.Copy(ca_certs, run_ca_certs, CopyLogic.SoftFiles)
             command += ' --ca-certs "{}" '.format(run_ca_certs)
 
+    if verbose:
+        command += "--verbose diag "
+
     if other_args:
         command += " {}".format(other_args)
 
@@ -102,8 +107,8 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
 
 
 def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
-                      http_ports=None, https_ports=None,
-                      ssl_cert='', ca_certs='', other_args=''):
+                      configure_http=True, configure_https=True, http_ports=None, https_ports=None,
+                      ssl_cert='', ca_certs='', verbose=True, other_args=''):
     """
     Create a verifier-client process.
 
@@ -122,6 +127,10 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
             http_ports and https_ports.
 
         use_ipv6: (bool) True if IPv6 localhost should be used, IPv4 otherise.
+
+        configure_http: (bool) True if http ports should be configured, False if not.
+
+        configure_https: (bool) True if https ports should be configured, False if not.
 
         http_ports: (list of ints) The set of HTTP ports to connect on.
 
@@ -143,20 +152,22 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
             pass in None for ca_certs.  Whitespace can be passed in to test
             --ca-certs with an empty argument.
 
+        verbose: (bool) Whether to enable debug-level logging.
+
         other_args: (str) Any other arbitrary options to pass to verifier-client.
 
     Returns:
         A verifier-client process.
     """
     client = test.Processes.Process(name)
-    _configure_client(test, client, name, replay_dir, find_ports, use_ipv6, http_ports,
-                      https_ports, ssl_cert, ca_certs, other_args)
+    _configure_client(test, client, name, replay_dir, find_ports, use_ipv6, configure_http, configure_https,  http_ports,
+                      https_ports, ssl_cert, ca_certs, verbose, other_args)
     return client
 
 
 def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
-                     http_ports=None, https_ports=None,
-                     ssl_cert='', ca_certs='', other_args=''):
+                     configure_http=True, configure_https=True, http_ports=None, https_ports=None,
+                     ssl_cert='', ca_certs='', verbose=True, other_args=''):
     """
     Set the Default process of the test run to a verifier-client Process.
 
@@ -171,8 +182,8 @@ def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
     """
 
     p = run.Processes.Default
-    _configure_client(run, p, name, replay_dir, find_ports, use_ipv6, http_ports,
-                      https_ports, ssl_cert, ca_certs, other_args)
+    _configure_client(run, p, name, replay_dir, find_ports, use_ipv6, configure_http, configure_https,  http_ports,
+                      https_ports, ssl_cert, ca_certs, verbose, other_args)
     return p
 
 

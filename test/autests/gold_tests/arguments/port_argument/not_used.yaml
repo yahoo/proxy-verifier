@@ -1,0 +1,21 @@
+meta:
+  version: "1.0"
+
+sessions:
+- transactions:
+  - client-request:
+      version: "1.1"
+      method: "GET"
+      url: "/v1/video/search/channel/delain"
+      headers:
+        fields:
+        - [ Host, base.ex ]
+        - [ uuid, 1 ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Type, html/plaintext ]
+        - [ Content-Length, 96 ]

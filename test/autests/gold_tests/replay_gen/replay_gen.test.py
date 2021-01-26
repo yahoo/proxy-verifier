@@ -19,10 +19,8 @@ r = Test.AddTestRun("Generate replay files via replay_gen.py")
 replay_gen = r.ConfigureReplayGenDefaultProcess("replay_gen1", num_transactions=20)
 
 r = Test.AddTestRun("Make sure we can use the generated replay files")
-client = r.AddClientProcess("client1", replay_gen.Variables.replay_dir,
-                            other_args="--verbose diag")
-server = r.AddServerProcess("server1", replay_gen.Variables.replay_dir,
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client1", replay_gen.Variables.replay_dir)
+server = r.AddServerProcess("server1", replay_gen.Variables.replay_dir)
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 

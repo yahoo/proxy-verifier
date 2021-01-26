@@ -16,10 +16,8 @@ Verify the user can white list transactions with --keys.
 # Test 1: Verify that without the keys argument, all transactions are sent.
 #
 r = Test.AddTestRun("Verify all keys are sent when --keys is not used.")
-client = r.AddClientProcess("client1", "five_transactions.yaml",
-                            other_args="--verbose diag")
-server = r.AddServerProcess("server1", "five_transactions.yaml",
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client1", "five_transactions.yaml")
+server = r.AddServerProcess("server1", "five_transactions.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
@@ -33,9 +31,8 @@ for uuid in range(1, 6):
 #
 r = Test.AddTestRun("Verify all keys are sent when --keys is not used.")
 client = r.AddClientProcess("client2", "five_transactions.yaml",
-                            other_args="--keys 2 --verbose diag")
-server = r.AddServerProcess("server2", "five_transactions.yaml",
-                            other_args="--verbose diag")
+                            other_args="--keys 2")
+server = r.AddServerProcess("server2", "five_transactions.yaml")
 proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
@@ -53,9 +50,8 @@ for uuid in [1, 3, 4, 5, 6]:
 #
 r = Test.AddTestRun("Verify multiple transactions can be sent with --keys.")
 client = r.AddClientProcess("client3", "five_transactions.yaml",
-                            other_args="--keys 3 5 --verbose diag")
-server = r.AddServerProcess("server3", "five_transactions.yaml",
-                            other_args="--verbose diag")
+                            other_args="--keys 3 5")
+server = r.AddServerProcess("server3", "five_transactions.yaml")
 proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
@@ -75,9 +71,8 @@ for uuid in [1, 2, 4]:
 #
 r = Test.AddTestRun("Verify no transactions are sent if none match the key.")
 client = r.AddClientProcess("client4", "five_transactions.yaml",
-                            other_args="--keys does_not_exist --verbose diag")
-server = r.AddServerProcess("server4", "five_transactions.yaml",
-                            other_args="--verbose diag")
+                            other_args="--keys does_not_exist")
+server = r.AddServerProcess("server4", "five_transactions.yaml")
 proxy = r.AddProxyProcess("proxy4", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 

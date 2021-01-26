@@ -766,8 +766,14 @@ Engine::command_run()
     Errata errata;
     auto args{arguments.get("run")};
     std::deque<swoc::IPEndpoint> server_addrs, server_addrs_https;
-    auto server_addr_arg{arguments.get("listen")};
+
+    auto server_addr_http_arg{arguments.get("listen-http")};
     auto server_addr_https_arg{arguments.get("listen-https")};
+    if (!server_addr_http_arg && !server_addr_https_arg) {
+      errata.error(R"(Must provide either "--listen-http" and/or "--listen-https" arguments")");
+      process_exit_code = 1;
+      return;
+    }
 
     swoc::LocalBufferWriter<1024> w;
 
@@ -792,9 +798,9 @@ Engine::command_run()
       HttpHeader::_key_format = key_format_arg[0];
     }
 
-    if (server_addr_arg) {
-      if (server_addr_arg.size() == 1) {
-        errata = parse_ips(server_addr_arg[0], server_addrs);
+    if (server_addr_http_arg) {
+      if (server_addr_http_arg.size() == 1) {
+        errata = parse_ips(server_addr_http_arg[0], server_addrs);
       } else {
         errata.error(R"(--listen option must have a single value, the listen address and port.)");
         process_exit_code = 1;
@@ -946,22 +952,22 @@ main(int /* argc */, char const *argv[])
   engine.parser
       .add_command(
           "run",
-          "run <dir>: the replay server using data in <dir>",
+          "run <path>: the file path or directory containing replay file(s).",
           "",
           1,
           [&]() -> void { engine.command_run(); })
       .add_option("--thread-limit", "", thread_limit_description.c_str(), "", 1, "")
       .add_option(
-          "--listen",
+          "--listen-http",
           "",
-          "Listen address and port. Can be a comma separated list.",
+          "Address and port to connect on. Can be a comma separated list.",
           "",
           1,
           "")
       .add_option(
           "--listen-https",
           "",
-          "Listen TLS address and port. Can be a comma separated list.",
+          "TLS address and port to connect on. Can be a comma separated list.",
           "",
           1,
           "")

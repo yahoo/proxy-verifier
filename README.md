@@ -979,11 +979,11 @@ connections:
 ```
 verifier-server \
     run \
-    --listen 127.0.0.1:8080 \
+    --listen-http 127.0.0.1:8080 \
     --listen-https 127.0.0.1:4443 \
     --server-cert <server_cert> \
     --ca-certs <file_or_directory_of_ca_certs> \
-    <replay_file_directory>
+    <replay_file_or_directory>
 ```
 
 Here's an example invocation of the verifier-client, configuring it to connect to
@@ -995,14 +995,24 @@ verifier-client \
     run \
     --client-cert <client_cert> \
     --ca-certs <file_or_directory_of_ca_certs> \
-    <replay_file_directory> \
-    127.0.0.1:8081 \
-    127.0.0.1:4444
+    --connect-http 127.0.0.1:8081 \
+    --connect-https 127.0.0.1:4444 \
+    <replay_file_or_directory>
 ```
 
 With these two invocations, the verifier-client and verifier-server will replay the
-sessions and transactions in `<replay_file_directory>`  and perform any field
+sessions and transactions in `<replay_file_or_directory>`  and perform any field
 verification described therein.
+
+On the server either `--listen-http` or `--listen-https` or both must be
+provided. That is, for example, if you are only testing HTTPS traffic, you may
+only specify `--listen-https`. The same is true on the client: either
+`--connect-http` or `--connect-https` or both must be provided. These address
+arguments take a comma-separated list of address/port pairs to specify multiple
+listening or connecting sockets. The processing of these arguments
+automatically detects any IPv6 addresses if provided. The client's processing
+of `--connect-http` and `--connect-https` arguments will resolve fully
+qualified domain names.
 
 Note that the `--client-cert` and `--server-cert` both take either a
 certificate file containing the public and private key or a directory
@@ -1010,7 +1020,8 @@ containing pem and key files. Similarly, the `--ca-certs` takes either a file
 containing one or more certificates or a directory with separate certificate
 files.  For convenience, the
 [test/keys](https://github.com/bneradt/proxy-verifier/tree/expand_readme/test/keys)
-directory contains key files which can be used for testing.
+directory contains key files which can be used for testing. These certificate
+arguments are only required if HTTPS traffic will be replayed.
 
 ### Optional Arguments
 

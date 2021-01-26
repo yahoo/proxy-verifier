@@ -18,9 +18,9 @@ Verify --format argument parsing.
 #
 r = Test.AddTestRun('--format "{url}" against transactions unique by Host')
 client = r.AddClientProcess("client1", "unique_by_host.yaml",
-                            other_args="--verbose diag --format '{url}'")
+                            other_args="--format '{url}'")
 server = r.AddServerProcess("server1", "unique_by_host.yaml",
-                            other_args="--verbose diag --format '{url}'")
+                            other_args="--format '{url}'")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
@@ -65,9 +65,9 @@ server.ReturnCode = 1
 #
 r = Test.AddTestRun('--format "{field.host}"')
 client = r.AddClientProcess("client2", "unique_by_host.yaml",
-                            other_args="--verbose diag --format '{field.host}'")
+                            other_args="--format '{field.host}'")
 server = r.AddServerProcess("server2", "unique_by_host.yaml",
-                            other_args="--verbose diag --format '{field.host}'")
+                            other_args="--format '{field.host}'")
 proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
@@ -100,9 +100,9 @@ server.Streams.stdout += Testers.ContainsExpression(
 #
 r = Test.AddTestRun('--format "{field.host}/{url}"')
 client = r.AddClientProcess("client3", "unique_by_host.yaml",
-                            other_args="--verbose diag --format '{field.host}/{url}'")
+                            other_args="--format '{field.host}/{url}'")
 server = r.AddServerProcess("server3", "unique_by_host.yaml",
-                            other_args="--verbose diag --format '{field.host}/{url}'")
+                            other_args="--format '{field.host}/{url}'")
 proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
@@ -135,8 +135,7 @@ server.Streams.stdout += Testers.ContainsExpression(
 # transaction.
 #
 r = Test.AddTestRun('Verify that the client detects a non-existent key')
-client = r.AddClientProcess("client4", "no_uuid.yaml",
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client4", "no_uuid.yaml")
 
 # The client will give a non-zero return code because it found a transaction
 # without a key.
@@ -150,8 +149,7 @@ client.Streams.stdout += Testers.ContainsExpression(
 # transaction.
 #
 r = Test.AddTestRun('Verify that the server detects a non-existent key')
-server = r.AddDefaultServerProcess("server5", "no_uuid.yaml",
-                                   other_args="--verbose diag")
+server = r.AddDefaultServerProcess("server5", "no_uuid.yaml")
 
 # The server will give a non-zero return code because it found a transaction
 # without a key.
@@ -164,14 +162,12 @@ server.Streams.stdout += Testers.ContainsExpression(
 # Test 6: Verify that the server returns a 404 for an unrecognized key.
 #
 r = Test.AddTestRun('Verify a 404 response for an unrecognized key')
-client = r.AddClientProcess("client6", "uuid1.yaml",
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client6", "uuid1.yaml")
 
 # Notice that the server will be configured to recognize uuid 2, not 1. So when
 # a request with uuid 1 is received, it will not recognize it and should return
 # a 404 (Not Found).
-server = r.AddServerProcess("server6", "uuid2.yaml",
-                            other_args="--verbose diag")
+server = r.AddServerProcess("server6", "uuid2.yaml")
 proxy = r.AddProxyProcess("proxy6", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
@@ -190,9 +186,9 @@ server.Streams.stdout += Testers.ContainsExpression(
 #
 r = Test.AddTestRun('--format "{url}" against transactions unique by URL')
 client = r.AddClientProcess("client7", "unique_by_url.yaml",
-                            other_args="--verbose diag --format '{url}'")
+                            other_args="--format '{url}'")
 server = r.AddServerProcess("server7", "unique_by_url.yaml",
-                            other_args="--verbose diag --format '{url}'")
+                            other_args="--format '{url}'")
 proxy = r.AddProxyProcess("proxy7", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 

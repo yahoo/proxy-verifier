@@ -1811,8 +1811,24 @@ protected:
   } _state = State::INIT;
 };
 
-swoc::Errata parse_ips(std::string arg, std::deque<swoc::IPEndpoint> &target);
-swoc::Errata resolve_ips(std::string arg, std::deque<swoc::IPEndpoint> &target);
+/** Parse the given address into an IPEndpoint.
+ *
+ * @param[in] addresses The comman separated addresss to parse, such as:
+ * "127.0.0.1:8081".
+ *
+ * @param[out] targets The parsed addresses as IPEndpoint objects.
+ */
+swoc::Errata parse_ips(std::string addresses, std::deque<swoc::IPEndpoint> &targets);
+
+/** Parse the given hostname into an IPEndpoint.
+ *
+ * @param[in] hostnames The comma separated hostnames to parse, such as:
+ * "test.machine.com:8081".
+ * @param[out] targets The resolved hostnames as IPEndpoint objects.
+ *
+ * @return The parsed endpoint.
+ */
+swoc::Errata resolve_ips(std::string hostnames, std::deque<swoc::IPEndpoint> &targets);
 swoc::Rv<swoc::IPEndpoint> Resolve_FQDN(swoc::TextView host);
 
 class ThreadInfo

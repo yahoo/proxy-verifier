@@ -17,10 +17,8 @@ Verify correct TLS client and server verification behavior.
 #         if specified to do so in the "tls" node.
 #
 r = Test.AddTestRun("Verify parsing of a YAML-specified replay file")
-client = r.AddClientProcess("client1", "replay_files/mtls.yaml",
-                            other_args="--verbose diag")
-server = r.AddServerProcess("server1", "replay_files/mtls.yaml",
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client1", "replay_files/mtls.yaml")
+server = r.AddServerProcess("server1", "replay_files/mtls.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True)

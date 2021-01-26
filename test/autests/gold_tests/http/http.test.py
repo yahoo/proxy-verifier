@@ -16,10 +16,13 @@ Verify basic HTTP/1.x functionality.
 # Test 1: Verify correct behavior of a single HTTP transaction.
 #
 r = Test.AddTestRun("Verify HTTP/1 processing of a single HTTP transaction")
+
+# Add configure_https=False to verify ATS client and server work when the https
+# optional arguments are not provided.
 client = r.AddClientProcess("client1", "replay_files/single_transaction.yaml",
-                            other_args="--verbose diag")
+                            configure_https=False)
 server = r.AddServerProcess("server1", "replay_files/single_transaction.yaml",
-                            other_args="--verbose diag")
+                            configure_https=False)
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
@@ -40,10 +43,8 @@ server.Streams.stdout += Testers.ExcludesExpression(
 # Test 2: Verify correct behavior of multiple HTTP sessions.
 #
 r = Test.AddTestRun("Verify HTTP/1 processing of multiple HTTP transactions")
-client = r.AddClientProcess("client2", "replay_files/multiple_transactions",
-                            other_args="--verbose diag")
-server = r.AddServerProcess("server2", "replay_files/multiple_transactions",
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client2", "replay_files/multiple_transactions")
+server = r.AddServerProcess("server2", "replay_files/multiple_transactions")
 proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 

@@ -18,10 +18,8 @@ Verify correct handling of session and transaction delay.
 # Test 1: Run a few sessions and transactions with delay.
 #
 r = Test.AddTestRun("Verify the handling of the delay specification.")
-client = r.AddClientProcess("client", "delay.yaml",
-                            other_args="--verbose diag")
-server = r.AddServerProcess("server", "delay.yaml",
-                            other_args="--verbose diag")
+client = r.AddClientProcess("client", "delay.yaml")
+server = r.AddServerProcess("server", "delay.yaml")
 
 # The test proxy is not featureful enough to handle both HTTP/1 and HTTP/2
 # traffic. Thankfully this is easily addressed by running a separate process
