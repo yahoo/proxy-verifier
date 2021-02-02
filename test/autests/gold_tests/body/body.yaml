@@ -142,7 +142,7 @@ sessions:
         - [ Content-Type, multipart/form-data;snoopy=123456 ]
         - [ Connection, keep-alive ]
         - [ Transfer-Encoding, chunked ]
-        - [ X-Response, "second_response" ]
+        - [ X-Response, "third_response" ]
 
     proxy-response:
       status: 200
@@ -150,4 +150,59 @@ sessions:
         encoding: esc_json
         fields:
         - [ Transfer-Encoding, { value: chunked, as: equal } ]
-        - [ X-Response, { value: "second_response", as: equal } ]
+        - [ X-Response, { value: "third_response", as: equal } ]
+
+  #
+  # Verify we can send user-specified data.
+  #
+  - all:
+      headers:
+        fields:
+        - [ uuid, 4 ]
+
+    client-request:
+      version: '1.1'
+      method: POST
+      url: https://example.data.com/a/path
+      content:
+        encoding: plain
+        data: 0123456789
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, application/json; charset=utf-8 ]
+        - [ Content-Length, 10]
+        - [ X-Request, "third_request" ]
+
+    proxy-request:
+      headers:
+        fields:
+        - [ X-Request, { value: "third_request", as: equal } ]
+        - [ Content-Length, { value: 10, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        encoding: plain
+        data: |
+            ### Heading
+
+            * Bullet
+            * Points
+
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Type, multipart/form-data;snoopy=123456 ]
+        - [ Connection, keep-alive ]
+        - [ Transfer-Encoding, chunked ]
+        - [ X-Response, "fourth_response" ]
+
+    proxy-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Transfer-Encoding, { value: chunked, as: equal } ]
+        - [ X-Response, { value: "fourth_response", as: equal } ]

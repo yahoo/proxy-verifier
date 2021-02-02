@@ -143,10 +143,11 @@ the following key/value YAML nodes:
 1. `headers`: This takes a `fields` node which has, as a value, a sequence of
    HTTP fields. Each field is itself a sequence of two values: the name of the
    field and the value for the field.
-1. `content`: This specifies the number of bytes to send. It takes a map as a
-   value. This map will contain an item with `size` as its name which maps to
-   an integer describing how many bytes the body should be. An auto-generated
-   body of this many bytes will be sent to the client.
+1. `content`: This specifies the body to send. It takes a map as a value. The
+   user can specify a `size` integer value in which an automated body of that
+   size will be generated. Otherwise a `data` string value can be provided in
+   which the specified body will be sent and an `encoding` taking `plain` or
+   `uri` to specify that the string is raw or URI encoded.
 
 Here's an example of a `client-request` node describing an HTTP/1.1 POST
 request with a request target of `/pictures/flower.jpeg`
@@ -253,6 +254,29 @@ therefore, would look like the following:
       - [ Content-Type, image/jpeg ]
     content:
       size: 3432
+```
+
+Finally, here is an example of a response with specific body content sent (YAML
+in this case) as opposed to the generated content specified by the
+`content:size` nodes above:
+
+```YAML
+  server-response:
+    status: 200
+    reason: OK
+    headers:
+      fields:
+      - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+      - [ Content-Type, text/yaml ]
+      - [ Transfer-Encoding, chunked ]
+      - [ Connection, keep-alive ]
+    content:
+      encoding: plain
+      data: |
+          ### Heading
+
+          * Bullet
+          * Points
 ```
 
 #### Server Response Lookup

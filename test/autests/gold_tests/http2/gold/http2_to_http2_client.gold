@@ -14,6 +14,7 @@
 - "x-test-duplicate-separate": "two"
 - "uuid": "1"
 
+``content: 0123456789abcdef
 ``
 ``Equals Success: Key: "2", Field Name: ":status", Value: "500"
 ``Absence Success: Key: "2", Field Name: "content-length"
@@ -27,6 +28,7 @@
 - "uuid": "2"
 - "x-added-header": "1"
 
+``content: 0000000 0000001 0000002 0000003 
 ``
 ``Equals Success: Key: "3", Field Name: ":status", Value: "200"
 ``Absence Success: Key: "3", Field Name: "content-length"
