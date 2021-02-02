@@ -95,7 +95,7 @@ sessions:
         - [ x-test-duplicate-separate, two ]
       content:
         encoding: plain
-        size: 16
+        data: "0123456789abcdef"
 
     proxy-response:
       headers:
@@ -131,7 +131,7 @@ sessions:
         - [ X-Proxy-Directive, "Delete=%<x-deleted-header%> Insert=%<X-Added-Header: 1%>" ]
       content:
         encoding: plain
-        size: 10
+        data: 0123456789
 
     proxy-request:
       # HTTP/2 on the server-side.

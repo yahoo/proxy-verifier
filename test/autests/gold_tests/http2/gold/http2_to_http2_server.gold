@@ -41,7 +41,7 @@
 - "uuid": "2"
 - "x-added-header": "1"
 
-``Drained HTTP/2 body for transaction with key: 2, stream id: 3 of 10 bytes with content: 0000000 00
+``Drained HTTP/2 body for transaction with key: 2, stream id: 3 of 10 bytes with content: 0123456789
 ``Equals Success: Key: "2", Field Name: ":authority", Value: "example.data.com"
 ``Equals Success: Key: "2", Field Name: ":method", Value: "POST"
 ``Equals Success: Key: "2", Field Name: ":scheme", Value: "https"

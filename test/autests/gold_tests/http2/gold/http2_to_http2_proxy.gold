@@ -33,7 +33,7 @@ x-test-duplicate-separate: two
 uuid: 1
 
 ==== RESPONSE BODY ====
-b'0000000 0000001 '
+b'0123456789abcdef'
 
 ==== REQUEST HEADERS ====
 :method: POST
@@ -45,7 +45,7 @@ uuid: 2
 X-Added-Header: 1
 
 ==== REQUEST BODY ====
-b'0000000 00'
+b'0123456789'
 
 ==== RESPONSE ====
 500 

@@ -11,3 +11,15 @@ b'0000000 0000001 '
 ==== RESPONSE BODY ====
 b'0000000 0000001 0000002 0000003 '
 ``
+==== REQUEST BODY ====
+b'0\r\n\r\n'
+``
+==== RESPONSE BODY ====
+b'0\r\n\r\n'
+``
+==== REQUEST BODY ====
+b'0123456789'
+``
+==== RESPONSE BODY ====
+b'1f\r\n### Heading\n\n* Bullet\n* Points\n\r\n0\r\n\r\n'
+``

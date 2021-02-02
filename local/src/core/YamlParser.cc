@@ -249,13 +249,17 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         message._content_data = content.data();
         const size_t content_size = content.size();
         message._recorded_content_size = content_size;
+        // Cross check against previously read content-length header, if any.
         if (message._content_length_p) {
           if (message._content_size != content_size) {
             errata.diag(
                 R"(Conflicting sizes for "Content-Length", sending header value {} instead of data value {}.)",
                 message._content_size,
                 content_size);
+            // _content_size will be the value of the Content-Length header.
           }
+        } else {
+          message._content_size = content_size;
         }
       } else if (auto size_node{content_node[YAML_CONTENT_SIZE_KEY]}; size_node) {
         const size_t content_size = swoc::svtou(size_node.Scalar());
@@ -267,12 +271,9 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
                 R"(Conflicting sizes for "Content-Length", sending header value {} instead of rule value {}.)",
                 message._content_size,
                 content_size);
+            // _content_size will be the value of the Content-Length header.
           }
-        } else if (message._chunked_p) {
-          message._content_size = content_size;
-        } else if (message._is_http2) {
-          // HTTP/2 transactions may, and likely won't, have a Content-Length
-          // header field. And chunked encoding is not allowed in HTTP/2.
+        } else {
           message._content_size = content_size;
         }
       } else {
