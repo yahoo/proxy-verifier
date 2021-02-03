@@ -8,9 +8,13 @@ env.DependsOn([
     Component("yaml-cpp"),
 ])
 
+cflags = ['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror']
+if env.GetOption('enable_asan'):
+    cflags += ['-fsanitize=address', '-fno-omit-frame-pointer']
+
 env.AppendUnique(
     CPPPATH=["${CHECK_OUT_DIR}/local/include"],
-    CCFLAGS=['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror'],
+    CCFLAGS=cflags,
     LIBS=['pthread'],
 )
 

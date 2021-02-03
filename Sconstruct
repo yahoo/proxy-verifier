@@ -24,6 +24,12 @@ AddOption("--with-nghttp2",
           help='Optional path to custom build of nghttp2'
          )
 
+
+AddOption('--enable-asan',
+          dest='enable_asan',
+          action='store_true',
+          help='Configure compiling and linking for ASan.')
+
 path_ssl = GetOption("with_ssl")
 Part("#lib/openssl.part", CUSTOM_PATH=path_ssl)
 path_nghttp2 = GetOption("with_nghttp2")
