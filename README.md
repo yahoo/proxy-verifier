@@ -29,6 +29,7 @@ Table of Contents
       * [Install](#install)
          * [Prerequisites](#prerequisites)
          * [Building](#building)
+            * [Building on macOS](#building-on-macos)
             * [ASan Instrumentation](#asan-instrumentation)
          * [Running the Tests](#running-the-tests)
             * [Unit Tests](#unit-tests)
@@ -911,13 +912,12 @@ convenience, a Pipfile exists at the root of the Proxy Verifier repo that
 specifies the SCons Python modules needed to build Proxy Verifier. Assuming you
 have [pipenv](https://pypi.org/project/pipenv/) installed in your environment,
 you can simply use `pipenv install` to configure your Python virtual
-environment for SCons, enter that environment with `pipenv shell`, and
-then build using the `scons` command.
+environment for SCons and then build using the `scons` command in that
+environment.
 
 ```
 pipenv install
-pipenv shell
-scons \
+pipenv run scons \
     -j8 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
@@ -938,6 +938,28 @@ the root of the repository. Note:
    optimization enabled (e.g., with `-O2` for g++ builds). This is critical if
    replaying high volumes of traffic.
 
+#### Building on macOS
+
+The following commands will install the required packages and build Proxy
+Verifier on a Mac. These commands assume that you have
+[Homebrew](https://brew.sh) installed on your system. These commands were
+verified on macOS Big Sur.
+
+```
+brew install pipenv openssl nghttp2
+
+git clone git@github.com:yahoo/proxy-verifier.git
+cd proxy-verifier
+
+pipenv install
+pipenv run scons \
+    -j8 \
+    --cfg=release \
+    --with-ssl=`brew --prefix openssl` \
+    --with-nghttp2=`brew --prefix nghttp2` \
+    proxy-verifier
+```
+
 #### ASan Instrumentation
 
 The local Sconstruct file is configured to take an optional `--enable-asan`
@@ -950,8 +972,7 @@ with AddressSanitizer instrumentation:
 
 ```
 pipenv install
-pipenv shell
-scons \
+pipenv run scons \
     -j8 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
@@ -965,10 +986,10 @@ scons \
 #### Unit Tests
 
 To build and run the unit tests, use the `run_utest` Scons target (this assumes
-you are in the pipenv shell you used to build Proxy Verifier, see above):
+you previously ran `pipenv install`, see above):
 
 ```
-scons \
+pipenv run scons \
     -j8 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
