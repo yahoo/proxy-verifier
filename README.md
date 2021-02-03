@@ -11,7 +11,6 @@ gh-md-toc README.md
 Then copy and paste the output here.
 -->
 
-
 Table of Contents
 =================
 
@@ -30,6 +29,7 @@ Table of Contents
       * [Install](#install)
          * [Prerequisites](#prerequisites)
          * [Building](#building)
+            * [ASan Instrumentation](#asan-instrumentation)
          * [Running the Tests](#running-the-tests)
             * [Unit Tests](#unit-tests)
             * [Gold Tests](#gold-tests)
@@ -937,6 +937,28 @@ the root of the repository. Note:
    directs it to do a non-debug build for the various components with
    optimization enabled (e.g., with `-O2` for g++ builds). This is critical if
    replaying high volumes of traffic.
+
+#### ASan Instrumentation
+
+The local Sconstruct file is configured to take an optional `--enable-asan`
+parameter. If this is passed to the scons build line then the Proxy Verifier
+objects and binaries will be compiled and linked with the flags that instrument
+them for [AddressSanatizer](https://clang.llvm.org/docs/AddressSanitizer.html).
+This assumes that the system has the AddressSanatizer library installed on the
+system. Thus the above invocation would look like the following to compile it
+with AddressSanitizer instrumentation:
+
+```
+pipenv install
+pipenv shell
+scons \
+    -j8 \
+    --with-ssl=/path/to/openssl \
+    --with-nghttp2=/path/to/nghttp2 \
+    --cfg=release \
+    --enable-asan \
+    proxy-verifier
+```
 
 ### Running the Tests
 

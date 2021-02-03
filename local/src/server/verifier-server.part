@@ -8,10 +8,19 @@ env.DependsOn([
     Component("proxy-verifier.core"),
 ])
 
-env.AppendUnique(
-    CCFLAGS=['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror'],
-    LIBS=['pthread'],
-)
+cflags = ['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror']
+if env.GetOption('enable_asan'):
+    cflags += ['-fsanitize=address', '-fno-omit-frame-pointer']
+    env.AppendUnique(
+        CCFLAGS=cflags,
+        LIBS=['pthread'],
+        LINKFLAGS=['-fsanitize=address', '-static-libasan'],
+    )
+else:
+    env.AppendUnique(
+        CCFLAGS=cflags,
+        LIBS=['pthread'],
+    )
 
 env.InstallBin(
     env.SetRPath(  # allow fancy patchelf runpath setting it defined
