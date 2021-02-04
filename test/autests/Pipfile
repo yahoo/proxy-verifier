@@ -16,12 +16,6 @@ pyflakes = "*"
 [packages]
 autest = "==1.7.4"
 hyper = "*"
-dnslib = "*"
-# These are likely to be available via yum/dnf or apt-get
-requests = "*"
-gunicorn = "*"
-httpbin = "*"
-jsonschema = "*"
 pyOpenSSL = "*"
 eventlet = "*"
 
