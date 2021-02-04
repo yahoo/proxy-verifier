@@ -4215,7 +4215,7 @@ ThreadPool::get_worker()
   {
     std::unique_lock<std::mutex> lock(this->_threadPoolMutex);
     while (_threadPool.size() == 0) {
-      if (_allThreads.size() > max_threads) {
+      if (_allThreads.size() >= max_threads) {
         // Just sleep until a thread comes back
         _threadPoolCvar.wait(lock);
       } else { // Make a new thread
