@@ -37,6 +37,28 @@ if [ $? -eq 0 ]; then
     pipenv --venv &> /dev/null
     if [ $? -ne 0 ]; then
         echo "Installing a new virtual environment via pipenv"
+
+        os_name=$(uname)
+        if [ "${os_name}" == "Darwin" ]
+        then
+          # MacOS has its own SSL version. The PyOpenSSL Python package
+          # installed via the following pipenv command will build the
+          # crytpography package which will require the brew-installed openssl
+          # version. We set the following variables to point the cryptography
+          # build to the brew openssl.
+          brew_openssl_lib="/usr/local/opt/openssl/lib"
+          if [ ! -d "${brew_openssl_lib}" ]
+          then
+            echo "WARNING:"
+            echo "Could not find ${brew_openssl_lib}. Have you run \"brew install openssl\"?"
+            echo "If the cryptography package fails to install, the lack of brew's openssl may be why."
+          else
+            export LDFLAGS="-L/usr/local/opt/openssl/lib"
+            export CPPFLAGS="-I/usr/local/opt/openssl/include"
+            export PKG_CONFIG_PATH="/usr/local/opt/openssl/lib/pkgconfig"
+          fi
+        fi
+
         pipenv install
     else
         echo "Using the pre-existing virtual environment."

@@ -1021,6 +1021,28 @@ quick description of the various command-line options. See the [AuTest
 Documentation](https://autestsuite.bitbucket.io) for further details about the
 framework.
 
+**A note for macOS**: The Python virtual environment for these gold tests
+requires the [cryptograpy](https://github.com/pyca/cryptography) package as a
+dependency of the [pyOpenSSL](https://www.pyopenssl.org/en/stable/) package.
+Pipenv will install this automatically, but the installation of the
+`cryptography` package will require compiling certain c files against OpenSSL.
+macOS has its own SSL libraries which brew's version of OpenSSL does not
+replace, for understandable reasons. The building of `cryptography` will
+fail against the system's SSL libraries. To point the build to brew's OpenSSL
+libraries, the `autest.sh` script exports the following variables before
+running `pipenv install`:
+
+```
+export LDFLAGS="-L/usr/local/opt/openssl/lib"
+export CPPFLAGS="-I/usr/local/opt/openssl/include"
+export PKG_CONFIG_PATH="/usr/local/opt/openssl/lib/pkgconfig"
+```
+
+Thus if you stick with using the `autest.sh` script you do not need to worry
+about this. But if you install pipenv by hand rather than through the
+`autest.sh` script on macOS, then keep this in mind and export those variables
+before running `pipenv install`.
+
 ## Usage
 
 This section describes how to run the Proxy Verifier client and server at
