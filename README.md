@@ -1272,7 +1272,7 @@ on the client in parallel. Likewise, each accepted connection on the server is
 handled in parallel. Each of these sessions is handled via a single thread of
 execution. By default, Proxy Verifier limits the number of threads for handling
 these connections to 2,000. This limit can be changed via the `--thread-limit`
-option. Setting a value of `1` on the client will effectively cause sessions
+option. Setting a value of 1 on the client will effectively cause sessions
 to be replayed in serial.
 
 
