@@ -44,6 +44,7 @@ Table of Contents
             * [--strict](#--strict)
             * [--rate &lt;requests/second&gt;](#--rate-requestssecond)
             * [--repeat &lt;number&gt;](#--repeat-number)
+            * [--thread-limit &lt;number&gt;](#--thread-limit-number)
       * [Contribute](#contribute)
       * [License](#license)
 
@@ -115,10 +116,12 @@ which is a sequence where each item in the sequence describes the
 characteristics of each connection. For each session the protocol stack can be
 specified via the `protocol` node. This node describes the protocol
 characteristics of the connection such as what version of HTTP to use, whether
-to use TLS and what the characteristics of the TLS handshake should be.  In
-the absence of a `protocol` node the default protocol is HTTP/1 over TCP.
-See [Protocol Specification](#protocol-specification) below for details about the
-`protocol` node.  Each session is run in parallel by the verifier-client. 
+to use TLS and what the characteristics of the TLS handshake should be.  In the
+absence of a `protocol` node the default protocol is HTTP/1 over TCP.  See
+[Protocol Specification](#protocol-specification) below for details about the
+`protocol` node.  Each session is run in parallel by the verifier-client
+(although see [--thread-limit &lt;number&gt;](#--thread-limit-number) below for
+a way to serialize them).
 
 In addition to protocol specification, each session in the `sessions`
 sequence contains a `transactions` node. This itself is a sequence of
@@ -1257,10 +1260,21 @@ This is a client-side only option.
 
 By default, the client will replay all the transactions once in the set of
 input replay files. If the user would like the client to automatically repeat
-this set a number of times, they can provide the `--repeat` argument. The
+this set a number of times, they can provide the `--repeat` option. The
 argument takes the number of times the client should replay the entire dataset.
 
 This is a client-side only option.
+
+#### --thread-limit \<number\>
+
+Each connection, corresponding to a `session` in a replay file, is dispatched
+on the client in parallel. Likewise, each accepted connection on the server is
+handled in parallel. Each of these sessions is handled via a single thread of
+execution. By default, Proxy Verifier limits the number of threads for handling
+these connections to 2,000. This limit can be changed via the `--thread-limit`
+option. Setting a value of `1` on the client will effectively cause sessions
+to be replayed in serial.
+
 
 ## Contribute
 
