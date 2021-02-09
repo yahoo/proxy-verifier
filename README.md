@@ -32,6 +32,8 @@ Table of Contents
             * [Building on Ubuntu](#building-on-ubuntu)
             * [Building on macOS](#building-on-macos)
             * [Building on CentOS](#building-on-centos)
+               * [Building on CentOS 8](#building-on-centos-8)
+               * [Building on CentOS 7](#building-on-centos-7)
             * [ASan Instrumentation](#asan-instrumentation)
          * [Running the Tests](#running-the-tests)
             * [Unit Tests](#unit-tests)
@@ -988,8 +990,9 @@ pipenv run scons \
 
 #### Building on CentOS
 
+##### Building on CentOS 8
 The following commands will install the required packages and build Proxy
-Verifier on Centos. These commands were verified for
+Verifier on CentOS. These commands were verified for
 `CentOS Linux release 8.3.2011`:
 
 ```
@@ -1001,7 +1004,6 @@ sudo pip3 install pipenv
 git clone https://github.com/yahoo/proxy-verifier.git
 cd proxy-verifier
 
-
 pipenv install
 pipenv run scons \
     -j8 \
@@ -1011,6 +1013,7 @@ pipenv run scons \
     proxy-verifier
 ```
 
+##### Building on CentOS 7
 Building on CentOS 7 requires building an updated version of nghttp2 because
 the official CentOS package repositories do not contain a recent enough
 version to build with Proxy Verifier. The following was verified on
@@ -1042,10 +1045,8 @@ ln -s /usr/lib64/openssl11/ /opt/scons-build/openssl/1.1.1/lib
 
 exit # To exit the shell from "sudo su"
 
-cd
 git clone https://github.com/yahoo/proxy-verifier.git
 cd proxy-verifier
-
 
 source /opt/rh/rh-python38/enable
 pipenv install
