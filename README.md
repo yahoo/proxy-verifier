@@ -29,6 +29,7 @@ Table of Contents
       * [Install](#install)
          * [Prerequisites](#prerequisites)
          * [Building](#building)
+            * [Building on Ubuntu](#building-on-ubuntu)
             * [Building on macOS](#building-on-macos)
             * [ASan Instrumentation](#asan-instrumentation)
          * [Running the Tests](#running-the-tests)
@@ -941,17 +942,38 @@ the root of the repository. Note:
    optimization enabled (e.g., with `-O2` for g++ builds). This is critical if
    replaying high volumes of traffic.
 
+#### Building on Ubuntu
+
+The following commands will install the required packages and build Proxy
+Verifier on Ubuntu. These commands were verified for Ubuntu 20.04 LTS.
+
+```
+sudo apt update
+sudo apt-get install -y git libssl-dev libnghttp2-dev pipenv
+
+git clone https://github.com/yahoo/proxy-verifier.git
+cd proxy-verifier
+
+pipenv install
+pipenv run scons \
+    -j8 \
+    --cfg=release \
+    --with-ssl=$(dirname $(dpkg -L libssl-dev | grep ssl.so)) \
+    --with-nghttp2=$(dirname $(dpkg -L libnghttp2-dev | grep libnghttp2.so)) \
+    proxy-verifier
+```
+
 #### Building on macOS
 
 The following commands will install the required packages and build Proxy
 Verifier on a Mac. These commands assume that you have
 [Homebrew](https://brew.sh) installed on your system. These commands were
-verified on macOS Big Sur.
+verified for macOS Big Sur.
 
 ```
 brew install pipenv openssl nghttp2
 
-git clone git@github.com:yahoo/proxy-verifier.git
+git clone https://github.com/yahoo/proxy-verifier.git
 cd proxy-verifier
 
 pipenv install
