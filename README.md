@@ -31,6 +31,7 @@ Table of Contents
          * [Building](#building)
             * [Building on Ubuntu](#building-on-ubuntu)
             * [Building on macOS](#building-on-macos)
+            * [Building on CentOS](#building-on-centos)
             * [ASan Instrumentation](#asan-instrumentation)
          * [Running the Tests](#running-the-tests)
             * [Unit Tests](#unit-tests)
@@ -982,6 +983,77 @@ pipenv run scons \
     --cfg=release \
     --with-ssl=`brew --prefix openssl` \
     --with-nghttp2=`brew --prefix nghttp2` \
+    proxy-verifier
+```
+
+#### Building on CentOS
+
+The following commands will install the required packages and build Proxy
+Verifier on Centos. These commands were verified for
+`CentOS Linux release 8.3.2011`:
+
+```
+sudo yum install -y openssl-devel python38-pip git
+sudo dnf -y group install "Development Tools"
+sudo dnf -y --enablerepo=powertools install libnghttp2-devel
+sudo pip3 install pipenv
+
+git clone https://github.com/yahoo/proxy-verifier.git
+cd proxy-verifier
+
+
+pipenv install
+pipenv run scons \
+    -j8 \
+    --cfg=release \
+    --with-ssl=/usr/lib64 \
+    --with-nghttp2=/usr/include \
+    proxy-verifier
+```
+
+Building on CentOS 7 requires building an updated version of nghttp2 because
+the official CentOS package repositories do not contain a recent enough
+version to build with Proxy Verifier. The following was verified on
+`CentOS Linux release 7.9.2009`:
+
+```
+sudo yum install -y centos-release-scl epel-release git wget autoconf automake libtool
+sudo yum install -y devtoolset-9 rh-python38-python-devel rh-python38 rh-python38-python-pip openssl11-devel
+
+# "sudo su" as a convenience since we'll be sourcing environment variables.
+sudo su
+source /opt/rh/rh-python38/enable
+pip3 install pipenv
+
+source /opt/rh/devtoolset-9/enable
+
+cd /var/tmp
+wget https://github.com/nghttp2/nghttp2/archive/v1.43.0.tar.gz
+tar xf v1.43.0.tar.gz
+cd nghttp2-1.43.0
+autoreconf -fi
+./configure --prefix=/opt/scons-build/nghttp2/1.43.0 LIBS="-L/opt/rh/rh-python38/root/lib"
+make -j8
+make -j8 install
+
+mkdir -p /opt/scons-build/openssl/1.1.1
+ln -s /usr/include/openssl11/ /opt/scons-build/openssl/1.1.1/include
+ln -s /usr/lib64/openssl11/ /opt/scons-build/openssl/1.1.1/lib
+
+exit # To exit the shell from "sudo su"
+
+cd
+git clone https://github.com/yahoo/proxy-verifier.git
+cd proxy-verifier
+
+
+source /opt/rh/rh-python38/enable
+pipenv install
+pipenv run scons \
+    -j8 \
+    --cfg=release \
+    --with-ssl=/opt/scons-build/openssl/1.1.1 \
+    --with-nghttp2=/opt/scons-build/nghttp2/1.43.0 \
     proxy-verifier
 ```
 
