@@ -699,6 +699,13 @@ ReplayFileHandler::parse_for_protocol_node(
       desired_node.error("Protocol element at {} is not a map.", protocol_element.Mark());
       return desired_node;
     }
+    if (!protocol_element[YAML_SSN_PROTOCOL_NAME]) {
+      desired_node.error(
+          R"(Protocol element at {} does not have a "{}" element.)",
+          protocol_element.Mark(),
+          YAML_SSN_PROTOCOL_NAME);
+      return desired_node;
+    }
     if (protocol_element[YAML_SSN_PROTOCOL_NAME].Scalar() != protocol_name) {
       continue;
     }
