@@ -260,8 +260,9 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
       errata.note(std::move(http_node.errata()));
       return errata;
     }
-    if (http_node.result().IsDefined() &&
-        http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
+    if (http_node.result().IsDefined() && http_node.result()[YAML_SSN_PROTOCOL_VERSION] &&
+        http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2")
+    {
       _ssn->is_h2 = true;
     }
   }

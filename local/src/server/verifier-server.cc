@@ -419,8 +419,9 @@ ServerReplayFileHandler::handle_protocol_node(YAML::Node const &proxy_request_no
     errata.note(std::move(http_node.errata()));
     return errata;
   }
-  if (http_node.result().IsDefined() &&
-      http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
+  if (http_node.result().IsDefined() && http_node.result()[YAML_SSN_PROTOCOL_VERSION] &&
+      http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2")
+  {
     _txn._req._is_http2 = true;
     _txn._rsp._is_http2 = true;
   }
