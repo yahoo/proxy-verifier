@@ -67,6 +67,23 @@ interpret_delay_string(TextView src)
           .error(R"(Unrecognized unit, "{}", for delay specification: "{}")", delay_suffix, src)};
 }
 
+swoc::Rv<microseconds>
+get_delay_time(YAML::Node const &node)
+{
+  swoc::Rv<microseconds> zret;
+  if (node[YAML_TIME_DELAY_KEY]) {
+    auto delay_node{node[YAML_TIME_DELAY_KEY]};
+    if (delay_node.IsScalar()) {
+      auto &&[delay, delay_errata] = interpret_delay_string(delay_node.Scalar());
+      zret.note(std::move(delay_errata));
+      zret = delay;
+    } else {
+      zret.error(R"("{}" key that is not a scalar.)", YAML_TIME_DELAY_KEY);
+    }
+  }
+  return zret;
+}
+
 Errata
 YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
 {

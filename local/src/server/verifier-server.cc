@@ -484,6 +484,19 @@ ServerReplayFileHandler::server_response(YAML::Node const &node)
   if (_txn._rsp._status == 0) {
     errata.error(R"(server-response without a status at "{}":{}.)", _path, node.Mark().line);
   }
+  if (node[YAML_TIME_DELAY_KEY]) {
+    auto &&[delay_time, delay_errata] = get_delay_time(node);
+    if (!delay_errata.is_ok()) {
+      errata.note(std::move(delay_errata));
+      errata.error(
+          R"(server-response node at "{}":{} has a bad "{}" key value.)",
+          _path,
+          node.Mark().line,
+          YAML_TIME_DELAY_KEY);
+      return errata;
+    }
+    _txn._user_specified_delay_duration = delay_time;
+  }
   return errata;
 }
 
@@ -646,6 +659,9 @@ TF_Serve_Connection(std::thread *t)
       if (is_http2) {
         specified_transaction._rsp._is_http2 = true;
         specified_transaction._rsp._stream_id = stream_id;
+      }
+      if (specified_transaction._user_specified_delay_duration > 0us) {
+        sleep_for(specified_transaction._user_specified_delay_duration);
       }
       auto &&[bytes_written, write_errata] =
           thread_info._session->write(specified_transaction._rsp);

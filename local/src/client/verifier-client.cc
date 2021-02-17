@@ -132,23 +132,6 @@ get_start_time(YAML::Node const &node)
   return zret;
 }
 
-swoc::Rv<microseconds>
-get_delay_time(YAML::Node const &node)
-{
-  swoc::Rv<microseconds> zret;
-  if (node[YAML_TIME_DELAY_KEY]) {
-    auto delay_node{node[YAML_TIME_DELAY_KEY]};
-    if (delay_node.IsScalar()) {
-      auto &&[delay, delay_errata] = interpret_delay_string(delay_node.Scalar());
-      zret.note(std::move(delay_errata));
-      zret = delay;
-    } else {
-      zret.error(R"("{}" key that is not a scalar.)", YAML_TIME_DELAY_KEY);
-    }
-  }
-  return zret;
-}
-
 class ClientReplayFileHandler : public ReplayFileHandler
 {
 public:
@@ -356,7 +339,7 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
       if (!delay_errata.is_ok()) {
         errata.note(std::move(delay_errata));
         errata.error(
-            R"(Session at "{}":{} has a bad "{}" key value.)",
+            R"(client-request node at "{}":{} has a bad "{}" key value.)",
             _path,
             _ssn->_line_no,
             YAML_TIME_DELAY_KEY);
@@ -384,7 +367,7 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
       if (!delay_errata.is_ok()) {
         errata.note(std::move(delay_errata));
         errata.error(
-            R"(Session at "{}":{} has a bad "{}" key value.)",
+            R"(proxy-request node at "{}":{} has a bad "{}" key value.)",
             _path,
             _ssn->_line_no,
             YAML_TIME_DELAY_KEY);
