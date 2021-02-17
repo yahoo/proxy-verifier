@@ -421,12 +421,13 @@ establishing an HTTP/1 connection over TCP (no TLS).
 
 ### Session and Transaction Delay Specification
 
-A user can also stipulate per `session` and/or per `client-request` delays to
-be inserted by the Verifier client during the replay of traffic. This is done
-via the `delay` node which takes a unit-specified duration for the associated
-delay.  During traffic replay, the delay is inserted before the associated
-session is established or before the client request is sent.  Proxy Verifier
-recognizes the following time duration units for the `delay` node:
+A user can also stipulate per session and/or per transaction delays to be
+inserted by the Verifier client and server during the replay of traffic. This
+is done via the `delay` node which takes a unit-specified duration for the
+associated delay.  During traffic replay, the delay is inserted before the
+associated session is established or before the client request or server
+response is sent.  Proxy Verifier recognizes the following time duration units
+for the `delay` node:
 
 Unit Suffix | Meaning
 ----------- | -------
@@ -434,9 +435,8 @@ s           | seconds
 ms          | milliseconds
 us          | microseconds
 
-Here is a sample replay file snippet that specifies a 2 second delay before
-establishing the first session and a 15 millisecond delay before sending the
-first client request in that session.
+Here is a sample replay file snippet that demonstrates the specification of a
+set of delays:
 
 ```YAML
 sessions:
@@ -456,13 +456,38 @@ sessions:
         - [ Content-Type, image/jpeg ]
         - [ Host, example.com ]
         - [ uuid, 1 ]
+
+  server-response:
+    delay: 17000 us
+
+    status: 200
+    reason: OK
+    headers:
+      fields:
+      - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+      - [ Content-Type, image/jpeg ]
+      - [ Transfer-Encoding, chunked ]
+      - [ Connection, keep-alive ]
+    content:
+      size: 3432
 ```
+
+Note that this example specifies the following delays:
+
+* The client delays 2 seconds before establishing the session.
+* The client also delays 15 milliseconds before sending the client
+  request.
+* The server delays 17 milliseconds (17,000 microseconds) before sending the
+  corresponding response after receiving the request.
 
 Be aware of the following characteristics of the `delay` node:
 
-* `delay` is currently only interpreted and used by the Verifier client in
-`client-request` nodes. A server delay is not currently specifiable. Please
-file a ticket if server-side delay specification would be helpful.
+* The Verifier client interprets and implements `delay` for sessions in the
+  `sessions` node and for transactions in the `client-request` node. The
+  Verifier server interprets delay only for transactions in the
+  `server-response` node and ignores `sessions` delays. Since the server is
+  passive in receiving connections, it's not obvious what a server-side session
+  delay would mean in this context.
 * Notice that Proxy Verifier supports microsecond level delay granularity, and
 does indeed faithfully insert delays at the appropriate times during replay
 with that precision of time. Be aware, however, that for the vast majority of

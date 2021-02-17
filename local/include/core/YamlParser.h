@@ -106,6 +106,16 @@ bwformat(BufferWriter &w, bwf::Spec const & /* spec */, YAML::Mark const &mark)
  */
 swoc::Rv<std::chrono::microseconds> interpret_delay_string(swoc::TextView delay);
 
+/** Parse the node for YAML_TIME_DELAY_KEY and return the delay value it
+ * specifies.
+ *
+ * @param[in] node The parent node containing a YAML_TIME_START_KEY value.
+ *
+ * @return The specified delay, parsed and converted (if need be) to
+ * microseconds.
+ */
+swoc::Rv<std::chrono::microseconds> get_delay_time(YAML::Node const &node);
+
 struct VerificationConfig
 {
   std::shared_ptr<HttpFields> txn_rules;

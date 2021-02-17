@@ -6,6 +6,7 @@ meta:
 
 sessions:
 
+# Verify the user can add a space between the number and the unit.
 - delay: 250 ms
 
 #
@@ -14,10 +15,7 @@ sessions:
 #
   transactions:
 
-    #
-    # Direct the Proxy Verifier client to send a POST request with a body of
-    # 399 bytes.
-    #
+  # Specify a delay of 25 milliseconds using microseconds as the unit.
   - client-request:
       delay: 250000us
 
@@ -30,13 +28,7 @@ sessions:
         - [ Content-Type, image/jpeg ]
         - [ Content-Length, '399' ]
         - [ uuid, first-request ]
-      # A "content" node is not needed if a Content-Length field is specified.
 
-    #
-    # Direct the Proxy Verifier server to verify that the request received from
-    # the proxy has a path in the request target that contains "flower.jpeg"
-    # and has the Content-Length field of any value.
-    #
     proxy-request:
       url:
       - [ path, { value: flower.jpeg, as: contains } ]
@@ -45,30 +37,18 @@ sessions:
         fields:
         - [ Content-Length, { value: '399', as: present } ]
 
-    #
-    # Direct the Proxy Verifier server to reply with a 200 OK response with a body
-    # of 3,432 bytes.
-    #
     server-response:
-        status: 200
-        reason: OK
-        headers:
-          fields:
-          - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
-          - [ Content-Type, image/jpeg ]
-          - [ Transfer-Encoding, chunked ]
-          - [ Connection, keep-alive ]
-        # Unlike the request which contains a Content-Length, this response
-        # will require a "content" node to specify the size of the body.
-        # Otherwise Proxy Verifier has no way of knowing how large the response
-        # should be.
-        content:
-          size: 3432
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+        - [ Content-Type, image/jpeg ]
+        - [ Transfer-Encoding, chunked ]
+        - [ Connection, keep-alive ]
+      content:
+        size: 3432
 
-    #
-    # Direct the Proxy Verifier client to verify that it receives a 200 OK from
-    # the proxy with a `Transfer-Encoding: chunked` header field.
-    #
     proxy-response:
       status: 200
       headers:
@@ -76,8 +56,7 @@ sessions:
         - [ Transfer-Encoding, { value: chunked, as: equal } ]
 
 #
-# For the second session, we use a protocol node to configure HTTP/2 using an
-# SNI of # test_sni in the TLS handshake.
+# Specify a session delay for an HTTP/2 conneciton.
 #
 - protocol:
   - name: http
@@ -87,14 +66,11 @@ sessions:
   - name: tcp
   - name: ip
 
+  # Verify the ability to specify seconds as a unit.
   delay: 1s
 
   transactions:
 
-  #
-  # Direct the Proxy Verifier client to send a POST request with a body of
-  # 399 bytes.
-  #
   - client-request:
       delay: 500ms
       headers:
@@ -108,11 +84,6 @@ sessions:
       content:
         size: 399
 
-    #
-    # Direct the Proxy Verifier server to verify that the request received from
-    # the proxy has a path pseudo header field that contains "flower.jpeg"
-    # and has a field "Content-Type: image/jpeg".
-    #
     proxy-request:
       url:
       - [ path, { value: flower.jpeg, as: contains } ]
@@ -125,10 +96,6 @@ sessions:
         - [ :path,        { value: flower.jpeg, as: contains } ]
         - [ Content-Type, { value: image/jpeg,  as: equal } ]
 
-    #
-    # Direct the Proxy Verifier server to reply with a 200 OK response with a body
-    # of 3,432 bytes.
-    #
     server-response:
       headers:
         fields:
@@ -138,9 +105,5 @@ sessions:
       content:
         size: 3432
 
-    #
-    # Direct the Proxy Verifier client to verify that it receives a 200 OK from
-    # the proxy.
-    #
     proxy-response:
       status: 200
