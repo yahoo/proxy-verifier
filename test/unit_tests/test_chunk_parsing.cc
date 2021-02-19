@@ -6,7 +6,7 @@
  */
 
 #include "catch.hpp"
-#include "core/ProxyVerifier.h"
+#include "core/http.h"
 
 using swoc::TextView;
 

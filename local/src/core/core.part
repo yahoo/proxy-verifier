@@ -25,5 +25,14 @@ env.SdkInclude(
 )
 
 env.SdkLib(
-    env.StaticLibrary("verifier-core",["ArgParser.cc", "Localizer.cc", "YamlParser.cc", "ProxyVerifier.cc"])
+    env.StaticLibrary("verifier-core",[
+        "ArgParser.cc",
+        "http.cc",
+        "http2.cc",
+        "https.cc",
+        "Localizer.cc",
+        "ProxyVerifier.cc",
+        "verification.cc",
+        "YamlParser.cc",
+    ])
 )

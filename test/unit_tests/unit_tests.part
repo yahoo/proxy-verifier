@@ -13,10 +13,12 @@ env.AppendUnique(
 )
 
 files = [
-    "unit_test_main.cc",
-    "test_ProxyVerifier.cc",
     "test_YamlParser.cc",
     "test_chunk_parsing.cc",
+    "test_http.cc",
+    "test_https.cc",
+    "test_verification.cc",
+    "unit_test_main.cc",
 ]
 env.UnitTest(
     "tests",

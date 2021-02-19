@@ -4,6 +4,12 @@
  * Copyright 2021, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
+#include "core/ArgParser.h"
+#include "core/http.h"
+#include "core/http2.h"
+#include "core/https.h"
+#include "core/ProxyVerifier.h"
+#include "core/YamlParser.h"
 
 #include <array>
 #include <atomic>
@@ -24,9 +30,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "core/ArgParser.h"
-#include "core/YamlParser.h"
-#include "core/ProxyVerifier.h"
 #include "swoc/BufferWriter.h"
 #include "swoc/Errata.h"
 #include "swoc/MemArena.h"
@@ -1021,6 +1024,7 @@ main(int /* argc */, char const *argv[])
   if (auto const verbose_argument{engine.arguments.get("verbose")}; verbose_argument) {
     verbosity = verbose_argument.value();
   }
+  HttpHeader::global_init();
   if (!configure_logging(verbosity)) {
     std::cerr << "Unrecognized verbosity option: " << verbosity << std::endl;
     return 1;
