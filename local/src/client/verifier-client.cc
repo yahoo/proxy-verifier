@@ -6,12 +6,11 @@
  */
 
 #include "core/ArgParser.h"
+#include "core/http.h"
+#include "core/http2.h"
+#include "core/https.h"
 #include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
-#include "swoc/bwf_ex.h"
-#include "swoc/bwf_ip.h"
-#include "swoc/bwf_std.h"
-#include "swoc/swoc_file.h"
 
 #include <assert.h>
 #include <chrono>
@@ -26,6 +25,11 @@
 #include <dirent.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+
+#include "swoc/bwf_ex.h"
+#include "swoc/bwf_ip.h"
+#include "swoc/bwf_std.h"
+#include "swoc/swoc_file.h"
 
 namespace swoc
 {
@@ -936,6 +940,7 @@ main(int /* argc */, char const *argv[])
   if (const auto verbose_argument{engine.arguments.get("verbose")}; verbose_argument) {
     verbosity = verbose_argument.value();
   }
+  HttpHeader::global_init();
   if (!configure_logging(verbosity)) {
     std::cerr << "Unrecognized verbosity option: " << verbosity << std::endl;
     return 1;

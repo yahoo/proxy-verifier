@@ -7,6 +7,7 @@
 
 #include "core/YamlParser.h"
 #include "core/ProxyVerifier.h"
+#include "core/verification.h"
 
 #include "core/Localizer.h"
 #include "core/yaml_util.h"
