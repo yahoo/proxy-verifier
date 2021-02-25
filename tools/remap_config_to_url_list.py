@@ -2,7 +2,7 @@
 
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -102,8 +102,12 @@ def parse_args():
                         help='Path to the remap.config file from which to parse URLs.')
     parser.add_argument('-o', '--output', type=argparse.FileType('w'), default=sys.stdout,
                         help='A filename to which to write the list of URLs. Defaults to stdout.')
-    parser.add_argument('--no-ip', dest='no_ip', action='store_true', required=False,
-                        help='Ignore ip address (in the "replacement" section) in the remap.config file.')
+    parser.add_argument(
+        '--no-ip',
+        dest='no_ip',
+        action='store_true',
+        required=False,
+        help='Ignore ip address (in the "replacement" section) in the remap.config file.')
     return parser.parse_args()
 
 

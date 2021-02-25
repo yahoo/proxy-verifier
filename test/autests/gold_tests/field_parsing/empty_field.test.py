@@ -3,7 +3,7 @@ Verify correct handling of malformed replay files.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -29,8 +29,8 @@ server.ReturnCode = 1
 server.Ready = None
 
 client.Streams.stdout = Testers.ContainsExpression(
-        "Field or rule at line .* is not a sequence as required",
-        "Verify that we inform the user of the malformed field.")
+    "Field or rule at line .* is not a sequence as required",
+    "Verify that we inform the user of the malformed field.")
 server.Streams.stdout = Testers.ContainsExpression(
-        "Field or rule at line .* is not a sequence as required",
-        "Verify that we inform the user of the malformed field.")
+    "Field or rule at line .* is not a sequence as required",
+    "Verify that we inform the user of the malformed field.")

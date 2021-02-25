@@ -3,7 +3,7 @@ Implement the common test proxy logic.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -18,7 +18,7 @@ import proxy_http2
 
 def parse_args():
     parser = argparse.ArgumentParser(
-            description='Implement a simple HTTP proxy which simply forwards transactions.')
+        description='Implement a simple HTTP proxy which simply forwards transactions.')
     parser.add_argument('--listen-port', metavar='listen_port', type=int,
                         help='The port on which to listen')
     parser.add_argument('--server-port', metavar='server_port', type=int,
@@ -40,7 +40,7 @@ def parse_args():
     if args.https_pem:
         if not os.path.isfile(args.https_pem):
             raise argparse.ArgumentTypeError(
-                    "--https-pem argument is not a file: {}".format(args.https_pem))
+                "--https-pem argument is not a file: {}".format(args.https_pem))
     return args
 
 
@@ -49,13 +49,23 @@ def main():
 
     try:
         if args.http2_to_1:
-            proxy_http2.configure_http2_server(args.listen_port, args.server_port, args.https_pem, args.ca_pem, h2_to_server=False)
+            proxy_http2.configure_http2_server(
+                args.listen_port,
+                args.server_port,
+                args.https_pem,
+                args.ca_pem,
+                h2_to_server=False)
         if args.http2_to_2:
-            proxy_http2.configure_http2_server(args.listen_port, args.server_port, args.https_pem, args.ca_pem, h2_to_server=True)
+            proxy_http2.configure_http2_server(
+                args.listen_port,
+                args.server_port,
+                args.https_pem,
+                args.ca_pem,
+                h2_to_server=True)
         else:
             proxy_http1.configure_http1_server(
-                    proxy_http1.ProxyRequestHandler, proxy_http1.ThreadingHTTPServer,
-                    "HTTP/1.1", args.listen_port, args.server_port, args.https_pem)
+                proxy_http1.ProxyRequestHandler, proxy_http1.ThreadingHTTPServer,
+                "HTTP/1.1", args.listen_port, args.server_port, args.https_pem)
     except KeyboardInterrupt:
         print("Received KeyboardInterrupt. Exiting gracefully.")
 

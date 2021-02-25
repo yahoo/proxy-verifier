@@ -31,20 +31,20 @@ proxy = r.AddProxyProcess("proxy_https_client_delay", listen_port=client.Variabl
                           use_ssl=True, use_http2_to_2=True)
 
 server.Streams.stdout += Testers.ContainsExpression(
-        "Ready with 2 transactions.",
-        "The server should have parsed 2 transactions.")
+    "Ready with 2 transactions.",
+    "The server should have parsed 2 transactions.")
 
 client.Streams.stdout += Testers.ContainsExpression(
-        "2 transactions in 2 sessions .* in .* milliseconds",
-        "The client should have reported running the transactions with timing data.")
+    "2 transactions in 2 sessions .* in .* milliseconds",
+    "The client should have reported running the transactions with timing data.")
 
 client.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 server.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 #
 # Test 2: Verify that the timing data indicates that the delays took place.
@@ -56,11 +56,11 @@ expected_min_delay_ms = "1500"
 r.Processes.Default.Setup.Copy(verifier_script)
 
 r.Processes.Default.Command = \
-        f'python3 {verifier_script} {client_output} {expected_min_delay_ms}'
+    f'python3 {verifier_script} {client_output} {expected_min_delay_ms}'
 r.ReturnCode = 0
 r.Streams.stdout += Testers.ContainsExpression(
-        'Good',
-        f'The verifier script should report success.')
+    'Good',
+    f'The verifier script should report success.')
 
 #
 # Test 3: Run a few sessions and transactions with server-side delay.
@@ -79,20 +79,20 @@ proxy = r.AddProxyProcess("proxy_https_server_delay", listen_port=client.Variabl
                           use_ssl=True, use_http2_to_2=True)
 
 server.Streams.stdout += Testers.ContainsExpression(
-        "Ready with 2 transactions.",
-        "The server should have parsed 2 transactions.")
+    "Ready with 2 transactions.",
+    "The server should have parsed 2 transactions.")
 
 client.Streams.stdout += Testers.ContainsExpression(
-        "2 transactions in 2 sessions .* in .* milliseconds",
-        "The client should have reported running the transactions with timing data.")
+    "2 transactions in 2 sessions .* in .* milliseconds",
+    "The client should have reported running the transactions with timing data.")
 
 client.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 server.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 #
 # Test 4: Verify that the timing data indicates that the delays took place.
@@ -103,8 +103,8 @@ expected_min_delay_ms = "1000"
 r.Processes.Default.Setup.Copy(verifier_script)
 
 r.Processes.Default.Command = \
-        f'python3 {verifier_script} {client_output} {expected_min_delay_ms}'
+    f'python3 {verifier_script} {client_output} {expected_min_delay_ms}'
 r.ReturnCode = 0
 r.Streams.stdout += Testers.ContainsExpression(
-        'Good',
-        f'The verifier script should report success.')
+    'Good',
+    f'The verifier script should report success.')

@@ -46,8 +46,8 @@ r = Test.AddTestRun('Verify that the client detects a non-existent key')
 client = r.AddClientProcess("client1", replay_dir=None, other_args="--version")
 
 client.Streams.stdout += Testers.ContainsExpression(
-        f'Version {part_version} of Proxy Verifier',
-        "The --version output should print the expected string")
+    f'Version {part_version} of Proxy Verifier',
+    "The --version output should print the expected string")
 
 #
 # Test 2: Verify that the server detects when a key is not present in a
@@ -57,5 +57,5 @@ r = Test.AddTestRun('Verify that the server detects a non-existent key')
 server = r.AddDefaultServerProcess("server2", replay_dir=None, other_args="--version")
 
 server.Streams.stdout += Testers.ContainsExpression(
-        f'Version {part_version} of Proxy Verifier',
-        "The --version output should print the expected string")
+    f'Version {part_version} of Proxy Verifier',
+    "The --version output should print the expected string")

@@ -3,7 +3,7 @@ Implement the Test Proxy autest common setup extension.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -35,10 +35,10 @@ if ENV['VERIFIER_BIN'] is not None:
     check_file(verifier_bin, verifier_server)
 
     new_variables = {
-            'VERIFIER_BIN': verifier_bin,
-            'VERIFIER_CLIENT': verifier_client,
-            'VERIFIER_SERVER': verifier_server,
-            }
+        'VERIFIER_BIN': verifier_bin,
+        'VERIFIER_CLIENT': verifier_client,
+        'VERIFIER_SERVER': verifier_server,
+    }
     Variables.update(new_variables)
 
 # Modify delay times as we always have to kill server-replay, thus there's no

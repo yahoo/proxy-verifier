@@ -3,7 +3,7 @@ Verify basic body reading functionality.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -22,9 +22,9 @@ client.Streams.stdout = "gold/body_client.gold"
 server.Streams.stdout = "gold/body_server.gold"
 
 client.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 server.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")

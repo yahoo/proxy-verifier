@@ -3,7 +3,7 @@ Implement X-Proxy-Directive behavior.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -15,6 +15,7 @@ class Directive:
     """
     The base class for the logic of a single directive.
     """
+
     def apply_headers(self, headers):
         """
         The public interface of all Directive objects.
@@ -167,7 +168,7 @@ class InsertDirective(Directive):
             raise ValueError("Insert directive value has no colon: "
                              "{}".format(field_to_insert))
         self._new_field_name = field_to_insert[:colon_index].strip()
-        self._new_field_value = field_to_insert[colon_index+1:].strip()
+        self._new_field_value = field_to_insert[colon_index + 1:].strip()
 
     def _apply_headers(self, headers):
         """
@@ -259,7 +260,7 @@ class DirectiveEngine:
                 directive_value = directive_value.decode('ascii')
             self._x_proxy_directive_value = directive_value
             self._split_directive_values = DirectiveEngine._directive_value_parser(
-                    self._x_proxy_directive_value)
+                self._x_proxy_directive_value)
 
             for command, value in self._split_directive_values:
                 self._directives.append(Directive.directive_factory(command, value))

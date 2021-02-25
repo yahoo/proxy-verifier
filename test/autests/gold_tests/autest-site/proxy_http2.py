@@ -3,7 +3,7 @@ Implement HTTP/2 proxy behavior in Python.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -59,6 +59,7 @@ class Http2ConnectionManager(object):
     """
     An object that manages a single HTTP/2 connection.
     """
+
     def __init__(self, sock, h2_to_server=False):
         listening_config = H2Configuration(client_side=False, validate_inbound_headers=False)
         self.tls = threading.local()
@@ -114,7 +115,8 @@ class Http2ConnectionManager(object):
                     request_info._headers = event.headers
 
                 if isinstance(event, StreamEnded):
-                    self.request_received(request_info._headers, request_info._body_bytes, stream_id)
+                    self.request_received(
+                        request_info._headers, request_info._body_bytes, stream_id)
                     del self.request_infos[stream_id]
 
             self.sock.sendall(self.listening_conn.data_to_send())
@@ -153,9 +155,10 @@ class Http2ConnectionManager(object):
                     else:
                         gcontext = ssl.SSLContext()
                     self.tls.http_conns[origin] = http.client.HTTPSConnection(
-                            replay_server, timeout=self.timeout, context=gcontext, cert_file=self.cert_file)
+                        replay_server, timeout=self.timeout, context=gcontext, cert_file=self.cert_file)
                 else:
-                    self.tls.http_conns[origin] = http.client.HTTPConnection(replay_server, timeout=self.timeout)
+                    self.tls.http_conns[origin] = http.client.HTTPConnection(
+                        replay_server, timeout=self.timeout)
             connection_to_server = self.tls.http_conns[origin]
             http1_headers = self.convert_headers_to_http1(request_headers)
             connection_to_server.request(method, path, req_body, http1_headers)
@@ -182,12 +185,19 @@ class Http2ConnectionManager(object):
         )
         for k, v in res.headers.items():
             response_headers += ((k, v),)
-        self.print_info(request_headers, req_body, response_headers, response_body, res.status, res.reason)
+        self.print_info(
+            request_headers,
+            req_body,
+            response_headers,
+            response_body,
+            res.status,
+            res.reason)
         return response_headers, response_body
 
     def _send_http2_request_to_server(self, request_headers, req_body, client_stream_id):
         if not self.is_h2_to_server:
-            raise RuntimeError("Unexpected received non is_h2_to_server in _send_http2_request_to_server")
+            raise RuntimeError(
+                "Unexpected received non is_h2_to_server in _send_http2_request_to_server")
 
         request_headers_message = HttpHeaders()
         for name, value in request_headers:
@@ -213,13 +223,14 @@ class Http2ConnectionManager(object):
                     setattr(gcontext, "wrap_socket", new_wrap_socket)
 
                 http2_connection = hyper.HTTP20Connection(
-                        '127.0.0.1', port=self.server_port, secure=True, ssl_context=gcontext)
+                    '127.0.0.1', port=self.server_port, secure=True, ssl_context=gcontext)
                 try:
                     http2_connection.connect()
                 except AssertionError:
                     # This will happen if the ALPN negotiation refuses HTTP2. Try with HTTP/1.
                     print("HTTP/2 negotiation failed. Trying with HTTP/1")
-                    return self._send_http1_request_to_server(request_headers, req_body, client_stream_id)
+                    return self._send_http1_request_to_server(
+                        request_headers, req_body, client_stream_id)
 
                 self.tls.http_conns[origin] = http2_connection
 
@@ -230,7 +241,8 @@ class Http2ConnectionManager(object):
         except Exception as e:
             if origin in self.tls.http_conns:
                 del self.tls.http_conns[origin]
-            self.listening_conn.send_headers(client_stream_id, ((':status', '502')), end_stream=True)
+            self.listening_conn.send_headers(
+                client_stream_id, ((':status', '502')), end_stream=True)
             print("Connection to '{}' initiated with request to '{}://{}{}' failed: {}".format(
                 replay_server, scheme, request_headers.get(':authority', ''), path, e))
             traceback.print_exc(file=sys.stdout)
@@ -255,14 +267,22 @@ class Http2ConnectionManager(object):
                 response_headers = response_headers[0:-1]
             response_headers += ((k, v),)
             previous_k, previous_v = k, v
-        self.print_info(request_headers, req_body, response_headers, response_body, res.status, res.reason)
+        self.print_info(
+            request_headers,
+            req_body,
+            response_headers,
+            response_body,
+            res.status,
+            res.reason)
         return response_headers, response_body
 
     def request_received(self, request_headers, req_body, stream_id):
         if self.is_h2_to_server:
-            response_headers, response_body = self._send_http2_request_to_server(request_headers, req_body, stream_id)
+            response_headers, response_body = self._send_http2_request_to_server(
+                request_headers, req_body, stream_id)
         else:
-            response_headers, response_body = self._send_http1_request_to_server(request_headers, req_body, stream_id)
+            response_headers, response_body = self._send_http1_request_to_server(
+                request_headers, req_body, stream_id)
 
         self.listening_conn.send_headers(stream_id, response_headers)
         self.listening_conn.send_data(stream_id, response_body, end_stream=True)
@@ -270,7 +290,10 @@ class Http2ConnectionManager(object):
     def print_info(self, request_headers, req_body, response_headers, res_body,
                    response_status, response_reason):
         def parse_qsl(s):
-            return '\n'.join("%-20s %s" % (k, v) for k, v in urllib.parse.parse_qsl(s, keep_blank_values=True))
+            return '\n'.join(
+                "%-20s %s" %
+                (k, v) for k, v in urllib.parse.parse_qsl(
+                    s, keep_blank_values=True))
 
         print("==== REQUEST HEADERS ====")
         for k, v in request_headers.items():

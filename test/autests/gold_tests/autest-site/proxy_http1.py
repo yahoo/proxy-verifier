@@ -3,7 +3,7 @@ Implement HTTP/1 proxy behavior in Python.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -137,10 +137,11 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                     else:
                         proxy_to_server_context = ssl.SSLContext()
                     self.tls.conns[origin] = http.client.HTTPSConnection(
-                            replay_server, timeout=self.timeout,
-                            context=proxy_to_server_context, cert_file=self.cert_file)
+                        replay_server, timeout=self.timeout,
+                        context=proxy_to_server_context, cert_file=self.cert_file)
                 else:
-                    self.tls.conns[origin] = http.client.HTTPConnection(replay_server, timeout=self.timeout)
+                    self.tls.conns[origin] = http.client.HTTPConnection(
+                        replay_server, timeout=self.timeout)
             conn = self.tls.conns[origin]
 
             if 'transfer-encoding' in req.headers and req.headers['transfer-encoding'] == 'chunked':
@@ -153,7 +154,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             setattr(res, 'response_version', version_table[res.version])
 
             # support streaming
-            if 'Content-Length' not in res.headers and 'no-store' in res.headers.get('Cache-Control', ''):
+            if 'Content-Length' not in res.headers and 'no-store' in res.headers.get(
+                    'Cache-Control', ''):
                 self.response_handler(req, req_body, res, '')
                 setattr(res, 'headers', self.filter_headers(res.headers))
                 self.relay_streaming(res)
@@ -259,10 +261,14 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
 
     def print_info(self, req, req_body, res, res_body):
         def parse_qsl(s):
-            return '\n'.join("%-20s %s" % (k, v) for k, v in urllib.parse.parse_qsl(s, keep_blank_values=True))
+            return '\n'.join(
+                "%-20s %s" %
+                (k, v) for k, v in urllib.parse.parse_qsl(
+                    s, keep_blank_values=True))
 
         req_header_text = "%s %s %s\n%s" % (req.command, req.path, req.request_version, req.headers)
-        res_header_text = "%s %d %s\n%s" % (res.response_version, res.status, res.reason, res.headers)
+        res_header_text = "%s %d %s\n%s" % (
+            res.response_version, res.status, res.reason, res.headers)
 
         print(req_header_text)
 
@@ -321,8 +327,13 @@ def configure_http1_server(HandlerClass, ServerClass, protocol,
         client_to_proxy_context.load_cert_chain(certfile=https_pem)
         client_to_proxy_context.set_servername_callback(servername_callback)
         httpd.socket = client_to_proxy_context.wrap_socket(
-                httpd.socket, server_side=True)
+            httpd.socket, server_side=True)
 
     sa = httpd.socket.getsockname()
-    print("Serving HTTP Proxy on {}:{}, forwarding to {}:{}".format(sa[0], sa[1], "127.0.0.1", server_port))
+    print(
+        "Serving HTTP Proxy on {}:{}, forwarding to {}:{}".format(
+            sa[0],
+            sa[1],
+            "127.0.0.1",
+            server_port))
     httpd.serve_forever()

@@ -3,7 +3,7 @@ Implement Proxy Verifier test proxy logic
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -34,7 +34,7 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
     proxy_dest = os.path.join(proxy_rundir, os.path.basename(proxy_src))
 
     command = "python {} --listen-port {} --server-port {}".format(
-            proxy_dest, listen_port, server_port)
+        proxy_dest, listen_port, server_port)
     if use_ssl:
         test_root = process.TestRoot
         pem_file = https_pem
@@ -142,6 +142,7 @@ def AddProxyProcess(run, name, listen_port=8080, server_port=8081,
     client.StartBefore(proxy)
 
     return proxy
+
 
 ##########################################################################
 ExtendTest(MakeProxyProcess, name="MakeProxyProcess")

@@ -29,8 +29,8 @@ r.Processes.Default.Setup.Copy(example_yaml)
 r.Processes.Default.Command = f'python3 {verifier_script} {example_yaml} {readme_path}'
 r.ReturnCode = 0
 r.Streams.stdout += Testers.ContainsExpression(
-        'Good',
-        f'The contents of {example_yaml} should be in {readme_path}')
+    'Good',
+    f'The contents of {example_yaml} should be in {readme_path}')
 
 #
 # Test 2: Verify correct behavior of a single client-side HTTP/2 transaction.
@@ -52,9 +52,9 @@ client.Streams.stdout = "gold/doctest_client.gold"
 server.Streams.stdout = "gold/doctest_server.gold"
 
 client.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 server.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")

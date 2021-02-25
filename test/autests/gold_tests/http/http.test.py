@@ -3,7 +3,7 @@ Verify basic HTTP/1.x functionality.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -32,12 +32,12 @@ client.Streams.stdout = "gold/single_transaction_client.gold"
 server.Streams.stdout = "gold/single_transaction_server.gold"
 
 client.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 server.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 #
 # Test 2: Verify correct behavior of multiple HTTP sessions.
@@ -50,25 +50,25 @@ proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
 
 
 client.Streams.stdout = Testers.ContainsExpression(
-        "6 transactions in 4 sessions",
-        "Verify that 6 transactions were parsed.")
+    "6 transactions in 4 sessions",
+    "Verify that 6 transactions were parsed.")
 
 client.Streams.stdout += Testers.ContainsExpression(
-        "Loading 2 replay files.",
-        "Verify that 2 replay files were parsesd.")
+    "Loading 2 replay files.",
+    "Verify that 2 replay files were parsesd.")
 
 client.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 server.Streams.stdout = Testers.ContainsExpression(
-        "Ready with 6 transactions.",
-        "Verify that 6 transactions were parsed.")
+    "Ready with 6 transactions.",
+    "Verify that 6 transactions were parsed.")
 
 server.Streams.stdout += Testers.ContainsExpression(
-        "Loading 2 replay files",
-        "Verify that 2 replay files were parsed.")
+    "Loading 2 replay files",
+    "Verify that 2 replay files were parsed.")
 
 server.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")

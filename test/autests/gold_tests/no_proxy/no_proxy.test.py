@@ -3,7 +3,7 @@ Verify basic --no-proxy functionality.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -19,32 +19,32 @@ client = r.AddClientProcess("client", "replay/single_transaction.json",
                             other_args="--no-proxy")
 
 client.Streams.stdout = Testers.ContainsExpression(
-        'Received an HTTP/1 200 response for .*',
-        "Verify that the response came back from replay-server")
+    'Received an HTTP/1 200 response for .*',
+    "Verify that the response came back from replay-server")
 
 client.Streams.stdout += Testers.ContainsExpression(
-        '"x-testheader": "from_server_response"',
-        "Verify that the server response headers were used by the replay-server.")
+    '"x-testheader": "from_server_response"',
+    "Verify that the server response headers were used by the replay-server.")
 
 client.Streams.stdout += Testers.ExcludesExpression(
-        '"x-testheader": "from_proxy_response"',
-        "Verify that the proxy response headers were not used by the replay-server.")
+    '"x-testheader": "from_proxy_response"',
+    "Verify that the proxy response headers were not used by the replay-server.")
 
 client.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 server.Streams.stdout = Testers.ContainsExpression(
-        "response to request with key .* with response status 200",
-        "Verify that the proxy request path was used by the replay-client.")
+    "response to request with key .* with response status 200",
+    "Verify that the proxy request path was used by the replay-client.")
 
 server.Streams.stdout += Testers.ContainsExpression(
-        '"client-ip": "10.10.10.1"',
-        "Verify that the proxy request headers were used by the replay-client.")
+    '"client-ip": "10.10.10.1"',
+    "Verify that the proxy request headers were used by the replay-client.")
 
 server.Streams.stdout += Testers.ExcludesExpression(
-        "Violation:",
-        "There should be no verification errors because there are none added.")
+    "Violation:",
+    "There should be no verification errors because there are none added.")
 
 r = Test.AddTestRun("Verify no-proxy mode works for a simple HTTP/2 transaction")
 server = r.AddServerProcess("server-h2", "replay/h2.yaml")
