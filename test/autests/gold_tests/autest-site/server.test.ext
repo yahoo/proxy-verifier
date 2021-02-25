@@ -3,7 +3,7 @@ Implement the Proxy Verifier test server extension.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -174,9 +174,20 @@ def MakeServerProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
     return server
 
 
-def AddDefaultServerProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
-                            configure_http=True, configure_https=True, http_ports=None, https_ports=None,
-                            ssl_cert='', ca_certs='', verbose=True, other_args=''):
+def AddDefaultServerProcess(
+        run,
+        name,
+        replay_dir,
+        find_ports=True,
+        use_ipv6=False,
+        configure_http=True,
+        configure_https=True,
+        http_ports=None,
+        https_ports=None,
+        ssl_cert='',
+        ca_certs='',
+        verbose=True,
+        other_args=''):
 
     server = run.Processes.Default
     _configure_server(run, server, name, replay_dir, find_ports, use_ipv6,

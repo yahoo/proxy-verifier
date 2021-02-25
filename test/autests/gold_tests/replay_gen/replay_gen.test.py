@@ -3,7 +3,7 @@ Verify replay_gen.py can generate parsable replay files.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -30,9 +30,9 @@ proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
 client.ReturnCode = Any(0, 1)
 
 client.Streams.stdout += Testers.ContainsExpression(
-        "Parsed 20 transactions",
-        "Verify that the verifier client was able to parse the expected 20 transactions.")
+    "Parsed 20 transactions",
+    "Verify that the verifier client was able to parse the expected 20 transactions.")
 
 server.Streams.stdout += Testers.ContainsExpression(
-        "Ready with 20 transactions",
-        "Verify that the verifier server was able to parse the expected 20 transactions.")
+    "Ready with 20 transactions",
+    "Verify that the verifier server was able to parse the expected 20 transactions.")

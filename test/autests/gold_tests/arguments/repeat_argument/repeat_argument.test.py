@@ -3,7 +3,7 @@ Verify the user can repeat transactions with --repeat.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -23,11 +23,11 @@ proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
-        'Parsed 8 transactions',
-        'Verify the 8 transactions were parsed.')
+    'Parsed 8 transactions',
+    'Verify the 8 transactions were parsed.')
 client.Streams.stdout += Testers.ContainsExpression(
-        '8 transactions in 5 sessions',
-        'Verify each transaction is executed once.')
+    '8 transactions in 5 sessions',
+    'Verify each transaction is executed once.')
 
 #
 # Test 2: Verify that with --repeat 1 the transactions are executed once.
@@ -40,11 +40,11 @@ proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
-        'Parsed 8 transactions',
-        'Verify the 8 transactions were parsed.')
+    'Parsed 8 transactions',
+    'Verify the 8 transactions were parsed.')
 client.Streams.stdout += Testers.ContainsExpression(
-        '8 transactions in 5 sessions',
-        'Verify each transaction is executed once.')
+    '8 transactions in 5 sessions',
+    'Verify each transaction is executed once.')
 
 #
 # Test 3: Verify that with --repeat 0 the transactions are not executed.
@@ -57,11 +57,11 @@ proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
-        'Parsed 8 transactions',
-        'Verify the 8 transactions were parsed.')
+    'Parsed 8 transactions',
+    'Verify the 8 transactions were parsed.')
 client.Streams.stdout += Testers.ContainsExpression(
-        '0 transactions in 0 sessions',
-        'Verify no transactions are executed.')
+    '0 transactions in 0 sessions',
+    'Verify no transactions are executed.')
 
 #
 # Test 4: Verify that with --repeat 2 the transactions are executed twice.
@@ -74,11 +74,11 @@ proxy = r.AddProxyProcess("proxy4", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
-        'Parsed 8 transactions',
-        'Verify the 8 transactions were parsed.')
+    'Parsed 8 transactions',
+    'Verify the 8 transactions were parsed.')
 client.Streams.stdout += Testers.ContainsExpression(
-        '16 transactions in 10 sessions',
-        'Verify each transaction is executed twice.')
+    '16 transactions in 10 sessions',
+    'Verify each transaction is executed twice.')
 
 if Condition.IsPlatform("darwin"):
     # On the Mac, the test proxy closes the session prematurely for some
@@ -105,11 +105,11 @@ proxy = r.AddProxyProcess("proxy5", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
-        'Parsed 8 transactions',
-        'Verify the 8 transactions were parsed.')
+    'Parsed 8 transactions',
+    'Verify the 8 transactions were parsed.')
 client.Streams.stdout += Testers.ContainsExpression(
-        '80 transactions in 50 sessions',
-        'Verify each transaction is executed ten times.')
+    '80 transactions in 50 sessions',
+    'Verify each transaction is executed ten times.')
 
 if Condition.IsPlatform("darwin"):
     # See above comment.

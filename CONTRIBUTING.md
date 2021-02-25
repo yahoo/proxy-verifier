@@ -18,7 +18,7 @@ Please follow [best practices](https://github.com/trein/dev-best-practices/wiki/
 
 When your code is ready to be submitted, read github's article about how to [submit a pull request](https://help.github.com/articles/creating-a-pull-request/) to begin the code review process and follow its directions. Before creaing a pull request, please do the following to make sure the patch is ready for review:
 
-1. Run the tools/clang\_format.sh script to format the C++ source code according to the repository's formatting standards.
+1. Run the tools/format.sh script to format the source code according to the repository's formatting standards.
 1. Verify that all AuTests pass (see the [README](https://github.com/yahoo/proxy-verifier/blob/master/README.md) for instructions on how to run the AuTests).
 1. Verify that all unit tests pass (see the [README](https://github.com/yahoo/proxy-verifier/blob/master/README.md) for instructions on how to run the unit tests).
 

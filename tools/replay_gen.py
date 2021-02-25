@@ -2,7 +2,7 @@
 
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -128,8 +128,8 @@ class ReplaySession:
 
         if self.tls_ver > 0:
             self.session['protocol'].append(
-                    {'name': 'tls', 'version': self.tls_vers[self.tls_ver], 'sni': self.hostname,
-                        'proxy-verify-mode': 0, 'proxy-provided-cert': True})
+                {'name': 'tls', 'version': self.tls_vers[self.tls_ver], 'sni': self.hostname,
+                 'proxy-verify-mode': 0, 'proxy-provided-cert': True})
 
         self.session['protocol'].append({'name': 'tcp'})
 
@@ -172,7 +172,8 @@ class ReplaySession:
         transaction['all']['headers'] = {}
         transaction['all']['headers']['fields'] = []
         new_uuid = uuid.uuid4().hex
-        new_uuid = new_uuid[:8] + '-' + new_uuid[8:12] + '-' + new_uuid[12:16] + '-' + new_uuid[16:20] + '-' + new_uuid[20:]
+        new_uuid = new_uuid[:8] + '-' + new_uuid[8:12] + '-' + \
+            new_uuid[12:16] + '-' + new_uuid[16:20] + '-' + new_uuid[20:]
         transaction['all']['headers']['fields'].append(['uuid', new_uuid])
 
         transaction['client-request'] = {}
@@ -185,10 +186,10 @@ class ReplaySession:
         req_headers['encoding'] = 'esc_json'
         req_headers['fields'] = []
         if transaction['client-request']['method'] != 'GET':
-          request_size = random.randint(1, 1000)
-          req_headers['fields'].append(['Content-Length', str(request_size)])
+            request_size = random.randint(1, 1000)
+            req_headers['fields'].append(['Content-Length', str(request_size)])
         else:
-          request_size = 0
+            request_size = 0
         req_headers['fields'].append(['Host', self.hostname])
 
         transaction['client-request']['headers'] = req_headers
@@ -209,7 +210,8 @@ class ReplaySession:
         res_headers['encoding'] = 'esc_json'
         res_headers['fields'] = []
         res_headers['fields'].append(['Content-Length', str(response_size)])
-        res_headers['fields'].append(['Connection', random.choices(['close', 'keep-alive'], weights=[1, 10], k=1)[0]])
+        res_headers['fields'].append(['Connection', random.choices(
+            ['close', 'keep-alive'], weights=[1, 10], k=1)[0]])
         if res_headers['fields'][-1][-1] == 'keep-alive':
             res_headers['fields'].append(['Keep-Alive', 'timeout=1, max=100'])
 
@@ -240,8 +242,18 @@ class RepalyFile:
         self.sess_count = 0
         self.trans_count = 0
 
-    def random_populate(self, curr_trans_num, total_trans_num, url_list, sess_lower, sess_upper, trans_lower,
-                        trans_upper, http_trans, tls_trans, h2_trans):
+    def random_populate(
+            self,
+            curr_trans_num,
+            total_trans_num,
+            url_list,
+            sess_lower,
+            sess_upper,
+            trans_lower,
+            trans_upper,
+            http_trans,
+            tls_trans,
+            h2_trans):
         sess_num = random.randint(sess_lower, sess_upper)
 
         for sess in range(sess_num):
@@ -286,11 +298,21 @@ def parse_args():
                         help='The lower limit of sessions per file.')
     parser.add_argument('-su', '--sess-upper', dest='sess_upper', type=int, default=10,
                         help='The upper limit of sessions per file.')
-    parser.add_argument('-tp', '--trans-protocols', dest='trans_protocols', type=str, default='all',
-                        help='A comma separated list of protocols that are allowed to be generated. '
-                             'Available options are: http, tls, h2, all.')
-    parser.add_argument('-u', '--url-file', dest='url_file', type=argparse.FileType('r'), required=True,
-                        help='Path to a file with the list of URLs that can be used.')
+    parser.add_argument(
+        '-tp',
+        '--trans-protocols',
+        dest='trans_protocols',
+        type=str,
+        default='all',
+        help='A comma separated list of protocols that are allowed to be generated. '
+        'Available options are: http, tls, h2, all.')
+    parser.add_argument(
+        '-u',
+        '--url-file',
+        dest='url_file',
+        type=argparse.FileType('r'),
+        required=True,
+        help='Path to a file with the list of URLs that can be used.')
     parser.add_argument('-o', '--output', dest='output', type=str, default='replay',
                         help='Path to a directory where the replay files are generated.')
     parser.add_argument('-p', '--prefix', dest='prefix', type=str, default='',
@@ -320,7 +342,8 @@ def main():
             print('Invalid protocol value {0}, ignoring...'.format(p))
 
     if not http_trans and not tls_trans and not h2_trans:
-        all_protocols = input('No valid protocols provided, generate with ALL protocols allowed? [y/N]: ')
+        all_protocols = input(
+            'No valid protocols provided, generate with ALL protocols allowed? [y/N]: ')
         if all_protocols.lower() == 'y':
             http_trans = True
             tls_trans = True

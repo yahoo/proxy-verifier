@@ -3,7 +3,7 @@ Implement the Proxy Verifier client extensions.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -160,8 +160,21 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
         A verifier-client process.
     """
     client = test.Processes.Process(name)
-    _configure_client(test, client, name, replay_dir, find_ports, use_ipv6, configure_http, configure_https,  http_ports,
-                      https_ports, ssl_cert, ca_certs, verbose, other_args)
+    _configure_client(
+        test,
+        client,
+        name,
+        replay_dir,
+        find_ports,
+        use_ipv6,
+        configure_http,
+        configure_https,
+        http_ports,
+        https_ports,
+        ssl_cert,
+        ca_certs,
+        verbose,
+        other_args)
     return client
 
 
@@ -182,8 +195,21 @@ def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
     """
 
     p = run.Processes.Default
-    _configure_client(run, p, name, replay_dir, find_ports, use_ipv6, configure_http, configure_https,  http_ports,
-                      https_ports, ssl_cert, ca_certs, verbose, other_args)
+    _configure_client(
+        run,
+        p,
+        name,
+        replay_dir,
+        find_ports,
+        use_ipv6,
+        configure_http,
+        configure_https,
+        http_ports,
+        https_ports,
+        ssl_cert,
+        ca_certs,
+        verbose,
+        other_args)
     return p
 
 

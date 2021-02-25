@@ -28,6 +28,7 @@ def line_has_timing_data(line):
     line_matcher = re.compile('.*transactions in .* sessions .* in .* milliseconds.*')
     return line_matcher.match(line) is not None
 
+
 def get_replay_duration(line):
     """
     Retrieve the number of milliseconds the replay took.
@@ -46,12 +47,13 @@ def get_replay_duration(line):
     if not line_has_timing_data(line):
         raise ValueError(f'The line does not have timing data:\n{line}')
 
-    duration_getter = re.compile('in (\d+) milliseconds')
+    duration_getter = re.compile(r'in (\d+) milliseconds')
     return int(duration_getter.findall(line)[0])
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
-            description='Verify client output recorded an expected replay duration.')
+        description='Verify client output recorded an expected replay duration.')
 
     parser.add_argument('client_output', type=argparse.FileType('r'),
                         help='The Verifier client output file.')
