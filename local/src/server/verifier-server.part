@@ -9,7 +9,7 @@ env.DependsOn([
 ])
 
 cflags = ['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror']
-if env.GetOption('enable_asan'):
+if 'enable-asan' in env['MODE']:
     cflags += ['-fsanitize=address', '-fno-omit-frame-pointer']
     env.AppendUnique(
         CCFLAGS=cflags,
