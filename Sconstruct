@@ -45,6 +45,9 @@ SetOptionDefault("RPATH",  custom_rpath)
 
 Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc", tag="1.2.19"), package_group="proxy-verifier")
 
-Part("local/parts/proxy-verifier.part", package_group="proxy-verifier")
+pv_mode = []
+if GetOption("enable_asan"):
+  pv_mode.append('enable-asan')
+Part("local/parts/proxy-verifier.part", package_group="proxy-verifier", mode=pv_mode)
 Part("test/unit_tests/unit_tests.part")
 
