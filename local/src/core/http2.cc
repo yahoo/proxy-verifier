@@ -245,6 +245,7 @@ H2Session::connect()
 Errata
 H2Session::run_transactions(
     std::list<Txn> const &txn_list,
+    swoc::TextView device,
     swoc::IPEndpoint const *real_target,
     double rate_multiplier)
 {
@@ -255,7 +256,7 @@ H2Session::run_transactions(
     Errata txn_errata;
     auto const key{txn._req.get_key()};
     if (this->is_closed()) {
-      txn_errata.note(this->do_connect(real_target));
+      txn_errata.note(this->do_connect(device, real_target));
       if (!txn_errata.is_ok()) {
         txn_errata.error(R"(Failed to reconnect HTTP/2 key={}.)", key);
         // If we don't have a valid connection, there's no point in continuing.

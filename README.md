@@ -44,6 +44,7 @@ Table of Contents
             * [--format &lt;format-specification&gt;](#--format-format-specification)
             * [--keys &lt;key1 key2 ... keyn&gt;](#--keys-key1-key2--keyn)
             * [--verbose](#--verbose)
+            * [--interface](#--interface)
             * [--no-proxy](#--no-proxy)
             * [--strict](#--strict)
             * [--rate &lt;requests/second&gt;](#--rate-requestssecond)
@@ -1320,6 +1321,12 @@ verifier-client \
     --verbose diag
 ```
 
+#### --interface \<device\>
+
+Initiate connections from the specified interface. You can enter any name supported by setsockopt BINDTODEVICE, such at eth0:1.
+
+This is a client-side only option.
+
 #### --no-proxy
 
 As explained above, replay files contain traffic information for both client to
@@ -1394,7 +1401,6 @@ execution. By default, Proxy Verifier limits the number of threads for handling
 these connections to 2,000. This limit can be changed via the `--thread-limit`
 option. Setting a value of 1 on the client will effectively cause sessions
 to be replayed in serial.
-
 
 ## Contribute
 

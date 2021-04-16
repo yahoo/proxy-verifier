@@ -126,6 +126,7 @@ public:
   swoc::Errata send_connection_settings();
   swoc::Errata run_transactions(
       std::list<Txn> const &txn,
+      swoc::TextView device,
       swoc::IPEndpoint const *real_target,
       double rate_multiplier) override;
   swoc::Errata run_transaction(Txn const &txn) override;
