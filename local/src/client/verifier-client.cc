@@ -57,7 +57,7 @@ bool Use_Strict_Checking = false;
 
 std::unordered_set<std::string> Keys_Whitelist;
 
-swoc::TextView interface_device;
+swoc::TextView specified_interface;
 
 std::mutex LoadMutex;
 
@@ -532,11 +532,11 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
     return;
   }
 
-  errata.note(session->do_connect(interface_device, real_target));
+  errata.note(session->do_connect(specified_interface, real_target));
   if (errata.is_ok()) {
     errata.note(session->run_transactions(
         ssn._transactions,
-        interface_device,
+        specified_interface,
         real_target,
         ssn._rate_multiplier));
   }
@@ -648,7 +648,7 @@ Engine::command_run()
     return;
   } else if (!interface_arg.empty()) {
     // Copy to global TextView, function does not terminate until joining
-    interface_device = interface_arg[0];
+    specified_interface = interface_arg[0];
   }
 
   errata.info(R"(Loading replay data from "{}".)", args[0]);
