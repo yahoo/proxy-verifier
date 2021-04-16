@@ -57,6 +57,8 @@ bool Use_Strict_Checking = false;
 
 std::unordered_set<std::string> Keys_Whitelist;
 
+swoc::TextView interface_device;
+
 std::mutex LoadMutex;
 
 std::list<std::shared_ptr<Ssn>> Session_List;
@@ -530,9 +532,9 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
     return;
   }
 
-  errata.note(session->do_connect(real_target));
+  errata.note(session->do_connect(interface_device, real_target));
   if (errata.is_ok()) {
-    errata.note(session->run_transactions(ssn._transactions, real_target, ssn._rate_multiplier));
+    errata.note(session->run_transactions(ssn._transactions, interface_device, real_target, ssn._rate_multiplier));
   }
   if (!errata.is_ok()) {
     Engine::process_exit_code = 1;
@@ -633,6 +635,16 @@ Engine::command_run()
     for (auto const &key : keys_arg) {
       Keys_Whitelist.insert(key);
     }
+  }
+
+  auto interface_arg{arguments.get("interface")};
+  if (interface_arg.size() > 1) {
+    errata.error(R"("interface" command requires exactly one device name as an argument.)");
+    process_exit_code = 1;
+    return;
+  } else if (!interface_arg.empty()) {
+    // Copy to global TextView, function does not terminate until joining
+    interface_device = interface_arg[0];
   }
 
   errata.info(R"(Loading replay data from "{}".)", args[0]);
@@ -876,9 +888,16 @@ main(int /* argc */, char const *argv[])
           "")
       .add_option("--no-proxy", "", "Use proxy data instead of client data.")
       .add_option(
+          "--interface",
+          "-i",
+          "Specify the network device the client will establish connections from.",
+          "",
+          1,
+          "")
+      .add_option(
           "--repeat",
           "",
-          "Specify a number of times to repeat replaying the data set.",
+          "Specify the number of times to repeat replaying the data set.",
           "",
           1,
           "")

@@ -758,7 +758,7 @@ do_listen(swoc::IPEndpoint &server_addr, bool do_tls)
             auto runner = std::make_unique<std::thread>(TF_Accept, socket_fd, do_tls);
             Accept_Threads.push_back(std::move(runner));
           } else {
-            errata.error(R"(Could not isten to {}: {}.)", server_addr, swoc::bwf::Errno{});
+            errata.error(R"(Could not listen to {}: {}.)", server_addr, swoc::bwf::Errno{});
           }
         } else {
           errata.error(R"(Could not bind to {}: {}.)", server_addr, swoc::bwf::Errno{});

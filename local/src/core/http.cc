@@ -1173,6 +1173,7 @@ Session::run_transaction(Txn const &json_txn)
 Errata
 Session::run_transactions(
     std::list<Txn> const &txn_list,
+    swoc::TextView device,
     swoc::IPEndpoint const *real_target,
     double rate_multiplier)
 {
@@ -1185,7 +1186,7 @@ Session::run_transactions(
       // verifier-server closes connections if the body is unspecified in size.
       // Otherwise proxies generally will timeout. To accomodate this, we
       // simply reconnect if the connection was closed.
-      txn_errata.note(this->do_connect(real_target));
+      txn_errata.note(this->do_connect(device, real_target));
       if (!txn_errata.is_ok()) {
         txn_errata.error(R"(Failed to reconnect HTTP/1 key={}.)", txn._req.get_key());
         session_errata.note(std::move(txn_errata));
@@ -1228,7 +1229,7 @@ Session::set_fd(int fd)
 }
 
 Errata
-Session::do_connect(swoc::IPEndpoint const *real_target)
+Session::do_connect(swoc::TextView device, swoc::IPEndpoint const *real_target)
 {
   Errata errata;
   int socket_fd = socket(real_target->family(), SOCK_STREAM, 0);
@@ -1238,7 +1239,9 @@ Session::do_connect(swoc::IPEndpoint const *real_target)
     l.l_onoff = 0;
     l.l_linger = 0;
     setsockopt(socket_fd, SOL_SOCKET, SO_LINGER, (char *)&l, sizeof(l));
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
+    if (!device.empty() && setsockopt(socket_fd, SOL_SOCKET, SO_BINDTODEVICE, device.data(), device.length()) < 0) {
+      errata.error(R"(Could not set device {} on socket {} - {}.)", device, socket_fd, swoc::bwf::Errno{});
+    } else if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
       errata.error(R"(Could not set reuseaddr on socket {} - {}.)", socket_fd, swoc::bwf::Errno{});
     } else {
       errata.note(this->set_fd(socket_fd));
