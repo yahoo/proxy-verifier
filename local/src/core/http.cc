@@ -1239,8 +1239,14 @@ Session::do_connect(swoc::TextView device, swoc::IPEndpoint const *real_target)
     l.l_onoff = 0;
     l.l_linger = 0;
     setsockopt(socket_fd, SOL_SOCKET, SO_LINGER, (char *)&l, sizeof(l));
-    if (!device.empty() && setsockopt(socket_fd, SOL_SOCKET, SO_BINDTODEVICE, device.data(), device.length()) < 0) {
-      errata.error(R"(Could not set device {} on socket {} - {}.)", device, socket_fd, swoc::bwf::Errno{});
+    if (!device.empty() &&
+        setsockopt(socket_fd, SOL_SOCKET, SO_BINDTODEVICE, device.data(), device.length()) < 0)
+    {
+      errata.error(
+          R"(Could not set device {} on socket {} - {}.)",
+          device,
+          socket_fd,
+          swoc::bwf::Errno{});
     } else if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
       errata.error(R"(Could not set reuseaddr on socket {} - {}.)", socket_fd, swoc::bwf::Errno{});
     } else {
