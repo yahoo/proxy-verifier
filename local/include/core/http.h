@@ -473,7 +473,7 @@ public:
   virtual swoc::Rv<size_t>
   drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView bytes_read);
 
-  virtual swoc::Errata do_connect(swoc::TextView device, swoc::IPEndpoint const *real_target);
+  virtual swoc::Errata do_connect(swoc::TextView interface, swoc::IPEndpoint const *real_target);
 
   /** Write the content in data to the socket.
    *
@@ -510,7 +510,7 @@ public:
 
   virtual swoc::Errata run_transactions(
       std::list<Txn> const &txn,
-      swoc::TextView device,
+      swoc::TextView interface,
       swoc::IPEndpoint const *real_target,
       double rate_multiplier);
   virtual swoc::Errata run_transaction(Txn const &json_txn);
