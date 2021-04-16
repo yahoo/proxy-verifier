@@ -9,10 +9,13 @@
 #include "core/verification.h"
 #include "core/ProxyVerifier.h"
 
+#include <arpa/inet.h>
 #include <cassert>
 #include <fcntl.h>
+#include <ifaddrs.h>
 #include <netinet/tcp.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -1173,7 +1176,7 @@ Session::run_transaction(Txn const &json_txn)
 Errata
 Session::run_transactions(
     std::list<Txn> const &txn_list,
-    swoc::TextView device,
+    swoc::TextView interface,
     swoc::IPEndpoint const *real_target,
     double rate_multiplier)
 {
@@ -1186,7 +1189,7 @@ Session::run_transactions(
       // verifier-server closes connections if the body is unspecified in size.
       // Otherwise proxies generally will timeout. To accomodate this, we
       // simply reconnect if the connection was closed.
-      txn_errata.note(this->do_connect(device, real_target));
+      txn_errata.note(this->do_connect(interface, real_target));
       if (!txn_errata.is_ok()) {
         txn_errata.error(R"(Failed to reconnect HTTP/1 key={}.)", txn._req.get_key());
         session_errata.note(std::move(txn_errata));
@@ -1228,8 +1231,60 @@ Session::set_fd(int fd)
   return errata;
 }
 
+static swoc::Rv<swoc::IPEndpoint>
+get_ip_endpoint_from_device_name(TextView expected_device, int expected_family)
+{
+  swoc::Rv<swoc::IPEndpoint> zret{};
+  auto &ip_endpoint = zret.result();
+
+  struct ifaddrs *ifaddr_list_head = nullptr;
+  if (getifaddrs(&ifaddr_list_head) == -1) {
+    zret.error("getifaddrs failed: {}", swoc::bwf::Errno{});
+    return zret;
+  }
+  bool found_interface = false;
+  for (auto *ifa = ifaddr_list_head; ifa != nullptr; ifa = ifa->ifa_next) {
+    std::string_view interface_name{ifa->ifa_name};
+    if (interface_name != expected_device) {
+      continue;
+    }
+    auto const family = ifa->ifa_addr->sa_family;
+    if (family != expected_family) {
+      continue;
+    }
+    ip_endpoint.assign(ifa->ifa_addr);
+    if (!ip_endpoint.is_valid()) {
+      zret.error("Failed to assign an address from the derived interface.");
+    }
+    char ip_buffer[INET6_ADDRSTRLEN];
+    char const *ntop_ret = nullptr;
+    if (family == AF_INET) {
+      ntop_ret = inet_ntop(family, &ip_endpoint.sa4.sin_addr, ip_buffer, sizeof(ip_buffer));
+    } else { // AF_INET6
+      ntop_ret = inet_ntop(family, &ip_endpoint.sa6.sin6_addr, ip_buffer, sizeof(ip_buffer));
+    }
+    if (ntop_ret == nullptr) {
+      zret.error(
+          "inet_ntop failed to convert the interface address to a string: {}",
+          swoc::bwf::Errno{});
+    }
+    zret.diag(
+        "Found interface from name {} with family {} and ip {}",
+        expected_device,
+        swoc::IPEndpoint::family_name(zret.result().family()),
+        TextView{ip_buffer, strlen(ip_buffer)});
+    found_interface = true;
+    break;
+  }
+  if (!found_interface) {
+    zret.error("Could not find the specified interface: {}", expected_device);
+  }
+  freeifaddrs(ifaddr_list_head);
+  return zret;
+}
+
 Errata
-Session::do_connect(swoc::TextView device, swoc::IPEndpoint const *real_target)
+Session::do_connect(TextView interface, swoc::IPEndpoint const *real_target)
 {
   Errata errata;
   int socket_fd = socket(real_target->family(), SOCK_STREAM, 0);
@@ -1239,15 +1294,19 @@ Session::do_connect(swoc::TextView device, swoc::IPEndpoint const *real_target)
     l.l_onoff = 0;
     l.l_linger = 0;
     setsockopt(socket_fd, SOL_SOCKET, SO_LINGER, (char *)&l, sizeof(l));
-    if (!device.empty() &&
-        setsockopt(socket_fd, SOL_SOCKET, SO_BINDTODEVICE, device.data(), device.length()) < 0)
-    {
-      errata.error(
-          R"(Could not set device {} on socket {} - {}.)",
-          device,
-          socket_fd,
-          swoc::bwf::Errno{});
-    } else if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
+    if (!interface.empty()) {
+      auto &&[device_endpoint, device_errata] =
+          get_ip_endpoint_from_device_name(interface, real_target->family());
+      errata.note(std::move(device_errata));
+      if (!errata.is_ok()) {
+        return errata;
+      }
+      if (bind(socket_fd, &device_endpoint.sa, device_endpoint.size()) == -1) {
+        errata.error("Failed to bind on interface {}: {}", interface, swoc::bwf::Errno{});
+        return errata;
+      }
+    }
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
       errata.error(R"(Could not set reuseaddr on socket {} - {}.)", socket_fd, swoc::bwf::Errno{});
     } else {
       errata.note(this->set_fd(socket_fd));
