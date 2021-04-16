@@ -78,6 +78,46 @@ BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const 
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
 
+
+/** Provide the ability to concert an interface name into an IPEndpoint.
+ *
+ * This provides RAII for the struct ifaddrs allocated via getifaddrs().
+ */
+class InterfaceNameToEndpoint
+{
+public:
+  /**
+   * @param[in] expected_interface The name of the interface to look for.
+   * @param[in] expected_family The IP family the interface should belong to.
+   */
+  InterfaceNameToEndpoint(swoc::TextView expected_interface, int expected_family);
+
+  ~InterfaceNameToEndpoint();
+
+  /** Find the endpoint with constructed expectations.
+   */
+  swoc::Rv<swoc::IPEndpoint> find_ip_endpoint();
+
+private:
+  /** A helper function to loop through the interfaces and find one that
+   * matches the specified interface name and family.
+   */
+  swoc::Rv<struct ifaddrs *> find_matching_interface();
+
+  /** Convert the IPEndpoint to a string.
+   *
+   * @param[in] ip The endpoing to convert to a string.
+   *
+   * @return The string representing the endpoint.
+   */
+  swoc::Rv<std::string> convert_ip_endpoint_to_string(swoc::IPEndpoint const &ip);
+
+private:
+  struct ifaddrs *_ifaddr_list_head = nullptr;
+  const std::string _expected_interface;
+  const int _expected_family;
+};
+
 class HttpFields
 {
   using self_type = HttpFields;

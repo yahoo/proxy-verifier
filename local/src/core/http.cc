@@ -1231,55 +1231,97 @@ Session::set_fd(int fd)
   return errata;
 }
 
-static swoc::Rv<swoc::IPEndpoint>
-get_ip_endpoint_from_device_name(TextView expected_device, int expected_family)
+InterfaceNameToEndpoint::InterfaceNameToEndpoint(TextView expected_interface, int expected_family)
+  : _expected_interface{expected_interface}
+  , _expected_family{expected_family}
 {
-  swoc::Rv<swoc::IPEndpoint> zret{};
-  auto &ip_endpoint = zret.result();
+}
 
-  struct ifaddrs *ifaddr_list_head = nullptr;
-  if (getifaddrs(&ifaddr_list_head) == -1) {
-    zret.error("getifaddrs failed: {}", swoc::bwf::Errno{});
-    return zret;
+InterfaceNameToEndpoint::~InterfaceNameToEndpoint()
+{
+  if (_ifaddr_list_head != nullptr) {
+    freeifaddrs(_ifaddr_list_head);
+    _ifaddr_list_head = nullptr;
   }
-  bool found_interface = false;
-  for (auto *ifa = ifaddr_list_head; ifa != nullptr; ifa = ifa->ifa_next) {
+}
+
+swoc::Rv<struct ifaddrs *>
+InterfaceNameToEndpoint::find_matching_interface()
+{
+  swoc::Rv<struct ifaddrs *> zret{nullptr};
+  if (_ifaddr_list_head == nullptr) {
+    if (getifaddrs(&_ifaddr_list_head) == -1) {
+      zret.error("getifaddrs failed: {}", swoc::bwf::Errno{});
+      return zret;
+    }
+  }
+  for (auto *ifa = _ifaddr_list_head; ifa != nullptr; ifa = ifa->ifa_next) {
     std::string_view interface_name{ifa->ifa_name};
-    if (interface_name != expected_device) {
+    if (interface_name != _expected_interface) {
       continue;
     }
     auto const family = ifa->ifa_addr->sa_family;
-    if (family != expected_family) {
+    if (family != _expected_family) {
       continue;
     }
-    ip_endpoint.assign(ifa->ifa_addr);
-    if (!ip_endpoint.is_valid()) {
-      zret.error("Failed to assign an address from the derived interface.");
-    }
-    char ip_buffer[INET6_ADDRSTRLEN];
-    char const *ntop_ret = nullptr;
-    if (family == AF_INET) {
-      ntop_ret = inet_ntop(family, &ip_endpoint.sa4.sin_addr, ip_buffer, sizeof(ip_buffer));
-    } else { // AF_INET6
-      ntop_ret = inet_ntop(family, &ip_endpoint.sa6.sin6_addr, ip_buffer, sizeof(ip_buffer));
-    }
-    if (ntop_ret == nullptr) {
-      zret.error(
-          "inet_ntop failed to convert the interface address to a string: {}",
-          swoc::bwf::Errno{});
-    }
-    zret.diag(
-        "Found interface from name {} with family {} and ip {}",
-        expected_device,
-        swoc::IPEndpoint::family_name(zret.result().family()),
-        TextView{ip_buffer, strlen(ip_buffer)});
-    found_interface = true;
-    break;
+    zret = ifa;
+    return zret;
   }
-  if (!found_interface) {
-    zret.error("Could not find the specified interface: {}", expected_device);
+  return nullptr;
+}
+
+swoc::Rv<std::string>
+InterfaceNameToEndpoint::convert_ip_endpoint_to_string(swoc::IPEndpoint const &ip)
+{
+  swoc::Rv<std::string> zret;
+  char ip_buffer[INET6_ADDRSTRLEN];
+  char const *ntop_ret = nullptr;
+  auto const &family = ip.family();
+  if (family == AF_INET) {
+    ntop_ret = inet_ntop(family, &ip.sa4.sin_addr, ip_buffer, sizeof(ip_buffer));
+  } else { // AF_INET6
+    ntop_ret = inet_ntop(family, &ip.sa6.sin6_addr, ip_buffer, sizeof(ip_buffer));
   }
-  freeifaddrs(ifaddr_list_head);
+  if (ntop_ret == nullptr) {
+    zret.error(
+        "inet_ntop failed to convert the interface address to a string: {}",
+        swoc::bwf::Errno{});
+  }
+  zret = std::string{ip_buffer, strlen(ip_buffer)};
+  return zret;
+}
+
+swoc::Rv<swoc::IPEndpoint>
+InterfaceNameToEndpoint::find_ip_endpoint()
+{
+  swoc::Rv<swoc::IPEndpoint> zret{};
+  if (getifaddrs(&_ifaddr_list_head) == -1) {
+    zret.error("getifaddrs failed: {}", swoc::bwf::Errno{});
+    return zret;
+  }
+  auto && [matching_interface, find_errata] = find_matching_interface();
+  zret.note(std::move(find_errata));
+  if (!zret.is_ok()) {
+    return zret;
+  }
+  if (matching_interface == nullptr) {
+    zret.error("Could not find an interface named {} with family {}.",
+        _expected_interface,
+        swoc::IPEndpoint::family_name(_expected_family));
+    return zret;
+  }
+  auto &ip_endpoint = zret.result();
+  ip_endpoint.assign(matching_interface->ifa_addr);
+  auto &&[ip_string, convert_errata] = convert_ip_endpoint_to_string(ip_endpoint);
+  zret.note(std::move(convert_errata));
+  if (!zret.is_ok()) {
+    return zret;
+  }
+  zret.diag(
+      "Found interface from name {} with family {} and ip {}",
+      _expected_interface,
+      swoc::IPEndpoint::family_name(ip_endpoint.family()),
+      ip_string);
   return zret;
 }
 
@@ -1295,8 +1337,9 @@ Session::do_connect(TextView interface, swoc::IPEndpoint const *real_target)
     l.l_linger = 0;
     setsockopt(socket_fd, SOL_SOCKET, SO_LINGER, (char *)&l, sizeof(l));
     if (!interface.empty()) {
+      InterfaceNameToEndpoint interface_to_endpoint{interface, real_target->family()};
       auto &&[device_endpoint, device_errata] =
-          get_ip_endpoint_from_device_name(interface, real_target->family());
+          interface_to_endpoint.find_ip_endpoint();
       errata.note(std::move(device_errata));
       if (!errata.is_ok()) {
         return errata;
