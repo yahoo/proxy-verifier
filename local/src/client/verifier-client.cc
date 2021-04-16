@@ -534,7 +534,11 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
 
   errata.note(session->do_connect(interface_device, real_target));
   if (errata.is_ok()) {
-    errata.note(session->run_transactions(ssn._transactions, interface_device, real_target, ssn._rate_multiplier));
+    errata.note(session->run_transactions(
+        ssn._transactions,
+        interface_device,
+        real_target,
+        ssn._rate_multiplier));
   }
   if (!errata.is_ok()) {
     Engine::process_exit_code = 1;
