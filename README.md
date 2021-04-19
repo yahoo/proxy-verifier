@@ -1321,9 +1321,9 @@ verifier-client \
     --verbose diag
 ```
 
-#### --interface \<device\>
+#### --interface \<interface\>
 
-Initiate connections from the specified interface. You can enter any name supported by setsockopt BINDTODEVICE, such at eth0:1.
+Initiate connections from the specified interface, such as eth0:1.
 
 This is a client-side only option.
 

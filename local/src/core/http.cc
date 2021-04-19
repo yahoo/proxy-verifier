@@ -1270,27 +1270,6 @@ InterfaceNameToEndpoint::find_matching_interface()
   return nullptr;
 }
 
-swoc::Rv<std::string>
-InterfaceNameToEndpoint::convert_ip_endpoint_to_string(swoc::IPEndpoint const &ip)
-{
-  swoc::Rv<std::string> zret;
-  char ip_buffer[INET6_ADDRSTRLEN];
-  char const *ntop_ret = nullptr;
-  auto const &family = ip.family();
-  if (family == AF_INET) {
-    ntop_ret = inet_ntop(family, &ip.sa4.sin_addr, ip_buffer, sizeof(ip_buffer));
-  } else { // AF_INET6
-    ntop_ret = inet_ntop(family, &ip.sa6.sin6_addr, ip_buffer, sizeof(ip_buffer));
-  }
-  if (ntop_ret == nullptr) {
-    zret.error(
-        "inet_ntop failed to convert the interface address to a string: {}",
-        swoc::bwf::Errno{});
-  }
-  zret = std::string{ip_buffer, strlen(ip_buffer)};
-  return zret;
-}
-
 swoc::Rv<swoc::IPEndpoint>
 InterfaceNameToEndpoint::find_ip_endpoint()
 {
@@ -1299,29 +1278,26 @@ InterfaceNameToEndpoint::find_ip_endpoint()
     zret.error("getifaddrs failed: {}", swoc::bwf::Errno{});
     return zret;
   }
-  auto && [matching_interface, find_errata] = find_matching_interface();
+  auto &&[matching_interface, find_errata] = find_matching_interface();
   zret.note(std::move(find_errata));
   if (!zret.is_ok()) {
     return zret;
   }
   if (matching_interface == nullptr) {
-    zret.error("Could not find an interface named {} with family {}.",
+    zret.error(
+        "Could not find an interface named {} with family {}.",
         _expected_interface,
         swoc::IPEndpoint::family_name(_expected_family));
     return zret;
   }
   auto &ip_endpoint = zret.result();
   ip_endpoint.assign(matching_interface->ifa_addr);
-  auto &&[ip_string, convert_errata] = convert_ip_endpoint_to_string(ip_endpoint);
-  zret.note(std::move(convert_errata));
-  if (!zret.is_ok()) {
-    return zret;
-  }
+  
   zret.diag(
       "Found interface from name {} with family {} and ip {}",
       _expected_interface,
       swoc::IPEndpoint::family_name(ip_endpoint.family()),
-      ip_string);
+      ip_endpoint);
   return zret;
 }
 
@@ -1338,8 +1314,7 @@ Session::do_connect(TextView interface, swoc::IPEndpoint const *real_target)
     setsockopt(socket_fd, SOL_SOCKET, SO_LINGER, (char *)&l, sizeof(l));
     if (!interface.empty()) {
       InterfaceNameToEndpoint interface_to_endpoint{interface, real_target->family()};
-      auto &&[device_endpoint, device_errata] =
-          interface_to_endpoint.find_ip_endpoint();
+      auto &&[device_endpoint, device_errata] = interface_to_endpoint.find_ip_endpoint();
       errata.note(std::move(device_errata));
       if (!errata.is_ok()) {
         return errata;
