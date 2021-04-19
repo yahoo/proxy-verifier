@@ -78,7 +78,6 @@ BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const 
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
 
-
 /** Provide the ability to concert an interface name into an IPEndpoint.
  *
  * This provides RAII for the struct ifaddrs allocated via getifaddrs().
@@ -103,14 +102,6 @@ private:
    * matches the specified interface name and family.
    */
   swoc::Rv<struct ifaddrs *> find_matching_interface();
-
-  /** Convert the IPEndpoint to a string.
-   *
-   * @param[in] ip The endpoing to convert to a string.
-   *
-   * @return The string representing the endpoint.
-   */
-  swoc::Rv<std::string> convert_ip_endpoint_to_string(swoc::IPEndpoint const &ip);
 
 private:
   struct ifaddrs *_ifaddr_list_head = nullptr;
