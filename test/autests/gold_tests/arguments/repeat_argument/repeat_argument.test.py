@@ -92,7 +92,7 @@ if Condition.IsPlatform("darwin"):
     # verified with the above stdout Testers, so this test is nevertheless
     # helpful despite the annoying test proxy behavior. For now we'll just
     # ignore the return code.
-    client.ReturnCode = 1
+    client.ReturnCode = Any(0, 1)
 
 #
 # Test 5: Verify that with --repeat 10 the transactions are executed ten times
@@ -113,4 +113,4 @@ client.Streams.stdout += Testers.ContainsExpression(
 
 if Condition.IsPlatform("darwin"):
     # See above comment.
-    client.ReturnCode = 1
+    client.ReturnCode = Any(0, 1)

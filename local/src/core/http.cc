@@ -44,6 +44,8 @@ std::string HttpHeader::_key_format{"{field.uuid}"};
 swoc::MemSpan<char> HttpHeader::_content;
 std::bitset<600> HttpHeader::STATUS_NO_CONTENT;
 
+memoized_ip_endpoints_t InterfaceNameToEndpoint::memoized_ip_endpoints;
+
 namespace swoc
 {
 inline namespace SWOC_VERSION_NS
@@ -51,7 +53,7 @@ inline namespace SWOC_VERSION_NS
 BufferWriter &
 bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
 {
-  if (h._is_http2) {
+  if (h.is_http2() || h.is_http3()) {
     if (h._status) {
       w.print(R"(- ":status": "{}"{})", h._status_string, '\n');
     } else {
@@ -60,7 +62,6 @@ bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
       w.print(R"(- ":authority": "{}"{})", h._authority, '\n');
       w.print(R"(- ":path": "{}"{})", h._path, '\n');
     }
-  } else {
   }
   for (auto const &[key, value] : h._fields_rules->_fields_sequence) {
     if (key.starts_with(":")) {
@@ -149,9 +150,9 @@ HttpHeader::serialize(swoc::BufferWriter &w) const
 {
   swoc::Errata errata;
 
-  if (_is_response) {
+  if (is_response()) {
     w.print("HTTP/{} {} {}{}", _http_version, _status, _reason, HTTP_EOL);
-  } else if (_is_request) {
+  } else if (is_request()) {
     w.print("{} {} HTTP/{}{}", _method, _url, _http_version, HTTP_EOL);
   } else {
     errata.error(R"(Unable to write header: could not determine request/response state.)");
@@ -204,6 +205,27 @@ HttpFields::add_fields_to_ngnva(nghttp2_nv *l) const
       continue;
     }
     l[offset++] = nghttp2_nv{
+        const_cast<uint8_t *>((uint8_t *)key.data()),
+        const_cast<uint8_t *>((uint8_t *)value.data()),
+        key.length(),
+        value.length(),
+        NGHTTP2_NV_FLAG_NONE};
+  }
+}
+
+void
+HttpFields::add_fields_to_ngnva(nghttp3_nv *l) const
+{
+  int offset = 0;
+  for (auto const &[key, value] : _fields_sequence) {
+    if (key.starts_with(":")) {
+      // Pseudo header fields are handled specially via the _method, _status
+      // HttpHeader member variables. This provides continuity in
+      // implementation with HTTP/1. In any case, they are added to the vector
+      // independently.
+      continue;
+    }
+    l[offset++] = nghttp3_nv{
         const_cast<uint8_t *>((uint8_t *)key.data()),
         const_cast<uint8_t *>((uint8_t *)value.data()),
         key.length(),
@@ -432,6 +454,92 @@ HttpHeader::HttpHeader(bool verify_strictly)
 {
 }
 
+HTTP_PROTOCOL_TYPE
+HttpHeader::get_http_protocol() const
+{
+  return _http_protocol;
+}
+
+void
+HttpHeader::set_http_protocol(HTTP_PROTOCOL_TYPE protocol)
+{
+  _http_protocol = protocol;
+}
+
+void
+HttpHeader::set_is_http1()
+{
+  _http_protocol = HTTP_PROTOCOL_TYPE::HTTP_1;
+}
+
+bool
+HttpHeader::is_http1() const
+{
+  return _http_protocol == HTTP_PROTOCOL_TYPE::HTTP_1;
+}
+
+void
+HttpHeader::set_is_http2()
+{
+  _http_protocol = HTTP_PROTOCOL_TYPE::HTTP_2;
+}
+
+bool
+HttpHeader::is_http2() const
+{
+  return _http_protocol == HTTP_PROTOCOL_TYPE::HTTP_2;
+}
+
+void
+HttpHeader::set_is_http3()
+{
+  _http_protocol = HTTP_PROTOCOL_TYPE::HTTP_3;
+}
+
+bool
+HttpHeader::is_http3() const
+{
+  return _http_protocol == HTTP_PROTOCOL_TYPE::HTTP_3;
+}
+
+void
+HttpHeader::set_is_request(HTTP_PROTOCOL_TYPE protocol)
+{
+  _is_request = true;
+  _http_protocol = protocol;
+}
+
+void
+HttpHeader::set_is_request()
+{
+  _is_request = true;
+}
+
+bool
+HttpHeader::is_request() const
+{
+  return _is_request;
+}
+
+void
+HttpHeader::set_is_response(HTTP_PROTOCOL_TYPE protocol)
+{
+  _is_request = false;
+  _http_protocol = protocol;
+}
+
+void
+HttpHeader::set_is_response()
+{
+  _is_request = false;
+}
+
+bool
+HttpHeader::is_response() const
+{
+  return !_is_request;
+}
+
 bool
 icompare_pred(unsigned char a, unsigned char b)
 {
@@ -464,7 +572,7 @@ HttpHeader::parse_request(swoc::TextView data)
       _method = first_line.take_prefix_if(&isspace);
       _url = first_line.ltrim_if(&isspace).take_prefix_if(&isspace);
       parse_url(_url);
-      _is_request = true;
+      set_is_request();
 
       while (data) {
         auto field{data.take_prefix_at('\n').rtrim_if(&isspace)};
@@ -510,7 +618,7 @@ HttpHeader::parse_response(swoc::TextView data)
       auto status{first_line.ltrim_if(&isspace).take_prefix_if(&isspace)};
       _status = swoc::svtou(status);
       _status_string = std::string(status);
-      _is_response = true;
+      set_is_response();
 
       if (_status < 1 || _status > 599) {
         zret.error(
@@ -628,7 +736,6 @@ Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
 
   zret = std::make_shared<HttpHeader>();
   auto &hdr = zret.result();
-  hdr->_is_http2 = false;
   auto received_data = TextView(buffer.data(), _body_offset);
   auto &&[parse_result, parse_errata] = hdr->parse_request(received_data);
   zret.note(parse_errata);
@@ -1005,7 +1112,7 @@ Session::write_body(HttpHeader const &hdr)
   /* Observe that by this point, hdr._content_size will have been adjusted to 0
    * for HEAD requests via update_content_length. */
   auto const message_type_permits_body =
-      (hdr._is_request || (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status]));
+      (hdr.is_request() || (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status]));
   // Note that zero-length chunked bodies must send a zero-length encoded chunk.
   if (message_type_permits_body && (hdr._content_size > 0 || hdr._chunked_p)) {
     TextView content;
@@ -1087,7 +1194,7 @@ Session::run_transaction(Txn const &json_txn)
   if (errata.is_ok()) {
     auto const key{json_txn._req.get_key()};
     HttpHeader rsp_hdr_from_wire;
-    rsp_hdr_from_wire._is_response = true;
+    rsp_hdr_from_wire.set_is_response();
     // The response headers are not required to have the key. For logging
     // purposes, explicitly make sure it is set with the expected value we have
     // from the client-request.
@@ -1274,6 +1381,24 @@ swoc::Rv<swoc::IPEndpoint>
 InterfaceNameToEndpoint::find_ip_endpoint()
 {
   swoc::Rv<swoc::IPEndpoint> zret{};
+
+  // Check whether we've already found this endpoint.
+  auto interface_it = memoized_ip_endpoints.find(_expected_interface);
+  if (interface_it != memoized_ip_endpoints.end()) {
+    auto const &family_map = interface_it->second;
+    auto family_it = family_map.find(_expected_family);
+    if (family_it != family_map.end()) {
+      auto const &ip_endpoint = family_it->second;
+      zret.result() = ip_endpoint;
+      zret.diag(
+          "Using memoized interface from name {} with family {} and ip {}",
+          _expected_interface,
+          swoc::IPEndpoint::family_name(ip_endpoint.family()),
+          ip_endpoint);
+      return zret;
+    }
+  }
+
   if (getifaddrs(&_ifaddr_list_head) == -1) {
     zret.error("getifaddrs failed: {}", swoc::bwf::Errno{});
     return zret;
@@ -1292,7 +1417,13 @@ InterfaceNameToEndpoint::find_ip_endpoint()
   }
   auto &ip_endpoint = zret.result();
   ip_endpoint.assign(matching_interface->ifa_addr);
-  
+
+  if (!ip_endpoint.is_valid()) {
+    zret.error("Could not form a valid IP from the specified interface {}", _expected_interface);
+    return zret;
+  }
+
+  memoized_ip_endpoints[_expected_interface][_expected_family] = ip_endpoint;
   zret.diag(
       "Found interface from name {} with family {} and ip {}",
       _expected_interface,
@@ -1319,7 +1450,7 @@ Session::do_connect(TextView interface, swoc::IPEndpoint const *real_target)
       if (!errata.is_ok()) {
         return errata;
       }
-      if (bind(socket_fd, &device_endpoint.sa, device_endpoint.size()) == -1) {
+      if (::bind(socket_fd, &device_endpoint.sa, device_endpoint.size()) == -1) {
         errata.error("Failed to bind on interface {}: {}", interface, swoc::bwf::Errno{});
         return errata;
       }

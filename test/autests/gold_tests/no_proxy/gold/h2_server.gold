@@ -1,8 +1,6 @@
 ``
 ``Ready with 4 transactions.
 ``
-``Negotiated alpn: h2
-``
 ``Received an HTTP/2 request for stream id 1:
 - ":method": "GET"
 - ":scheme": "https"

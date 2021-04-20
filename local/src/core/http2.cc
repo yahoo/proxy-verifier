@@ -478,7 +478,7 @@ receive_nghttp2_data(
   unsigned char buffer[10 * 1024];
 
   if (session_data->is_closed()) {
-    errata.error("Socket closed while waiting for an HTTP/2 resonse.");
+    errata.error("Socket closed while waiting for an HTTP/2 response.");
     return -1;
   }
   int n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
@@ -492,7 +492,7 @@ receive_nghttp2_data(
       return -1;
     } else if (poll_return < 0) {
       session_data->close();
-      errata.error("Socket closed while polling for an HTTP/2 resonse.");
+      errata.error("Socket closed while polling for an HTTP/2 response.");
       return -1;
     } else if (poll_return == 0) {
       // Timeout in this context is OK.
@@ -733,24 +733,27 @@ on_stream_close_cb(
     void *user_data)
 {
   Errata errata;
-  errata.diag("Stream is closed with id: {}", stream_id);
+  errata.diag("HTTP/2 stream is closed with id: {}", stream_id);
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
   auto iter = session_data->_stream_map.find(stream_id);
-  if (iter != session_data->_stream_map.end()) {
-    H2StreamState &stream_state = *iter->second;
-    auto const &message_start = stream_state._stream_start;
-    auto const message_end = ClockType::now();
-    auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start);
-    if (elapsed_ms > Transaction_Delay_Cutoff) {
-      errata.error(
-          R"(HTTP/2 transaction in stream id {} having key={} took {}.)",
-          stream_id,
-          stream_state._key,
-          elapsed_ms);
-    }
-    stream_state.set_stream_has_closed();
-    session_data->_stream_map.erase(iter);
+  if (iter == session_data->_stream_map.end()) {
+    errata.error(
+        "HTTP/2 stream is closed with id {} but could not find it tracked internally",
+        stream_id);
+    return 0;
   }
+  H2StreamState &stream_state = *iter->second;
+  auto const &message_start = stream_state._stream_start;
+  auto const message_end = ClockType::now();
+  auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start);
+  if (elapsed_ms > Transaction_Delay_Cutoff) {
+    errata.error(
+        R"(HTTP/2 transaction in stream id {} with key {} took {}.)",
+        stream_id,
+        stream_state._key,
+        elapsed_ms);
+  }
+  session_data->_stream_map.erase(iter);
   return 0;
 }
 
@@ -771,7 +774,6 @@ on_data_chunk_recv_cb(
     return 0;
   }
   H2StreamState &stream_state = *iter->second;
-  stream_state._received_body_length += len;
   errata.diag(
       "Drained HTTP/2 body for transaction with key: {}, stream id: {} "
       "of {} bytes with content: {}",
@@ -787,10 +789,8 @@ H2StreamState::H2StreamState()
   , _request_from_client{std::make_shared<HttpHeader>()}
   , _response_from_server{std::make_shared<HttpHeader>()}
 {
-  _request_from_client->_is_http2 = true;
-  _request_from_client->_is_request = true;
-  _response_from_server->_is_http2 = true;
-  _response_from_server->_is_response = true;
+  _request_from_client->set_is_request(HTTP_PROTOCOL_TYPE::HTTP_2);
+  _response_from_server->set_is_response(HTTP_PROTOCOL_TYPE::HTTP_2);
 }
 
 H2StreamState::~H2StreamState()
@@ -806,18 +806,6 @@ H2StreamState::~H2StreamState()
     free(_response_nv_headers);
     _response_nv_headers = nullptr;
   }
-}
-
-void
-H2StreamState::set_stream_has_closed()
-{
-  _stream_has_closed = true;
-}
-
-bool
-H2StreamState::get_stream_has_closed() const
-{
-  return _stream_has_closed;
 }
 
 void
@@ -944,7 +932,7 @@ H2Session::write(HttpHeader const &hdr)
   int32_t submit_result = 0;
   H2StreamState *stream_state = nullptr;
   std::shared_ptr<H2StreamState> new_stream_state{nullptr};
-  if (hdr._is_response) {
+  if (hdr.is_response()) {
     stream_id = hdr._stream_id;
     auto stream_map_iter = _stream_map.find(stream_id);
     if (stream_map_iter == _stream_map.end()) {
@@ -962,14 +950,14 @@ H2Session::write(HttpHeader const &hdr)
   int hdr_count = 0;
   nghttp2_nv *hdrs = nullptr;
   pack_headers(hdr, hdrs, hdr_count);
-  if (hdr._is_response) {
+  if (hdr.is_response()) {
     stream_state->store_nv_response_headers_to_free(hdrs);
   } else {
     stream_state->store_nv_request_headers_to_free(hdrs);
   }
 
   stream_state->_key = hdr.get_key();
-  if (hdr._content_size > 0 && (hdr._is_request || !HttpHeader::STATUS_NO_CONTENT[hdr._status])) {
+  if (hdr._content_size > 0 && (hdr.is_request() || !HttpHeader::STATUS_NO_CONTENT[hdr._status])) {
     TextView content;
     if (hdr._content_data) {
       content = TextView{hdr._content_data, hdr._content_size};
@@ -986,7 +974,7 @@ H2Session::write(HttpHeader const &hdr)
     stream_state->_body_to_send = content.data();
     stream_state->_send_body_length = content.size();
     stream_state->_wait_for_continue = hdr._send_continue;
-    if (hdr._is_response) {
+    if (hdr.is_response()) {
       submit_result = nghttp2_submit_response(
           this->_session,
           stream_state->get_stream_id(),
@@ -998,7 +986,7 @@ H2Session::write(HttpHeader const &hdr)
           nghttp2_submit_request(this->_session, nullptr, hdrs, hdr_count, &data_prd, stream_state);
     }
   } else { // Empty body.
-    if (hdr._is_response) {
+    if (hdr.is_response()) {
       submit_result = nghttp2_submit_response(
           this->_session,
           stream_state->get_stream_id(),
@@ -1011,7 +999,7 @@ H2Session::write(HttpHeader const &hdr)
     }
   }
 
-  if (hdr._is_response) {
+  if (hdr.is_response()) {
     stream_id = stream_state->get_stream_id();
     if (submit_result < 0) {
       zret.error(
@@ -1027,6 +1015,7 @@ H2Session::write(HttpHeader const &hdr)
       stream_state->set_stream_id(stream_id);
       record_stream_state(stream_id, new_stream_state);
     }
+    // TODO: Move this up to when submit succeeded?
     zret.diag("Sent the following HTTP/2 headers for stream id {}:\n{}", stream_id, hdr);
   }
 
@@ -1047,9 +1036,9 @@ H2Session::pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_cou
   hdr_count = hdr._fields_rules->_fields.size();
 
   if (!hdr._contains_pseudo_headers_in_fields_array) {
-    if (hdr._is_response) {
+    if (hdr.is_response()) {
       hdr_count += 1;
-    } else if (hdr._is_request) {
+    } else if (hdr.is_request()) {
       hdr_count += 4;
     } else {
       hdr_count = 0;
@@ -1064,9 +1053,9 @@ H2Session::pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_cou
   // nghttp2 requires pseudo header fields to be at the start of the
   // nv array. Thus we add them here before calling add_fields_to_ngnva
   // which then skips the pseueo headers if they are in there.
-  if (hdr._is_response) {
+  if (hdr.is_response()) {
     nv_hdr[offset++] = tv_to_nv(":status", hdr._status_string);
-  } else if (hdr._is_request) {
+  } else if (hdr.is_request()) {
     // TODO: add error checking and refactor and tolerance for non-required
     // pseudo-headers
     nv_hdr[offset++] = tv_to_nv(":method", hdr._method);
@@ -1155,6 +1144,11 @@ H2Session::client_init(SSL_CTX *&client_context)
 #else
   static_assert(false, "Error must be at least openssl 1.0.2");
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
+
+  if (TLSSession::tls_secrets_are_being_logged()) {
+    SSL_CTX_set_keylog_callback(client_context, TLSSession::keylog_callback);
+  }
+
   return errata;
 }
 

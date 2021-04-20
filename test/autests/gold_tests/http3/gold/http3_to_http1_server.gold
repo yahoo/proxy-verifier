@@ -1,0 +1,63 @@
+``
+``Equals Success: Key: "1", Field Name: "content-length", Value: "10"
+``Equals Success: Key: "1", Field Name: "x-added-header", Value: "1"
+``Absence Success: Key: "1", Field Name: "x-deleted-header"
+``Equals Success: Key: "1", Field Name: "x-request-header", Value: "request"
+``
+- "x-equal-header": "some_content"
+- "x-response-header": "response"
+- "x-deleted-header2": "this_will_be_deleted"
+- "x-proxy-directive": "Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>"
+- "content-length": "32"
+- "uuid": "1"
+
+``
+- "Host": "127.0.0.1:``"
+- "Accept-Encoding": "identity"
+- "x-request-header": "request"
+- "uuid": "1"
+- "X-Added-Header": "1"
+- "Content-Length": "10"
+
+``Equals Success: Key: "2", Field Name: "content-length", Value: "10240"
+``Equals Success: Key: "2", Field Name: "x-request-header", Value: "request2"
+``
+- "x-response-header": "response2"
+- "content-length": "10240"
+
+``
+``Drained with headers body of 10240 bytes with content: 0000000 `` 00004ff 
+``
+- "Host": "127.0.0.1:``"
+- "Accept-Encoding": "identity"
+- "uuid": "2"
+- "x-request-header": "request2"
+- "Content-Length": "10240"
+
+``Equals Success: Key: "3", Field Name: "content-length", Value: "48"
+``Equals Success: Key: "3", Field Name: "x-request-header", Value: "request3"
+``
+- "x-response-header": "response3"
+- "content-length": "16"
+
+``
+- "Host": "127.0.0.1:``"
+- "Accept-Encoding": "identity"
+- "uuid": "3"
+- "x-request-header": "request3"
+- "Content-Length": "48"
+
+``Equals Success: Key: "4", Field Name: "content-length", Value: "64"
+``Equals Success: Key: "4", Field Name: "x-request-header", Value: "request3"
+``
+- "x-response-header": "response4"
+- "content-length": "50"
+
+``
+- "Host": "127.0.0.1:``"
+- "Accept-Encoding": "identity"
+- "uuid": "4"
+- "x-request-header": "request3"
+- "Content-Length": "64"
+
+``

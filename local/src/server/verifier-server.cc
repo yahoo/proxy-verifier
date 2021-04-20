@@ -7,6 +7,7 @@
 #include "core/ArgParser.h"
 #include "core/http.h"
 #include "core/http2.h"
+#include "core/http3.h"
 #include "core/https.h"
 #include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
@@ -84,16 +85,17 @@ public:
 ServerThreadPool Server_Thread_Pool;
 
 HttpHeader
-get_continue_response(int32_t stream_id = -1)
+get_continue_response(
+    int64_t stream_id = -1,
+    HTTP_PROTOCOL_TYPE protocol = HTTP_PROTOCOL_TYPE::HTTP_1)
 {
   HttpHeader response;
-  response._is_response = true;
+  response.set_is_response(protocol);
   response._status = 100;
   response._status_string = "100";
   response._http_version = "1.1";
   response._reason = "continue";
   if (stream_id >= 0) {
-    response._is_http2 = true;
     // _http_version and _reason are not used in HTTP/2, so don't worry about
     // them because they won't be used.
     response._stream_id = stream_id;
@@ -102,14 +104,15 @@ get_continue_response(int32_t stream_id = -1)
 }
 
 HttpHeader
-get_not_found_response(int32_t stream_id = -1)
+get_not_found_response(
+    int64_t stream_id = -1,
+    HTTP_PROTOCOL_TYPE protocol = HTTP_PROTOCOL_TYPE::HTTP_1)
 {
   HttpHeader response;
-  response._is_response = true;
+  response.set_is_response(protocol);
   response._status = 404;
   response._status_string = "404";
   if (stream_id >= 0) {
-    response._is_http2 = true;
     // _http_version and _reason are not used in HTTP/2, so don't worry about
     // them because they won't be used.
     response._stream_id = stream_id;
@@ -297,8 +300,8 @@ swoc::Errata
 ServerReplayFileHandler::txn_open(YAML::Node const &node)
 {
   LoadMutex.lock();
-  _txn._req._is_request = true;
-  _txn._rsp._is_response = true;
+  _txn._req.set_is_request();
+  _txn._rsp.set_is_response();
   Errata errata;
   if (!node[YAML_SERVER_RSP_KEY]) {
     errata.error(
@@ -422,11 +425,14 @@ ServerReplayFileHandler::handle_protocol_node(YAML::Node const &proxy_request_no
     errata.note(std::move(http_node.errata()));
     return errata;
   }
-  if (http_node.result().IsDefined() && http_node.result()[YAML_SSN_PROTOCOL_VERSION] &&
-      http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2")
-  {
-    _txn._req._is_http2 = true;
-    _txn._rsp._is_http2 = true;
+  if (http_node.result().IsDefined() && http_node.result()[YAML_SSN_PROTOCOL_VERSION]) {
+    if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
+      _txn._req.set_is_http2();
+      _txn._rsp.set_is_http2();
+    } else if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "3") {
+      _txn._req.set_is_http3();
+      _txn._rsp.set_is_http3();
+    }
   }
 
   auto const tls_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
@@ -606,14 +612,16 @@ TF_Serve_Connection(std::thread *t)
         break;
       }
       auto const stream_id = req_hdr->_stream_id;
-      auto const is_http2 = (stream_id >= 0);
+      auto const is_http2 = req_hdr->is_http2();
+      auto const is_http3 = req_hdr->is_http3();
       auto key{req_hdr->get_key()};
       auto specified_transaction_it{Transactions.find(key)};
 
       if (specified_transaction_it == Transactions.end()) {
         thread_errata.error(R"(Proxy request with key "{}" not found, sending a 404.)", key);
         Engine::process_exit_code = 1;
-        HttpHeader not_found_response = get_not_found_response(stream_id);
+        HttpHeader not_found_response =
+            get_not_found_response(stream_id, req_hdr->get_http_protocol());
         not_found_response.update_content_length(req_hdr->_method);
         thread_info._session->write(not_found_response);
         // This will end the loop and eventually drop the connection.
@@ -628,14 +636,16 @@ TF_Serve_Connection(std::thread *t)
       // If there is an Expect header with the value of 100-continue, send the
       // 100-continue response before Reading request body.
       if (req_hdr->_send_continue) {
-        HttpHeader continue_response = get_continue_response(stream_id);
+        HttpHeader continue_response =
+            get_continue_response(stream_id, req_hdr->get_http_protocol());
         thread_info._session->write(continue_response);
       }
 
-      // HTTP/2 transactions are processed on a stream basis, and the body is never needed
-      // to be independantly drained.
-      if (!is_http2 &&
-          (req_hdr->_content_size || req_hdr->_content_length_p || req_hdr->_chunked_p)) {
+      // HTTP/3 and HTTP/2 transactions are processed on a stream basis, and
+      // the body is never needed to be independantly drained.
+      if (!is_http3 && !is_http2 &&
+          (req_hdr->_content_size || req_hdr->_content_length_p || req_hdr->_chunked_p))
+      {
         if (req_hdr->_chunked_p) {
           req_hdr->_content_size = specified_transaction._req._content_size;
         }
@@ -659,8 +669,11 @@ TF_Serve_Connection(std::thread *t)
       // expectations so the body is not written for responses to such
       // requests.
       specified_transaction._rsp.update_content_length(req_hdr->_method);
-      if (is_http2) {
-        specified_transaction._rsp._is_http2 = true;
+      if (is_http3) {
+        specified_transaction._rsp.set_is_http3();
+        specified_transaction._rsp._stream_id = stream_id;
+      } else if (is_http2) {
+        specified_transaction._rsp.set_is_http2();
         specified_transaction._rsp._stream_id = stream_id;
       }
       if (specified_transaction._user_specified_delay_duration > 0us) {
@@ -670,11 +683,12 @@ TF_Serve_Connection(std::thread *t)
           thread_info._session->write(specified_transaction._rsp);
       thread_errata.note(std::move(write_errata));
       thread_errata.diag(
-          "Wrote {} bytes in an {}{} response to request with key {} "
+          "Wrote {} bytes in an {}{}{} response to request with key {} "
           "with response status {}:\n{}",
           bytes_written,
+          swoc::bwf::If(is_http3, "HTTP/3"),
           swoc::bwf::If(is_http2, "HTTP/2"),
-          swoc::bwf::If(!is_http2, "HTTP/1"),
+          swoc::bwf::If(!is_http3 && !is_http2, "HTTP/1"),
           key,
           specified_transaction._rsp._status,
           specified_transaction._rsp);
@@ -686,7 +700,7 @@ TF_Serve_Connection(std::thread *t)
 }
 
 void
-TF_Accept(int socket_fd, bool do_tls)
+TF_Accept(int socket_fd, bool do_https, bool do_http3)
 {
   std::unique_ptr<Session> session;
   struct pollfd pfd = {.fd = socket_fd, .events = POLLIN, .revents = 0};
@@ -715,7 +729,9 @@ TF_Accept(int socket_fd, bool do_tls)
     if (0 != ::fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)) {
       errata.error("Failed to make the server socket non-blocking: {}", swoc::bwf::Errno{});
     }
-    if (do_tls) {
+    if (do_http3) {
+      session = std::make_unique<H3Session>();
+    } else if (do_https) {
       // H2Session will figure out the HTTP protocol during the TLS handshake
       // and handle HTTP/1.x or HTTP/2 accordingly.
       session = std::make_unique<H2Session>();
@@ -738,11 +754,22 @@ TF_Accept(int socket_fd, bool do_tls)
   }
 }
 
+constexpr bool DO_HTTPS = true;
+constexpr bool DO_HTTP3 = true;
+
 swoc::Errata
-do_listen(swoc::IPEndpoint &server_addr, bool do_tls)
+do_listen(swoc::IPEndpoint &server_addr, bool do_https, bool do_http3)
 {
   swoc::Errata errata;
   int socket_fd = socket(server_addr.family(), SOCK_STREAM, 0);
+  std::string protocol_description;
+  if (do_http3) {
+    protocol_description = "HTTP/3";
+  } else if (do_https) {
+    protocol_description = "HTTPS (HTTP/2 or HTTP/1.x)";
+  } else {
+    protocol_description = "HTTP/1.x";
+  }
   if (socket_fd >= 0) {
     // Be agressive in reusing the port
     static constexpr int ONE = 1;
@@ -754,8 +781,8 @@ do_listen(swoc::IPEndpoint &server_addr, bool do_tls)
         if (bind_result == 0) {
           int listen_result = listen(socket_fd, 16384);
           if (listen_result == 0) {
-            errata.info(R"(Listening at {})", server_addr);
-            auto runner = std::make_unique<std::thread>(TF_Accept, socket_fd, do_tls);
+            errata.info(R"(Listening for {} at: {})", protocol_description, server_addr);
+            auto runner = std::make_unique<std::thread>(TF_Accept, socket_fd, do_https, do_http3);
             Accept_Threads.push_back(std::move(runner));
           } else {
             errata.error(R"(Could not listen to {}: {}.)", server_addr, swoc::bwf::Errno{});
@@ -785,12 +812,14 @@ Engine::command_run()
   { // Scope errata before the long-lived server loop.
     Errata errata;
     auto args{arguments.get("run")};
-    std::deque<swoc::IPEndpoint> server_addrs, server_addrs_https;
+    std::deque<swoc::IPEndpoint> server_addrs, server_addrs_https, server_addrs_http3;
 
     auto server_addr_http_arg{arguments.get("listen-http")};
     auto server_addr_https_arg{arguments.get("listen-https")};
-    if (!server_addr_http_arg && !server_addr_https_arg) {
-      errata.error(R"(Must provide either "--listen-http" and/or "--listen-https" arguments")");
+    auto server_addr_http3_arg{arguments.get("listen-http3")};
+    if (!server_addr_http_arg && !server_addr_https_arg && !server_addr_http3_arg) {
+      errata.error(
+          R"(Must provide at least one of "--listen-http", "--listen-https", or "--listen-http3" arguments")");
       process_exit_code = 1;
       return;
     }
@@ -829,41 +858,65 @@ Engine::command_run()
     }
 
     if (server_addr_https_arg) {
-      if (server_addr_https_arg.size() == 1) {
-        errata = parse_ips(server_addr_https_arg[0], server_addrs_https);
+      if (server_addr_https_arg.size() != 1) {
+        errata.error(
+            R"(--listen-https option must have a single value, a comma seaparated list of listen address and port.)");
+        process_exit_code = 1;
+        return;
+      }
+      errata = parse_ips(server_addr_https_arg[0], server_addrs_https);
+      if (!errata.is_ok()) {
+        process_exit_code = 1;
+        return;
+      }
+    }
+
+    if (server_addr_http3_arg) {
+      if (server_addr_http3_arg.size() != 1) {
+        errata.error(
+            R"(--listen-https option must have a single value, a comma seaparated list of listen address and port.)");
+        process_exit_code = 1;
+        return;
+      }
+      errata = parse_ips(server_addr_http3_arg[0], server_addrs_http3);
+      if (!errata.is_ok()) {
+        process_exit_code = 1;
+        return;
+      }
+      if (errata.is_ok()) {
+        // TODO: When server-side HTTP/3 is implemented, add a --qlog-dir
+        // option like the client has and pass that here.
+        errata.note(H3Session::init(&process_exit_code, ""));
+      }
+    }
+
+    if (server_addr_https_arg || server_addr_http3_arg) {
+      auto cert_arg{arguments.get("server-cert")};
+      if (cert_arg.size() >= 1) {
+        errata.note(TLSSession::configure_server_cert(cert_arg[0]));
         if (!errata.is_ok()) {
+          errata.error(R"(Invalid server-cert path "{}")", cert_arg[0]);
           process_exit_code = 1;
           return;
         }
-        std::error_code ec;
-
-        auto cert_arg{arguments.get("server-cert")};
-        if (cert_arg.size() >= 1) {
-          errata.note(TLSSession::configure_server_cert(cert_arg[0]));
-          if (!errata.is_ok()) {
-            errata.error(R"(Invalid server-cert path "{}")", cert_arg[0]);
-            process_exit_code = 1;
-            return;
-          }
+      }
+      auto ca_certs_arg{arguments.get("ca-certs")};
+      if (ca_certs_arg.size() >= 1) {
+        errata.note(TLSSession::configure_ca_cert(ca_certs_arg[0]));
+        if (!errata.is_ok()) {
+          errata.error(R"(Invalid ca-certs path "{}")", ca_certs_arg[0]);
+          process_exit_code = 1;
+          return;
         }
-        auto ca_certs_arg{arguments.get("ca-certs")};
-        if (ca_certs_arg.size() >= 1) {
-          errata.note(TLSSession::configure_ca_cert(ca_certs_arg[0]));
-          if (!errata.is_ok()) {
-            errata.error(R"(Invalid ca-certs path "{}")", ca_certs_arg[0]);
-            process_exit_code = 1;
-            return;
-          }
+      }
+      if (errata.is_ok()) {
+        auto tls_secrets_log_file_arg{arguments.get("tls-secrets-log-file")};
+        std::string tls_secrets_log_file;
+        if (tls_secrets_log_file_arg) {
+          tls_secrets_log_file = tls_secrets_log_file_arg[0];
         }
-        if (errata.is_ok()) {
-          errata.note(TLSSession::init());
-          errata.note(H2Session::init(&process_exit_code));
-        }
-      } else {
-        errata.error(
-            R"(--listen-https option must have a single value, the listen address and port.)");
-        process_exit_code = 1;
-        return;
+        errata.note(TLSSession::init(tls_secrets_log_file));
+        errata.note(H2Session::init(&process_exit_code));
       }
     }
 
@@ -899,7 +952,7 @@ Engine::command_run()
     for (auto &server_addr : server_addrs) {
       // Set up listen port.
       if (server_addr.is_valid()) {
-        errata.note(do_listen(server_addr, false));
+        errata.note(do_listen(server_addr, !DO_HTTPS, !DO_HTTP3));
       }
       if (!errata.is_ok()) {
         process_exit_code = 1;
@@ -908,7 +961,12 @@ Engine::command_run()
     }
     for (auto &server_addr_https : server_addrs_https) {
       if (server_addr_https.is_valid()) {
-        errata.note(do_listen(server_addr_https, true));
+        errata.note(do_listen(server_addr_https, DO_HTTPS, !DO_HTTP3));
+      }
+    }
+    for (auto &server_addr_http3 : server_addrs_http3) {
+      if (server_addr_http3.is_valid()) {
+        errata.note(do_listen(server_addr_http3, DO_HTTPS, DO_HTTP3));
       }
     }
   } // End of scope for errata so it gets logged.
@@ -926,6 +984,7 @@ Engine::command_run()
 
   TLSSession::terminate();
   H2Session::terminate();
+  H3Session::terminate();
   exit(Engine::process_exit_code);
 }
 
@@ -991,6 +1050,18 @@ main(int /* argc */, char const *argv[])
           "",
           1,
           "")
+#if 0
+      // Server-side HTTP/3 is not implemented yet. Don't confuse the user by
+      // showing this option. When we implement server-side HTTP/3, uncomment
+      // this code.
+      .add_option(
+          "--listen-http3",
+          "",
+          "HTTP/3 address and port to connect on. Can be a comma separated list.",
+          "",
+          1,
+          "")
+#endif
       .add_option("--format", "-f", "Transaction key format", "", 1, "")
       .add_option(
           "--server-cert",
@@ -1007,6 +1078,14 @@ main(int /* argc */, char const *argv[])
           "Specify TLS CA certificate file containing one or more certificates. "
           "Alternatively, a directory containing separate certificate files can "
           "be provided.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--tls-secrets-log-file",
+          "",
+          "A filename to which TLS secrets will be logged. These can be used to "
+          "decrypt packet captures. By default no TLS secrets will be logged.",
           "",
           1,
           "")

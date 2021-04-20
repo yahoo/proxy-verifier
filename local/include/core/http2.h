@@ -45,12 +45,6 @@ public:
    */
   swoc::TextView register_rcbuf(nghttp2_rcbuf *rcbuf);
 
-  /** Indicate that the stream has closed. */
-  void set_stream_has_closed();
-
-  /** Return whether this stream has closed. */
-  bool get_stream_has_closed() const;
-
   /** Set the stream_id for this and the appropriate members. */
   void set_stream_id(int32_t id);
 
@@ -64,10 +58,9 @@ public:
   void store_nv_request_headers_to_free(nghttp2_nv *hdrs);
 
 public:
-  size_t _send_body_offset = 0;
   char const *_body_to_send = nullptr;
   size_t _send_body_length = 0;
-  size_t _received_body_length = 0;
+  size_t _send_body_offset = 0;
   bool _wait_for_continue = false;
   std::string _key;
   /** The composed URL parts from :method, :authority, and :path pseudo headers
@@ -88,7 +81,6 @@ public:
 private:
   int32_t _stream_id = -1;
   std::deque<nghttp2_rcbuf *> _rcbufs_to_free;
-  bool _stream_has_closed = false;
   nghttp2_nv *_request_nv_headers = nullptr;
   nghttp2_nv *_response_nv_headers = nullptr;
 };
@@ -119,10 +111,23 @@ public:
 
   swoc::Errata accept() override;
   swoc::Errata connect() override;
+
+  /** Perform HTTP/2 global initialization.
+   *
+   * @param[in] process_exit_code: The integer to set to non-zero on failure
+   * conditions. This is necessary because many nghttp2 callbacks do
+   * not have direct returns to their callers.
+   */
   static swoc::Errata init(int *process_exit_code);
+
+  /** Delete global instances. */
   static void terminate();
+
+  /** Perform the HTTP/2 (nghttp2) configuration for a client connection. */
   swoc::Errata client_session_init();
+  /** Perform the HTTP/2 (nghttp2) configuration for a server connection. */
   swoc::Errata server_session_init();
+
   swoc::Errata send_connection_settings();
   swoc::Errata run_transactions(
       std::list<Txn> const &txn,

@@ -129,7 +129,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   }
 
   if (node[YAML_HTTP_STATUS_KEY]) {
-    message._is_response = true;
+    message.set_is_response();
     auto status_node{node[YAML_HTTP_STATUS_KEY]};
     if (status_node.IsScalar()) {
       TextView text{status_node.Scalar()};
@@ -169,7 +169,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     auto method_node{node[YAML_HTTP_METHOD_KEY]};
     if (method_node.IsScalar()) {
       message._method = Localizer::localize(method_node.Scalar());
-      message._is_request = true;
+      message.set_is_request();
     } else {
       errata.error(
           R"("{}" value at {} must be a string.)",
@@ -605,7 +605,7 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
     }
     message._method = pseudo_it->second;
     ++number_of_pseudo_headers;
-    message._is_request = true;
+    message.set_is_request();
   }
   pseudo_it = message._fields_rules->_fields.find(YAML_HTTP2_PSEUDO_SCHEME_KEY);
   if (pseudo_it != message._fields_rules->_fields.end()) {
@@ -618,7 +618,7 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
     }
     message._scheme = pseudo_it->second;
     ++number_of_pseudo_headers;
-    message._is_request = true;
+    message.set_is_request();
   }
   pseudo_it = message._fields_rules->_fields.find(YAML_HTTP2_PSEUDO_AUTHORITY_KEY);
   if (pseudo_it != message._fields_rules->_fields.end()) {
@@ -640,7 +640,7 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
     }
     message._authority = pseudo_it->second;
     ++number_of_pseudo_headers;
-    message._is_request = true;
+    message.set_is_request();
   }
   pseudo_it = message._fields_rules->_fields.find(YAML_HTTP2_PSEUDO_PATH_KEY);
   if (pseudo_it != message._fields_rules->_fields.end()) {
@@ -653,7 +653,7 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
     }
     message._path = pseudo_it->second;
     ++number_of_pseudo_headers;
-    message._is_request = true;
+    message.set_is_request();
   }
   pseudo_it = message._fields_rules->_fields.find(YAML_HTTP2_PSEUDO_STATUS_KEY);
   if (pseudo_it != message._fields_rules->_fields.end()) {
@@ -678,14 +678,14 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
           node.Mark());
     }
     ++number_of_pseudo_headers;
-    message._is_response = true;
+    message.set_is_response();
   }
   if (number_of_pseudo_headers > 0) {
     // Do some sanity checking on the user's pseudo headers, if provided.
-    if (message._is_response && number_of_pseudo_headers != 1) {
+    if (message.is_response() && number_of_pseudo_headers != 1) {
       errata.error("Found a mixture of request and response pseudo header fields: {}", node.Mark());
     }
-    if (message._is_request && number_of_pseudo_headers != 4) {
+    if (message.is_request() && number_of_pseudo_headers != 4) {
       errata.error(
           "Did not find all four required pseudo header fields "
           "(:method, :scheme, :authority, :path): {}",

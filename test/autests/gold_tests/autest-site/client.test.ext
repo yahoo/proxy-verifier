@@ -13,9 +13,15 @@ import os
 from ports import get_port
 
 
+def make_id(s):
+    return s.replace(".", "_").replace('-', '_')
+
+
 def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=False,
-                      configure_http=True, configure_https=True, http_ports=None, https_ports=None,
-                      ssl_cert='', ca_certs='', verbose=True, other_args=''):
+                      configure_http=True, configure_https=True, configure_http3=True,
+                      http_ports=None, https_ports=None, http3_ports=None,
+                      ssl_cert='', ca_certs='', verbose=True, single_threaded=True,
+                      enable_qlogging=True, enable_tls_secrets_logging=True, other_args=''):
     """
     Configure the process for running the verifier-client.
 
@@ -62,6 +68,15 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
         command += create_address_argument(https_ports, use_ipv6)
         command += " "
 
+    if configure_http3 and find_ports and not http3_ports:
+        http3_ports = [get_port(process, "http3_port")]
+
+    if http3_ports:
+        command += "--connect-http3 "
+        command += create_address_argument(http3_ports, use_ipv6)
+        command += " "
+
+    if https_ports or http3_ports:
         if ssl_cert == '':
             # Search for the root-level cert.
             test_root = process.TestRoot
@@ -96,8 +111,25 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
                 process.Setup.Copy(ca_certs, run_ca_certs, CopyLogic.SoftFiles)
             command += ' --ca-certs "{}" '.format(run_ca_certs)
 
+        if enable_tls_secrets_logging:
+            tls_secrets_log_filename = "tls_secrets.txt"
+            tls_secrets_log_path = os.path.join(client_dir, tls_secrets_log_filename)
+            command += f"--tls-secrets-log-file {tls_secrets_log_path} "
+            obj.Variables['tls_secrets_log_path'] = tls_secrets_log_path
+            obj.Disk.File(tls_secrets_log_path, id=make_id(tls_secrets_log_filename))
+
+    if http3_ports and enable_qlogging:
+        qlog_basename = "qlog_directory"
+        qlog_dir = os.path.join(client_dir, qlog_basename)
+        command += f"--qlog-dir {qlog_dir} "
+        obj.Variables['qlog_dir'] = qlog_dir
+        obj.Disk.File(qlog_dir, id=make_id(qlog_basename))
+
     if verbose:
         command += "--verbose diag "
+
+    if single_threaded:
+        command += "--thread-limit 1 "
 
     if other_args:
         command += " {}".format(other_args)
@@ -107,8 +139,10 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
 
 
 def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
-                      configure_http=True, configure_https=True, http_ports=None, https_ports=None,
-                      ssl_cert='', ca_certs='', verbose=True, other_args=''):
+                      configure_http=True, configure_https=True, configure_http3=True,
+                      http_ports=None, https_ports=None, http3_ports=None,
+                      ssl_cert='', ca_certs='', verbose=True, single_threaded=True,
+                      enable_qlogging=True, enable_tls_secrets_logging=True, other_args=''):
     """
     Create a verifier-client process.
 
@@ -132,9 +166,13 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
 
         configure_https: (bool) True if https ports should be configured, False if not.
 
+        configure_http3: (bool) True if http3 ports should be configured, False if not.
+
         http_ports: (list of ints) The set of HTTP ports to connect on.
 
         https_ports: (list of ints) The set of HTTPS ports to connect on.
+
+        http3_ports: (list of ints) The set of HTTP/3 ports to connect on.
 
         ssl_cert: (path) The location of the cert for HTTPS encryption. If this
             is not provided and https_ports is non-empty, the root-level
@@ -154,6 +192,15 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
 
         verbose: (bool) Whether to enable debug-level logging.
 
+        single_threaded: (bool) Whether the client should run in a single thread
+            rather than running the sessions in parallel.
+
+        enable_qlogging: (bool) Whether QUIC log will be configured if HTTP/3
+            is configured.
+
+        enable_tls_secrets_logging: (bool) Whether TLS secrets logging will be
+            configured if TLS is configured (HTTPS, HTTP/2, or HTTP/3).
+
         other_args: (str) Any other arbitrary options to pass to verifier-client.
 
     Returns:
@@ -169,18 +216,25 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
         use_ipv6,
         configure_http,
         configure_https,
+        configure_http3,
         http_ports,
         https_ports,
+        http3_ports,
         ssl_cert,
         ca_certs,
         verbose,
+        single_threaded,
+        enable_qlogging,
+        enable_tls_secrets_logging,
         other_args)
     return client
 
 
 def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
-                     configure_http=True, configure_https=True, http_ports=None, https_ports=None,
-                     ssl_cert='', ca_certs='', verbose=True, other_args=''):
+                     configure_http=True, configure_https=True, configure_http3=True,
+                     http_ports=None, https_ports=None, http3_ports=None,
+                     ssl_cert='', ca_certs='', verbose=True, single_threaded=True,
+                     enable_qlogging=True, enable_tls_secrets_logging=True, other_args=''):
     """
     Set the Default process of the test run to a verifier-client Process.
 
@@ -204,11 +258,16 @@ def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
         use_ipv6,
         configure_http,
         configure_https,
+        configure_http3,
         http_ports,
         https_ports,
+        http3_ports,
         ssl_cert,
         ca_certs,
         verbose,
+        single_threaded,
+        enable_qlogging,
+        enable_tls_secrets_logging,
         other_args)
     return p
 

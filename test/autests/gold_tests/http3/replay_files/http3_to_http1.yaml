@@ -1,0 +1,254 @@
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 3
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+
+  #
+  # Test 1: A simple transaction with field verification.
+  #
+  - all:
+      headers:
+        fields:
+        - [ uuid, 1 ]
+
+    client-request:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, POST ]
+        - [ :scheme, https ]
+        - [ :authority, example.data.com ]
+        - [ :path, /a/path ]
+        - [ X-Request-Header, request ]
+        - [ X-Deleted-Header, this_will_be_deleted ]
+        - [ X-Proxy-Directive, "Delete=%<x-deleted-header%> Insert=%<X-Added-Header: 1%>" ]
+      content:
+        encoding: plain
+        data: 0123456789
+
+    proxy-request:
+      # HTTP/1 on the server-side.
+      protocol:
+      - name: http
+        version: 1
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+
+      headers:
+        url:
+        - [ scheme, { value: http, as: equal } ]
+        - [ host, { value: example.data.com, as: equal } ]
+        - [ path, { value: /a/path, as: equal } ]
+
+        fields:
+        - [ X-Request-Header, { value: request, as: equal } ]
+        - [ X-Added-Header, { value: 1, as: equal } ]
+        - [ X-Deleted-Header, { as: absent } ]
+        - [ Content-Length, { value: 10, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Equal-Header, some_content ]
+        - [ X-Response-Header, response ]
+        - [ X-Deleted-Header2, this_will_be_deleted ]
+        - [ X-Proxy-Directive, "Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>" ]
+        - [ Content-Length, 32 ]
+      content:
+        encoding: plain
+        size: 32
+
+    proxy-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Equal-Header, { value: some_content, as: equal } ]
+        - [ X-Response-Header, { value: response, as: equal } ]
+        - [ X-Deleted-Header2, { as: absent } ]
+        - [ Content-Length, { value: 32, as: equal } ]
+
+  #
+  # Test 2: Verify we can send some big bodies.
+  #
+  - client-request:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, example.data.com ]
+        - [ :path, /a/new/path ]
+        - [ uuid, 2 ]
+        - [ X-Request-Header, request2 ]
+      content:
+        encoding: plain
+        size: 10240
+
+    proxy-request:
+      # HTTP/1 on the server-side.
+      protocol:
+      - name: http
+        version: 1
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+
+      headers:
+        url:
+        - [ scheme, { value: http, as: equal } ]
+        - [ host, { value: example.data.com, as: equal } ]
+        - [ path, { value: /a/new/path, as: equal } ]
+
+        fields:
+        - [ X-Request-Header, { value: request2, as: equal } ]
+        - [ Content-Length, { value: 10240, as: equal } ]
+
+    server-response:
+      status: 404
+      reason: Not Found
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, response2 ]
+        - [ Content-Length, 10240 ]
+      content:
+        encoding: plain
+        size: 10240
+
+    proxy-response:
+      status: 404
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, { value: response2, as: equal } ]
+        - [ Content-Length, { value: 10240, as: equal } ]
+
+#
+# Test 2: A few transactions in a second session
+#
+- protocol:
+  - name: http
+    version: 3
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+
+  - client-request:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, example.data.com ]
+        - [ :path, /a/path2 ]
+        - [ uuid, 3 ]
+        - [ X-Request-Header, request3 ]
+      content:
+        encoding: plain
+        size: 48
+
+    proxy-request:
+      # HTTP/1 on the server-side.
+      protocol:
+      - name: http
+        version: 1
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+
+      headers:
+        url:
+        - [ scheme, { value: http, as: equal } ]
+        - [ host, { value: example.data.com, as: equal } ]
+        - [ path, { value: /a/path2, as: equal } ]
+
+        fields:
+        - [ X-Request-Header, { value: request3, as: equal } ]
+        - [ Content-Length, { value: 48, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, response3 ]
+        - [ Content-Length, 16 ]
+
+    proxy-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, { value: response3, as: equal } ]
+        - [ Content-Length, { value: 16, as: equal } ]
+
+  - client-request:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, example.data.com ]
+        - [ :path, /a/path3 ]
+        - [ uuid, 4 ]
+        - [ X-Request-Header, request3 ]
+      content:
+        encoding: plain
+        size: 64
+
+    proxy-request:
+      # HTTP/1 on the server-side.
+      protocol:
+      - name: http
+        version: 1
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+
+      headers:
+        url:
+        - [ scheme, { value: http, as: equal } ]
+        - [ host, { value: example.data.com, as: equal } ]
+        - [ path, { value: /a/path3, as: equal } ]
+
+        fields:
+        - [ X-Request-Header, { value: request3, as: equal } ]
+        - [ Content-Length, { value: 64, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, response4 ]
+        - [ Content-Length, 50 ]
+
+    proxy-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Response-Header, { value: response4, as: equal } ]
+        - [ Content-Length, { value: 50, as: equal } ]

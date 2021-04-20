@@ -13,9 +13,15 @@ import os
 from ports import get_port
 
 
+def make_id(s):
+    return s.replace(".", "_").replace('-', '_')
+
+
 def _configure_server(obj, process, name, replay_dir, find_ports=True, use_ipv6=False,
-                      configure_http=True, configure_https=True, http_ports=None, https_ports=None,
-                      ssl_cert='', ca_certs='', verbose=True, other_args=''):
+                      configure_http=True, configure_https=True, configure_http3=True,
+                      http_ports=None, https_ports=None, http3_ports=None,
+                      ssl_cert='', ca_certs='', verbose=True,
+                      enable_tls_secrets_logging=True, other_args=''):
     """
     Configure the provided process to run a verifier-server command.
 
@@ -57,6 +63,16 @@ def _configure_server(obj, process, name, replay_dir, find_ports=True, use_ipv6=
         command += create_address_argument(https_ports, use_ipv6)
         command += " "
 
+    # Not implemented yet. Put this back in as we implement server-side HTTP/3.
+    # if configure_http3 and find_ports and not http3_ports:
+    #     http3_ports = [get_port(process, "http3_port")]
+
+    # if http3_ports:
+    #     command += '--listen-http3 '
+    #     command += create_address_argument(http3_ports, use_ipv6)
+    #     command += " "
+
+    if https_ports or http3_ports:
         if ssl_cert == '':
             # Search for the root-level cert.
             test_root = process.TestRoot
@@ -91,6 +107,13 @@ def _configure_server(obj, process, name, replay_dir, find_ports=True, use_ipv6=
                 process.Setup.Copy(ca_certs, run_ca_certs, CopyLogic.SoftFiles)
             command += ' --ca-certs "{}" '.format(run_ca_certs)
 
+        if enable_tls_secrets_logging:
+            tls_secrets_log_filename = "tls_secrets.txt"
+            tls_secrets_log_path = os.path.join(server_dir, tls_secrets_log_filename)
+            command += f"--tls-secrets-log-file {tls_secrets_log_path} "
+            obj.Variables['tls_secrets_log_path'] = tls_secrets_log_path
+            obj.Disk.File(tls_secrets_log_path, id=make_id(tls_secrets_log_filename))
+
     if replay_dir:
         # Create a copy of the replay directory in the run directory.
         run_replay_dir = os.path.join(server_dir, os.path.basename(replay_dir))
@@ -104,18 +127,21 @@ def _configure_server(obj, process, name, replay_dir, find_ports=True, use_ipv6=
         command += "{} ".format(other_args)
     process.Command = command
 
-    if https_ports:
-        process.Ready = When.PortOpen(https_ports[0])
-    elif http_ports:
+    # Do not try to run PortOpen on the HTTP/3 (QUIC) socket because UDP is a
+    # connectionless protocol.
+    if http_ports:
         process.Ready = When.PortOpen(http_ports[0])
+    elif https_ports:
+        process.Ready = When.PortOpen(https_ports[0])
     # Tests that expect a failure due to verification issues will need
     # to set this to 1.
     process.ReturnCode = 0
 
 
 def MakeServerProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
-                      configure_http=True, configure_https=True, http_ports=None, https_ports=None,
-                      ssl_cert='', ca_certs='', verbose=True, other_args=''):
+                      configure_http=True, configure_https=True, configure_http3=True,
+                      http_ports=None, https_ports=None, http3_ports=None, ssl_cert='',
+                      ca_certs='', verbose=True, enable_tls_secrets_logging=True, other_args=''):
     """
     Create a verifier-server process.
 
@@ -139,9 +165,13 @@ def MakeServerProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
 
         configure_https: (bool) True if https ports should be configured, False if not.
 
+        configure_http3: (bool) True if http3 ports should be configured, False if not.
+
         http_ports: (list of ints) The set of HTTP ports to listen on.
 
         https_ports: (list of ints) The set of HTTPS ports to listen on.
+
+        https_port3: (list of ints) The set of HTTP/3 ports to listen on.
 
         ssl_cert: (path) The location of the cert for HTTPS encryption. If this
             is not provided and https_ports is non-empty, the root-level
@@ -161,6 +191,9 @@ def MakeServerProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
 
         verbose: (bool) Whether to enable debug-level logging.
 
+        enable_tls_secrets_logging: (bool) Whether TLS secrets logging will be
+            configured if TLS is configured (HTTPS, HTTP/2, or HTTP/3).
+
         other_args: (str) Any other arbitrary options to pass to verifier-server.
 
     Raises:
@@ -169,8 +202,9 @@ def MakeServerProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
     """
     server = test.Processes.Process(name)
     _configure_server(test, server, name, replay_dir, find_ports, use_ipv6,
-                      configure_http, configure_https, http_ports, https_ports, ssl_cert,
-                      ca_certs, verbose, other_args)
+                      configure_http, configure_https, configure_http3, http_ports,
+                      https_ports, http3_ports, ssl_cert, ca_certs, verbose,
+                      enable_tls_secrets_logging, other_args)
     return server
 
 
@@ -182,23 +216,29 @@ def AddDefaultServerProcess(
         use_ipv6=False,
         configure_http=True,
         configure_https=True,
+        configure_http3=True,
         http_ports=None,
         https_ports=None,
+        http3_ports=None,
         ssl_cert='',
         ca_certs='',
         verbose=True,
+        enable_tls_secrets_logging=True,
         other_args=''):
 
     server = run.Processes.Default
     _configure_server(run, server, name, replay_dir, find_ports, use_ipv6,
-                      configure_http, configure_https, http_ports, https_ports, ssl_cert,
-                      ca_certs, verbose, other_args)
+                      configure_http, configure_https, configure_http3, http_ports,
+                      https_ports, http3_ports, ssl_cert, ca_certs, verbose,
+                      enable_tls_secrets_logging, other_args)
     return server
 
 
 def AddServerProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
-                     configure_http=True, configure_https=True, http_ports=None, https_ports=None,
-                     ssl_cert='', ca_certs='', verbose=True, other_args=''):
+                     configure_http=True, configure_https=True, configure_http3=True,
+                     http_ports=None, https_ports=None, http3_ports=None,
+                     ssl_cert='', ca_certs='', verbose=True,
+                     enable_tls_secrets_logging=True, other_args=''):
     """
     Create a verifier-server process and configure it for the given TestRun.
 
@@ -213,10 +253,15 @@ def AddServerProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
 
     server = run.Processes.Process(name)
     _configure_server(run, server, name, replay_dir, find_ports, use_ipv6,
-                      configure_http, configure_https, http_ports, https_ports, ssl_cert,
-                      ca_certs, verbose, other_args)
+                      configure_http, configure_https, configure_http3,
+                      http_ports, https_ports, http3_ports,
+                      ssl_cert, ca_certs, verbose, enable_tls_secrets_logging,
+                      other_args)
 
     client = run.Processes.Default
+
+    # TODO: will have to add this back later. For some reason this crashes in
+    # AuTest, and only when AuTest runs. The reply file works fine.
     client.StartBefore(server)
 
     return server

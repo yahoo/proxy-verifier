@@ -8,6 +8,7 @@
 #include "core/ArgParser.h"
 #include "core/http.h"
 #include "core/http2.h"
+#include "core/http3.h"
 #include "core/https.h"
 #include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
@@ -93,12 +94,28 @@ struct TargetSelector
     return https_target;
   }
 
+  /** Round robin retrieval of HTTPS addresses. */
+  swoc::IPEndpoint const *
+  get_http3_target()
+  {
+    if (http3_targets.empty()) {
+      return nullptr;
+    }
+    auto const *http3_target = &http3_targets[http3_target_index];
+    if (++http3_target_index >= http3_targets.size()) {
+      http3_target_index = 0;
+    }
+    return http3_target;
+  }
+
   std::deque<swoc::IPEndpoint> http_targets;
   std::deque<swoc::IPEndpoint> https_targets;
+  std::deque<swoc::IPEndpoint> http3_targets;
 
 private:
   size_t http_target_index = 0;
   size_t https_target_index = 0;
+  size_t http3_target_index = 0;
 };
 
 TargetSelector Target_Selector;
@@ -249,10 +266,12 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
       errata.note(std::move(http_node.errata()));
       return errata;
     }
-    if (http_node.result().IsDefined() && http_node.result()[YAML_SSN_PROTOCOL_VERSION] &&
-        http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2")
-    {
-      _ssn->is_h2 = true;
+    if (http_node.result().IsDefined() && http_node.result()[YAML_SSN_PROTOCOL_VERSION]) {
+      if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
+        _ssn->is_h2 = true;
+      } else if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "3") {
+        _ssn->is_h3 = true;
+      }
     }
   }
 
@@ -291,8 +310,8 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
 {
   swoc::Errata errata;
   _txn_node = &node;
-  _txn._req._is_request = true;
-  _txn._rsp._is_response = true;
+  _txn._req.set_is_request();
+  _txn._rsp.set_is_response();
   if (!node[YAML_CLIENT_REQ_KEY]) {
     errata.error(
         R"(Transaction node at "{}":{} does not have a client request [{}].)",
@@ -334,7 +353,11 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
 {
   swoc::Errata errata;
   if (!Use_Proxy_Request_Directives) {
-    _txn._req._is_http2 = _ssn->is_h2;
+    if (_ssn->is_h2) {
+      _txn._req.set_is_http2();
+    } else if (_ssn->is_h3) {
+      _txn._req.set_is_http3();
+    }
     errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
       errata.error(R"(client-request node without a method at "{}":{}.)", _path, node.Mark().line);
@@ -362,7 +385,11 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
 {
   swoc::Errata errata;
   if (Use_Proxy_Request_Directives) {
-    _txn._req._is_http2 = _ssn->is_h2;
+    if (_ssn->is_h2) {
+      _txn._req.set_is_http2();
+    } else if (_ssn->is_h3) {
+      _txn._req.set_is_http3();
+    }
     errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
       errata.error(R"(proxy-request node without a method at "{}":{}.)", _path, node.Mark().line);
@@ -391,7 +418,11 @@ ClientReplayFileHandler::proxy_response(YAML::Node const &node)
   if (!Use_Proxy_Request_Directives) {
     // We only expect proxy responses when we are behaving according to the
     // client-request directives and there is a proxy.
-    _txn._rsp._is_http2 = _ssn->is_h2;
+    if (_ssn->is_h2) {
+      _txn._rsp.set_is_http2();
+    } else if (_ssn->is_h3) {
+      _txn._rsp.set_is_http3();
+    }
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
     return YamlParser::populate_http_message(node, _txn._rsp);
   }
@@ -405,7 +436,11 @@ ClientReplayFileHandler::server_response(YAML::Node const &node)
   if (Use_Proxy_Request_Directives) {
     // If we are behaving like the proxy, then replay-client is talking directly
     // with the server and should expect the server's responses.
-    _txn._rsp._is_http2 = _ssn->is_h2;
+    if (_ssn->is_h2) {
+      _txn._rsp.set_is_http2();
+    } else if (_ssn->is_h3) {
+      _txn._rsp.set_is_http3();
+    }
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
     errata.note(YamlParser::populate_http_message(node, _txn._rsp));
     if (_txn._rsp._status == 0) {
@@ -499,9 +534,17 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
       R"(Starting session "{}":{} protocol={}.)",
       ssn._path,
       ssn._line_no,
-      ssn.is_h2 ? "h2" : (ssn.is_tls ? "https" : "http"));
+      ssn.is_h3 ? "h3" : (ssn.is_h2 ? "h2" : (ssn.is_tls ? "https" : "http")));
 
-  if (ssn.is_h2) {
+  if (ssn.is_h3) {
+    real_target = target_selector.get_http3_target();
+    if (real_target == nullptr) {
+      errata.error("Could not replay an HTTP/3 session because no HTTP/3 ports are provided.");
+    } else {
+      session = std::make_unique<H3Session>(ssn._client_sni, ssn._client_verify_mode);
+      errata.diag("Connecting via HTTP/3 over QUIC.");
+    }
+  } else if (ssn.is_h2) {
     real_target = target_selector.get_https_target();
     if (real_target == nullptr) {
       errata.error("Could not replay an HTTP/2 session because no HTTPS ports are provided.");
@@ -587,8 +630,10 @@ Engine::command_run()
 
   auto server_addr_http_arg{arguments.get("connect-http")};
   auto server_addr_https_arg{arguments.get("connect-https")};
-  if (!server_addr_http_arg && !server_addr_https_arg) {
-    errata.error(R"(Must provide either "--connect-http" and/or "--connect-https" arguments")");
+  auto server_addr_http3_arg{arguments.get("connect-http3")};
+  if (!server_addr_http_arg && !server_addr_https_arg && !server_addr_http3_arg) {
+    errata.error(
+        R"(Must provide at least one of "--connect-http", "--connect-https", or "--connect-http3" arguments")");
     process_exit_code = 1;
     return;
   }
@@ -603,6 +648,14 @@ Engine::command_run()
 
   if (server_addr_https_arg) {
     errata.note(resolve_ips(server_addr_https_arg[0], Target_Selector.https_targets));
+    if (!errata.is_ok()) {
+      process_exit_code = 1;
+      return;
+    }
+  }
+
+  if (server_addr_http3_arg) {
+    errata.note(resolve_ips(server_addr_http3_arg[0], Target_Selector.http3_targets));
     if (!errata.is_ok()) {
       process_exit_code = 1;
       return;
@@ -681,11 +734,45 @@ Engine::command_run()
   errata.info("Parsed {} transactions in {} sessions.", transaction_count, session_count);
   HttpHeader::set_max_content_length(max_content_length);
 
-  Session::init(transaction_count);
+  errata.note(Session::init(transaction_count));
+  if (!errata.is_ok()) {
+    return;
+  }
+
   errata.diag(R"(Initializing TLS)");
-  TLSSession::init();
+  auto tls_secrets_log_file_arg{arguments.get("tls-secrets-log-file")};
+  std::string tls_secrets_log_file;
+  if (tls_secrets_log_file_arg) {
+    tls_secrets_log_file = tls_secrets_log_file_arg[0];
+  }
+  errata.note(TLSSession::init(tls_secrets_log_file));
+  if (!errata.is_ok()) {
+    return;
+  }
+
   errata.diag(R"(Initialize H2)");
-  H2Session::init(&process_exit_code);
+  errata.note(H2Session::init(&process_exit_code));
+  if (!errata.is_ok()) {
+    TLSSession::terminate();
+    return;
+  }
+
+  errata.diag(R"(Initialize H3)");
+  auto qlog_dir_arg{arguments.get("qlog-dir")};
+  std::string qlog_dir;
+  if (qlog_dir_arg) {
+    qlog_dir = qlog_dir_arg[0];
+  }
+  errata.note(H3Session::init(&process_exit_code, qlog_dir));
+  if (!errata.is_ok()) {
+    TLSSession::terminate();
+    H2Session::terminate();
+    return;
+  }
+
+  if (!errata.is_ok()) {
+    return;
+  }
 
   auto sleep_limit_arg{arguments.get("sleep-limit")};
   microseconds sleep_limit = 500ms;
@@ -838,6 +925,7 @@ Engine::command_run()
 
   TLSSession::terminate();
   H2Session::terminate();
+  H3Session::terminate();
 };
 
 int
@@ -887,6 +975,21 @@ main(int /* argc */, char const *argv[])
           "--connect-https",
           "",
           "TLS address and port to connect on. Can be a comma separated list.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--connect-http3",
+          "",
+          "HTTP/3 address and port to connect on. Can be a comma separated list.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--qlog-dir",
+          "",
+          "The directory in which to store QUIC log files. By default no QUIC "
+          "logging is performed.",
           "",
           1,
           "")
@@ -945,6 +1048,14 @@ main(int /* argc */, char const *argv[])
           "Specify TLS CA certificate file containing one or more certificates. "
           "Alternatively, a directory containing separate certificate files can "
           "be provided.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--tls-secrets-log-file",
+          "",
+          "A filename to which TLS secrets will be logged. These can be used to "
+          "decrypt packet captures. By default no TLS secrets will be logged.",
           "",
           1,
           "")

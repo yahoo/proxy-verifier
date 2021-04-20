@@ -11,6 +11,7 @@
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -27,6 +28,8 @@ class HttpHeader;
 constexpr unsigned char protocol_negotiation_string[] =
     {2, 'h', '2', 7, 'h', 't', 't', 'p', '1', '.', '1'};
 constexpr int protocol_negotiation_len = sizeof(protocol_negotiation_string);
+
+int client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */);
 
 /** The callback for SSL_CTX_set_alpn_select_cb.
  *
@@ -198,7 +201,12 @@ public:
   }
 
   // static members
-  static swoc::Errata init();
+  /** Perform global TLS initialization.
+   *
+   * @param[in] tls_secrets_log_file The file to which TLS secrets should be
+   * logged. An empty string implies that TLS secrets will not be logged.
+   */
+  static swoc::Errata init(swoc::TextView tls_secrets_log_file);
   static void terminate();
 
   /** Register the TLS handshake verification mode of the server per the SNI.
@@ -270,26 +278,7 @@ public:
    */
   static swoc::Errata configure_ca_cert(std::string_view cert_path);
 
-public:
-  /// The client or server public key file. This may also contain the private
-  /// key.
-  static swoc::file::path certificate_file;
-
-  /// The client or server private key file if not in the certificate_file.
-  static swoc::file::path privatekey_file;
-
-  /// The CA file which may contain mutiple CA certs.
-  static swoc::file::path ca_certificate_file;
-
-  /// The CA directory containing one or more CA cert files.
-  static swoc::file::path ca_certificate_dir;
-
-protected:
-  static swoc::Errata client_init(SSL_CTX *&client_context);
-  static swoc::Errata server_init(SSL_CTX *&server_context);
-  static void terminate(SSL_CTX *&context);
-
-  /** A helper file to configure a host certificate.
+  /** Configure a host certificate.
    *
    * @param[in] cert_path The path to a directory with private and public key
    * files or the path to a file with both the private and public keys.
@@ -315,6 +304,38 @@ protected:
    */
   static swoc::Errata configure_certificates(SSL_CTX *&context);
 
+  /** Return whether TLS secrets are currently being logged.
+   *
+   * @return true if TLS secrets are currently being logged, false otherwise.
+   */
+  static bool tls_secrets_are_being_logged();
+
+  /** The TLS secrets logging callback function.
+   *
+   * Pass this to SSL_CTX_set_keylog_callback. See the OpenSSL documentation
+   * for details about this function.
+   */
+  static void keylog_callback(SSL const *ssl, char const *line);
+
+public:
+  /// The client or server public key file. This may also contain the private
+  /// key.
+  static swoc::file::path certificate_file;
+
+  /// The client or server private key file if not in the certificate_file.
+  static swoc::file::path privatekey_file;
+
+  /// The CA file which may contain mutiple CA certs.
+  static swoc::file::path ca_certificate_file;
+
+  /// The CA directory containing one or more CA cert files.
+  static swoc::file::path ca_certificate_dir;
+
+protected:
+  static swoc::Errata client_init(SSL_CTX *&client_context);
+  static swoc::Errata server_init(SSL_CTX *&server_context);
+  static void terminate(SSL_CTX *&context);
+
 protected:
   SSL *_ssl = nullptr;
   /** The SNI to be sent by the client (as opposed to the one expected by the
@@ -334,4 +355,21 @@ protected:
    * handshake as specified per the SNI received from the proxy.
    */
   static std::unordered_map<std::string, TLSHandshakeBehavior> _handshake_behavior_per_sni;
+
+private:
+  /** Open the file for TLS secrets logging.
+   *
+   * @param[in] tls_secrets_log_file The path to the file to open for logging.
+   */
+  static swoc::Errata open_tls_secrets_log_file(swoc::TextView tls_secrets_log_file);
+
+private:
+  /// A mutex to ensure serialized writing to tls_secrets_log_file_fd.
+  static std::mutex tls_secrets_log_file_fd_mutex;
+
+  /// The file descriptor for TLS secrets logging.
+  static int tls_secrets_log_file_fd;
+
+  /// The file to which TLS secrets will be logged.
+  static swoc::file::path tls_secrets_log_file;
 };

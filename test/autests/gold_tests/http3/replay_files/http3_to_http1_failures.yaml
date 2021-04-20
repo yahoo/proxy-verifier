@@ -1,0 +1,65 @@
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 3
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+
+  - client-request:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, example.data.com ]
+        - [ :path, /a/path ]
+        - [ uuid, 1 ]
+        - [ X-Request-Header, { value: request, as: equal } ]
+
+    # Other HTTP/1 tests verify verification on the server. This test focuses
+    # on the client-side verification directives.
+    proxy-request:
+      # HTTP/1 on the server-side.
+      protocol:
+      - name: http
+        version: 1
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+
+      headers:
+        fields:
+        - [ X-Request-Header, { value: request, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Equal-Header, some_content ]
+        - [ X-Response-Header, response ]
+        - [ X-Deleted-Header, this_will_be_deleted ]
+        - [ X-Proxy-Directive, "Delete=%<x-deleted-header%> Insert=%<x-added-header: 1%>" ]
+        - [ Content-Length, 32 ]
+      content:
+        encoding: plain
+        size: 32
+
+    # Explicitly configure things for verification failures.
+    proxy-response:
+      status: 502
+      headers:
+        encoding: esc_json
+        fields:
+        - [ X-Equal-Header, { value: other_content, as: equal } ]
+        - [ X-Response-Header, { value: response, as: equal } ]
+        - [ X-Deleted-Header, { as: present } ]
+        - [ X-Added-Header, { as: absent } ]
