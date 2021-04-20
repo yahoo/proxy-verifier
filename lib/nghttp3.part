@@ -1,0 +1,19 @@
+Import('*')
+import os
+PartName("nghttp3")
+path=env.get("CUSTOM_PATH") # passed in from top level SConstruct.
+if path:
+    path = env.subst(path);
+    i_path = os.path.join(path,"include")
+    env.Append(CPPPATH=[i_path])
+    env.ExportCPPPATH([i_path])
+    l_path = os.path.join(path,"lib")
+    env.Append(LIBPATH=[l_path])
+    env.ExportLIBPATH(l_path)
+
+cfg = env.Configure()
+if not cfg.CheckCHeader("nghttp3/nghttp3.h"):
+    env.PrintError("nghttp3/nghttp3.h was not found - install nghttp3 or use --with-nghttp3 to specify a directory.",show_stack=False)
+cfg.Finish()
+
+env.ExportLIBS(["libnghttp3"])

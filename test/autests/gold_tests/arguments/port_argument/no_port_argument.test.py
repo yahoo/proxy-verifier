@@ -17,9 +17,9 @@ Verify --format argument parsing.
 #
 r = Test.AddTestRun('Verify the client complains if no ports are provided.')
 client = r.AddClientProcess("client1", "not_used.yaml", configure_http=False,
-                            configure_https=False)
+                            configure_https=False, configure_http3=False)
 client.Streams.stdout += Testers.ContainsExpression(
-    'Must provide either "--connect-http" and/or "--connect-https" arguments',
+    'Must provide at least one of "--connect-http", "--connect-https", or "--connect-http3" arguments',
     'The client should explain that a port argument is required')
 client.ReturnCode = 1
 
@@ -28,8 +28,8 @@ client.ReturnCode = 1
 #
 r = Test.AddTestRun('Verify the server complains if no ports are provided.')
 server = r.AddDefaultServerProcess("server1", "not_used.yaml", configure_http=False,
-                                   configure_https=False)
+                                   configure_https=False, configure_http3=False)
 server.Streams.stdout += Testers.ContainsExpression(
-    'Must provide either "--listen-http" and/or "--listen-https" arguments',
+    'Must provide at least one of "--listen-http", "--listen-https", or "--listen-http3" arguments',
     'The server should explain that a port argument is required')
 server.ReturnCode = 1

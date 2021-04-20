@@ -35,6 +35,7 @@ Table of Contents
                * [Building on CentOS 8](#building-on-centos-8)
                * [Building on CentOS 7](#building-on-centos-7)
             * [ASan Instrumentation](#asan-instrumentation)
+            * [QUIC/HTTP3 Support](#quichttp3-support)
          * [Running the Tests](#running-the-tests)
             * [Unit Tests](#unit-tests)
             * [Gold Tests](#gold-tests)
@@ -50,6 +51,8 @@ Table of Contents
             * [--rate &lt;requests/second&gt;](#--rate-requestssecond)
             * [--repeat &lt;number&gt;](#--repeat-number)
             * [--thread-limit &lt;number&gt;](#--thread-limit-number)
+            * [--qlog-dir &lt;directory&gt;](#--qlog-dir-directory)
+            * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
       * [Contribute](#contribute)
       * [License](#license)
 
@@ -1105,6 +1108,39 @@ pipenv run scons \
     proxy-verifier
 ```
 
+#### QUIC/HTTP3 Support
+
+Proxy Verifier supports HTTP/3. The implemenation of this relies upon the
+following libraries:
+
+* A version of OpenSSL that supports QUIC.
+* ngtcp2 for its QUIC support
+* nghttp3 for its HTTP/3 support.
+
+A tool is provided to build these libraries:
+[build_http3_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_http3_dependencies.sh)
+
+Here is an example session, tested on MacOS BugSur and CentOS 7, that builds
+Proxy Verifier with QUIC/HTTP3 support:
+
+```
+# Alter this for your desired library location.
+http3_libs_dir=${HOME}/src/http3_libs
+
+bash ./tools/build_http3_dependencies.sh ${http3_libs_dir}
+
+# Replace '/path/to/nghttp2' to your location of the installed nghttp2
+# location.
+pipenv run scons \
+    -j8 \
+    --cfg=release \
+    --with-ssl=${http3_libs_dir}/openssl_build/ \
+    --with-ngtcp2=${http3_libs_dir}/ngtcp2_build/ \
+    --with-nghttp3=${http3_libs_dir}/nghttp3_build/ \
+    --with-nghttp2=/path/to/nghttp2 \
+    proxy-verifier
+```
+
 ### Running the Tests
 
 #### Unit Tests
@@ -1401,6 +1437,21 @@ execution. By default, Proxy Verifier limits the number of threads for handling
 these connections to 2,000. This limit can be changed via the `--thread-limit`
 option. Setting a value of 1 on the client will effectively cause sessions
 to be replayed in serial.
+
+#### --qlog-dir \<directory\>
+
+Proxy Verifier supports logging of replayed QUIC traffic information conformant
+to the qlog format. If the `--qlog-dir` option is provided, then qlog files for all
+replayed QUIC traffic will be written into the specified directory.  qlog
+diagnostic logging is disabled by default.
+
+#### --tls-secrets-log-file \<secrets_log_file_name\>
+
+To facilitate debugging, Proxy Verifier supports logging TLS keys for encrypted
+replayed traffic. If this option is used, TLS key logging will be appended to
+the specified filename. This file can then be provided to protocol analyzers
+such as Wireshark to decrypt the traffic. TLS key logging is disabled by
+default.
 
 ## Contribute
 

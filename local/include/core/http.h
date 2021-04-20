@@ -12,7 +12,9 @@
 #include <chrono>
 #include <list>
 #include <map>
+#include <unordered_map>
 #include <nghttp2/nghttp2.h>
+#include <nghttp3/nghttp3.h>
 #include <openssl/ssl.h>
 #include <poll.h>
 #include <string>
@@ -78,6 +80,9 @@ BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const 
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
 
+using memoized_ip_endpoints_t =
+    std::unordered_map<std::string_view, std::unordered_map<int, swoc::IPEndpoint>>;
+
 /** Provide the ability to concert an interface name into an IPEndpoint.
  *
  * This provides RAII for the struct ifaddrs allocated via getifaddrs().
@@ -107,6 +112,9 @@ private:
   struct ifaddrs *_ifaddr_list_head = nullptr;
   const std::string _expected_interface;
   const int _expected_family;
+
+  /// Save previously derived IPEndpoints for efficiency.
+  static memoized_ip_endpoints_t memoized_ip_endpoints;
 };
 
 class HttpFields
@@ -170,7 +178,7 @@ public:
    */
   void merge(self_type const &other);
 
-  /** Convert _fields into nghttp2_nv and add them to the vector provided
+  /** Convert _fields into nghttp2_nv and add them to the provided vector.
    *
    * This assumes that the pseudo header fields are handled separately.  If
    * such fields are in the _fields container they are not added here to the
@@ -180,7 +188,24 @@ public:
    */
   void add_fields_to_ngnva(nghttp2_nv *l) const;
 
+  /** Convert _fields into nghttp3_nv and add them to the provided vector.
+   *
+   * This assumes that the pseudo header fields are handled separately.  If
+   * such fields are in the _fields container they are not added here to the
+   * nghttp3_nv vector.
+   *
+   * @param[out] l vector of nghttp3_nv structs to populate from _fields.
+   */
+  void add_fields_to_ngnva(nghttp3_nv *l) const;
+
   friend class HttpHeader;
+};
+
+/// An enumeration of the various protocol types.
+enum class HTTP_PROTOCOL_TYPE {
+  HTTP_1,
+  HTTP_2,
+  HTTP_3,
 };
 
 // TODO: rename to HttpMessage?
@@ -272,14 +297,49 @@ public:
    */
   void merge(HttpFields const &other);
 
-  /// Whether this is an HTTP/2 message.
-  bool _is_http2 = false;
+  /// Get the HTTP protocol type of this message.
+  HTTP_PROTOCOL_TYPE get_http_protocol() const;
 
-  /// Whether this is an HTTP request
-  bool _is_request = false;
+  /// Set the HTTP protocol type for this message.
+  void set_http_protocol(HTTP_PROTOCOL_TYPE protocol);
 
-  /// Whether this is an HTTP response
-  bool _is_response = false;
+  /// Set that this is an HTTP/1.x message.
+  void set_is_http1();
+
+  /// Return whether this is an HTTP/1.x message.
+  bool is_http1() const;
+
+  /// Set that this is an HTTP/2 message.
+  void set_is_http2();
+
+  /// Return whether this is an HTTP/2 message.
+  bool is_http2() const;
+
+  /// Set that this is an HTTP/3 message.
+  void set_is_http3();
+
+  /// Return whether this is an HTTP/3 message.
+  bool is_http3() const;
+
+  /// Set this to be state for an HTTP request while also specifying the HTTP
+  /// protocol.
+  void set_is_request(HTTP_PROTOCOL_TYPE protocol);
+
+  /// Set this to be state for an HTTP request.
+  void set_is_request();
+
+  /// Return whether this is an HTTP request.
+  bool is_request() const;
+
+  /// Set this to be state for an HTTP response while also specifying the HTTP
+  /// protocol.
+  void set_is_response(HTTP_PROTOCOL_TYPE protocol);
+
+  /// Set this to be state for an HTTP response.
+  void set_is_response();
+
+  /// Return whether this is an HTTP response.
+  bool is_response() const;
 
   /// Whether the _fields array contains pseudo header fields.
   bool _contains_pseudo_headers_in_fields_array = false;
@@ -384,6 +444,12 @@ protected:
 private:
   /** The key associated with this HTTP transaction. */
   std::string _key;
+
+  /// The HTTP protocol this message represents.
+  HTTP_PROTOCOL_TYPE _http_protocol = HTTP_PROTOCOL_TYPE::HTTP_1;
+
+  /// Whether this is an HTTP request.
+  bool _is_request = false;
 };
 
 struct Txn
@@ -419,6 +485,7 @@ struct Ssn
   int _client_verify_mode = SSL_VERIFY_NONE;
   bool is_tls = false;
   bool is_h2 = false;
+  bool is_h3 = false;
 
   swoc::Errata post_process_transactions();
 };

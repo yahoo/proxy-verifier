@@ -24,6 +24,26 @@ AddOption("--with-nghttp2",
           help='Optional path to custom build of nghttp2'
          )
 
+AddOption("--with-ngtcp2",
+          dest='with_ngtcp2',
+          nargs=1,
+          type='string',
+          action='store',
+          metavar='DIR',
+          default=None,
+          help='Optional path to custom build of ngtcp2'
+         )
+
+AddOption("--with-nghttp3",
+          dest='with_nghttp3',
+          nargs=1,
+          type='string',
+          action='store',
+          metavar='DIR',
+          default=None,
+          help='Optional path to custom build of nghttp3'
+         )
+
 
 AddOption('--enable-asan',
           dest='enable_asan',
@@ -32,8 +52,16 @@ AddOption('--enable-asan',
 
 path_ssl = GetOption("with_ssl")
 Part("#lib/openssl.part", CUSTOM_PATH=path_ssl)
+
 path_nghttp2 = GetOption("with_nghttp2")
 Part("#lib/nghttp2.part", CUSTOM_PATH=path_nghttp2)
+
+path_ngtcp2 = GetOption("with_ngtcp2")
+Part("#lib/ngtcp2.part", CUSTOM_PATH=path_ngtcp2)
+
+path_nghttp3 = GetOption("with_nghttp3")
+Part("#lib/nghttp3.part", CUSTOM_PATH=path_nghttp3)
+
 Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="yaml-cpp-0.6.3"), package_group="proxy-verifier")
 
 custom_rpath=[]
@@ -41,6 +69,10 @@ if path_ssl is not None:
   custom_rpath.append(path_ssl + "/lib")
 if path_nghttp2 is not None:
   custom_rpath.append(path_nghttp2 + "/lib")
+if path_ngtcp2 is not None:
+  custom_rpath.append(path_ngtcp2 + "/lib")
+if path_nghttp3 is not None:
+  custom_rpath.append(path_nghttp3 + "/lib")
 SetOptionDefault("RPATH",  custom_rpath)
 
 Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc", tag="1.2.19"), package_group="proxy-verifier")

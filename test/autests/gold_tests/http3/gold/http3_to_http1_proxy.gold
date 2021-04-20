@@ -1,0 +1,93 @@
+``
+==== REQUEST HEADERS ====
+:method: POST
+:scheme: https
+:path: /a/path
+:authority: example.data.com
+x-request-header: request
+uuid: 1
+X-Added-Header: 1
+
+==== REQUEST BODY ====
+b'0123456789'
+
+==== RESPONSE ====
+200 OK
+
+==== RESPONSE HEADERS ====
+:status: 200
+x-equal-header: some_content
+x-response-header: response
+content-length: 32
+uuid: 1
+x-added-header: 1
+
+==== RESPONSE BODY ====
+b'0000000 0000001 0000002 0000003 '
+
+==== REQUEST HEADERS ====
+:method: GET
+:scheme: https
+:path: /a/new/path
+:authority: example.data.com
+uuid: 2
+x-request-header: request2
+
+==== REQUEST BODY ====
+b'0000000 `` 00004ff '
+
+==== RESPONSE ====
+404 Not Found
+
+==== RESPONSE HEADERS ====
+:status: 404
+x-response-header: response2
+content-length: 10240
+
+==== RESPONSE BODY ====
+b'0000000 `` 00004ff '
+
+==== REQUEST HEADERS ====
+:method: GET
+:scheme: https
+:path: /a/path2
+:authority: example.data.com
+uuid: 3
+x-request-header: request3
+
+==== REQUEST BODY ====
+b'0000000 0000001 0000002 0000003 0000004 0000005 '
+
+==== RESPONSE ====
+200 OK
+
+==== RESPONSE HEADERS ====
+:status: 200
+x-response-header: response3
+content-length: 16
+
+==== RESPONSE BODY ====
+b'0000000 0000001 '
+
+==== REQUEST HEADERS ====
+:method: GET
+:scheme: https
+:path: /a/path3
+:authority: example.data.com
+uuid: 4
+x-request-header: request3
+
+==== REQUEST BODY ====
+b'0000000 0000001 0000002 0000003 0000004 0000005 0000006 0000007 '
+
+==== RESPONSE ====
+200 OK
+
+==== RESPONSE HEADERS ====
+:status: 200
+x-response-header: response4
+content-length: 50
+
+==== RESPONSE BODY ====
+b'0000000 0000001 0000002 0000003 0000004 0000005 00'
+``

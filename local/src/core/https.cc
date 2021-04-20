@@ -30,6 +30,10 @@ using chrono::milliseconds;
 
 std::unordered_map<std::string, TLSHandshakeBehavior> TLSSession::_handshake_behavior_per_sni;
 
+std::mutex TLSSession::tls_secrets_log_file_fd_mutex;
+int TLSSession::tls_secrets_log_file_fd = -1;
+swoc::file::path TLSSession::tls_secrets_log_file;
+
 namespace swoc
 {
 inline namespace SWOC_VERSION_NS
@@ -63,9 +67,9 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error)
     w.print(number_fmt, error._e);
   } else {
     w.write(short_name(error._e));
-    auto const &error_reason = ERR_reason_error_string(error._e);
+    auto const *error_reason = ERR_reason_error_string(error._e);
     if (error_reason != nullptr) {
-      w.write(ERR_reason_error_string(error._e));
+      w.write(error_reason);
     }
     if (spec._type != 's' && spec._type != 'S') {
       w.write(' ');
@@ -468,12 +472,15 @@ SSL_CTX *TLSSession::client_context = nullptr;
 
 // static
 Errata
-TLSSession::init()
+TLSSession::init(TextView tls_secrets_log_file)
 {
   SSL_load_error_strings();
   SSL_library_init();
   Errata errata = TLSSession::client_init(client_context);
   errata.note(TLSSession::server_init(server_context));
+  if (!tls_secrets_log_file.empty()) {
+    errata.note(open_tls_secrets_log_file(tls_secrets_log_file));
+  }
   errata.diag("Finished TLSSession::init");
   return errata;
 }
@@ -486,7 +493,33 @@ TLSSession::terminate()
   TLSSession::terminate(server_context);
 }
 
-static int
+// static
+swoc::Errata
+TLSSession::open_tls_secrets_log_file(TextView tls_secrets_log_file)
+{
+  Errata errata;
+  tls_secrets_log_file_fd = -1;
+  if (tls_secrets_log_file.empty()) {
+    return errata;
+  }
+
+  tls_secrets_log_file_fd = ::open(
+      tls_secrets_log_file.data(),
+      O_WRONLY | O_CREAT | O_APPEND,
+      S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+
+  if (tls_secrets_log_file_fd < 0) {
+    errata.error(
+        "Failed to open TLS secrets log file {}: {}",
+        tls_secrets_log_file,
+        swoc::bwf::Errno{});
+    return errata;
+  }
+  errata.diag("Writing TLS secrets to: {}", tls_secrets_log_file);
+  return errata;
+}
+
+int
 client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */)
 {
   int ret = SSL_CLIENT_HELLO_SUCCESS;
@@ -697,6 +730,39 @@ TLSSession::configure_certificates(SSL_CTX *&context)
 }
 
 // static
+bool
+TLSSession::tls_secrets_are_being_logged()
+{
+  return tls_secrets_log_file_fd != -1;
+}
+
+// static
+void
+TLSSession::keylog_callback(SSL const * /* ssl */, char const *line)
+{
+  if (tls_secrets_log_file_fd == -1) {
+    // Likely a previous write has failed and the log was closed.
+    return;
+  }
+  Errata errata;
+  std::scoped_lock _{tls_secrets_log_file_fd_mutex};
+  ssize_t rc = ::write(tls_secrets_log_file_fd, line, strlen(line));
+  if (rc == -1) {
+    errata.error("Failed to write to TLS secrets log file: {}", swoc::bwf::Errno{});
+    ::close(tls_secrets_log_file_fd);
+    tls_secrets_log_file_fd = -1;
+  }
+
+  constexpr char const *LF = "\n";
+  rc = ::write(tls_secrets_log_file_fd, LF, strlen(LF));
+  if (rc == -1) {
+    errata.error("Failed to write to TLS secrets log file: {}", swoc::bwf::Errno{});
+    ::close(tls_secrets_log_file_fd);
+    tls_secrets_log_file_fd = -1;
+  }
+}
+
+// static
 Errata
 TLSSession::client_init(SSL_CTX *&client_context)
 {
@@ -707,6 +773,10 @@ TLSSession::client_init(SSL_CTX *&client_context)
     return errata;
   }
   errata.note(configure_certificates(client_context));
+
+  if (tls_secrets_are_being_logged()) {
+    SSL_CTX_set_keylog_callback(client_context, keylog_callback);
+  }
   return errata;
 }
 
@@ -724,6 +794,10 @@ TLSSession::server_init(SSL_CTX *&server_context)
   /* Register for the client hello callback so we can inspect the SNI
    * for dynamic server behavior (such as requesting a client cert). */
   SSL_CTX_set_client_hello_cb(server_context, client_hello_callback, nullptr);
+
+  if (tls_secrets_are_being_logged()) {
+    SSL_CTX_set_keylog_callback(server_context, keylog_callback);
+  }
 
   return errata;
 }

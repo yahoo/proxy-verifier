@@ -3,6 +3,8 @@ PartName("core")
 
 env.DependsOn([
     Component("nghttp2"),
+    Component("ngtcp2"),
+    Component("nghttp3"),
     Component("openssl"),
     Component("libswoc.static"),
     Component("yaml-cpp"),
@@ -29,6 +31,7 @@ env.SdkLib(
         "ArgParser.cc",
         "http.cc",
         "http2.cc",
+        "http3.cc",
         "https.cc",
         "Localizer.cc",
         "ProxyVerifier.cc",
