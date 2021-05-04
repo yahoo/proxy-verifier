@@ -29,13 +29,7 @@ Table of Contents
       * [Install](#install)
          * [Prerequisites](#prerequisites)
          * [Building](#building)
-            * [Building on Ubuntu](#building-on-ubuntu)
-            * [Building on macOS](#building-on-macos)
-            * [Building on CentOS](#building-on-centos)
-               * [Building on CentOS 8](#building-on-centos-8)
-               * [Building on CentOS 7](#building-on-centos-7)
             * [ASan Instrumentation](#asan-instrumentation)
-            * [QUIC/HTTP3 Support](#quichttp3-support)
          * [Running the Tests](#running-the-tests)
             * [Unit Tests](#unit-tests)
             * [Gold Tests](#gold-tests)
@@ -45,7 +39,7 @@ Table of Contents
             * [--format &lt;format-specification&gt;](#--format-format-specification)
             * [--keys &lt;key1 key2 ... keyn&gt;](#--keys-key1-key2--keyn)
             * [--verbose](#--verbose)
-            * [--interface](#--interface)
+            * [--interface &lt;interface&gt;](#--interface-interface)
             * [--no-proxy](#--no-proxy)
             * [--strict](#--strict)
             * [--rate &lt;requests/second&gt;](#--rate-requestssecond)
@@ -55,6 +49,8 @@ Table of Contents
             * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
       * [Contribute](#contribute)
       * [License](#license)
+
+Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
 
 # Proxy Verifier
 
@@ -926,37 +922,58 @@ sessions:
 These instructions describe how to build a copy of the Proxy Verifier project
 on your local machine for development and testing purposes.
 
-
 ### Prerequisites
 
-Building and running Proxy Verifier requires the following to be installed on the system:
+Proxy Verifier is built using [SCons](https://scons.org). Scons is a Python
+module, so installing it is as straightforward as installing any Python
+package. A top-level `Pipfile` is provided to install Scons and its use is
+described and assumed in these instructions.
 
-* SCons. Proxy Verifier is built using the [SCons](https://scons.org) Python
-  build tool.
-* OpenSSL. The version of OpenSSL compiled against will dictate the TLS version
-  the built Proxy Verifier will support. Use at least version 1.1.1 for TLS 1.3
-  support.
+Proxy Verifier depends upon the following libraries:
+
+* [OpenSSL](https://www.openssl.org). The version of OpenSSL compiled against
+  will dictate the TLS version the built Proxy Verifier will support. Use at
+  least version 1.1.1 for TLS 1.3 support.
 * [Nghttp2](https://nghttp2.org) This is the framework used for parsing HTTP/2
-  traffic. Main development of Proxy Verifier has been done with version 1.39,
-  but earlier versions may work as well.
+  traffic.
+* [ngtcp2](https://github.com/ngtcp2/ngtcp2) This is the framework used for
+  parsing QUIC traffic.
+* [nghttp3](https://github.com/ngtcp2/nghttp3) This is the framework used for
+  parsing HTTP/3 traffic.
+
+For convenience, a tool is provided to build these libraries:
+[build_library_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_library_dependencies.sh)
+
+Here's an example invocation of this script:
+
+```
+# Alter this for your desired library location.
+http3_libs_dir=${HOME}/src/http3_libs
+
+bash ./tools/build_http3_dependencies.sh ${http3_libs_dir}
+```
+
+A set of Dockerfile documents are provided that installs the needed system
+packages for a number of supported systems and runs
+[build_library_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_library_dependencies.sh),
+installing the built libraries in `/opt/`. 
 
 ### Building
 
-OpenSSL and Nghttp2 are linked against dynamically and have their own SCons
-arguments to point to their locations. SCons is a Python module. For
-convenience, a Pipfile exists at the root of the Proxy Verifier repo that
-specifies the SCons Python modules needed to build Proxy Verifier. Assuming you
-have [pipenv](https://pypi.org/project/pipenv/) installed in your environment,
-you can simply use `pipenv install` to configure your Python virtual
-environment for SCons and then build using the `scons` command in that
-environment.
+Once the above pre-requisites are taken care of, Proxy Verifier is installed running
+scons like so from the root level of the proxy-verifier repository:
 
 ```
+# Install scons and any of its requirements.
 pipenv install
+
+# Now run scons to build proxy-verifier.
 pipenv run scons \
     -j8 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
+    --with-ngtcp2=/path/to/ngtcp2 \
+    --with-nghttp3=/path/to/nghttp3 \
     --cfg=release \
     proxy-verifier
 ```
@@ -966,124 +983,30 @@ the root of the repository. Note:
 
 1. `-j8` directs scons to build with 8 threads. Adjust according to the
    capabilities of your build system.
-1. `--with-ssl` and `--with-nghttp2` both take the path to the system's opennsl
-   and nghttp2 devel install locations, respectively. Proxy Verifier will be
-   dynamically linked with these libraries.
+1. `--with-ssl`, `--with-nghttp2`, `--with-ngtcp2`, and `--with-nghttp3` take
+   the paths to the built opennsl, nghttp2, ngtcp2, and nghttp3 libraries
+   (respectively).  Proxy Verifier will be dynamically linked with these
+   libraries. As a quick way to make sure you are providing the right paths to
+   these locations, verify that each of them has `lib` directories under them
+   containing their respective `.so` files.
 1. By default scons does a debug build without optimization. `--cfg=release`
    directs it to do a non-debug build for the various components with
    optimization enabled (e.g., with `-O2` for g++ builds). This is critical if
    replaying high volumes of traffic.
 
-#### Building on Ubuntu
-
-The following commands will install the required packages and build Proxy
-Verifier on Ubuntu. These commands were verified for Ubuntu 20.04 LTS.
+If a Docker container is created from an image built from one of the provided
+Dockerfile documents, then the libraries are installed in `/opt/`. In this case,
+Proxy Verifier can be built like so:
 
 ```
-sudo apt update
-sudo apt-get install -y git libssl-dev libnghttp2-dev pipenv
-
-git clone https://github.com/yahoo/proxy-verifier.git
-cd proxy-verifier
-
 pipenv install
 pipenv run scons \
     -j8 \
+    --with-ssl=/opt/openssl \
+    --with-nghttp2=/opt/nghttp2 \
+    --with-ngtcp2=/opt/ngtcp2 \
+    --with-nghttp3=/opt/nghttp3 \
     --cfg=release \
-    --with-ssl=$(dirname $(dpkg -L libssl-dev | grep ssl.so)) \
-    --with-nghttp2=$(dirname $(dpkg -L libnghttp2-dev | grep libnghttp2.so)) \
-    proxy-verifier
-```
-
-#### Building on macOS
-
-The following commands will install the required packages and build Proxy
-Verifier on a Mac. These commands assume that you have
-[Homebrew](https://brew.sh) installed on your system. These commands were
-verified for macOS Big Sur.
-
-```
-brew install pipenv openssl nghttp2
-
-git clone https://github.com/yahoo/proxy-verifier.git
-cd proxy-verifier
-
-pipenv install
-pipenv run scons \
-    -j8 \
-    --cfg=release \
-    --with-ssl=`brew --prefix openssl` \
-    --with-nghttp2=`brew --prefix nghttp2` \
-    proxy-verifier
-```
-
-#### Building on CentOS
-
-##### Building on CentOS 8
-The following commands will install the required packages and build Proxy
-Verifier on CentOS. These commands were verified for
-`CentOS Linux release 8.3.2011`:
-
-```
-sudo yum install -y openssl-devel python38-pip git
-sudo dnf -y group install "Development Tools"
-sudo dnf -y --enablerepo=powertools install libnghttp2-devel
-sudo pip3 install pipenv
-
-git clone https://github.com/yahoo/proxy-verifier.git
-cd proxy-verifier
-
-pipenv install
-pipenv run scons \
-    -j8 \
-    --cfg=release \
-    --with-ssl=/usr/lib64 \
-    --with-nghttp2=/usr/include \
-    proxy-verifier
-```
-
-##### Building on CentOS 7
-Building on CentOS 7 requires building an updated version of nghttp2 because
-the official CentOS package repositories do not contain a recent enough
-version to build with Proxy Verifier. The following was verified on
-`CentOS Linux release 7.9.2009`:
-
-```
-sudo yum install -y centos-release-scl epel-release git wget autoconf automake libtool
-sudo yum install -y devtoolset-9 rh-python38-python-devel rh-python38 rh-python38-python-pip openssl11-devel
-
-# "sudo su" as a convenience since we'll be sourcing environment variables.
-sudo su
-source /opt/rh/rh-python38/enable
-pip3 install pipenv
-
-source /opt/rh/devtoolset-9/enable
-
-cd /var/tmp
-wget https://github.com/nghttp2/nghttp2/archive/v1.43.0.tar.gz
-tar xf v1.43.0.tar.gz
-cd nghttp2-1.43.0
-autoreconf -fi
-./configure --prefix=/opt/scons-build/nghttp2/1.43.0 LIBS="-L/opt/rh/rh-python38/root/lib"
-make -j8
-make -j8 install
-
-mkdir -p /opt/scons-build/openssl/1.1.1
-ln -s /usr/include/openssl11/ /opt/scons-build/openssl/1.1.1/include
-ln -s /usr/lib64/openssl11/ /opt/scons-build/openssl/1.1.1/lib
-
-exit # To exit the shell from "sudo su"
-
-git clone https://github.com/yahoo/proxy-verifier.git
-cd proxy-verifier
-
-source /opt/rh/rh-python38/enable
-pipenv install
-pipenv run scons \
-    -j8 \
-    --cfg=release \
-    --with-ssl=/opt/scons-build/openssl/1.1.1 \
-    --with-nghttp2=/opt/scons-build/nghttp2/1.43.0 \
     proxy-verifier
 ```
 
@@ -1103,41 +1026,10 @@ pipenv run scons \
     -j8 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
+    --with-ngtcp2=/path/to/ngtcp2 \
+    --with-nghttp3=/path/to/nghttp3 \
     --cfg=release \
     --enable-asan \
-    proxy-verifier
-```
-
-#### QUIC/HTTP3 Support
-
-Proxy Verifier supports HTTP/3. The implemenation of this relies upon the
-following libraries:
-
-* A version of OpenSSL that supports QUIC.
-* ngtcp2 for its QUIC support
-* nghttp3 for its HTTP/3 support.
-
-A tool is provided to build these libraries:
-[build_http3_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_http3_dependencies.sh)
-
-Here is an example session, tested on MacOS BugSur and CentOS 7, that builds
-Proxy Verifier with QUIC/HTTP3 support:
-
-```
-# Alter this for your desired library location.
-http3_libs_dir=${HOME}/src/http3_libs
-
-bash ./tools/build_http3_dependencies.sh ${http3_libs_dir}
-
-# Replace '/path/to/nghttp2' to your location of the installed nghttp2
-# location.
-pipenv run scons \
-    -j8 \
-    --cfg=release \
-    --with-ssl=${http3_libs_dir}/openssl_build/ \
-    --with-ngtcp2=${http3_libs_dir}/ngtcp2_build/ \
-    --with-nghttp3=${http3_libs_dir}/nghttp3_build/ \
-    --with-nghttp2=/path/to/nghttp2 \
     proxy-verifier
 ```
 
@@ -1153,6 +1045,8 @@ pipenv run scons \
     -j8 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
+    --with-ngtcp2=/path/to/ngtcp2 \
+    --with-nghttp3=/path/to/nghttp3 \
     --cfg=release \
     run_utest::
 ```
