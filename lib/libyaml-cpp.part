@@ -8,26 +8,23 @@ env.AppendUnique(
     CXXFLAGS=["-std=c++17", "-g"],
 )
 
-files = env.Pattern(src_dir="${CHECK_OUT_DIR}/src",includes=['*.cpp']).files()
+files = env.Pattern(src_dir="${CHECK_OUT_DIR}/src", includes=['*.cpp']).files()
 
 env.InstallLib(
-    env.StaticLibrary("yaml-cpp",files)
-    )
+    env.StaticLibrary("yaml-cpp", files)
+)
 
 # include headers
-env.SdkInclude(env.Pattern(src_dir="${CHECK_OUT_DIR}/include",includes=['*.h']))
+env.SdkInclude(env.Pattern(src_dir="${CHECK_OUT_DIR}/include", includes=['*.h']))
 
 env.InstallInclude(
-    Pattern(src_dir="${CHECK_OUT_DIR}/include/",includes=["*.h"]),
-    )
+    Pattern(src_dir="${CHECK_OUT_DIR}/include/", includes=["*.h"]),
+)
 
 # Export the package config.
-pc_file = env.Substfile("libyaml-cpp.pc", "libyaml-cpp.pc.in"
-    , SUBST_DICT = {
-        "pkg_prefix": env.Dir("$INSTALL_ROOT").abspath
-      , "pkg_version": "$PART_VERSION"
-    })
+pc_file = env.Substfile("libyaml-cpp.pc", "${PART_DIR}/libyaml-cpp.pc.in", SUBST_DICT={
+    "pkg_prefix": env.Dir("$INSTALL_ROOT").abspath, "pkg_version": "$PART_VERSION"
+})
 
 
 env.InstallPkgConfig(pc_file)
-

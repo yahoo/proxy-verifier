@@ -1,19 +1,62 @@
-Import('*')
 import os
+Import('*')
 PartName("nghttp2")
-path=env.get("CUSTOM_PATH") # passed in from top level SConstruct.
+path = env.get("CUSTOM_PATH")  # passed in from top level SConstruct.
 if path:
-    path = env.subst(path);
-    i_path = os.path.join(path,"include")
+    path = env.subst(path)
+    i_path = os.path.join(path, "include")
     env.Append(CPPPATH=[i_path])
     env.ExportCPPPATH([i_path])
-    l_path = os.path.join(path,"lib")
+    l_path = os.path.join(path, "lib")
     env.Append(LIBPATH=[l_path])
     env.ExportLIBPATH(l_path)
 
-cfg = env.Configure()
-if not cfg.CheckCHeader("nghttp2/nghttp2.h"):
-    env.PrintError("nghttp2/nghttp2.h was not found - install nghttp2 or use --with-nghttp2 to specify a directory.",show_stack=False)
-cfg.Finish()
+    cfg = env.Configure()
+    if not cfg.CheckCHeader("nghttp2/nghttp2.h"):
+        env.PrintError(
+            "nghttp2/nghttp2.h was not found - install nghttp2 or use --with-nghttp2 to specify a directory.",
+            show_stack=False)
+    cfg.Finish()
 
-env.ExportLIBS(["libnghttp2"])
+    env.ExportLIBS(["libnghttp2"])
+
+else:
+    # No path provided.
+    DependsOn([
+        Component("openssl", requires=REQ.DEFAULT(internal=True)),
+    ])
+    PartVersion(
+        GitVersionFromTag(
+            "1.43.0",
+            regex=r'\d+\_\d+\_\d+[a-z]',
+            converter=lambda ver, env: ver.replace("_", ".")
+        )
+    )
+    auto_scanner = {}
+    if "SKIP_DOCS" in env['mode']:
+        auto_scanner.update(
+            dict(
+                InstallManPage=dict(
+                    source=[],
+                ),
+                InstallDoc=dict(
+                    source=[],
+                ),
+            ),
+        )
+
+    env.AutoMake(
+        copy_src=True,
+        copy_top=True,
+        autoreconf="autoreconf",
+        configure="configure",
+        configure_args=[
+            '--prefix=$CONFIGURE_PREFIX',
+            '--enable-lib-only',
+        ],
+        # this allows us to call make depends to "finialize" what finial makefile. Prevents a rebuild.
+        # however this sort of build twice
+        configure_post_actions='cd ${{TARGET.dir}} && make CC=$CC CXX=$CXX CPPFLAGS="$CCFLAGS $CPPFLAGS $_CPPDEFFLAGS $_ABSCPPINCFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LINKFLAGS $_RUNPATH $_ABSRPATHLINK $_ABSLIBDIRFLAGS" V=1 $(-j{jobs}$)'.format(jobs=env.GetOption('num_jobs')),
+        # need to make sure we don't export the engine-1.1 so files
+        auto_scanner=auto_scanner,
+    )

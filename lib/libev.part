@@ -32,7 +32,8 @@ env.Command(
         "#_makeinstall/${PART_NAME}/lib/libev.so.4.0.0",
     ],
     ["Makefile"],
-    # the -rpath-link is to get the correct paths for the binaries to link with the rpath usage of the makefile
+    # the -rpath-link is to get the correct paths for the binaries to link
+    # with the rpath usage of the makefile
     [
         'cd ${{SOURCE.dir}} ; make all V=1\
          $(-j{jobs}$)'.format(jobs=env.GetOption('num_jobs')),

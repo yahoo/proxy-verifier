@@ -34,7 +34,7 @@ env.Command(
      --prefix=${ABSPATH('#_makeinstall')}/${PART_NAME}\
      CC=${CC} CXX=${CXX}\
      ''',
-     source_scanner=Scanner(function = lambda *lst,**kw: [])
+    source_scanner=Scanner(function=lambda *lst, **kw: [])
 )
 env.Command(
     [
@@ -77,21 +77,26 @@ env.Command(
         env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent.so"),
         env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent-${PART_SHORT_VERSION}.so.6"),
         "#_makeinstall/${PART_NAME}/lib/libevent-${PART_SHORT_VERSION}.so.6.0.2",
-        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_core-${PART_SHORT_VERSION}.so.6"),
+        env.FileSymbolicLink(
+            "#_makeinstall/${PART_NAME}/lib/libevent_core-${PART_SHORT_VERSION}.so.6"),
         "#_makeinstall/${PART_NAME}/lib/libevent_core-${PART_SHORT_VERSION}.so.6.0.2",
         env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_core.so"),
-        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_extra-${PART_SHORT_VERSION}.so.6"),
+        env.FileSymbolicLink(
+            "#_makeinstall/${PART_NAME}/lib/libevent_extra-${PART_SHORT_VERSION}.so.6"),
         "#_makeinstall/${PART_NAME}/lib/libevent_extra-${PART_SHORT_VERSION}.so.6.0.2",
         env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_extra.so"),
-        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_openssl-${PART_SHORT_VERSION}.so.6"),
+        env.FileSymbolicLink(
+            "#_makeinstall/${PART_NAME}/lib/libevent_openssl-${PART_SHORT_VERSION}.so.6"),
         "#_makeinstall/${PART_NAME}/lib/libevent_openssl-${PART_SHORT_VERSION}.so.6.0.2",
         env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_openssl.so"),
-        env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_pthreads-${PART_SHORT_VERSION}.so.6"),
+        env.FileSymbolicLink(
+            "#_makeinstall/${PART_NAME}/lib/libevent_pthreads-${PART_SHORT_VERSION}.so.6"),
         "#_makeinstall/${PART_NAME}/lib/libevent_pthreads-${PART_SHORT_VERSION}.so.6.0.2",
         env.FileSymbolicLink("#_makeinstall/${PART_NAME}/lib/libevent_pthreads.so"),
     ],
     ["Makefile"],
-    # the -rpath-link is to get the correct paths for the binaries to link with the rpath usage of the makefile
+    # the -rpath-link is to get the correct paths for the binaries to link
+    # with the rpath usage of the makefile
     [
         'cd ${{SOURCE.dir}} ; make all V=1\
          $(-j{jobs}$)'.format(jobs=env.GetOption('num_jobs')),
@@ -119,10 +124,9 @@ env.InstallInclude(
     ),
     sub_dir="event2"
 )
-substdict = {env.subst("${ABSPATH('#_makeinstall/$PART_NAME')}"):env.subst("${PACKAGE_ROOT}")}
-pc_files = [
-    env.Substfile(target="${SOURCE.file}", source=f, SUBST_DICT=substdict) for f in env.Glob("#_makeinstall/${PART_NAME}/lib/pkgconfig/*.pc")
-    ]
+substdict = {env.subst("${ABSPATH('#_makeinstall/$PART_NAME')}"): env.subst("${PACKAGE_ROOT}")}
+pc_files = [env.Substfile(target="${SOURCE.file}", source=f, SUBST_DICT=substdict)
+            for f in env.Glob("#_makeinstall/${PART_NAME}/lib/pkgconfig/*.pc")]
 env.InstallLib(pc_files, auto_add_libs=False, sub_dir="pkgconfig", add_to_path=False)
 
 env.ExportItem("PKGCONFIG", env.Dir("#_makeinstall/${PART_NAME}/lib/pkgconfig").abspath)

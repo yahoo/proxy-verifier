@@ -1,19 +1,118 @@
-Import('*')
 import os
+Import('*')
 PartName("openssl")
-path=env.get("CUSTOM_PATH") # passed in from top level SConstruct.
+path = env.get("CUSTOM_PATH")  # passed in from top level SConstruct.
+
 if path:
-    path = env.subst(path);
-    i_path = os.path.join(path,"include")
+    path = env.subst(path)
+    i_path = os.path.join(path, "include")
     env.Append(CPPPATH=[i_path])
     env.ExportCPPPATH([i_path])
-    l_path = os.path.join(path,"lib")
+    l_path = os.path.join(path, "lib")
     env.Append(LIBPATH=[l_path])
     env.ExportLIBPATH(l_path)
 
-cfg = env.Configure()
-if not cfg.CheckCHeader("openssl/ssl.h"):
-    env.PrintError("openssl/ssl.h was not found - install OpenSSL or use --with-ssl to specify a directory.",show_stack=False)
-cfg.Finish()
+    cfg = env.Configure()
+    if not cfg.CheckCHeader("openssl/ssl.h"):
+        env.PrintError(
+            "openssl/ssl.h was not found - install OpenSSL or use --with-ssl to specify a directory.",
+            show_stack=False)
+    cfg.Finish()
 
-env.ExportLIBS(["libssl", "libcrypto"])
+    env.ExportLIBS(["libssl", "libcrypto"])
+
+else:
+    # No path provided.
+    PartVersion(
+        GitVersionFromTag(
+            "1.1.1.g",
+            regex=r'\d+\_\d+\_\d+[a-z]',
+            converter=lambda ver, env: ver.replace("_", ".")
+        )
+    )
+
+    if env['CC'] == 'gcc':
+        env.AppendUnique(
+            CCFLAGS=[
+                '-Wno-error=unused-parameter',
+                '-Wno-error=missing-field-initializers',
+                '-Wno-error=cpp',
+                '-Wno-error=comment'
+            ]
+        )
+
+    if env['CC'] == 'icc':
+        env.AppendUnique(
+            CCFLAGS=[
+                '-diag-warning=3656',
+                '-diag-warning=2011',
+                '-diag-warning=2330',
+                '-diag-warning=592',
+                '-diag-warning=188',
+                '-diag-warning=191',
+                '-diag-warning=1224',
+                '-diag-warning=175',
+            ],
+        )
+
+    if env['CC'] == 'aocc':
+        env.AppendUnique(
+            CCFLAGS=[
+                "-Wno-error=builtin-macro-redefined",
+                "-Wno-error=missing-field-initializers",
+                "-Wno-error=unused-parameter",
+                "-Wno-error=unused-command-line-argument",
+                "-Wno-error=#warnings",
+                "-Wno-error=implicit-int-float-conversion",
+            ]
+        )
+
+    auto_scanner = dict(
+        InstallLib=dict(
+            source=lambda node,
+            env: [
+                env.Pattern(
+                    src_dir=node.Dir("lib"),
+                    includes=env["INSTALL_LIB_PATTERN"] +
+                    env["INSTALL_API_LIB_PATTERN"],
+                    recursive=False),
+            ],
+        ),
+    )
+
+    # This if guard should not be necessary after Scons 0.16.0.
+    if "SKIP_DOCS" in env['MODE'] and env['CC'] != 'clang':
+        auto_scanner.update(
+            dict(
+                InstallManPage=dict(
+                    source=[],
+                ),
+                InstallDoc=dict(
+                    source=[],
+                ),
+                InstallData=dict(
+                    source=[],
+                ),
+            )
+        )
+
+    env.AutoMake(
+        copy_src=True,
+        copy_top=True,
+        autoreconf=None,  # There is no autoconf.. so skip this step
+        configure="config",
+        configure_args=[
+            'enable-tls1_3',
+            '--prefix=$CONFIGURE_PREFIX',
+        ],
+        # this allows us to call make depends to "finialize" what finial makefile. Prevents a rebuild.
+        # however this sort of build twice
+        configure_post_actions='cd ${{TARGET.dir}} && make CC=$CC CXX=$CXX CPPFLAGS="$CCFLAGS $CPPFLAGS $_CPPDEFFLAGS $_ABSCPPINCFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LINKFLAGS $_RUNPATH $_ABSRPATHLINK $_ABSLIBDIRFLAGS" V=1 $(-j{jobs}$)'.format(jobs=env.GetOption('num_jobs')),
+        # we have to do advance logic for openssl
+        auto_configure_args=False,
+        AUTOMAKE_BUILD_ARGS='CC=$CC CXX=$CXX CPPFLAGS="$CCFLAGS $CPPFLAGS $_CPPDEFFLAGS $_ABSCPPINCFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LINKFLAGS $_RUNPATH $_ABSRPATHLINK $_ABSLIBDIRFLAGS"',
+        # need to make sure we don't export the engine-1.1 so files
+        auto_scanner=auto_scanner,
+        install_targets="install_sw",
+        skip_check=True,
+    )
