@@ -23,11 +23,11 @@ env.AppendUnique(
 env.SdkInclude(
     Pattern(src_dir="${CHECK_OUT_DIR}/local/include/core", includes=["*.h"]),
     sub_dir="core",
-    add_to_path=False # don't add the sub_dir to path
+    add_to_path=False  # don't add the sub_dir to path
 )
 
 env.SdkLib(
-    env.StaticLibrary("verifier-core",[
+    env.StaticLibrary("verifier-core", [
         "ArgParser.cc",
         "http.cc",
         "http2.cc",

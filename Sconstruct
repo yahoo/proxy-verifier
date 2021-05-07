@@ -4,6 +4,11 @@ from parts import *
 SetOptionDefault("LINKFLAGS", ['-Wl,--copy-dt-needed-entries', '-Wl,--as-needed'])
 SetOptionDefault("INSTALL_ROOT",  "#")
 
+SetOptionDefault("COMPILER", "${_replace('$TOOLCHAIN',',','_')}")
+SetOptionDefault("AUTO_MAKE_DESTDIR", "${ABSPATH('#_destdir/$COMPILER/$PART_ALIAS')}")
+SetOptionDefault("CMAKE_DESTDIR", "${ABSPATH('#_destdir/$COMPILER/$PART_ALIAS')}")
+SetOptionDefault('default_config', "release")
+
 AddOption("--with-ssl",
           dest='with_ssl',
           nargs=1,
@@ -44,23 +49,66 @@ AddOption("--with-nghttp3",
           help='Optional path to custom build of nghttp3'
          )
 
-
 AddOption('--enable-asan',
           dest='enable_asan',
           action='store_true',
           help='Configure compiling and linking for ASan.')
 
 path_ssl = GetOption("with_ssl")
-Part("#lib/openssl.part", CUSTOM_PATH=path_ssl)
+if path_ssl is not None:
+  Part("#lib/openssl.part", CUSTOM_PATH=path_ssl)
+else:
+  Part(
+    "openssl",
+    "#lib/openssl.part",
+    vcs_type=VcsGit(server="github.com", repository="tatsuhiro-t/openssl",
+                    protocol="https",
+                    revision="afdc16c82f724e8c0b8384224180b140fe8566fe"
+                    ),
+    mode=['SKIP_DOCS'],
+  )
 
 path_nghttp2 = GetOption("with_nghttp2")
-Part("#lib/nghttp2.part", CUSTOM_PATH=path_nghttp2)
+if path_nghttp2 is not None:
+    Part("#lib/nghttp2.part", CUSTOM_PATH=path_nghttp2)
+else:
+    Part(
+        "nghttp2",
+        "#lib/nghttp2.part",
+        vcs_type=VcsGit(server="github.com", repository="tatsuhiro-t/nghttp2",
+                        protocol="https",
+                        revision="d2e570c72e169ed88557ce5108df34d34d4f7f08"
+                        ),
+        mode=['SKIP_DOCS'],
+    )
 
 path_ngtcp2 = GetOption("with_ngtcp2")
-Part("#lib/ngtcp2.part", CUSTOM_PATH=path_ngtcp2)
+if path_ngtcp2 is not None:
+    Part("#lib/ngtcp2.part", CUSTOM_PATH=path_ngtcp2)
+else:
+  Part(
+    "ngtcp2",
+    "#lib/ngtcp2.part",
+    vcs_type=VcsGit(server="github.com", repository="ngtcp2/ngtcp2",
+                    protocol="https",
+                    revision="169c68127b78ea906c96b49b9e18d4f805ab8eda"
+                    ),
+    mode=['SKIP_DOCS'],
+  )
 
 path_nghttp3 = GetOption("with_nghttp3")
-Part("#lib/nghttp3.part", CUSTOM_PATH=path_nghttp3)
+if path_nghttp3 is not None:
+  Part("#lib/nghttp3.part", CUSTOM_PATH=path_nghttp3)
+else:
+  Part(
+    "nghttp3",
+    "#lib/nghttp3.part",
+    vcs_type=VcsGit(server="github.com", repository="ngtcp2/nghttp3",
+                    protocol="https",
+                    revision="aed3107f9104eae77d97ed8093caa8f3b7ef64d4"
+                    ),
+    mode=['SKIP_DOCS'],
+  )
 
 Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="yaml-cpp-0.6.3"), package_group="proxy-verifier")
 
@@ -80,6 +128,7 @@ Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="SolidW
 pv_mode = []
 if GetOption("enable_asan"):
   pv_mode.append('enable-asan')
+
+Default("proxy-verifier::")
 Part("local/parts/proxy-verifier.part", package_group="proxy-verifier", mode=pv_mode)
 Part("test/unit_tests/unit_tests.part")
-

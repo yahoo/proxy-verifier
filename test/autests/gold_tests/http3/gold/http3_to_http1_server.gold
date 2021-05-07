@@ -26,7 +26,7 @@
 - "content-length": "10240"
 
 ``
-``Drained with headers body of 10240 bytes with content: 0000000 `` 00004ff 
+``Drained``body of 10240 bytes with content: 0000000 `` 00004ff 
 ``
 - "Host": "127.0.0.1:``"
 - "Accept-Encoding": "identity"

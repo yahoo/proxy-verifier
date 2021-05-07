@@ -21,6 +21,9 @@ install_dir=$1
 # Only try using sudo if the install directory is not writable by the current
 # user.
 SUDO=""
+[ -d "${install_dir}" ] || \
+    mkdir -p ${install_dir} || \
+    sudo mkdir -p ${install_dir}
 [ -w "${install_dir}" ] || SUDO=sudo
 
 mkdir -p ${install_dir}
@@ -67,7 +70,8 @@ cd nghttp2
 git checkout d2e570c72e169ed88557ce5108df34d34d4f7f08
 autoreconf -if
 ./configure \
+  PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
   --prefix=${install_dir}/nghttp2 \
-  PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig
+  --enable-lib-only
 make -j $(nproc)
 ${SUDO} make install

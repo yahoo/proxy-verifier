@@ -69,7 +69,7 @@ function main() {
   git diff --cached --name-only --diff-filter=A >> ${files}
   # Keep this list of Python extensions the same with the list of
   # extensions searched for in the tools/git/pre-commit hook.
-  grep -E '\.py$|\.cli.ext$|\.test.ext$' ${files} > ${files_filtered}
+  grep -E '\.part$|\.py$|\.cli.ext$|\.test.ext$' ${files} > ${files_filtered}
 
   echo "Running autopep8. This may take a minute."
   autopep8 \

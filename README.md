@@ -26,10 +26,14 @@ Table of Contents
          * [URL Verification](#url-verification)
          * [Status Verification](#status-verification)
          * [Example Replay File](#example-replay-file)
-      * [Install](#install)
-         * [Prerequisites](#prerequisites)
-         * [Building](#building)
+      * [Installing](#installing)
+         * [Prebuilt Binaries](#prebuilt-binaries)
+         * [Building from Source](#building-from-source)
+            * [Prerequisites](#prerequisites)
+            * [Build](#build)
+            * [Using Prebuilt Libraries](#using-prebuilt-libraries)
             * [ASan Instrumentation](#asan-instrumentation)
+            * [Debug Build](#debug-build)
          * [Running the Tests](#running-the-tests)
             * [Unit Tests](#unit-tests)
             * [Gold Tests](#gold-tests)
@@ -49,8 +53,6 @@ Table of Contents
             * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
       * [Contribute](#contribute)
       * [License](#license)
-
-Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
 
 # Proxy Verifier
 
@@ -917,103 +919,149 @@ sessions:
       status: 200
 ```
 
-## Install
+## Installing
+
+### Prebuilt Binaries
+
+Starting with the v2.2.0 release, statically linked binaries for Linux and Mac
+are provided with the release in the
+[Releases](https://github.com/yahoo/proxy-verifier/releases) page. If you do not
+need your own customized build of Proxy Verifier, the easiest way to start
+using it is to simply download the proxy-verifier `tar.gz` for the desired
+release, untar it on the desired box, and copy the `verifier-client` and
+`verifier-server` binaries to a convenient location from which to run them.
+The Linux binaries should run on Ubuntu, Alma/CentOS/Fedora/RHEL, FreeBSD, and
+other Linux flavors.
+
+### Building from Source
 
 These instructions describe how to build a copy of the Proxy Verifier project
 on your local machine for development and testing purposes.
 
-### Prerequisites
+#### Prerequisites
 
 Proxy Verifier is built using [SCons](https://scons.org). Scons is a Python
 module, so installing it is as straightforward as installing any Python
-package. A top-level `Pipfile` is provided to install Scons and its use is
-described and assumed in these instructions.
+package. A top-level
+[Pipfile](https://github.com/yahoo/proxy-verifier/tree/master/Pipfile) is
+provided to install Scons and its use is described and assumed in these
+instructions, but it can also be installed using pip if preferred.
 
-Proxy Verifier depends upon the following libraries:
+Scons will clone and build the dependent libraries using Automake. Thus
+building will require the installation of the following system packages:
 
-* [OpenSSL](https://www.openssl.org). The version of OpenSSL compiled against
-  will dictate the TLS version the built Proxy Verifier will support. Use at
-  least version 1.1.1 for TLS 1.3 support.
-* [Nghttp2](https://nghttp2.org) This is the framework used for parsing HTTP/2
+* git
+* pipenv
+* autoconf
+* libtool
+* pkg-config
+
+For system-specific commands to install these packages (Ubuntu, CentOS, etc.),
+one can view the
+[Dockerfile](https://docs.docker.com/engine/reference/builder/) documents
+provided under
+[docker](https://github.com/yahoo/proxy-verifier/tree/master/docker). These
+demonstrate, for each system, what commands are used to install these package
+dependencies. Naturally, performing a `docker build` against these Dockerfiles
+can also be used to create Docker images, containers from which builds can be
+performed.
+
+In addition to the above system package dependencies, Proxy Verifier utilizes
+the following C++ libraries:
+
+* [OpenSSL](https://www.openssl.org) is used to implement TLS encryption.
+  Proxy Verifier requires the version of OpenSSL that supports QUIC.
+* [Nghttp2](https://nghttp2.org) is used for parsing HTTP/2 traffic.
+* [ngtcp2](https://github.com/ngtcp2/ngtcp2) is used for parsing QUIC
   traffic.
-* [ngtcp2](https://github.com/ngtcp2/ngtcp2) This is the framework used for
-  parsing QUIC traffic.
-* [nghttp3](https://github.com/ngtcp2/nghttp3) This is the framework used for
-  parsing HTTP/3 traffic.
+* [nghttp3](https://github.com/ngtcp2/nghttp3) is used for parsing HTTP/3
+  traffic.
+* [yaml-cpp](https://github.com/jbeder/yaml-cpp) is used for parsing the YAML
+  replay files.
+* [libswoc](https://github.com/SolidWallOfCode/libswoc) are a set of C++
+  library extensions to support string parsing, memory management, logging, and
+  other features.
 
-For convenience, a tool is provided to build these libraries:
-[build_library_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_library_dependencies.sh)
+*Note*: None of these libraries need to be explicitly installed before you
+build.  By default, Scons will fetch and build each of these libraries as a
+part of building the project.
 
-Here's an example invocation of this script:
+#### Build
 
-```
-# Alter this for your desired library location.
-http3_libs_dir=${HOME}/src/http3_libs
-
-bash ./tools/build_http3_dependencies.sh ${http3_libs_dir}
-```
-
-A set of Dockerfile documents are provided that installs the needed system
-packages for a number of supported systems and runs
-[build_library_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_library_dependencies.sh),
-installing the built libraries in `/opt/`. 
-
-### Building
-
-Once the above pre-requisites are taken care of, Proxy Verifier is installed running
-scons like so from the root level of the proxy-verifier repository:
+Once the above-listed system packages (git, autoconf, etc.) are installed on
+your system, you can build Proxy Verifier using Scons. This involves first
+creating the Python virtual environment and then running the `scons` command
+to build Proxy Verifier. Here is an example invocation:
 
 ```
-# Install scons and any of its requirements.
+# Install scons and any of its Python requirements. This only needs to be
+# done once before the first invocation of scons.
 pipenv install
 
 # Now run scons to build proxy-verifier.
-pipenv run scons \
-    -j8 \
-    --with-ssl=/path/to/openssl \
-    --with-nghttp2=/path/to/nghttp2 \
-    --with-ngtcp2=/path/to/ngtcp2 \
-    --with-nghttp3=/path/to/nghttp3 \
-    --cfg=release \
-    proxy-verifier
+pipenv run scons -j4
 ```
 
-This will build `verifier-client` `verifier-server` in the `bin/` directory at
-the root of the repository. Note:
+This will build and install `verifier-client` and `verifier-server` in the
+`bin/` directory at the root of the repository. `-j4` directs Scons to build
+with 4 threads. Adjust according to the capabilities of your build system.
 
-1. `-j8` directs scons to build with 8 threads. Adjust according to the
-   capabilities of your build system.
-1. `--with-ssl`, `--with-nghttp2`, `--with-ngtcp2`, and `--with-nghttp3` take
-   the paths to the built opennsl, nghttp2, ngtcp2, and nghttp3 libraries
-   (respectively).  Proxy Verifier will be dynamically linked with these
-   libraries. As a quick way to make sure you are providing the right paths to
-   these locations, verify that each of them has `lib` directories under them
-   containing their respective `.so` files.
-1. By default scons does a debug build without optimization. `--cfg=release`
-   directs it to do a non-debug build for the various components with
-   optimization enabled (e.g., with `-O2` for g++ builds). This is critical if
-   replaying high volumes of traffic.
+#### Using Prebuilt Libraries
 
-If a Docker container is created from an image built from one of the provided
-Dockerfile documents, then the libraries are installed in `/opt/`. In this case,
-Proxy Verifier can be built like so:
+As mentioned above, Scons will by default fetch the various library
+dependencies (OpenSSL, Nghttp2, etc.), build, and manage those for you. If you
+do not change the fetched source code for these libraries, they will not be
+rebuilt after the first `scons` build invocation. This behavior is convenient
+as it relieves the burden of fetching and building these libraries from the
+developer. However, Scons will rescan the fetched source trees for these
+libraries on every call of `scons` to inspect them for any changes. For
+long-term development projects, a developer may find it more efficient to build
+these libraries externally and relieve Scons from managing them. To
+conveniently support this, the
+[build_library_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_library_dependencies.sh)
+script is provided to build these libraries. To build and install the
+libraries, run that script, passing as an argument the desired install location
+for the various libraries. Then point Scons to those libraries using various
+`--with` directives.
+
+Here's an example invocation of `scons` along with the use of the library build
+script:
+
+```
+# Alter this to your desired library location.
+http3_libs_dir=${HOME}/src/http3_libs
+
+bash ./tools/build_http3_dependencies.sh ${http3_libs_dir}
+
+pipenv install
+pipenv run scons \
+    -j4 \
+    --with-ssl=${http3_libs_dir}/openssl \
+    --with-nghttp2=${http3_libs_dir}/nghttp2 \
+    --with-ngtcp2=${http3_libs_dir}/ngtcp2 \
+    --with-nghttp3=${http3_libs_dir}/nghttp3
+```
+
+The [Dockerfile](https://github.com/yahoo/proxy-verifier/tree/master/docker)
+documents run this build script, installing the HTTP packages in `/opt`.
+Therefore, if you are developing in a container made from images generated from
+these Dockerfile documents, you can use the following `scons` command to build
+Proxy Verifier:
 
 ```
 pipenv install
 pipenv run scons \
-    -j8 \
+    -j4 \
     --with-ssl=/opt/openssl \
     --with-nghttp2=/opt/nghttp2 \
     --with-ngtcp2=/opt/ngtcp2 \
-    --with-nghttp3=/opt/nghttp3 \
-    --cfg=release \
-    proxy-verifier
+    --with-nghttp3=/opt/nghttp3
 ```
 
 #### ASan Instrumentation
 
 The local Sconstruct file is configured to take an optional `--enable-asan`
-parameter. If this is passed to the scons build line then the Proxy Verifier
+parameter. If this is passed to the `scons` build line then the Proxy Verifier
 objects and binaries will be compiled and linked with the flags that instrument
 them for [AddressSanatizer](https://clang.llvm.org/docs/AddressSanitizer.html).
 This assumes that the system has the AddressSanatizer library installed on the
@@ -1023,14 +1071,22 @@ with AddressSanitizer instrumentation:
 ```
 pipenv install
 pipenv run scons \
-    -j8 \
+    -j4 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
     --with-ngtcp2=/path/to/ngtcp2 \
     --with-nghttp3=/path/to/nghttp3 \
-    --cfg=release \
-    --enable-asan \
-    proxy-verifier
+    --enable-asan
+```
+
+#### Debug Build
+
+By default, Scons will build the Proxy Verifier project in `release` mode. This
+means that the binaries will compiled with optimization. If an unoptimized
+debug build is desired, then pass the `--cfg=debug` option to `scons`:
+
+```
+pipenv run scons -j4 --cfg=debug
 ```
 
 ### Running the Tests
@@ -1042,12 +1098,11 @@ you previously ran `pipenv install`, see above):
 
 ```
 pipenv run scons \
-    -j8 \
+    -j4 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
     --with-ngtcp2=/path/to/ngtcp2 \
     --with-nghttp3=/path/to/nghttp3 \
-    --cfg=release \
     run_utest::
 ```
 
