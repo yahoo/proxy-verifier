@@ -6,7 +6,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Packages for building Proxy Verifier and its dependencies.
 RUN apt-get update; \
-    apt-get install -y pipenv autoconf libtool pkg-config git
+    apt-get install -y pipenv autoconf libtool pkg-config git curl
 
 # Install the library dependencies in /opt.
 WORKDIR /var/tmp
