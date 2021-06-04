@@ -996,6 +996,11 @@ to build Proxy Verifier. Here is an example invocation:
 ```
 # Install scons and any of its Python requirements. This only needs to be
 # done once before the first invocation of scons.
+#
+# Note: for older RHEL/CentOS systems, you will have to souce the appropriate
+# Python 3 enable script to initialize the correct Python 3 environment. For
+# example:
+# source /opt/rh/rh-python38/enable
 pipenv install
 
 # Now run scons to build proxy-verifier.
