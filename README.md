@@ -1063,6 +1063,18 @@ pipenv run scons \
     --with-nghttp3=/opt/nghttp3
 ```
 
+As a further convenience, if these libraries (`openssl`, `nghttp2`, `ngtcp2`,
+and `nghttp3`, with those exact names) exist under a single directory, such as
+is the case with images built from the provided
+[Dockerfile](https://github.com/yahoo/proxy-verifier/tree/master/docker)
+documemnts, then you can specify the location of these libraries with a single
+`--with-libs` argument. Thus the previous command can be expressed like so:
+
+```
+pipenv install
+pipenv run scons -j4 --with-libs=/opt
+```
+
 #### ASan Instrumentation
 
 The local Sconstruct file is configured to take an optional `--enable-asan`
