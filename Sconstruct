@@ -49,12 +49,46 @@ AddOption("--with-nghttp3",
           help='Optional path to custom build of nghttp3'
          )
 
+AddOption("--with-libs",
+          dest='with_libs',
+          nargs=1,
+          type='string',
+          action='store',
+          metavar='DIR',
+          default=None,
+          help='Optional path containing the various libraries'
+         )
+
 AddOption('--enable-asan',
           dest='enable_asan',
           action='store_true',
           help='Configure compiling and linking for ASan.')
 
-path_ssl = GetOption("with_ssl")
+path_ssl = None
+path_nghttp2 = None
+path_nghttp3 = None
+path_ngtcp2 = None
+
+libs_path = GetOption("with_libs")
+if libs_path is not None:
+    # We initially populate these from the broad --with-libs option. Each can
+    # be overriden by the more specific options with later processing.
+    path_ssl = os.path.join(libs_path, 'openssl')
+    path_nghttp2 = os.path.join(libs_path, 'nghttp2')
+    path_nghttp3 = os.path.join(libs_path, 'nghttp3')
+    path_ngtcp2 = os.path.join(libs_path, 'ngtcp2')
+
+
+def GetOptionWithDefault(option_name, default_value):
+    '''
+    Return GetOption's result if option_name was specified, otherwise return
+    default_value.
+    '''
+    specific_value = GetOption(option_name)
+    return specific_value if specific_value is not None else default_value
+
+
+path_ssl = GetOptionWithDefault("with_ssl", path_ssl)
 if path_ssl is not None:
   Part("#lib/openssl.part", CUSTOM_PATH=path_ssl)
 else:
@@ -68,7 +102,7 @@ else:
     mode=['SKIP_DOCS'],
   )
 
-path_nghttp2 = GetOption("with_nghttp2")
+path_nghttp2 = GetOptionWithDefault("with_nghttp2", path_nghttp2)
 if path_nghttp2 is not None:
     Part("#lib/nghttp2.part", CUSTOM_PATH=path_nghttp2)
 else:
@@ -82,7 +116,7 @@ else:
         mode=['SKIP_DOCS'],
     )
 
-path_ngtcp2 = GetOption("with_ngtcp2")
+path_ngtcp2 = GetOptionWithDefault("with_ngtcp2", path_ngtcp2)
 if path_ngtcp2 is not None:
     Part("#lib/ngtcp2.part", CUSTOM_PATH=path_ngtcp2)
 else:
@@ -96,7 +130,7 @@ else:
     mode=['SKIP_DOCS'],
   )
 
-path_nghttp3 = GetOption("with_nghttp3")
+path_nghttp3 = GetOptionWithDefault("with_nghttp3", path_nghttp3)
 if path_nghttp3 is not None:
   Part("#lib/nghttp3.part", CUSTOM_PATH=path_nghttp3)
 else:
