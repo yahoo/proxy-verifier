@@ -32,10 +32,10 @@ mkdir -p ${repo_dir}
 
 # 1. OpenSSL version that supports quic.
 cd ${repo_dir}
-git clone --depth 1 -b OpenSSL_1_1_1g-quic-draft-33 https://github.com/tatsuhiro-t/openssl
+git clone -b OpenSSL_1_1_1k+quic --depth 1 https://github.com/quictls/openssl.git openssl
 cd openssl
-git checkout afdc16c82f724e8c0b8384224180b140fe8566fe
-./config enable-tls1_3 --prefix=${install_dir}/openssl
+git checkout a6e9d76db343605dae9b59d71d2811b195ae7434
+./config --prefix=${install_dir}/openssl
 make -j4
 ${SUDO} make install_sw
 
