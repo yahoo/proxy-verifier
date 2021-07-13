@@ -95,9 +95,9 @@ else:
   Part(
     "openssl",
     "#lib/openssl.part",
-    vcs_type=VcsGit(server="github.com", repository="tatsuhiro-t/openssl",
+    vcs_type=VcsGit(server="github.com", repository="quictls/openssl",
                     protocol="https",
-                    revision="afdc16c82f724e8c0b8384224180b140fe8566fe"
+                    revision="a6e9d76db343605dae9b59d71d2811b195ae7434"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -111,7 +111,17 @@ else:
         "#lib/nghttp2.part",
         vcs_type=VcsGit(server="github.com", repository="tatsuhiro-t/nghttp2",
                         protocol="https",
-                        revision="d2e570c72e169ed88557ce5108df34d34d4f7f08"
+                        # This commit will be removed whenever the nghttp2
+                        # author rebases origin/quic.  For reference, this
+                        # commit is currently described as:
+                        #
+                        # commit cdf58e370e6a843b0965aabcd75908ca52633b60
+                        # Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+                        # Date:   Sat Mar 27 23:37:37 2021 +0900
+                        #
+                        #     Compile with the latest ngtcp2
+
+                        revision="cdf58e370e6a843b0965aabcd75908ca52633b60"
                         ),
         mode=['SKIP_DOCS'],
     )
