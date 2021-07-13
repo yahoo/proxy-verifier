@@ -661,6 +661,24 @@ The following demonstrates the `suffix` directive which specifies that `X-Forwar
   - [ X-Forwarded-For, { value: 2, as: suffix } ]
 ```
 
+Proxy Verifier supports inverting the result of any rule by using `not` instead of `as`. The following demonstrates the `prefix` directive which specifies that `X-Forwarded-For` should have been received from the proxy with a field value not starting with "a":
+
+```YAML
+  - [ X-Forwarded-For, { value: a, not: prefix } ]
+```
+
+Proxy Verifier also supports ignoring the upper/lower case distinction with another directive: `case: ignore`. The following demonstrates the `suffix` directive which specifies that `X-Forwarded-For` should have been received from the proxy with a field value starting with "a" or "A":
+
+```YAML
+  - [ X-Forwarded-For, { value: a, as: prefix, case: ignore } ]
+```
+
+The `not` and `case: ignore` directives can both be applied on the same rule. The following demonstrates the `suffix` directive which specifies that `X-Forwarded-For` should have been received from the proxy with a field value not starting with "a" nor "A":
+
+```YAML
+  - [ X-Forwarded-For, { value: a, not: prefix, case: ignore } ]
+```
+
 ### URL Verification
 
 In a manner similar to field verification described above, a mechanism exists
@@ -810,12 +828,14 @@ sessions:
 
     #
     # Direct the Proxy Verifier server to verify that the request received from
-    # the proxy has a path in the request target that contains "flower.jpeg"
+    # the proxy has a path in the request target that contains "flower.jpeg",
+    # has a path that is not prefixed with "JPEG" (case insensitively),
     # and has the Content-Length field of any value.
     #
     proxy-request:
       url:
       - [ path, { value: flower.jpeg, as: contains } ]
+      - [ path, { value: JPEG, not: prefix, case: ignore } ]
 
       headers:
         fields:
