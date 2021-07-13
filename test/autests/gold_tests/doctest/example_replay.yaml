@@ -27,12 +27,14 @@ sessions:
 
     #
     # Direct the Proxy Verifier server to verify that the request received from
-    # the proxy has a path in the request target that contains "flower.jpeg"
+    # the proxy has a path in the request target that contains "flower.jpeg",
+    # has a path that is not prefixed with "JPEG" (case insensitively),
     # and has the Content-Length field of any value.
     #
     proxy-request:
       url:
       - [ path, { value: flower.jpeg, as: contains } ]
+      - [ path, { value: JPEG, not: prefix, case: ignore } ]
 
       headers:
         fields:

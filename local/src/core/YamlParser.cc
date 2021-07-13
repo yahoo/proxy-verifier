@@ -355,7 +355,7 @@ YamlParser::parse_url_rules(
     const auto node_size = node.size();
     if (node_size != 2 && node_size != 3) {
       errata.error(
-          "URL rule node at {} is not a sequence of length 2 "
+          "URL rule at {} is not a sequence of length 2 "
           "or 3 as required.",
           node.Mark());
       continue;
@@ -364,12 +364,14 @@ YamlParser::parse_url_rules(
     TextView part_name{Localizer::localize_lower(node[YAML_RULE_KEY_INDEX].Scalar())};
     UrlPart part_id = HttpHeader::parse_url_part(part_name);
     if (part_id == UrlPart::Error) {
-      errata.error("URL rule node at {} has an invalid URL part.", node.Mark());
+      errata.error("URL rule at {} has an invalid URL part.", node.Mark());
       continue;
     }
     const YAML::Node ValueNode{node[YAML_RULE_VALUE_INDEX]};
     if (ValueNode.IsScalar()) {
-      // There's only a single value associated with this URL part.
+      // Legacy support for non-map nodes, not/nocase unsupported
+      // URL part verification rules can't support multiple values,
+      // so there's no IsSequence() case
       TextView value{Localizer::localize(node[YAML_RULE_VALUE_INDEX].Scalar())};
       if (node_size == 2 && assume_equality_rule) {
         fields._url_rules[static_cast<size_t>(part_id)].push_back(
@@ -380,7 +382,7 @@ YamlParser::parse_url_rules(
         std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(part_id, value, rule_type);
         if (!tester) {
           errata.error(
-              "URL rule node at {} does not have a valid directive ({})",
+              "URL rule at {} does not have a valid directive ({})",
               node.Mark(),
               rule_type);
           continue;
@@ -388,36 +390,63 @@ YamlParser::parse_url_rules(
           fields._url_rules[static_cast<size_t>(part_id)].push_back(tester);
         }
       }
-      // No error reported if incorrect length
     } else if (ValueNode.IsMap()) {
       // Verification is specified as a map, such as:
       // - [ path, { value: config/settings.yaml, as: equal } ]
-      TextView value;
-      if (auto const url_value_node{ValueNode[YAML_RULE_VALUE_MAP_KEY]}; url_value_node) {
-        value = Localizer::localize(url_value_node.Scalar());
-      }
-      if (!ValueNode[YAML_RULE_TYPE_MAP_KEY]) {
-        // No verification directive was specified.
-        if (assume_equality_rule) {
-          fields._url_rules[static_cast<size_t>(part_id)].push_back(
-              RuleCheck::make_equality(part_id, value));
+
+      // Get case setting (default false)
+      auto const rule_case_node{ValueNode[YAML_RULE_CASE_MAP_KEY]};
+      bool is_nocase = false;
+      if (rule_case_node && rule_case_node.IsScalar()) {
+        TextView case_str = Localizer::localize(rule_case_node.Scalar());
+        if (case_str == VERIFICATION_DIRECTIVE_IGNORE) {
+          is_nocase = true;
         }
+      }
+
+      // Get rule type for "as: equal" structure, or "not: equal" if "as" fails
+      TextView rule_type;
+      bool is_inverted = false;
+      if (auto const rule_type_node_as = ValueNode[YAML_RULE_TYPE_MAP_KEY]; rule_type_node_as) {
+        rule_type = rule_type_node_as.Scalar();
+      } else if (auto const rule_type_node_not = ValueNode[YAML_RULE_TYPE_MAP_KEY_NOT];
+                 rule_type_node_not)
+      {
+        rule_type = rule_type_node_not.Scalar();
+        is_inverted = true;
+      } else if (assume_equality_rule) {
+        rule_type = VERIFICATION_DIRECTIVE_EQUALS;
+      } else {
+        errata.info(
+            "URL rule at {} ignored: no directive, and equality is not assumed",
+            node.Mark());
+        // Can continue because all URL maps are verification rules, unlike field rules
         continue;
       }
-      TextView rule_type{ValueNode[YAML_RULE_TYPE_MAP_KEY].Scalar()};
-      std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(part_id, value, rule_type);
+
+      TextView value;
+      auto const url_value_node{ValueNode[YAML_RULE_VALUE_MAP_KEY]};
+      if (url_value_node) {
+        if (url_value_node.IsScalar()) {
+          // Single value
+          value = Localizer::localize(url_value_node.Scalar());
+        } else if (url_value_node.IsSequence()) {
+          errata.error("URL rule at {} has multiple values, which is not allowed.", node.Mark());
+          continue;
+        }
+      }
+      std::shared_ptr<RuleCheck> tester =
+          RuleCheck::make_rule_check(part_id, value, rule_type, is_inverted, is_nocase);
+
       if (!tester) {
-        errata.error(
-            "URL rule node at {} does not have a valid directive ({})",
-            node.Mark(),
-            rule_type);
-        continue;
+        errata.error("URL rule at {} does not have a valid directive ({})", node.Mark(), rule_type);
       } else {
         fields._url_rules[static_cast<size_t>(part_id)].push_back(tester);
       }
     } else if (ValueNode.IsSequence()) {
-      errata.error("URL rule node at {} has multiple values, which is not allowed.", node.Mark());
-      continue;
+      errata.error("URL rule at {} has multiple values, which is not allowed.", node.Mark());
+    } else {
+      errata.error("URL rule at {} is null or malformed.", node.Mark());
     }
   }
   return errata;
@@ -439,15 +468,17 @@ YamlParser::parse_fields_and_rules(
     auto const node_size = node.size();
     if (node_size != 2 && node_size != 3) {
       errata.error(
-          "Field or rule node at {} is not a sequence of length 2 "
+          "Field or rule at {} is not a sequence of length 2 "
           "or 3 as required.",
           node.Mark());
       continue;
     }
 
+    // Get name of header being tested
     TextView name{Localizer::localize_lower(node[YAML_RULE_KEY_INDEX].Scalar())};
     const YAML::Node ValueNode{node[YAML_RULE_VALUE_INDEX]};
     if (ValueNode.IsScalar()) {
+      // Legacy support for non-map nodes, not/nocase unsupported
       // There's only a single value associated with this field name.
       TextView value{Localizer::localize(node[YAML_RULE_VALUE_INDEX].Scalar())};
       fields.add_field(name, value);
@@ -469,6 +500,7 @@ YamlParser::parse_fields_and_rules(
         }
       }
     } else if (ValueNode.IsSequence()) {
+      // Legacy support for non-map nodes, not/nocase unsupported
       // There's a list of values associated with this field. This
       // indicates duplicate fields for the same field name.
       std::vector<TextView> values;
@@ -497,13 +529,48 @@ YamlParser::parse_fields_and_rules(
         }
       }
     } else if (ValueNode.IsMap()) {
+      // Extensible format for future features added
       // Verification is specified as a map, such as:
       // -[ Host, { value: example.com, as: equal } ]
+
+      // Get case setting (default false)
+      auto const rule_case_node{ValueNode[YAML_RULE_CASE_MAP_KEY]};
+      bool is_nocase = false;
+      if (rule_case_node && rule_case_node.IsScalar()) {
+        TextView case_str = Localizer::localize(rule_case_node.Scalar());
+        if (case_str == VERIFICATION_DIRECTIVE_IGNORE) {
+          is_nocase = true;
+        }
+      }
+
+      // Get rule type for "as: equal" structure, or "not: equal" if "as" fails
+      TextView rule_type;
+      bool is_inverted = false;
+      if (auto const rule_type_node_as = ValueNode[YAML_RULE_TYPE_MAP_KEY]; rule_type_node_as) {
+        rule_type = rule_type_node_as.Scalar();
+      } else if (auto const rule_type_node_not = ValueNode[YAML_RULE_TYPE_MAP_KEY_NOT];
+                 rule_type_node_not)
+      {
+        rule_type = rule_type_node_not.Scalar();
+        is_inverted = true;
+      } else if (assume_equality_rule) {
+        rule_type = VERIFICATION_DIRECTIVE_EQUALS;
+      } else {
+        errata.info(
+            "Field rule at {} ignored: no directive, and equality is not assumed",
+            node.Mark());
+        // Cannot use continue statement because of client request/server response
+      }
+
+      std::shared_ptr<RuleCheck> tester;
       TextView value;
-      if (auto const field_value_node{ValueNode[YAML_RULE_VALUE_MAP_KEY]}; field_value_node) {
+      auto const field_value_node{ValueNode[YAML_RULE_VALUE_MAP_KEY]};
+      if (field_value_node) {
         if (field_value_node.IsScalar()) {
+          // Single value
           value = Localizer::localize(field_value_node.Scalar());
           fields.add_field(name, value);
+          tester = RuleCheck::make_rule_check(name, value, rule_type, is_inverted, is_nocase);
         } else if (field_value_node.IsSequence()) {
           // Verification is for duplicate fields:
           // -[ set-cookie, { value: [ cookiea, cookieb], as: equal } ]
@@ -514,47 +581,26 @@ YamlParser::parse_fields_and_rules(
             values.emplace_back(localized_value);
             fields.add_field(name, localized_value);
           }
-          if (auto const rule_type_node{ValueNode[YAML_RULE_TYPE_MAP_KEY]}; rule_type_node) {
-            TextView rule_type{rule_type_node.Scalar()};
-            std::shared_ptr<RuleCheck> tester =
-                RuleCheck::make_rule_check(name, std::move(values), rule_type);
-            if (!tester) {
-              errata.error(
-                  "Field rule at {} does not have a valid directive ({})",
-                  node.Mark(),
-                  rule_type);
-              continue;
-            } else {
-              fields._rules.emplace(name, tester);
-            }
-          } else {
-            // No verification directive was specified.
-            if (assume_equality_rule) {
-              fields._rules.emplace(name, RuleCheck::make_equality(name, std::move(values)));
-            }
-          }
-          continue;
-        }
-      }
-      if (auto const rule_type_node{ValueNode[YAML_RULE_TYPE_MAP_KEY]}; rule_type_node) {
-        TextView rule_type{rule_type_node.Scalar()};
-        std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(name, value, rule_type);
-        if (!tester) {
-          errata.error(
-              "Field rule at {} does not have a valid directive ({})",
-              node.Mark(),
-              rule_type);
-          continue;
-        } else {
-          fields._rules.emplace(name, tester);
+          tester = RuleCheck::make_rule_check(
+              name,
+              std::move(values),
+              rule_type,
+              is_inverted,
+              is_nocase);
         }
       } else {
-        // No verification directive was specified.
-        if (assume_equality_rule) {
-          fields._rules.emplace(name, RuleCheck::make_equality(name, value));
-        }
-        continue;
+        // Attempt to create check with empty value; if failure, next if will catch
+        tester = RuleCheck::make_rule_check(name, value, rule_type, is_inverted, is_nocase);
       }
+
+      if (tester) {
+        fields._rules.emplace(name, tester);
+      } else if (!rule_type.empty()) {
+        // Do not report error if no rule because of client request/server response
+        errata.error("Field rule at {} has an invalid directive ({})", node.Mark(), rule_type);
+      }
+    } else {
+      errata.error("Field or rule at {} is null or malformed.", node.Mark());
     }
   }
   return errata;

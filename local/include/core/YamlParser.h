@@ -81,6 +81,8 @@ static constexpr size_t YAML_RULE_TYPE_INDEX{2};
 
 static const std::string YAML_RULE_VALUE_MAP_KEY{"value"};
 static const std::string YAML_RULE_TYPE_MAP_KEY{"as"};
+static const std::string YAML_RULE_TYPE_MAP_KEY_NOT{"not"};
+static const std::string YAML_RULE_CASE_MAP_KEY{"case"};
 
 static constexpr swoc::TextView FIELD_HOST{"host"};
 

@@ -1,0 +1,78 @@
+meta:
+  version: "1.0"
+
+sessions:
+- transactions:
+
+  - client-request:
+      version: "1.1"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ X-Test-Request, RequestData ]
+        - [ X-Test-Present, It's there ]
+        - [ uuid, 5 ]
+
+    proxy-request:
+      url:
+      - [ path, { value: iG/S, not: contains, case: ignore } ]
+      headers:
+        fields:
+        - [ Host, { value: le.on, not: equal } ]
+        - [ X-Test-Absent, { not: present } ]
+        - [ X-Test-Present, { not: absent } ]
+        - [ Host, { value: leo, not: contains } ]
+        - [ X-Test-Request, { value: equ, not: prefix } ]
+        - [ X-Test-Present, { value: It's, not: suffix } ]
+        - [ Host, { value: EXAMpLE.ONE, as: equal, case: ignore } ]
+        - [ Host, { value: Le.ON, as: contains, case: ignore } ]
+        - [ X-Test-Request, { value: rEQ, as: prefix, case: ignore } ]
+        - [ X-Test-Present, { value: heRe, as: suffix, case: ignore } ]
+        - [ Host, { value: example.ON, not: equal, case: ignore } ]
+        - [ Host, { value: U, not: contains, case: ignore } ]
+        - [ X-Test-Request, { value: EQU, not: prefix, case: ignore } ]
+        - [ X-Test-Present, { value: hre, not: suffix, case: ignore } ]
+        - [ Host, { value: example.one, not: equal } ]
+        - [ X-Test-Present, { not: present } ]
+        - [ X-Test-Absent, { not: absent } ]
+        - [ Host, { value: le.on, not: contains } ]
+        - [ X-Test-Request, { value: Req, not: prefix } ]
+        - [ X-Test-Present, { value: there, not: suffix } ]
+        - [ Host, { value: EXAMPLE.ON, as: equal, case: ignore } ]
+        - [ Host, { value: LE..On, as: contains, case: ignore } ]
+        - [ X-Test-Request, { value: -TE, as: prefix, case: ignore } ]
+        - [ X-Test-Present, { value: THER, as: suffix, case: ignore } ]
+        - [ Host, { value: Example.one, not: equal, case: ignore } ]
+        - [ Host, { value: le.oN, not: contains, case: ignore } ]
+        - [ X-Test-Request, { value: req, not: prefix, case: ignore } ]
+        - [ X-Test-Present, { value: eRE, not: suffix, case: ignore } ]
+        - [ uuid, 5 ]
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ Set-Cookie, ABCD ]
+        - [ Multiple, [ abc, DEF ] ]
+        - [ uuid, 5 ]
+
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ Content-Type, { value: text, not: equal } ]
+        - [ Set-Cookie, { not: present } ]
+        - [ Fake-Cookie, { not: absent } ]
+        - [ Content-Type, { value: Tex, not: contains, case: ignore } ]
+        - [ Fake-Cookie, { value: B, not: prefix, case: ignore } ]
+        - [ Content-Type, { value: L, as: suffix, case: ignore } ]
+        - [ Multiple, { value: [ Abc, DEF ], not: prefix } ]
+        - [ Multiple, { value: [ Abc, DEF ], not: equal, case: ignore } ]
+        - [ uuid, 5 ]
