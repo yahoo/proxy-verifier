@@ -67,7 +67,18 @@ ${SUDO} make install
 cd ${repo_dir}
 git clone https://github.com/tatsuhiro-t/nghttp2.git
 cd nghttp2
-git checkout d2e570c72e169ed88557ce5108df34d34d4f7f08
+
+# This commit will be removed whenever the nghttp2 author rebases origin/quic.
+# For reference, this commit is currently described as:
+#
+# commit cdf58e370e6a843b0965aabcd75908ca52633b60
+# Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+# Date:   Sat Mar 27 23:37:37 2021 +0900
+#
+#     Compile with the latest ngtcp2
+
+git checkout cdf58e370e6a843b0965aabcd75908ca52633b60
+
 autoreconf -if
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
