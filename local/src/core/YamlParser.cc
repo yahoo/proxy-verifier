@@ -240,6 +240,10 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         if (0 == strcasecmp("chunked"_tv, xf)) {
           message._chunked_p = true;
         } else if (0 == strcasecmp("plain"_tv, xf)) {
+          // The user may be specifying raw chunk body content (i.e.,
+          // specifying the chunk header with CRLF's, etc.). We set this to
+          // false so that later, when the body is written, we don't
+          // automagically try to frame the body as chunked for the user.
           message._chunked_p = false;
         } else {
           errata.error(

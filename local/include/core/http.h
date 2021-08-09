@@ -403,6 +403,9 @@ public:
 
   /// Body is chunked.
   bool _chunked_p = false;
+  /// Whether there is a "Transfer-Encoding: chunked" HTTP header field in this
+  /// message.
+  bool _has_transfer_encoding_chunked = false;
   /// No Content-Length - close after sending body.
   bool _content_length_p = false;
 

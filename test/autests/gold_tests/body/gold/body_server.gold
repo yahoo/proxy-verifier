@@ -13,3 +13,8 @@
 ``
 ``Drained``: 0123456789
 ``
+``Drained 3 chunked body bytes with chunk stream: 3
+abc
+0
+
+``
