@@ -206,3 +206,31 @@ sessions:
         fields:
         - [ Transfer-Encoding, { value: chunked, as: equal } ]
         - [ X-Response, { value: "fourth_response", as: equal } ]
+
+  - client-request:
+      method: "GET"
+      version: "1.1"
+      url: /for/http
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ Transfer-Encoding, chunked ]
+        - [ uuid, 5 ]
+      content:
+        transfer: plain
+        encoding: uri
+        data: 3%0D%0Aabc%0D%0A0%0D%0A%0D%0A
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Transfer-Encoding, chunked ]
+      content:
+        transfer: plain
+        encoding: uri
+        data: 4%0D%0Adefg%0D%0Ab%0D%0A0123456789a%0D%0A0%0D%0A%0D%0A
+
+    proxy-response:
+      status: 200

@@ -140,6 +140,7 @@ HttpHeader::update_transfer_encoding()
   {
     if (0 == strcasecmp("chunked", spot->second)) {
       _chunked_p = true;
+      _has_transfer_encoding_chunked = true;
     }
   }
   return {};
@@ -713,6 +714,7 @@ Session::read(swoc::MemSpan<char> span)
       this->close();
     } else {
       zret.error("Error reading from socket: {}", swoc::bwf::Errno{});
+      this->close();
     }
   }
   return zret;
@@ -1134,8 +1136,9 @@ Session::write_body(HttpHeader const &hdr)
       bytes_written.result() += n;
       ec = std::error_code(errno, std::system_category());
 
-      if (!hdr._content_length_p) { // no content-length, must close to signal
-                                    // end of body
+      if (!hdr._content_length_p && !hdr._has_transfer_encoding_chunked) {
+        // Since there is no content-length, close the connection to signal the
+        // end of body.
         bytes_written.diag(
             "No content length, status {}. Closing the connection for key {}.",
             hdr._status,

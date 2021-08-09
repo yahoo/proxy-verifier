@@ -23,3 +23,9 @@ b'0123456789'
 ==== RESPONSE BODY ====
 b'1f\r\n### Heading\n\n* Bullet\n* Points\n\r\n0\r\n\r\n'
 ``
+==== REQUEST BODY ====
+b'3\r\nabc\r\n0\r\n\r\n'
+``
+==== RESPONSE BODY ====
+b'f\r\ndefg0123456789a\r\n0\r\n\r\n'
+``
