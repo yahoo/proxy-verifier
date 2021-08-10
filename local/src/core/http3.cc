@@ -376,7 +376,7 @@ cb_stream_stop_sending(
 {
   H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
   int rv = nghttp3_conn_stop_sending(h3_session->quic_socket.h3conn, stream_id);
-  if(rv) {
+  if (rv) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
