@@ -88,6 +88,9 @@ def GetOptionWithDefault(option_name, default_value):
     return specific_value if specific_value is not None else default_value
 
 
+# For the various QUIC/HTTP3 dependencies, we pin to a particular commit so that
+# these libraries do not change out from under us between clean runs.
+
 path_ssl = GetOptionWithDefault("with_ssl", path_ssl)
 if path_ssl is not None:
   Part("#lib/openssl.part", CUSTOM_PATH=path_ssl)
@@ -97,6 +100,7 @@ else:
     "#lib/openssl.part",
     vcs_type=VcsGit(server="github.com", repository="quictls/openssl",
                     protocol="https",
+                    # A pinned commit from branch OpenSSL_1_1_1k+quic.
                     revision="a6e9d76db343605dae9b59d71d2811b195ae7434"
                     ),
     mode=['SKIP_DOCS'],
@@ -111,17 +115,19 @@ else:
         "#lib/nghttp2.part",
         vcs_type=VcsGit(server="github.com", repository="tatsuhiro-t/nghttp2",
                         protocol="https",
+                        # A pinned commit from branch quic.
+
                         # This commit will be removed whenever the nghttp2
                         # author rebases origin/quic.  For reference, this
                         # commit is currently described as:
                         #
-                        # commit cdf58e370e6a843b0965aabcd75908ca52633b60
+                        # commit 19cf303828eca4653130e1aaf27aa57319e3b819
                         # Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
                         # Date:   Sat Mar 27 23:37:37 2021 +0900
                         #
                         #     Compile with the latest ngtcp2
 
-                        revision="cdf58e370e6a843b0965aabcd75908ca52633b60"
+                        revision="19cf303828eca4653130e1aaf27aa57319e3b819"
                         ),
         mode=['SKIP_DOCS'],
     )
@@ -135,7 +141,8 @@ else:
     "#lib/ngtcp2.part",
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/ngtcp2",
                     protocol="https",
-                    revision="169c68127b78ea906c96b49b9e18d4f805ab8eda"
+                    # A pinned commit on branch main.
+                    revision="d23e3431d86e5047a756172c6b2cbecab9cea3d4"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -149,7 +156,8 @@ else:
     "#lib/nghttp3.part",
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/nghttp3",
                     protocol="https",
-                    revision="aed3107f9104eae77d97ed8093caa8f3b7ef64d4"
+                    # A pinned commit on branch main.
+                    revision="d9605232a39e171f7b5b76d16213e0925bd1ed58"
                     ),
     mode=['SKIP_DOCS'],
   )

@@ -358,8 +358,25 @@ cb_stream_reset(
     void * /* stream_user_data */)
 {
   H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int rv = nghttp3_conn_reset_stream(h3_session->quic_socket.h3conn, stream_id);
+  int rv = nghttp3_conn_shutdown_stream_read(h3_session->quic_socket.h3conn, stream_id);
   if (rv != 0) {
+    return NGTCP2_ERR_CALLBACK_FAILURE;
+  }
+
+  return 0;
+}
+
+static int
+cb_stream_stop_sending(
+    ngtcp2_conn * /* tconn */,
+    int64_t stream_id,
+    uint64_t /* app_error_code */,
+    void *conn_data,
+    void * /* stream_user_data */)
+{
+  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
+  int rv = nghttp3_conn_stop_sending(h3_session->quic_socket.h3conn, stream_id);
+  if(rv) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -545,6 +562,8 @@ static ngtcp2_callbacks client_ngtcp2_callbacks = {
     nullptr, /* recv_datagram */
     nullptr, /* ack_datagram */
     nullptr, /* lost_datagram */
+    nullptr, /* get_path_challenge_data */
+    cb_stream_stop_sending,
 };
 
 // TODO: fill this out when we add server-side code.
@@ -1094,14 +1113,10 @@ static nghttp3_callbacks nghttp3_client_callbacks = {
     nullptr, /* begin_trailers */
     cb_h3_recv_header,
     nullptr, /* end_trailers */
-    nullptr, /* http_begin_push_promise */
-    nullptr, /* http_recv_push_promise */
-    nullptr, /* http_end_push_promise */
-    nullptr, /* http_cancel_push */
     cb_h3_send_stop_sending,
-    nullptr, /* push_stream */
     nullptr, /* end_stream */
     nullptr, /* reset_stream */
+    nullptr, /* shutdown */
 };
 // --------------------------------------------
 // End nghttp3 callbacks.
