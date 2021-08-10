@@ -43,7 +43,7 @@ ${SUDO} make install_sw
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/nghttp3
 cd nghttp3/
-git checkout aed3107f9104eae77d97ed8093caa8f3b7ef64d4
+git checkout d9605232a39e171f7b5b76d16213e0925bd1ed58
 autoreconf -i
 ./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
 make -j4
@@ -53,7 +53,7 @@ ${SUDO} make install
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/ngtcp2
 cd ngtcp2
-git checkout 169c68127b78ea906c96b49b9e18d4f805ab8eda
+git checkout d23e3431d86e5047a756172c6b2cbecab9cea3d4
 autoreconf -i
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
@@ -71,13 +71,13 @@ cd nghttp2
 # This commit will be removed whenever the nghttp2 author rebases origin/quic.
 # For reference, this commit is currently described as:
 #
-# commit cdf58e370e6a843b0965aabcd75908ca52633b60
+# commit 19cf303828eca4653130e1aaf27aa57319e3b819
 # Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
 # Date:   Sat Mar 27 23:37:37 2021 +0900
 #
 #     Compile with the latest ngtcp2
 
-git checkout cdf58e370e6a843b0965aabcd75908ca52633b60
+git checkout 19cf303828eca4653130e1aaf27aa57319e3b819
 
 autoreconf -if
 ./configure \
