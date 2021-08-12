@@ -1,44 +1,48 @@
 Import("*")
 PartName("verifier-client")
 
-env.DependsOn([
+build.DependsOn([
+    Component("proxy-verifier.core"),
     Component("openssl"),
     Component("ngtcp2"),
     Component("nghttp2"),
     Component("nghttp3"),
     Component("libswoc.static"),
     Component("yaml-cpp"),
-    Component("proxy-verifier.core"),
 ])
 
-cflags = ['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror']
-if 'enable-asan' in env['MODE']:
-    cflags += ['-fsanitize=address', '-fno-omit-frame-pointer']
-    env.AppendUnique(
-        CCFLAGS=cflags,
-        LIBS=['crypto', 'dl', 'pthread'],
-        LINKFLAGS=['-fsanitize=address', '-static-libasan'],
-    )
-else:
-    env.AppendUnique(
-        CCFLAGS=cflags,
-        # Adding crypto here is a work-around. Scons doesn't realize that
-        # -lcrypto should come after -lssl, sow we add crypto to this list to
-        # ensure it comes after ssl.
-        LIBS=['crypto', 'dl', 'pthread'],
-    )
+@build
+def config(env):
+    cflags = ['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror']
+    if 'enable-asan' in env['MODE']:
+        cflags += ['-fsanitize=address', '-fno-omit-frame-pointer']
+        env.AppendUnique(
+            CCFLAGS=cflags,
+            LIBS=['crypto', 'dl', 'pthread'],
+            LINKFLAGS=['-fsanitize=address', '-static-libasan'],
+        )
+    else:
+        env.AppendUnique(
+            CCFLAGS=cflags,
+            # Adding crypto here is a work-around. Scons doesn't realize that
+            # -lcrypto should come after -lssl, sow we add crypto to this list to
+            # ensure it comes after ssl.
+            LIBS=['crypto', 'dl', 'pthread'],
+        )
 
-if env['CC'] == 'gcc':
-    env.AppendUnique(
-        LIBS=['stdc++fs'],
-        # A nice idea, but we need to link pthread with --whole-archive before
-        # this will work.  Future releases of scons-parts may take care of
-        # static linking anywya.
-        # LINKFLAGS=['-static'],
-    )
+    if env['CC'] == 'gcc':
+        env.AppendUnique(
+            LIBS=['stdc++fs'],
+            # A nice idea, but we need to link pthread with --whole-archive before
+            # this will work.  Future releases of scons-parts may take care of
+            # static linking anywya.
+            # LINKFLAGS=['-static'],
+        )
 
-env.InstallBin(
-    env.SetRPath(  # allow fancy patchelf runpath setting if defined
-        env.Program("verifier-client", ["verifier-client.cc"])
+@build
+def source(env):
+    env.InstallBin(
+        env.SetRPath(  # allow fancy patchelf runpath setting if defined
+            env.Program("verifier-client", ["verifier-client.cc"])
+        )
     )
-)

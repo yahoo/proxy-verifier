@@ -13,5 +13,5 @@ verify_ssl = true
 python_version = "3"
 
 [packages]
-scons = "==4.1.0"
-scons-parts = "==0.15.8"
+scons = "*"
+scons-parts = "*"
