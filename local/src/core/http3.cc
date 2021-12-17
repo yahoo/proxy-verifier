@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <ngtcp2/ngtcp2_crypto.h>
+#include <ngtcp2/ngtcp2_crypto_openssl.h>
 #include <netdb.h>
 
 #include "swoc/bwf_ex.h"
@@ -53,7 +54,8 @@ constexpr auto QUIC_MAX_STREAMS = 256 * 1024;
 constexpr auto QUIC_MAX_DATA = 1 * 1024 * 1024;
 constexpr auto QUIC_IDLE_TIMEOUT = 60s;
 
-TextView H3_ALPN_H3_29 = "\x5h3-29";
+// TextView H3_ALPN_H3_29_H3 = "\x5h3-29\x2h3";
+TextView H3_ALPN_H3_29_H3 = "\x5h3-29";
 constexpr char const *QUIC_CIPHERS = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_"
                                      "POLY1305_SHA256:TLS_AES_128_CCM_SHA256";
 
@@ -244,22 +246,6 @@ timestamp()
 // Begin ngtcp2 callbacks.
 // --------------------------------------------
 static int
-cb_recv_crypto_data(
-    ngtcp2_conn *tconn,
-    ngtcp2_crypto_level crypto_level,
-    uint64_t /* offset */,
-    const uint8_t *data,
-    size_t datalen,
-    void * /* user_data */)
-{
-  if (ngtcp2_crypto_read_write_crypto_data(tconn, crypto_level, data, datalen) != 0) {
-    return NGTCP2_ERR_CRYPTO;
-  }
-
-  return 0;
-}
-
-static int
 cb_handshake_completed(ngtcp2_conn * /* tconn */, void * /* user_data */)
 {
   Errata errata;
@@ -319,6 +305,7 @@ cb_acked_stream_data_offset(
 static int
 cb_stream_close(
     ngtcp2_conn * /* tconn */,
+    uint32_t flags,
     int64_t stream_id,
     uint64_t app_error_code,
     void *conn_data,
@@ -326,12 +313,22 @@ cb_stream_close(
 {
   H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
 
+  if (!(flags & NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET)) {
+    app_error_code = NGHTTP3_H3_NO_ERROR;
+  }
+
   int rv = nghttp3_conn_close_stream(h3_session->quic_socket.h3conn, stream_id, app_error_code);
   if (rv != 0) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
   return 0;
+}
+
+static void
+cb_rand(uint8_t *dest, size_t destlen, const ngtcp2_rand_ctx * /* rand_ctx */)
+{
+  QuicSocket::randomly_populate_array(dest, destlen);
 }
 
 static int
@@ -375,11 +372,20 @@ cb_stream_stop_sending(
     void * /* stream_user_data */)
 {
   H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int rv = nghttp3_conn_stop_sending(h3_session->quic_socket.h3conn, stream_id);
+  int rv = nghttp3_conn_shutdown_stream_read(h3_session->quic_socket.h3conn, stream_id);
   if (rv) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
+  return 0;
+}
+
+static int
+cb_extend_max_local_streams_bidi(
+    ngtcp2_conn * /* tconn */,
+    uint64_t /*max_streams */,
+    void * /*user_data */)
+{
   return 0;
 }
 
@@ -400,26 +406,6 @@ cb_extend_max_stream_data(
   return 0;
 }
 
-static ngtcp2_crypto_level
-quic_from_ossl_level(OSSL_ENCRYPTION_LEVEL ossl_level)
-{
-  switch (ossl_level) {
-  case ssl_encryption_initial:
-    return NGTCP2_CRYPTO_LEVEL_INITIAL;
-  case ssl_encryption_early_data:
-    return NGTCP2_CRYPTO_LEVEL_EARLY;
-  case ssl_encryption_handshake:
-    return NGTCP2_CRYPTO_LEVEL_HANDSHAKE;
-  case ssl_encryption_application:
-    return NGTCP2_CRYPTO_LEVEL_APPLICATION;
-  default:
-    assert(0);
-    // To silence the compiler complaining about no return from a non-void
-    // function.
-    return NGTCP2_CRYPTO_LEVEL_EARLY;
-  }
-}
-
 /// @return 0 on success, 1 on failure.
 static int initialize_nghttp3_connection(H3Session *session);
 
@@ -433,7 +419,7 @@ quic_set_encryption_secrets(
 {
   auto *h3_session = reinterpret_cast<H3Session *>(SSL_get_app_data(ssl));
   auto &qs = h3_session->quic_socket;
-  auto const level = quic_from_ossl_level(ossl_level);
+  auto const level = ngtcp2_crypto_openssl_from_ossl_encryption_level(ossl_level);
 
   if (ngtcp2_crypto_derive_and_install_rx_key(
           qs.qconn,
@@ -503,7 +489,7 @@ quic_add_handshake_data(SSL *ssl, OSSL_ENCRYPTION_LEVEL ossl_level, const uint8_
 {
   auto *h3_session = reinterpret_cast<H3Session *>(SSL_get_app_data(ssl));
   auto &qs = h3_session->quic_socket;
-  auto const level = quic_from_ossl_level(ossl_level);
+  auto const level = ngtcp2_crypto_openssl_from_ossl_encryption_level(ossl_level);
 
   return write_client_handshake(&qs, level, data, len);
 }
@@ -529,22 +515,21 @@ static SSL_QUIC_METHOD ssl_quic_method =
 static ngtcp2_callbacks client_ngtcp2_callbacks = {
     ngtcp2_crypto_client_initial_cb,
     nullptr, /* recv_client_initial */
-    cb_recv_crypto_data,
+    ngtcp2_crypto_recv_crypto_data_cb,
     cb_handshake_completed,
     nullptr, /* recv_version_negotiation */
     ngtcp2_crypto_encrypt_cb,
     ngtcp2_crypto_decrypt_cb,
     ngtcp2_crypto_hp_mask_cb,
     cb_recv_stream_data,
-    nullptr, /* acked_crypto_offset */
     cb_acked_stream_data_offset,
     nullptr, /* stream_open */
     cb_stream_close,
     nullptr, /* recv_stateless_reset */
     ngtcp2_crypto_recv_retry_cb,
-    nullptr,
+    cb_extend_max_local_streams_bidi,
     nullptr, /* extend_max_local_streams_uni */
-    nullptr, /* rand  */
+    cb_rand,
     cb_get_new_connection_id,
     nullptr,                     /* remove_connection_id */
     ngtcp2_crypto_update_key_cb, /* update_key */
@@ -562,7 +547,7 @@ static ngtcp2_callbacks client_ngtcp2_callbacks = {
     nullptr, /* recv_datagram */
     nullptr, /* ack_datagram */
     nullptr, /* lost_datagram */
-    nullptr, /* get_path_challenge_data */
+    ngtcp2_crypto_get_path_challenge_data_cb,
     cb_stream_stop_sending,
 };
 
@@ -571,14 +556,13 @@ static ngtcp2_callbacks client_ngtcp2_callbacks = {
 static ngtcp2_callbacks server_ngtcp2_callbacks = {
   nullptr, /* client_initial */
   ngtcp2_crypto_recv_client_initial_cb, /* recv_client_initial */
-  cb_recv_crypto_data,
+  ngtcp2_crypto_recv_crypto_data_cb,
   cb_handshake_completed,
   nullptr, /* recv_version_negotiation */
   ngtcp2_crypto_encrypt_cb,
   ngtcp2_crypto_decrypt_cb,
   ngtcp2_crypto_hp_mask_cb,
   cb_recv_stream_data,
-  nullptr, /* acked_crypto_offset */
   cb_acked_stream_data_offset,
   nullptr, /* stream_open */
   cb_stream_close,
@@ -586,7 +570,7 @@ static ngtcp2_callbacks server_ngtcp2_callbacks = {
   ngtcp2_crypto_recv_retry_cb,
   cb_extend_max_local_streams_bidi,
   nullptr, /* extend_max_local_streams_uni */
-  nullptr, /* rand  */
+  cb_rand,
   cb_get_new_connection_id,
   nullptr, /* remove_connection_id */
   ngtcp2_crypto_update_key_cb, /* update_key */
@@ -694,18 +678,7 @@ ngtcp2_flush_egress(H3Session &session)
   swoc::Rv<int> zret{0};
   auto &qs = session.quic_socket;
 
-  size_t pktlen = 0;
   assert(qs.local_addr.is_valid());
-  switch (qs.local_addr.family()) {
-  case AF_INET:
-    pktlen = NGTCP2_MAX_PKTLEN_IPV4;
-    break;
-  case AF_INET6:
-    pktlen = NGTCP2_MAX_PKTLEN_IPV6;
-    break;
-  default:
-    assert(0);
-  }
 
   ngtcp2_tstamp ts = timestamp();
   int rv = ngtcp2_conn_handle_expiry(qs.qconn, ts);
@@ -739,14 +712,14 @@ ngtcp2_flush_egress(H3Session &session)
     }
 
     uint32_t flags = NGTCP2_WRITE_STREAM_FLAG_MORE | (fin ? NGTCP2_WRITE_STREAM_FLAG_FIN : 0);
-    uint8_t out[NGTCP2_MAX_PKTLEN_IPV4];
+    uint8_t out[NGTCP2_MAX_UDP_PAYLOAD_SIZE];
     ssize_t ndatalen = 0;
     ssize_t outlen = ngtcp2_conn_writev_stream(
         qs.qconn,
         &ps.path,
         nullptr,
         out,
-        pktlen,
+        sizeof(out),
         &ndatalen,
         flags,
         stream_id,
@@ -758,7 +731,8 @@ ngtcp2_flush_egress(H3Session &session)
       break;
     }
     if (outlen < 0) {
-      if (outlen == NGTCP2_ERR_STREAM_DATA_BLOCKED || outlen == NGTCP2_ERR_STREAM_SHUT_WR) {
+      switch (outlen) {
+      case NGTCP2_ERR_STREAM_DATA_BLOCKED: {
         assert(ndatalen == -1);
         rv = nghttp3_conn_block_stream(qs.h3conn, stream_id);
         if (rv != 0) {
@@ -767,7 +741,18 @@ ngtcp2_flush_egress(H3Session &session)
           return zret;
         }
         continue;
-      } else if (outlen == NGTCP2_ERR_WRITE_MORE) {
+      }
+      case NGTCP2_ERR_STREAM_SHUT_WR: {
+        assert(ndatalen == -1);
+        rv = nghttp3_conn_shutdown_stream_write(qs.h3conn, stream_id);
+        if (rv != 0) {
+          zret.error("nghttp3_conn_shutdown_stream_write returned error: {}", Nghttp3Error{rv});
+          zret = -1;
+          return zret;
+        }
+        continue;
+      }
+      case NGTCP2_ERR_WRITE_MORE: {
         assert(ndatalen >= 0);
         rv = nghttp3_conn_add_write_offset(qs.h3conn, stream_id, ndatalen);
         if (rv != 0) {
@@ -776,11 +761,13 @@ ngtcp2_flush_egress(H3Session &session)
           return zret;
         }
         continue;
-      } else {
+      }
+      default: {
         assert(ndatalen == -1);
         zret.error("ngtcp2_conn_writev_stream returned error: {}", Ngtcp2Error{(int)outlen});
         zret = -1;
         return zret;
+      }
       }
     } else if (ndatalen >= 0) {
       rv = nghttp3_conn_add_write_offset(qs.h3conn, stream_id, ndatalen);
@@ -879,10 +866,42 @@ cb_h3_readfunction(
     return 0;
   }
   vec[0].base = (uint8_t *)stream_state->body_to_send.data();
-  vec[0].len = stream_state->body_to_send.size();
+
+  auto const body_size = stream_state->body_to_send.size();
+  vec[0].len = body_size;
+  stream_state->num_data_bytes_written += body_size;
+
   *pflags = NGHTTP3_DATA_FLAG_EOF;
 
   return 1;
+}
+
+/* this amount of data has now been acked on this stream */
+static int
+cb_h3_acked_stream_data(
+    nghttp3_conn *conn,
+    int64_t stream_id,
+    uint64_t datalen,
+    void * /* conn_user_data */,
+    void *stream_user_data)
+{
+  Errata errata;
+  errata.diag("HTTP/3 stream with id {} acked {} bytes", stream_id, datalen);
+  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
+  assert(stream_state->num_data_bytes_written >= datalen);
+  stream_state->num_data_bytes_written -= datalen;
+  if (stream_state->num_data_bytes_written == 0) {
+    errata.diag(
+        "Resuming HTTP/3 stream with id {} and key {}",
+        stream_id,
+        stream_state->key,
+        datalen);
+    auto const rv = nghttp3_conn_resume_stream(conn, stream_id);
+    if (rv != 0) {
+      return NGTCP2_ERR_CALLBACK_FAILURE;
+    }
+  }
+  return 0;
 }
 
 static int
@@ -1103,7 +1122,7 @@ cb_h3_send_stop_sending(
 }
 
 static nghttp3_callbacks nghttp3_client_callbacks = {
-    nullptr, /* acked_stream_data */
+    cb_h3_acked_stream_data,
     cb_h3_stream_close,
     cb_h3_recv_data,
     cb_h3_deferred_consume,
@@ -1936,9 +1955,10 @@ H3Session::client_ssl_session_init(SSL_CTX *client_context)
     errata.error("SSL_set_app_data failed: {}", swoc::bwf::SSLError{});
   }
   SSL_set_connect_state(quic_socket.ssl);
+  SSL_set_quic_use_legacy_codepoint(quic_socket.ssl, 0);
 
-  alpn = reinterpret_cast<uint8_t const *>(H3_ALPN_H3_29.data());
-  alpnlen = H3_ALPN_H3_29.size();
+  alpn = reinterpret_cast<uint8_t const *>(H3_ALPN_H3_29_H3.data());
+  alpnlen = H3_ALPN_H3_29_H3.size();
   if (alpn) {
     if (SSL_set_alpn_protos(quic_socket.ssl, alpn, (int)alpnlen) != 0) {
       errata.error("SSL_set_alpn_protos failed: {}", swoc::bwf::SSLError{});
@@ -2023,7 +2043,7 @@ H3Session::client_session_init()
       &quic_socket.dcid,
       &quic_socket.scid,
       &path,
-      NGTCP2_PROTO_VER_MIN,
+      NGTCP2_PROTO_VER_V1,
       &client_ngtcp2_callbacks,
       &quic_socket.settings,
       &quic_socket.transport_params,

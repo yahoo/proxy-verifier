@@ -235,6 +235,9 @@ public:
    * response. */
   bool wait_for_continue = false;
 
+  /// The number unacknowledged data frame bytes sent.
+  size_t num_data_bytes_written = 0;
+
 private:
   /// Whether this H3StreamState will be receiving a request (i.e., is an
   /// H3StreamState for a server).

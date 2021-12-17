@@ -10,6 +10,7 @@ build.DependsOn([
     Component("yaml-cpp"),
 ])
 
+
 @build
 def config(env):
     cflags = ['-std=c++17', '-g', '-Wall', '-Wextra', '-Werror']
@@ -21,6 +22,7 @@ def config(env):
         CCFLAGS=cflags,
         LIBS=['pthread'],
     )
+
 
 @build
 def build(env):
