@@ -101,7 +101,7 @@ else:
     vcs_type=VcsGit(server="github.com", repository="quictls/openssl",
                     protocol="https",
                     # A pinned commit from branch OpenSSL_1_1_1k+quic.
-                    revision="a6e9d76db343605dae9b59d71d2811b195ae7434"
+                    revision="7c0006ccf891c20cd0b1e9e6a436f9d1f3153b7b"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -116,18 +116,16 @@ else:
         vcs_type=VcsGit(server="github.com", repository="tatsuhiro-t/nghttp2",
                         protocol="https",
                         # A pinned commit from branch quic.
-
                         # This commit will be removed whenever the nghttp2
                         # author rebases origin/quic.  For reference, this
                         # commit is currently described as:
-                        #
-                        # commit 19cf303828eca4653130e1aaf27aa57319e3b819
+
+                        # commit 25f29e7634a2c8c5ba5c63432e5d94217a6535ef
                         # Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-                        # Date:   Sat Mar 27 23:37:37 2021 +0900
+                        # Date:   Mon Aug 16 16:58:11 2021 +0900
                         #
                         #     Compile with the latest ngtcp2
-
-                        revision="19cf303828eca4653130e1aaf27aa57319e3b819"
+                        revision="25f29e7634a2c8c5ba5c63432e5d94217a6535ef"
                         ),
         mode=['SKIP_DOCS'],
     )
@@ -142,7 +140,7 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/ngtcp2",
                     protocol="https",
                     # A pinned commit on branch main.
-                    revision="d23e3431d86e5047a756172c6b2cbecab9cea3d4"
+                    revision="982502f9ac594a45bc13804416a443522d906f29"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -157,7 +155,7 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/nghttp3",
                     protocol="https",
                     # A pinned commit on branch main.
-                    revision="d9605232a39e171f7b5b76d16213e0925bd1ed58"
+                    revision="b9e565cb48e92ded110162a65511f78681fb13c3"
                     ),
     mode=['SKIP_DOCS'],
   )

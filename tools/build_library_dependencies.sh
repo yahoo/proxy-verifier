@@ -32,9 +32,9 @@ mkdir -p ${repo_dir}
 
 # 1. OpenSSL version that supports quic.
 cd ${repo_dir}
-git clone -b OpenSSL_1_1_1k+quic --depth 1 https://github.com/quictls/openssl.git openssl
+git clone -b OpenSSL_1_1_1m+quic --depth 1 https://github.com/quictls/openssl.git openssl
 cd openssl
-git checkout a6e9d76db343605dae9b59d71d2811b195ae7434
+git checkout 7c0006ccf891c20cd0b1e9e6a436f9d1f3153b7b
 ./config --prefix=${install_dir}/openssl
 make -j4
 ${SUDO} make install_sw
@@ -43,7 +43,7 @@ ${SUDO} make install_sw
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/nghttp3
 cd nghttp3/
-git checkout d9605232a39e171f7b5b76d16213e0925bd1ed58
+git checkout b9e565cb48e92ded110162a65511f78681fb13c3
 autoreconf -i
 ./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
 make -j4
@@ -53,7 +53,7 @@ ${SUDO} make install
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/ngtcp2
 cd ngtcp2
-git checkout d23e3431d86e5047a756172c6b2cbecab9cea3d4
+git checkout 982502f9ac594a45bc13804416a443522d906f29
 autoreconf -i
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
@@ -71,13 +71,12 @@ cd nghttp2
 # This commit will be removed whenever the nghttp2 author rebases origin/quic.
 # For reference, this commit is currently described as:
 #
-# commit 19cf303828eca4653130e1aaf27aa57319e3b819
+# commit 25f29e7634a2c8c5ba5c63432e5d94217a6535ef
 # Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-# Date:   Sat Mar 27 23:37:37 2021 +0900
+# Date:   Mon Aug 16 16:58:11 2021 +0900
 #
 #     Compile with the latest ngtcp2
-
-git checkout 19cf303828eca4653130e1aaf27aa57319e3b819
+git checkout 25f29e7634a2c8c5ba5c63432e5d94217a6535ef
 
 autoreconf -if
 ./configure \
