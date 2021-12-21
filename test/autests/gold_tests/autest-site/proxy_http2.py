@@ -106,12 +106,17 @@ class Http2ConnectionManager(object):
             except TimeoutError:
                 data = None
                 for stream_id in resp_from_server.keys():
-                    response_headers, response_body = resp_from_server[stream_id]
+                    response_headers, response_body, response_trailers = resp_from_server[
+                        stream_id]
                     try:
                         self.listening_conn.send_headers(
                             stream_id, response_headers)
                         self.listening_conn.send_data(
-                            stream_id, response_body, end_stream=True)
+                            stream_id, response_body, end_stream=False if response_trailers else True)
+                        if response_trailers:
+                            self.listening_conn.send_headers(
+                                stream_id, response_trailers, end_stream=True)
+
                     except StreamClosedError as e:
                         print(e)
                     except StreamIDTooLowError as e:
@@ -279,9 +284,11 @@ class Http2ConnectionManager(object):
             req_body,
             response_headers,
             response_body,
+            None,
             res.status,
             res.reason)
-        return response_headers, response_body
+        # do not return trailers
+        return response_headers, response_body, None
 
     def _send_http2_request_to_server(self, request_headers, req_body, client_stream_id):
         if not self.is_h2_to_server:
@@ -359,14 +366,34 @@ class Http2ConnectionManager(object):
             response_from_server.headers).raw
         # Http/2 response does not have reason phrase.
         empty_reason_phrase = ''
+
+        response_trailers = tuple()
+        previous_k = b''
+        previous_v = b''
+        if res.trailers:
+            for k, v in res.trailers:
+                if k == b'date' and k == previous_k:
+                    # This happens with date, which HTTPHeaderMap annoyingly splits
+                    # on the comma:
+                    # "Sat, 16 Mar 2019 01:13:21 GMT"
+                    #
+                    # This yields the following two tuples:
+                    # (b'date', b'Sat')
+                    # (b'date', b'16 Mar 2019 01:13:21 GMT')
+                    v = previous_v + b', ' + v
+                    response_trailers = response_trailers[0:-1]
+                response_trailers += ((k, v),)
+                previous_k, previous_v = k, v
+
         self.print_info(
             request_headers,
             req_body,
             filtered_response_headers,
             response_from_server.body,
+            response_trailers,
             response_from_server.status_code,
             empty_reason_phrase)
-        return filtered_response_headers, response_from_server.body
+        return filtered_response_headers, response_from_server.body, response_trailers
 
     def request_received(self, request_headers, req_body, stream_id):
         if self.is_h2_to_server:
@@ -376,8 +403,7 @@ class Http2ConnectionManager(object):
             return self._send_http1_request_to_server(
                 request_headers, req_body, stream_id)
 
-    def print_info(self, request_headers, req_body, response_headers, res_body,
-                   response_status, response_reason):
+    def print_info(self, request_headers, req_body, response_headers, res_body, response_trailers, response_status, response_reason):
         def parse_qsl(s):
             return '\n'.join(
                 "%-20s %s" %
@@ -403,6 +429,13 @@ class Http2ConnectionManager(object):
 
         if res_body is not None:
             print(f"\n==== RESPONSE BODY ====\n{res_body}\n")
+
+        if response_trailers:
+            print("\n==== RESPONSE TRAILERS ====")
+            for k, v in response_trailers:
+                if isinstance(k, bytes):
+                    k, v = (k.decode('ascii'), v.decode('ascii'))
+                print("{}: {}".format(k, v))
 
 
 def alpn_callback(conn, protos):

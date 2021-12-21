@@ -61,6 +61,7 @@ static const std::string YAML_ALL_MESSAGES_KEY{"all"};
 static const std::string YAML_FRAMES_KEY{"frames"};
 static const std::string YAML_ERROR_CODE_KEY{"error-code"};
 static const std::string YAML_HDR_KEY{"headers"};
+static const std::string YAML_TRAILER_KEY{"trailers"};
 static const std::string YAML_FIELDS_KEY{"fields"};
 static const std::string YAML_HTTP_STATUS_KEY{"status"};
 static const std::string YAML_HTTP_REASON_KEY{"reason"};

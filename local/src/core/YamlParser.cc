@@ -370,6 +370,20 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
+  if (node[YAML_TRAILER_KEY]) {
+    auto hdr_node{node[YAML_TRAILER_KEY]};
+    if (hdr_node[YAML_FIELDS_KEY]) {
+      auto field_list_node{hdr_node[YAML_FIELDS_KEY]};
+      Errata result = parse_fields_and_rules(
+          field_list_node,
+          *message._trailer_fields_rules,
+          message._verify_strictly);
+      if (!result.is_ok()) {
+        errata.note(S_ERROR, "Failed to parse trailer at {}", node.Mark());
+        errata.note(std::move(result));
+      }
+    }
+  }
   errata.note(process_pseudo_headers(headers_frame, message));
 
   if (!rst_stream_frame.IsNull()) {
@@ -1225,10 +1239,7 @@ public:
   {
     errata.note(_handler.file_open(path));
   }
-  ~HandlerOpener()
-  {
-    errata.note(_handler.file_close());
-  }
+  ~HandlerOpener() { errata.note(_handler.file_close()); }
 
 private:
   ReplayFileHandler &_handler;

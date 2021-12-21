@@ -309,6 +309,8 @@ public:
    */
   void add_fields_to_ngnva(nghttp3_nv *l) const;
 
+  bool verify(swoc::TextView transaction_key, HttpFields const &rules_) const;
+
   friend class HttpHeader;
 };
 
@@ -392,12 +394,19 @@ public:
    */
   std::string get_key() const;
 
-  /** Verify that the fields in 'this' correspond to the provided rules.
+  /** Verify that the (header) fields in 'this' correspond to the provided rules.
    *
    * @param rules_ HeaderRules to iterate over, contains RuleCheck objects
    * @return Whether any rules were violated
    */
   bool verify_headers(swoc::TextView key, HttpFields const &rules_) const;
+
+  /** Verify that the (trailer) fields in 'this' correspond to the provided rules.
+   *
+   * @param rules_ HeaderRules to iterate over, contains RuleCheck objects
+   * @return Whether any rules were violated
+   */
+  bool verify_trailers(swoc::TextView key, HttpFields const &rules_) const;
 
   /** Add the fields and rules from other into self's _fields_rules.
    *
@@ -519,6 +528,7 @@ public:
 
   /// Maps field names to functors (rules) and field names to values (fields)
   std::shared_ptr<HttpFields> _fields_rules = nullptr;
+  std::shared_ptr<HttpFields> _trailer_fields_rules = nullptr;
 
   std::deque<H2Frame> _h2_frame_sequence;
 
@@ -610,6 +620,8 @@ struct Txn
   std::chrono::microseconds _user_specified_delay_duration{0};
   HttpHeader _req; ///< Request to send.
   HttpHeader _rsp; ///< Rules for response to expect.
+  // TODO: zli11: understand the following naming and comment. May need modify.
+  HttpHeader _rsp_trailer; ///< Rules for response to expect.
 };
 
 struct Ssn
