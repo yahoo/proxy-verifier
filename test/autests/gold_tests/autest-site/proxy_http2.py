@@ -190,9 +190,11 @@ class Http2ConnectionManager(object):
             req_body,
             response_headers,
             response_body,
+            None,
             res.status,
             res.reason)
-        return response_headers, response_body
+        # do not return trailers
+        return response_headers, response_body, None
 
     def _send_http2_request_to_server(self, request_headers, req_body, client_stream_id):
         if not self.is_h2_to_server:
@@ -238,6 +240,7 @@ class Http2ConnectionManager(object):
             server_stream_id = connection_to_server.request(method, path, req_body, request_headers)
             res = connection_to_server.get_response(server_stream_id)
             response_body = res.read(decode_content=False)
+            trailers = res.trailers
         except Exception as e:
             if origin in self.tls.http_conns:
                 del self.tls.http_conns[origin]
@@ -267,27 +270,49 @@ class Http2ConnectionManager(object):
                 response_headers = response_headers[0:-1]
             response_headers += ((k, v),)
             previous_k, previous_v = k, v
+
+        response_trailers = tuple()
+        previous_k = b''
+        previous_v = b''
+        if res.trailers:
+            for k, v in res.trailers:
+                if k == b'date' and k == previous_k:
+                    # This happens with date, which HTTPHeaderMap annoyingly splits
+                    # on the comma:
+                    # "Sat, 16 Mar 2019 01:13:21 GMT"
+                    #
+                    # This yields the following two tuples:
+                    # (b'date', b'Sat')
+                    # (b'date', b'16 Mar 2019 01:13:21 GMT')
+                    v = previous_v + b', ' + v
+                    response_trailers = response_trailers[0:-1]
+                response_trailers += ((k, v),)
+                previous_k, previous_v = k, v
+
         self.print_info(
             request_headers,
             req_body,
             response_headers,
             response_body,
+            response_trailers,
             res.status,
             res.reason)
-        return response_headers, response_body
+        return response_headers, response_body, response_trailers
 
     def request_received(self, request_headers, req_body, stream_id):
         if self.is_h2_to_server:
-            response_headers, response_body = self._send_http2_request_to_server(
+            response_headers, response_body, response_trailers = self._send_http2_request_to_server(
                 request_headers, req_body, stream_id)
         else:
-            response_headers, response_body = self._send_http1_request_to_server(
+            response_headers, response_body, response_trailers = self._send_http1_request_to_server(
                 request_headers, req_body, stream_id)
 
         self.listening_conn.send_headers(stream_id, response_headers)
-        self.listening_conn.send_data(stream_id, response_body, end_stream=True)
+        self.listening_conn.send_data(stream_id, response_body, end_stream=False if response_trailers else True)
+        if response_trailers:
+            self.listening_conn.send_headers(stream_id, response_trailers, end_stream=True)
 
-    def print_info(self, request_headers, req_body, response_headers, res_body,
+    def print_info(self, request_headers, req_body, response_headers, res_body, response_trailers,
                    response_status, response_reason):
         def parse_qsl(s):
             return '\n'.join(
@@ -314,6 +339,13 @@ class Http2ConnectionManager(object):
 
         if res_body is not None:
             print("\n==== RESPONSE BODY ====\n%s\n" % res_body)
+
+        if response_trailers:
+            print("\n==== RESPONSE TRAILERS ====")
+            for k, v in response_trailers:
+                if isinstance(k, bytes):
+                    k, v = (k.decode('ascii'), v.decode('ascii'))
+                print("{}: {}".format(k, v))
 
 
 def alpn_callback(conn, protos):

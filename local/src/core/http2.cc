@@ -413,9 +413,12 @@ on_header_callback(
     break;
   }
   case NGHTTP2_HCAT_PUSH_RESPONSE:
-  case NGHTTP2_HCAT_HEADERS:
     errata.error("Got HTTP/2 an header for an unimplemented category: {}", headers_category);
     return 0;
+  case NGHTTP2_HCAT_HEADERS:
+    auto &response_headers = stream_state->_response_from_server;
+    response_headers->_trailer_fields_rules->add_field(name_view, value_view);
+    break;
   }
   return 0;
 }
@@ -643,11 +646,11 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
     break;
   }
   auto const flags = frame->hd.flags;
+  auto const stream_id = frame->hd.stream_id;
   // `flags` have to be processed here. They are not communicated via
   // on_header_callback.
   if (flags & NGHTTP2_FLAG_END_HEADERS || flags & NGHTTP2_FLAG_END_STREAM) {
     auto *session_data = reinterpret_cast<H2Session *>(user_data);
-    auto const stream_id = frame->hd.stream_id;
     auto stream_map_iter = session_data->_stream_map.find(stream_id);
     if (stream_map_iter == session_data->_stream_map.end()) {
       // Nothing to do if this is not in our stream map.
@@ -715,10 +718,13 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
               response_from_wire._status,
               key);
         }
+      } else if (headers_category==NGHTTP2_HCAT_HEADERS) {
+        errata.diag(
+            "Received an HTTP/2 trailer for stream id {}:\n",
+            stream_id);
       }
     }
     if (flags & NGHTTP2_FLAG_END_STREAM) {
-      // We already verified above that this is in our _stream_map.
       session_data->set_stream_has_ended(stream_id);
     }
   }
@@ -746,6 +752,22 @@ on_stream_close_cb(
   auto const &message_start = stream_state._stream_start;
   auto const message_end = ClockType::now();
   auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start);
+
+  auto const specified_response = stream_state._specified_response;
+  if (specified_response && specified_response->_trailer_fields_rules->_rules.size()) {
+    auto response_from_wire = stream_state._response_from_server;
+    auto const &key = stream_state._key;
+
+    if (key.empty()) {
+      errata.error(R"(HTTP/2 trailer check failed: streamstate has no key.)");
+    } else {
+      if (response_from_wire->verify_trailers(key, *specified_response->_trailer_fields_rules)) {
+        errata.error(R"(HTTP/2 response trailers did not match expected response trailers.)");
+        session_data->set_non_zero_exit_status();
+      }
+    }
+  }
+
   if (elapsed_ms > Transaction_Delay_Cutoff) {
     errata.error(
         R"(HTTP/2 transaction in stream id {} with key {} took {}.)",
@@ -805,6 +827,10 @@ H2StreamState::~H2StreamState()
   if (_response_nv_headers) {
     free(_response_nv_headers);
     _response_nv_headers = nullptr;
+  }
+  if (_trailer_to_send) {
+    free(_trailer_to_send);
+    _trailer_to_send = nullptr;
   }
 }
 
@@ -915,6 +941,10 @@ data_read_callback(
     }
     if (stream_state->_send_body_offset >= stream_state->_send_body_length) {
       *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+      if (stream_state->_trailer_to_send) {
+        *data_flags |= NGHTTP2_DATA_FLAG_NO_END_STREAM;
+        nghttp2_submit_trailer(session,stream_id,stream_state->_trailer_to_send,stream_state->_trailer_length);
+      }
     }
   }
   errata.diag("Writing a {} byte body for stream id: {}", num_to_copy, stream_id);
@@ -949,7 +979,7 @@ H2Session::write(HttpHeader const &hdr)
   // pack_headers will convert all the fields in hdr into nghttp2_nv structs
   int hdr_count = 0;
   nghttp2_nv *hdrs = nullptr;
-  pack_headers(hdr, hdrs, hdr_count);
+  pack_headers(hdr, false, hdrs, hdr_count);
   if (hdr.is_response()) {
     stream_state->store_nv_response_headers_to_free(hdrs);
   } else {
@@ -975,6 +1005,7 @@ H2Session::write(HttpHeader const &hdr)
     stream_state->_send_body_length = content.size();
     stream_state->_wait_for_continue = hdr._send_continue;
     if (hdr.is_response()) {
+      pack_headers(hdr, true, stream_state->_trailer_to_send, stream_state->_trailer_length);
       submit_result = nghttp2_submit_response(
           this->_session,
           stream_state->get_stream_id(),
@@ -1026,16 +1057,21 @@ H2Session::write(HttpHeader const &hdr)
 }
 
 Errata
-H2Session::pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_count)
+H2Session::pack_headers(HttpHeader const &hdr, bool trailer, nghttp2_nv *&nv_hdr, int &hdr_count)
 {
   Errata errata;
   if (!_h2_is_negotiated) {
     errata.error("Should not be packing headers if h2 is not negotiated.");
     return errata;
   }
-  hdr_count = hdr._fields_rules->_fields.size();
 
-  if (!hdr._contains_pseudo_headers_in_fields_array) {
+  auto fields_rules = hdr._fields_rules;
+  if (trailer) {
+    fields_rules = hdr._trailer_fields_rules;
+  }
+  hdr_count = fields_rules->_fields.size();
+
+  if (!trailer && !hdr._contains_pseudo_headers_in_fields_array) {
     if (hdr.is_response()) {
       hdr_count += 1;
     } else if (hdr.is_request()) {
@@ -1053,18 +1089,20 @@ H2Session::pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_cou
   // nghttp2 requires pseudo header fields to be at the start of the
   // nv array. Thus we add them here before calling add_fields_to_ngnva
   // which then skips the pseueo headers if they are in there.
-  if (hdr.is_response()) {
-    nv_hdr[offset++] = tv_to_nv(":status", hdr._status_string);
-  } else if (hdr.is_request()) {
-    // TODO: add error checking and refactor and tolerance for non-required
-    // pseudo-headers
-    nv_hdr[offset++] = tv_to_nv(":method", hdr._method);
-    nv_hdr[offset++] = tv_to_nv(":scheme", hdr._scheme);
-    nv_hdr[offset++] = tv_to_nv(":path", hdr._path);
-    nv_hdr[offset++] = tv_to_nv(":authority", hdr._authority);
+  if (!trailer) {
+    if (hdr.is_response()) {
+      nv_hdr[offset++] = tv_to_nv(":status", hdr._status_string);
+    } else if (hdr.is_request()) {
+      // TODO: add error checking and refactor and tolerance for non-required
+      // pseudo-headers
+      nv_hdr[offset++] = tv_to_nv(":method", hdr._method);
+      nv_hdr[offset++] = tv_to_nv(":scheme", hdr._scheme);
+      nv_hdr[offset++] = tv_to_nv(":path", hdr._path);
+      nv_hdr[offset++] = tv_to_nv(":authority", hdr._authority);
+    }
   }
 
-  hdr._fields_rules->add_fields_to_ngnva(nv_hdr + offset);
+  fields_rules->add_fields_to_ngnva(nv_hdr + offset);
 
   return errata;
 }

@@ -14,24 +14,24 @@ Verify basic HTTP/2 functionality.
 #
 # Test 1: Verify correct behavior of a single client-side HTTP/2 transaction.
 #
-r = Test.AddTestRun("Verify HTTP/2 behavior on client-side only")
-client = r.AddClientProcess("client1", "replay_files/http2_to_http1.yaml")
-server = r.AddServerProcess("server1", "replay_files/http2_to_http1.yaml")
-proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
-                          server_port=server.Variables.https_port,
-                          use_ssl=True, use_http2_to_1=True)
+#r = Test.AddTestRun("Verify HTTP/2 behavior on client-side only")
+#client = r.AddClientProcess("client1", "replay_files/http2_to_http1.yaml")
+#server = r.AddServerProcess("server1", "replay_files/http2_to_http1.yaml")
+#proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
+#                          server_port=server.Variables.https_port,
+#                          use_ssl=True, use_http2_to_1=True)
 
-proxy.Streams.stdout = "gold/http2_to_http1_proxy.gold"
-client.Streams.stdout = "gold/http2_to_http1_client.gold"
-server.Streams.stdout = "gold/http2_to_http1_server.gold"
+#proxy.Streams.stdout = "gold/http2_to_http1_proxy.gold"
+#client.Streams.stdout = "gold/http2_to_http1_client.gold"
+#server.Streams.stdout = "gold/http2_to_http1_server.gold"
 
-client.Streams.stdout += Testers.ExcludesExpression(
-    "Violation:",
-    "There should be no verification errors because there are none added.")
+#client.Streams.stdout += Testers.ExcludesExpression(
+#    "Violation:",
+#    "There should be no verification errors because there are none added.")
 
-server.Streams.stdout += Testers.ExcludesExpression(
-    "Violation:",
-    "There should be no verification errors because there are none added.")
+#server.Streams.stdout += Testers.ExcludesExpression(
+#    "Violation:",
+#    "There should be no verification errors because there are none added.")
 
 #
 # Test 2: Verify field verification: all success.
@@ -54,6 +54,8 @@ client.Streams.stdout += Testers.ExcludesExpression(
 server.Streams.stdout += Testers.ExcludesExpression(
     "Violation:",
     "There should be no verification errors because there are none added.")
+
+'''
 
 #
 # Test 3: Verify field verification: failures.
@@ -137,3 +139,4 @@ server.Streams.stdout += Testers.ContainsExpression(
 server.Streams.stdout += Testers.ExcludesExpression(
     "Violation:",
     "There should be no verification errors because there are none added.")
+'''

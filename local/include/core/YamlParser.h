@@ -55,6 +55,7 @@ static const std::string YAML_SERVER_RSP_KEY{"server-response"};
 static const std::string YAML_PROXY_RSP_KEY{"proxy-response"};
 static const std::string YAML_ALL_MESSAGES_KEY{"all"};
 static const std::string YAML_HDR_KEY{"headers"};
+static const std::string YAML_TRAILER_KEY{"trailers"};
 static const std::string YAML_FIELDS_KEY{"fields"};
 static const std::string YAML_HTTP_VERSION_KEY{"version"};
 static const std::string YAML_HTTP_STATUS_KEY{"status"};
