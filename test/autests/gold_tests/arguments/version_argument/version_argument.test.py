@@ -22,7 +22,7 @@ def get_part_version():
     """
     repo_dir = dirname(dirname(dirname(Test.TestRoot)))
     part_file = os.path.join(repo_dir, "local", "parts", "proxy-verifier.part")
-    for line in open(part_file, 'r'):
+    for line in open(part_file, 'r', encoding='utf-8'):
         if 'PartVersion' not in line:
             continue
         version_start = line.find('"') + 1

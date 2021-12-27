@@ -29,7 +29,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         # surpress socket/ssl related errors
         cls, e = sys.exc_info()[:2]
         if cls is socket.error or cls is ssl.SSLError:
-            pass
+            return None
         else:
             return HTTPServer.handle_error(self, request, client_address)
 
@@ -53,12 +53,12 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
 
         BaseHTTPRequestHandler.__init__(self, *args, **kwargs)
 
-    def log_error(self, format, *args):
+    def log_error(self, fmt, *args):
         # surpress "Request timed out: timeout('timed out',)"
         if isinstance(args[0], socket.timeout):
             return
 
-        self.log_message(format, *args)
+        self.log_message(fmt, *args)
 
     def do_GET(self):
         req = self
@@ -82,9 +82,9 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
 
         if req.path[0] == '/':
             if isinstance(self.connection, ssl.SSLSocket):
-                req.path = "https://%s%s" % (req.headers['Host'], req.path)
+                req.path = f"https://{req.headers['Host']}{req.path}"
             else:
-                req.path = "http://%s%s" % (req.headers['Host'], req.path)
+                req.path = f"http://{req.headers['Host']}{req.path}"
 
         client_sni = None
         if hasattr(socket, 'client_sni'):
@@ -104,8 +104,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         final_url = self.get_url(req.headers, path)
         setattr(req, 'headers', self.filter_headers(req.headers))
 
-        replay_server = "127.0.0.1:{}".format(self.server_port)
-        print("Connecting to: {} with scheme {}".format(replay_server, scheme))
+        replay_server = f"127.0.0.1:{self.server_port}"
+        print(f"Connecting to: {replay_server} with scheme {scheme}")
 
         try:
             origin = (scheme, replay_server)
@@ -168,8 +168,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             if origin in self.tls.conns:
                 del self.tls.conns[origin]
             self.send_error(502)
-            print("Connection to '{}' initiated with request to '{}://{}{}' failed: {}".format(
-                replay_server, scheme, netloc, path, e))
+            print(f"Connection to '{replay_server}' initiated with request to "
+                  f"{scheme}://{netloc}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)
             return
 
@@ -182,10 +182,10 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = False
         setattr(res, 'headers', self.filter_headers(res.headers))
 
-        status_line = "%s %d %s\r\n" % (self.protocol_version, res.status, res.reason)
+        status_line = f"{self.protocol_version} {res.status} {res.reason}\r\n"
         self.wfile.write(status_line.encode())
         for key, value in res.headers.items():
-            self.wfile.write("{}:{}\r\n".format(key, value).encode())
+            self.wfile.write(f"{key}:{value}\r\n".encode())
         # End the headers.
         self.wfile.write(b"\r\n")
         self.wfile.write(res_body)
@@ -209,7 +209,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     do_options = do_GET
 
     def relay_streaming(self, res):
-        self.wfile.write("%s %d %s\r\n" % (self.protocol_version, res.status, res.reason))
+        self.wfile.write(f"{self.protocol_version} {res.status} {res.reason}\r\n")
         for line in res.headers.headers:
             self.wfile.write(line)
         self.end_headers()
@@ -266,38 +266,37 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                 (k, v) for k, v in urllib.parse.parse_qsl(
                     s, keep_blank_values=True))
 
-        req_header_text = "%s %s %s\n%s" % (req.command, req.path, req.request_version, req.headers)
-        res_header_text = "%s %d %s\n%s" % (
-            res.response_version, res.status, res.reason, res.headers)
+        req_header_text = f"{req.command} {req.path} {req.request_version}\n{req.headers}"
+        res_header_text = f"{res.response_version} {res.status} {res.reason}\n{res.headers}"
 
         print(req_header_text)
 
         u = urllib.parse.urlsplit(req.path)
         if u.query:
             query_text = parse_qsl(u.query)
-            print("==== QUERY PARAMETERS ====\n%s\n" % query_text)
+            print(f"==== QUERY PARAMETERS ====\n{query_text}\n")
 
         cookie = req.headers.get('Cookie', '')
         if cookie:
             cookie = parse_qsl(re.sub(r';\s*', '&', cookie))
-            print("==== COOKIE ====\n%s\n" % cookie)
+            print(f"==== COOKIE ====\n{cookie}\n")
 
         auth = req.headers.get('Authorization', '')
         if auth.lower().startswith('basic'):
             token = auth.split()[1].decode('base64')
-            print("==== BASIC AUTH ====\n%s\n" % token)
+            print(f"==== BASIC AUTH ====\n{token}\n")
 
         if req_body is not None:
-            print("==== REQUEST BODY ====\n%s\n" % req_body)
+            print(f"==== REQUEST BODY ====\n{req_body}\n")
 
         print(res_header_text)
 
         cookies = res.headers['Set-Cookie']
         if cookies:
-            print("==== SET-COOKIE ====\n%s\n" % cookies)
+            print(f"==== SET-COOKIE ====\n{cookies}\n")
 
         if res_body is not None:
-            print("==== RESPONSE BODY ====\n%s\n" % res_body)
+            print(f"==== RESPONSE BODY ====\n{res_body}\n")
 
     def request_handler(self, req, req_body):
         pass
@@ -331,9 +330,6 @@ def configure_http1_server(HandlerClass, ServerClass, protocol,
 
     sa = httpd.socket.getsockname()
     print(
-        "Serving HTTP Proxy on {}:{}, forwarding to {}:{}".format(
-            sa[0],
-            sa[1],
-            "127.0.0.1",
-            server_port))
+            f"Serving HTTP Proxy on {sa[0]}:{sa[1]}, forwarding to "
+            f"127.0.0.1:{server_port}")
     httpd.serve_forever()

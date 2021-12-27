@@ -7,9 +7,6 @@ Verify correct handling of session and transaction delay.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-import os
-from os.path import dirname
-
 Test.Summary = '''
 Verify correct handling of session and transaction delay.
 '''
@@ -60,7 +57,7 @@ r.Processes.Default.Command = \
 r.ReturnCode = 0
 r.Streams.stdout += Testers.ContainsExpression(
     'Good',
-    f'The verifier script should report success.')
+    'The verifier script should report success.')
 
 #
 # Test 3: Run a few sessions and transactions with server-side delay.
@@ -107,4 +104,4 @@ r.Processes.Default.Command = \
 r.ReturnCode = 0
 r.Streams.stdout += Testers.ContainsExpression(
     'Good',
-    f'The verifier script should report success.')
+    'The verifier script should report success.')
