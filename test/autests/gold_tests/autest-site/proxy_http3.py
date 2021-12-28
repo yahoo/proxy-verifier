@@ -6,35 +6,31 @@ Implement HTTP/3 proxy behavior in Python.
 # Copyright 2021, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
-import argparse
 import asyncio
-import importlib
 import json
-import logging
 import os
 from pathlib import Path
-import time
-from collections import deque
-from email.utils import formatdate
-from typing import Callable, Deque, Dict, List, Optional, Union, cast
-
-from proxy_http1 import ProxyRequestHandler
+from typing import Callable, Dict, Optional, Union
 
 # For HTTP/1 to origin.
 from email.message import EmailMessage as HttpHeaders
 import http.client
+import sys
 import threading
+import traceback
+import urllib
 
 import aioquic
 from aioquic.asyncio import QuicConnectionProtocol, serve
-from aioquic.h0.connection import H0_ALPN, H0Connection
+from aioquic.h0.connection import H0Connection
 from aioquic.h3.connection import H3_ALPN, H3Connection
 from aioquic.h3.events import DataReceived, H3Event, Headers, HeadersReceived
-from aioquic.h3.exceptions import NoAvailablePushIDError
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.quic.logger import QuicLogger, QuicLoggerTrace
 from aioquic.quic.events import DatagramFrameReceived, ProtocolNegotiated, QuicEvent
 from aioquic.tls import SessionTicket
+
+from proxy_http1 import ProxyRequestHandler
 
 AsgiApplication = Callable
 HttpConnection = Union[H0Connection, H3Connection]
@@ -49,7 +45,7 @@ class QuicDirectoryLogger(QuicLogger):
 
     def __init__(self, path: str) -> None:
         if not os.path.isdir(path):
-            raise ValueError("QUIC log output directory '%s' does not exist" % path)
+            raise ValueError(f"QUIC log output directory '{path}' does not exist")
         self.path = path
         super().__init__()
 
@@ -58,7 +54,7 @@ class QuicDirectoryLogger(QuicLogger):
         trace_path = os.path.join(
             self.path, trace_dict["common_fields"]["ODCID"] + ".qlog"
         )
-        with open(trace_path, "w") as logger_fp:
+        with open(trace_path, "w", encoding='utf-8') as logger_fp:
             json.dump({"qlog_version": "draft-01", "traces": [trace_dict]}, logger_fp)
         self._traces.remove(trace)
 
@@ -126,7 +122,7 @@ class HttpRequestHandler:
 
         # For all of these, for convenience, we simply talk HTTP (not HTTPS).
         scheme = 'http'
-        replay_server = "127.0.0.1:{}".format(self.server_port)
+        replay_server = f"127.0.0.1:{self.server_port}"
         method = request_headers[':method']
         path = request_headers[':path']
 
@@ -148,8 +144,9 @@ class HttpRequestHandler:
 
             response_body = res.read()
         except Exception as e:
-            print("Connection to '{}' initiated with request to '{}://{}{}' failed: {}".format(
-                replay_server, scheme, request_headers.get(':authority', ''), path, e))
+            authority = request_headers.get(':authority', '')
+            print(f"Connection to '{replay_server}' initiated with request to "
+                  f"'{scheme}://{authority}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)
             raise e
 
@@ -170,7 +167,7 @@ class HttpRequestHandler:
                 res.reason)
 
         except Exception as e:
-            print("Curating the HTTP/1 response to proxy to HTTP/3 failed: {}".format(e))
+            print(f"Curating the HTTP/1 response to proxy to HTTP/3 failed: {e}")
             traceback.print_exc(file=sys.stdout)
             raise e
         return response_headers, response_body
@@ -185,23 +182,23 @@ class HttpRequestHandler:
 
         print("==== REQUEST HEADERS ====")
         for k, v in request_headers.items():
-            print("{}: {}".format(k, v))
+            print(f"{k}: {v}")
 
         if req_body is not None:
-            print("\n==== REQUEST BODY ====\n%s" % req_body)
+            print(f"\n==== REQUEST BODY ====\n{req_body}")
 
         print("\n==== RESPONSE ====")
-        status_line = "%d %s" % (response_status, response_reason)
+        status_line = f"{response_status} {response_reason}"
         print(status_line)
 
         print("\n==== RESPONSE HEADERS ====")
         for k, v in response_headers:
             if isinstance(k, bytes):
                 k, v = (k.decode('ascii'), v.decode('ascii'))
-            print("{}: {}".format(k, v))
+            print(f"{k}: {v}")
 
         if res_body is not None:
-            print("\n==== RESPONSE BODY ====\n%s\n" % res_body)
+            print(f"\n==== RESPONSE BODY ====\n{res_body}\n")
 
     def http_event_received(self, event: H3Event) -> None:
         if isinstance(event, DataReceived):
@@ -241,7 +238,7 @@ class HttpRequestHandler:
                 )
             self.transmit()
         except Exception as e:
-            print("Transmitting the HTTP/3 response to the client failed: {}".format(e))
+            print(f"Transmitting the HTTP/3 response to the client failed: {e}")
             traceback.print_exc(file=sys.stdout)
             raise e
 
@@ -278,7 +275,7 @@ class HttpQuicServerHandler(QuicConnectionProtocol):
             else:
                 path_bytes, query_string = raw_path, b""
             path = path_bytes.decode()
-            self._quic._logger.info("HTTP request %s %s", method, path)
+            self._quic._logger.info(f"HTTP request {method} {path}")
 
             # FIXME: add a public API to retrieve peer address
             client_addr = self._http._quic._network_paths[0].addr
@@ -371,7 +368,7 @@ def configure_http3_server(
     except FileExistsError:
         pass
     quic_logger = QuicDirectoryLogger('quic_log_directory')
-    secrets_log_file = open('tls_secrets.log', "a")
+    secrets_log_file = open('tls_secrets.log', "a", encoding='utf-8')
     configuration = QuicConfiguration(
         alpn_protocols=H3_ALPN,
         is_client=False,

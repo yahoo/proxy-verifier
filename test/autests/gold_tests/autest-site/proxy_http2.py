@@ -68,6 +68,7 @@ class Http2ConnectionManager(object):
         self.listening_conn = H2Connection(config=listening_config)
         self.is_h2_to_server = h2_to_server
         self.request_infos = {}
+        self.client_sni = None
 
     def run_forever(self):
         self.listening_conn.initiate_connection()
@@ -142,7 +143,7 @@ class Http2ConnectionManager(object):
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         scheme = request_headers[':scheme']
-        replay_server = "127.0.0.1:{}".format(self.server_port)
+        replay_server = f"127.0.0.1:{self.server_port}"
         method = request_headers[':method']
         path = request_headers[':path']
 
@@ -155,7 +156,8 @@ class Http2ConnectionManager(object):
                     else:
                         gcontext = ssl.SSLContext()
                     self.tls.http_conns[origin] = http.client.HTTPSConnection(
-                        replay_server, timeout=self.timeout, context=gcontext, cert_file=self.cert_file)
+                        replay_server, timeout=self.timeout, context=gcontext,
+                        cert_file=self.cert_file)
                 else:
                     self.tls.http_conns[origin] = http.client.HTTPConnection(
                         replay_server, timeout=self.timeout)
@@ -173,8 +175,9 @@ class Http2ConnectionManager(object):
             if origin in self.tls.http_conns:
                 del self.tls.http_conns[origin]
             self.listening_conn.send_headers(stream_id, ((':status', '502')), end_stream=True)
-            print("Connection to '{}' initiated with request to '{}://{}{}' failed: {}".format(
-                replay_server, scheme, request_headers.get(':authority', ''), path, e))
+            authority = request_headers.get(':authority', '')
+            print(f"Connection to '{replay_server}' initiated with request to "
+                  f"'{scheme}://{authority}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)
             return
 
@@ -205,7 +208,7 @@ class Http2ConnectionManager(object):
         request_headers = request_headers_message
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
         scheme = request_headers[':scheme']
-        replay_server = "127.0.0.1:{}".format(self.server_port)
+        replay_server = f"127.0.0.1:{self.server_port}"
         method = request_headers[':method']
         path = request_headers[':path']
 
@@ -243,8 +246,9 @@ class Http2ConnectionManager(object):
                 del self.tls.http_conns[origin]
             self.listening_conn.send_headers(
                 client_stream_id, ((':status', '502')), end_stream=True)
-            print("Connection to '{}' initiated with request to '{}://{}{}' failed: {}".format(
-                replay_server, scheme, request_headers.get(':authority', ''), path, e))
+            authority = request_headers.get(':authority', '')
+            print(f"Connection to '{replay_server}' initiated with request to "
+                  f"'{scheme}://{authority}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)
             return
 
@@ -297,23 +301,23 @@ class Http2ConnectionManager(object):
 
         print("==== REQUEST HEADERS ====")
         for k, v in request_headers.items():
-            print("{}: {}".format(k, v))
+            print(f"{k}: {v}")
 
         if req_body is not None:
-            print("\n==== REQUEST BODY ====\n%s" % req_body)
+            print(f"\n==== REQUEST BODY ====\n{req_body}")
 
         print("\n==== RESPONSE ====")
-        status_line = "%d %s" % (response_status, response_reason)
+        status_line = f"{response_status} {response_reason}"
         print(status_line)
 
         print("\n==== RESPONSE HEADERS ====")
         for k, v in response_headers:
             if isinstance(k, bytes):
                 k, v = (k.decode('ascii'), v.decode('ascii'))
-            print("{}: {}".format(k, v))
+            print(f"{k}: {v}")
 
         if res_body is not None:
-            print("\n==== RESPONSE BODY ====\n%s\n" % res_body)
+            print(f"\n==== RESPONSE BODY ====\n{res_body}\n")
 
 
 def alpn_callback(conn, protos):
@@ -326,7 +330,7 @@ def alpn_callback(conn, protos):
 def servername_callback(conn):
     sni = conn.get_servername()
     conn.set_app_data({'sni': sni})
-    print("Got SNI from client: {}".format(sni))
+    print(f"Got SNI from client: {sni}")
 
 
 def configure_http2_server(listen_port, server_port, https_pem, ca_pem, h2_to_server=False):
@@ -350,13 +354,14 @@ def configure_http2_server(listen_port, server_port, https_pem, ca_pem, h2_to_se
     context.set_cipher_list(
         "RSA+AESGCM"
     )
-    context.set_tmp_ecdh(crypto.get_elliptic_curve(u'prime256v1'))
+    context.set_tmp_ecdh(crypto.get_elliptic_curve('prime256v1'))
 
     server = eventlet.listen(('0.0.0.0', listen_port))
     server = SSL.Connection(context, server)
     server_side_proto = "HTTP/2" if h2_to_server else "HTTP/1.x"
-    print("Serving HTTP/2 Proxy on {}:{} with pem '{}', forwarding to {}:{} via {}".format(
-        "127.0.0.1", listen_port, https_pem, "127.0.0.1", server_port, server_side_proto))
+    print(f"Serving HTTP/2 Proxy on 127.0.0.1:{listen_port} with pem "
+          f"'{https_pem}', forwarding to 127.0.0.1:{server_port} via "
+          f"{server_side_proto}")
     pool = eventlet.GreenPool()
 
     while True:

@@ -16,11 +16,18 @@ class Directive:
     The base class for the logic of a single directive.
     """
 
+    @staticmethod
+    def get_command_name():
+        """
+        Return the command name associated with this Directive.
+        """
+        raise NotImplementedError("Must be implemented in derived class.")
+
     def apply_headers(self, headers):
         """
         The public interface of all Directive objects.
 
-        Derived classes must implement the _apply_headers function which
+        Derived classes must implement the apply_headers function which
         implements its particular logic against headers.
 
         Args:
@@ -29,19 +36,19 @@ class Directive:
         Returns:
             The new headers after the directive manipulates them.
         """
-        return self._apply_headers(headers)
+        raise NotImplementedError("Must be implemented in derived class.")
 
     def apply_url(self):
         """
         Another public interface of all Directive objects.
 
-        Derived classes must implement the _apply_url function which
+        Derived classes must implement the apply_url function which
         implements its particular logic for a URL.
 
         Returns:
             The new URL. None if no change
         """
-        return self._apply_url()
+        raise NotImplementedError("Must be implemented in derived class.")
 
     @staticmethod
     def directive_factory(command, value):
@@ -55,12 +62,13 @@ class Directive:
         >>> type(d) == InsertDirective
         True
         """
-        if command.lower() == DeleteDirective._command_name.lower():
+        if command.lower() == DeleteDirective.get_command_name().lower():
             return DeleteDirective(value)
-        if command.lower() == InsertDirective._command_name.lower():
+        if command.lower() == InsertDirective.get_command_name().lower():
             return InsertDirective(value)
-        if command.lower() == SetURLDirective._command_name.lower():
+        if command.lower() == SetURLDirective.get_command_name().lower():
             return SetURLDirective(value)
+        return None
 
 
 class SetURLDirective(Directive):
@@ -73,10 +81,17 @@ class SetURLDirective(Directive):
 
     _command_name = "SetURL"
 
-    def __init__(self, new_URL):
-        self._new_URL = new_URL
+    def __init__(self, new_url):
+        self._new_url = new_url
 
-    def _apply_headers(self, headers):
+    @staticmethod
+    def get_command_name():
+        """
+        Return the command name associated with this Directive.
+        """
+        return SetURLDirective._command_name
+
+    def apply_headers(self, headers):
         """
         >>> import email.message
         >>> headers = email.message.Message()
@@ -91,13 +106,13 @@ class SetURLDirective(Directive):
         """
         return headers
 
-    def _apply_url(self):
+    def apply_url(self):
         """
         >>> d = SetURLDirective('test')
         >>> d.apply_url()
         'test'
         """
-        return self._new_URL
+        return self._new_url
 
 
 class DeleteDirective(Directive):
@@ -113,7 +128,14 @@ class DeleteDirective(Directive):
     def __init__(self, field_name_to_delete):
         self._field_name_to_delete = field_name_to_delete
 
-    def _apply_headers(self, headers):
+    @staticmethod
+    def get_command_name():
+        """
+        Return the command name associated with this Directive.
+        """
+        return DeleteDirective._command_name
+
+    def apply_headers(self, headers):
         """
         >>> import email.message
         >>> headers = email.message.Message()
@@ -141,7 +163,7 @@ class DeleteDirective(Directive):
             pass
         return headers
 
-    def _apply_url(self):
+    def apply_url(self):
         """
         >>> d = DeleteDirective('x-test')
         >>> d.apply_url() is None
@@ -166,11 +188,18 @@ class InsertDirective(Directive):
         colon_index = field_to_insert.find(':')
         if colon_index == -1:
             raise ValueError("Insert directive value has no colon: "
-                             "{}".format(field_to_insert))
+                             f"{field_to_insert}")
         self._new_field_name = field_to_insert[:colon_index].strip()
         self._new_field_value = field_to_insert[colon_index + 1:].strip()
 
-    def _apply_headers(self, headers):
+    @staticmethod
+    def get_command_name():
+        """
+        Return the command name associated with this Directive.
+        """
+        return InsertDirective._command_name
+
+    def apply_headers(self, headers):
         """
         >>> import email.message
         >>> headers = email.message.Message()
@@ -202,7 +231,7 @@ class InsertDirective(Directive):
         headers[self._new_field_name] = self._new_field_value
         return headers
 
-    def _apply_url(self):
+    def apply_url(self):
         """
         >>> d = InsertDirective('x-request-id:    5')
         >>> d.apply_url() is None
@@ -253,8 +282,8 @@ class DirectiveEngine:
             directive_value = headers[DirectiveEngine.PROXY_DIRECTIVE_FIELD_NAME.lower()]
             if isinstance(directive_value, list):
                 if len(directive_value) != 1:
-                    raise RuntimeError("Expected only one directive field, got {}".format(
-                        len(directive_value)))
+                    raise RuntimeError('Expected only one directive field, '
+                                       f'got {len(directive_value)}')
                 directive_value = directive_value[0]
             if isinstance(directive_value, bytes):
                 directive_value = directive_value.decode('ascii')
@@ -278,7 +307,8 @@ class DirectiveEngine:
         [('Delete', 'X-Test'), ('Insert', 'X-WOW:    3')]
         >>> DirectiveEngine._directive_value_parser("Delete=%<X-Test%> Insert=%<X-WOW:    3%>")
         [('Delete', 'X-Test'), ('Insert', 'X-WOW:    3')]
-        >>> DirectiveEngine._directive_value_parser("SetURL=%<http://example.one:8080/config/settings.yaml?q=3#F%>")
+        >>> directive = "SetURL=%<http://example.one:8080/config/settings.yaml?q=3#F%>"
+        >>> DirectiveEngine._directive_value_parser(directive)
         [('SetURL', 'http://example.one:8080/config/settings.yaml?q=3#F')]
         """
         return re.findall(r"(Delete|Insert|SetURL)=%<(.*?)%>", x_proxy_directive_value)
@@ -320,7 +350,8 @@ class DirectiveEngine:
         >>> headers.add_header('X-Test-Header', 'something')
         >>> headers.add_header('X-Duplicate-Header', 'one')
         >>> headers.add_header('X-Duplicate-Header', 'two')
-        >>> headers.add_header('X-Proxy-Directive', 'Delete=%<x-test-header%> Insert=%<X-Request-ID: 4%>')
+        >>> directive = 'Delete=%<x-test-header%> Insert=%<X-Request-ID: 4%>'
+        >>> headers.add_header('X-Proxy-Directive', directive)
         >>> e = DirectiveEngine(headers)
         >>> new_headers = e.get_new_headers()
         >>> len(new_headers)

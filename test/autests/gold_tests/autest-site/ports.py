@@ -65,21 +65,21 @@ def PortOpen(port, address=None):
             # Bind succeeded.
             host.WriteDebug(
                 'PortOpen',
-                "Bind on port {} succeeded, the port is closed "
+                f"Bind on port {port} succeeded, the port is closed "
                 "(no application is listening on it) "
-                "and thus a future connection can use it".format(port))
+                "and thus a future connection can use it")
             ret = False
 
     except socket.error:
         host.WriteDebug(
             'PortOpen',
-            "socket error binding on port {0}. "
-            "Assume a future connection cannot use it".format(port))
+            f"socket error binding on port {port}. "
+            "Assume a future connection cannot use it")
     except socket.timeout:
         host.WriteDebug(
             'PortOpen',
-            "Timeout error binding on port {0}. "
-            "Assume a future connection cannot use it".format(port))
+            f"Timeout error binding on port {port}. "
+            "Assume a future connection cannot use it")
 
     return ret
 
@@ -109,8 +109,8 @@ def _get_available_port(queue):
     port = queue.get()
     while PortOpen(port):
         host.WriteDebug(
-            '_get_available_port'
-            "Port was open but now is used: {}".format(port))
+            '_get_available_port',
+            f"Port was open but now is used: {port}")
         if queue.qsize() == 0:
             host.WriteWarning("Port queue is empty.")
             raise PortQueueSelectionError(
@@ -133,7 +133,7 @@ def _setup_port_queue(amount=1000):
         # The queue has already been populated.
         host.WriteDebug(
             '_setup_port_queue',
-            "Queue was previously populated. Queue size: {}".format(g_ports.qsize()))
+            f"Queue was previously populated. Queue size: {g_ports.qsize()}")
         return
     try:
         # Use sysctl to find the range of ports that the OS publishes it uses.
@@ -170,14 +170,14 @@ def _setup_port_queue(amount=1000):
             if not PortOpen(port):
                 host.WriteDebug(
                     '_setup_port_queue',
-                    "Adding a possible port to connect to: {0}".format(port))
+                    f"Adding a possible port to connect to: {port}")
                 g_ports.put(port)
             else:
                 host.WriteDebug(
                     '_setup_port_queue',
-                    "Rejecting a possible port to connect to: {0}".format(port))
+                    f"Rejecting a possible port to connect to: {port}")
             port += 1
-    if rmin > amount and g_ports.qsize() < amount:
+    if g_ports.qsize() < amount < rmin:
         port = 2001
         # Fill in more ports, starting at 2001, well above well known ports,
         # and going up until the minimum port range used by the OS.
@@ -185,12 +185,12 @@ def _setup_port_queue(amount=1000):
             if not PortOpen(port):
                 host.WriteDebug(
                     '_setup_port_queue',
-                    "Adding a possible port to connect to: {0}".format(port))
+                    f"Adding a possible port to connect to: {port}")
                 g_ports.put(port)
             else:
                 host.WriteDebug(
                     '_setup_port_queue',
-                    "Rejecting a possible port to connect to: {0}".format(port))
+                    f"Rejecting a possible port to connect to: {port}")
             port += 1
 
 
@@ -231,7 +231,7 @@ def get_port(obj, name):
             port = _get_available_port(g_ports)
             host.WriteVerbose(
                 "get_port",
-                "Using port from port queue: {}".format(port))
+                f"Using port from port queue: {port}")
             # setup clean up step to recycle the port
             obj.Setup.Lambda(func_cleanup=lambda: g_ports.put(
                 port), description="recycling port")
@@ -239,13 +239,13 @@ def get_port(obj, name):
             port = _get_port_by_bind()
             host.WriteVerbose(
                 "get_port",
-                "Queue was drained. Using port from a bound socket: {}".format(port))
+                f"Queue was drained. Using port from a bound socket: {port}")
     else:
         # Since the queue could not be populated, use a port via bind.
         port = _get_port_by_bind()
         host.WriteVerbose(
             "get_port",
-            "Queue is empty. Using port from a bound socket: {}".format(port))
+            f"Queue is empty. Using port from a bound socket: {port}")
 
     # Assign to the named variable.
     obj.Variables[name] = port

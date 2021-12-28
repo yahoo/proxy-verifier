@@ -26,6 +26,6 @@ def create_address_argument(ports, use_ipv6=False):
         else:
             argument += ','
         # We'll have a trailing ',', but verifier-server handles that fine.
-        argument += "{}:{}".format(address, port)
+        argument += f"{address}:{port}"
     argument += '"'
     return argument

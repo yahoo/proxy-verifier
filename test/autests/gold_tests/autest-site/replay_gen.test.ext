@@ -60,17 +60,17 @@ def ConfigureReplayGenDefaultProcess(
     process.Variables['replay_dir'] = replay_dir
 
     command = "python replay_gen.py "
-    command += " --number {}".format(num_transactions)
-    command += " --url-file {}".format(url_file)
-    command += " --output {}".format(replay_dir)
-    command += " {}".format(other_args)
+    command += f" --number {num_transactions}"
+    command += f" --url-file {url_file}"
+    command += f" --output {replay_dir}"
+    command += f" {other_args}"
     process.Command = command
 
     process.ReturnCode = 0
 
     host.WriteVerbose(
         "replay_gen",
-        "Running '{}' with replay_dir: '{}'".format(command, replay_dir))
+        f"Running '{command}' with replay_dir: '{replay_dir}'")
 
     return process
 

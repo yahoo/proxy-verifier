@@ -8,12 +8,22 @@ Implement the Proxy Verifier test server extension.
 #
 
 from __future__ import print_function
-from socket_util import create_address_argument
 import os
+from os.path import dirname
 from ports import get_port
+from socket_util import create_address_argument
 
 
 def make_id(s):
+    """
+    Given a string, create usable id for Disk.File.
+
+    Parameters:
+        input_str (str): An input string.
+
+    Returns (str): a transposed version of input_str that is usable as an id to
+    Disk.File.
+    """
     return s.replace(".", "_").replace('-', '_')
 
 
@@ -76,36 +86,34 @@ def _configure_server(obj, process, name, replay_dir, find_ports=True, use_ipv6=
         if ssl_cert == '':
             # Search for the root-level cert.
             test_root = process.TestRoot
-            from os.path import dirname
             git_root = dirname(dirname(dirname(test_root)))
             ssl_cert = os.path.join(git_root, "test", "keys", "server.pem")
 
             if not os.path.isfile(ssl_cert):
-                raise ValueError("Tried to use '{}' for --server-cert, but it is not "
-                                 "a valid file.".format(ssl_cert))
+                raise ValueError(f"Tried to use '{ssl_cert}' for --server-cert, "
+                                 "but it is not a valid file.")
         if ssl_cert:
             run_ssl_cert = ssl_cert
             if os.path.isfile(ssl_cert):
                 run_ssl_cert = os.path.join(server_dir, os.path.basename(ssl_cert))
                 process.Setup.Copy(ssl_cert, run_ssl_cert, CopyLogic.SoftFiles)
-            command += ' --server-cert "{}" '.format(run_ssl_cert)
+            command += f' --server-cert "{run_ssl_cert}" '
 
         if ca_certs == '':
             # Search for the root-level cert.
             test_root = process.TestRoot
-            from os.path import dirname
             git_root = dirname(dirname(dirname(test_root)))
             ca_certs = os.path.join(git_root, "test", "keys", "ca.pem")
 
             if not os.path.exists(ca_certs):
-                raise ValueError("Tried to use '{}' for --ca-certs, but it is not "
-                                 "a valid path.".format(ca_certs))
+                raise ValueError(f"Tried to use '{ca_certs}' for --ca-certs, "
+                                 "but it is not a valid path.")
         if ca_certs:
             run_ca_certs = ca_certs
             if os.path.isfile(ca_certs):
                 run_ca_certs = os.path.join(server_dir, os.path.basename(ca_certs))
                 process.Setup.Copy(ca_certs, run_ca_certs, CopyLogic.SoftFiles)
-            command += ' --ca-certs "{}" '.format(run_ca_certs)
+            command += f' --ca-certs "{run_ca_certs}" '
 
         if enable_tls_secrets_logging:
             tls_secrets_log_filename = "tls_secrets.txt"
@@ -118,13 +126,13 @@ def _configure_server(obj, process, name, replay_dir, find_ports=True, use_ipv6=
         # Create a copy of the replay directory in the run directory.
         run_replay_dir = os.path.join(server_dir, os.path.basename(replay_dir))
         process.Setup.Copy(replay_dir, run_replay_dir, CopyLogic.SoftFiles)
-        command += "{} ".format(run_replay_dir)
+        command += f"{run_replay_dir} "
 
     if verbose:
         command += ' --verbose diag '
 
     if other_args:
-        command += "{} ".format(other_args)
+        command += f"{other_args} "
     process.Command = command
 
     # Do not try to run PortOpen on the HTTP/3 (QUIC) socket because UDP is a

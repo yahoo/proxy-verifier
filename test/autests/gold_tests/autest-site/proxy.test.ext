@@ -9,6 +9,7 @@ Implement Proxy Verifier test proxy logic
 
 from __future__ import print_function
 import os
+from os.path import dirname
 
 sentinel_counter = 0
 
@@ -40,38 +41,35 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
     proxy_src = os.path.join(process.ComposeVariables().Autest.AutestSites[0], "test_proxy.py")
     proxy_dest = os.path.join(proxy_rundir, os.path.basename(proxy_src))
 
-    command = "python {} --listen-port {} --server-port {}".format(
-        proxy_dest, listen_port, server_port)
+    command = f"python {proxy_dest} --listen-port {listen_port} --server-port {server_port}"
     if use_ssl:
         test_root = process.TestRoot
         pem_file = https_pem
         if not pem_file:
-            from os.path import dirname
             git_root = dirname(dirname(dirname(test_root)))
             pem_file = os.path.join(git_root, "test", "keys", "client.pem")
 
             if not os.path.isfile(pem_file):
-                raise ValueError("Tried to use '{}' for --https-pem, but it is not "
-                                 "a valid file.".format(pem_file))
+                raise ValueError(f"Tried to use '{pem_file}' for --https-pem, but it is not "
+                                 "a valid file.")
 
         run_pem = os.path.join(proxy_rundir, os.path.basename(pem_file))
         process.Setup.Copy(pem_file, run_pem, CopyLogic.SoftFiles)
-        command += " --https-pem {}".format(run_pem)
+        command += f" --https-pem {run_pem}"
 
         ca_file = ca_pem
         if not ca_file:
-            from os.path import dirname
             git_root = dirname(dirname(dirname(test_root)))
             ca_file = os.path.join(git_root, "test", "keys", "ca.pem")
 
             if not os.path.isfile(ca_file):
-                raise ValueError("Tried to use '{}' for --ca-pem, but it is not "
-                                 "a valid file.".format(ca_file))
+                raise ValueError(f"Tried to use '{ca_file}' for --ca-pem, but it is not "
+                                 "a valid file.")
 
         run_ca_file = os.path.join(proxy_rundir, os.path.basename(ca_file))
         process.Setup.Copy(ca_file, run_ca_file, CopyLogic.SoftFiles)
 
-        command += " --ca-pem {}".format(run_ca_file)
+        command += f" --ca-pem {run_ca_file}"
 
     if use_http2_to_1:
         command += " --http2_to_1"

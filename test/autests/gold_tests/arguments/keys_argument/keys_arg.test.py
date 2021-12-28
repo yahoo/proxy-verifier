@@ -23,8 +23,8 @@ proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
 
 for uuid in range(1, 6):
     client.Streams.stdout += Testers.ContainsExpression(
-        '- "uuid": "{}"'.format(uuid),
-        "Client has uuid {}.".format(uuid))
+        f'- "uuid": "{uuid}"',
+        f"Client has uuid {uuid}.")
 
 #
 # Test 2: Verify a single transaction can be selected with --keys.
@@ -42,8 +42,8 @@ client.Streams.stdout += Testers.ContainsExpression(
 
 for uuid in [1, 3, 4, 5, 6]:
     client.Streams.stdout += Testers.ExcludesExpression(
-        '- "uuid": "{}"'.format(uuid),
-        "Client has uuid {}.".format(uuid))
+        f'- "uuid": "{uuid}"',
+        f"Client has uuid {uuid}.")
 
 #
 # Test 3: Verify a multiple transactions can be selected with --keys.
@@ -57,13 +57,13 @@ proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
 
 for uuid in [3, 5]:
     client.Streams.stdout += Testers.ContainsExpression(
-        '- "uuid": "{}"'.format(uuid),
-        "Client has uuid {}.".format(uuid))
+        f'- "uuid": "{uuid}"',
+        f"Client has uuid {uuid}.")
 
 for uuid in [1, 2, 4]:
     client.Streams.stdout += Testers.ExcludesExpression(
-        '- "uuid": "{}"'.format(uuid),
-        "Client has uuid {}.".format(uuid))
+        f'- "uuid": "{uuid}"',
+        f"Client has uuid {uuid}.")
 
 #
 # Test 4: Verify we can handle the situation if no transactions exist for the
@@ -77,5 +77,5 @@ proxy = r.AddProxyProcess("proxy4", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
-    'Parsed 0 transactions'.format(uuid),
+    'Parsed 0 transactions',
     "Verify no transactions are found")
