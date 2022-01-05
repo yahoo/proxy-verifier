@@ -1034,7 +1034,7 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
       if (is_closed()) {
         if (num_drained_body_bytes < expected_content_size) {
           num_drained_body_bytes.error(
-              R"(Body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
+              R"(Chunk body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
               num_drained_body_bytes.result(),
               expected_content_size,
               swoc::bwf::Errno{});
@@ -1079,7 +1079,7 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
       }
       if (is_closed()) {
         num_drained_body_bytes.error(
-            R"(Body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
+            R"(Content-Length body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
             num_drained_body_bytes.result(),
             expected_content_size,
             swoc::bwf::Errno{});
