@@ -487,12 +487,12 @@ ClientReplayFileHandler::txn_close()
 swoc::Errata
 ClientReplayFileHandler::ssn_close()
 {
+  swoc::Errata errata;
   {
     std::lock_guard<std::mutex> lock(LoadMutex);
     if (!_ssn->_transactions.empty()) {
       auto const &e = _ssn->post_process_transactions();
       if (!e.is_ok()) {
-        swoc::Errata errata;
         errata.note(e);
         errata.error(
             R"("{}":{} Could not process transactions in session.)",
@@ -503,7 +503,7 @@ ClientReplayFileHandler::ssn_close()
     }
   }
   this->ssn_reset();
-  return {};
+  return errata;
 }
 
 /** Command execution.
