@@ -565,7 +565,9 @@ receive_nghttp2_request(
   int total_recv = 0;
 
   auto const start_time = ClockType::now();
-  while (session_data->get_is_server() && !session_data->get_a_stream_has_ended()) {
+  while (!session_data->is_closed() && session_data->get_is_server() &&
+         !session_data->get_a_stream_has_ended())
+  {
     if (start_time - ClockType::now() > timeout) {
       return 0;
     }
