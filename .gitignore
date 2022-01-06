@@ -38,8 +38,13 @@
 /lib/pkgconfig
 /lib64
 /cmake*
+
+# Editor artifacts.
 .vscode
 .idea
+.clangd/
+.ropeproject/
+compile_commands.json
 
 # Default parts directories
 \.parts\.cache
