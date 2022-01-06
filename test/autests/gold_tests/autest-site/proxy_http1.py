@@ -330,6 +330,6 @@ def configure_http1_server(HandlerClass, ServerClass, protocol,
 
     sa = httpd.socket.getsockname()
     print(
-            f"Serving HTTP Proxy on {sa[0]}:{sa[1]}, forwarding to "
-            f"127.0.0.1:{server_port}")
+        f"Serving HTTP Proxy on {sa[0]}:{sa[1]}, forwarding to "
+        f"127.0.0.1:{server_port}")
     httpd.serve_forever()
