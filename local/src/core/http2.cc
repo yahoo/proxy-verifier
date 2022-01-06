@@ -19,7 +19,6 @@ using swoc::Errata;
 using swoc::TextView;
 using namespace swoc::literals;
 using namespace std::literals;
-using std::this_thread::sleep_for;
 
 namespace chrono = std::chrono;
 using ClockType = std::chrono::system_clock;
@@ -286,7 +285,6 @@ H2Session::run_transactions(
             duration_cast<milliseconds>(delay_time));
         current_time = ClockType::now();
         delay_time = next_time - current_time;
-        sleep_for(delay_time);
       }
     }
     txn_errata.note(this->run_transaction(txn));
@@ -586,7 +584,6 @@ receive_nghttp2_request(
         session_data->close();
         return (ssize_t)total_recv;
       } else if (poll_return == 0) {
-        errata.error("Timed out waiting to SSL_read for HTTP/2 request headers after {}.", timeout);
         return (ssize_t)total_recv;
       }
       // Poll succeeded. Repeat the attempt to read.
