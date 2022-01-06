@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+#
+# Build the proxy-verifier binaries as statically linked and stripped.
+#
+# Copyright 2022, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+tmpdir=/tmp/build_static.$$
+buildout=${tmpdir}/build_output.txt
+staticout=${tmpdir}/build_static_output.txt
+static_command=${tmpdir}/static_command.sh
+libdir=/opt
+
+fail()
+{
+  echo $1
+  exit 1
+}
+
+set -e
+
+os=$(uname)
+[ "${os}" = "Linux" -o "${os}" = "Darwin" ] || fail "Unrecognized OS: ${os}"
+[ -d "${libdir}" ] || fail "This script assumes HTTP build tools are in /opt"
+
+#
+# Do the initial build to get the build command.
+#
+if [ "${os}" = "Linux" ]
+then
+  num_threads=$(nproc)
+else
+  # MacOS.
+  num_threads=$(sysctl -n hw.physicalcpu)
+fi
+[ -f Sconstruct ] || fail "Not in the root directory of proxy-verifier."
+
+if ! pipenv --venv > /dev/null 2>&1
+then
+  pipenv install
+fi
+
+for i in `find . -name verifier-client -type f`; do rm $i; done
+for i in `find . -name verifier-server -type f`; do rm $i; done
+
+mkdir -p ${tmpdir}
+pipenv run scons -j${num_threads} --with-libs=/opt > ${buildout} 2>&1 || \
+  fail "Build command failed, see output in: ${buildout}"
+
+#
+# Craft the command to statically link the binaries.
+#
+if [ "${os}" = "Linux" ]
+then
+  grep -E 'verifier-(client|server) ' ${buildout} | \
+    sed 's/-o /-static -o /g' | \
+    sed 's/-Wl,-rpath[^ ]\+//g' | \
+    sed 's/-lpthread //g' | \
+    sed 's/$/ -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -ldl/g' > \
+    ${static_command}
+else
+  grep -E 'verifier-(client|server) ' ${buildout} | \
+    sed 's: -lssl : /opt/openssl/lib/libssl.a :g' | \
+    sed 's: -lcrypto : /opt/openssl/lib/libcrypto.a :g' | \
+    sed 's: -lngtcp2_crypto_openssl : /opt/ngtcp2/lib/libngtcp2_crypto_openssl.a :g' | \
+    sed 's: -lngtcp2 : /opt/ngtcp2/lib/libngtcp2.a :g' | \
+    sed 's: -lnghttp2 : /opt/nghttp2/lib/libnghttp2.a :g' | \
+    sed 's: -lnghttp3 : /opt/nghttp3/lib/libnghttp3.a :g' > \
+    ${static_command}
+fi
+
+#
+# Statically link the binaries.
+#
+for i in `find . -name verifier-client -type f`; do rm $i; done
+for i in `find . -name verifier-server -type f`; do rm $i; done
+
+bash ${static_command} > ${staticout} 2>&1 || \
+  fail "Command to statically link failed, see: ${static_command}"
+
+for f in $(grep -E -o '\S*/verifier-(client|server) ' ${buildout})
+do
+  cp $f bin/
+done
+
+strip bin/verifier-*
+
+#
+# Verify they are statically linked.
+#
+for f in $(ls bin/verifier-*)
+do
+  if [ "${os}" = "Linux" ]
+  then
+    ldd ${f} 2>&1 | grep -q "not a dynamic executable" || \
+      fail "${f} is not statically linked as expected."
+  fi
+done
+
+rm -rf ${tmpdir}
+
+#
+# Provide feedback to the user.
+#
+echo "Staticically linked binaries:"
+
+if [ "${os}" = "Linux" ]
+then
+  ldd bin/verifier-*
+else
+  otool -L bin/verifier-*
+fi

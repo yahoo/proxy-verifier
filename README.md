@@ -34,6 +34,7 @@ Table of Contents
             * [Using Prebuilt Libraries](#using-prebuilt-libraries)
             * [ASan Instrumentation](#asan-instrumentation)
             * [Debug Build](#debug-build)
+            * [Statically Link](#statically-link)
          * [Running the Tests](#running-the-tests)
             * [Unit Tests](#unit-tests)
             * [Gold Tests](#gold-tests)
@@ -1124,6 +1125,24 @@ debug build is desired, then pass the `--cfg=debug` option to `scons`:
 
 ```
 pipenv run scons -j4 --cfg=debug
+```
+
+#### Statically Link
+
+The current Scons configuration dynamically links the binaries with the various
+OpenSSL and HTTP build libraries. This is fine for local testing and execution,
+but can be inconvenient when copying the binaries to other machines. Ideally
+the
+[Sconstruct](https://github.com/yahoo/proxy-verifier/blob/master/Sconstruct)
+file can be updated to support an option to link the binaries statically. This
+currently does not exist and is not trivial to create. Future updates to
+`scons-parts` may help with this. As a current stopgap measure,
+[tools/build_static](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_static)
+is provided which automatically links the Verifier binaries statically. It is
+run from the root directory of your repository like so:
+
+```
+./tools/build_static 
 ```
 
 ### Running the Tests
