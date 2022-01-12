@@ -1,22 +1,24 @@
 ``
-``Ready with 1 transactions.
+``Ready with 1 transaction.
 ``
-``in an HTTP/1 response to request with key 1 with response status 200:
-- "cache-control": "private"
-- "content-encoding": "gzip"
-- "content-type": "application/json;charset=utf-8"
-- "content-length": "16"
-- "date": "Sat, 16 Mar 2019 01:13:21 GMT"
-- "age": "0"
-- "connection": "keep-alive"
-- "uuid": "1"
+GET /a/path HTTP/1.1
+accept: */*
+accept-language: en-us
+accept-encoding: gzip
+host: example.data.com
+uuid: 1
 
 ``
-``Received an HTTP/1 request with key 1:
-- "accept": "*/*"
-- "accept-language": "en-us"
-- "accept-encoding": "gzip"
-- "host": "example.data.com"
-- "uuid": "1"
+HTTP/1.1 200 OK
+cache-control: private
+content-encoding: gzip
+content-type: application/json;charset=utf-8
+content-length: 16
+date: Sat, 16 Mar 2019 01:13:21 GMT
+age: 0
+connection: keep-alive
+uuid: 1
 
+``
+0000000 0000001 
 ``

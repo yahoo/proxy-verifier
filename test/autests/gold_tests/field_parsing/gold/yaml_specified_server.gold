@@ -2,34 +2,37 @@
 ``Ready with 2 transactions.
 ``Absence Success: Key: "1", Field Name: "x-not-there"
 ``Presence Success: Key: "1", Field Name: "x-test-header", Value: "something"
-``response status 200:
-- "content-type": "text/html"
-- "content-length": "16"
-- "x-test-header": "backAtYou"
-- "uuid": "1"
+``
+GET /config/settings.yaml HTTP/1.1
+Accept-Encoding: identity
+Content-Length: 0
+host: example.one
+x-test-header: something
+uuid: 1
 
 ``
-``Received an HTTP/1 request with key 1:
-- "Accept-Encoding": "identity"
-- "Content-Length": "0"
-- "host": "example.one"
-- "x-test-header": "something"
-- "uuid": "1"
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
+x-test-header: backAtYou
+uuid: 1
 
+``
 ``Presence Success: Key: "2", Field Name: "x-another-header", Value: "request"
 ``Presence Violation: Absent. Key: "2", Field Name: "x-not-present"
-``status 200:
-- "content-type": "text/html"
-- "content-length": "32"
-- "x-another-response": "response"
-- "uuid": "2"
+``
+GET /config/settings.yaml HTTP/1.1
+Accept-Encoding: identity
+Content-Length: 0
+host: example.one
+x-another-header: request
+uuid: 2
 
 ``
-``Received an HTTP/1 request with key 2:
-- "Accept-Encoding": "identity"
-- "Content-Length": "0"
-- "host": "example.one"
-- "x-another-header": "request"
-- "uuid": "2"
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 32
+x-another-response: response
+uuid: 2
 
 ``

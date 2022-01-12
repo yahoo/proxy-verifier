@@ -4,60 +4,82 @@
 ``Absence Success: Key: "1", Field Name: "x-deleted-header"
 ``Equals Success: Key: "1", Field Name: "x-request-header", Value: "request"
 ``
-- "x-equal-header": "some_content"
-- "x-response-header": "response"
-- "x-deleted-header2": "this_will_be_deleted"
-- "x-proxy-directive": "Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>"
-- "content-length": "32"
-- "uuid": "1"
+POST /a/path HTTP/1.1
+Host: 127.0.0.1:``
+Accept-Encoding: identity
+x-request-header: request
+uuid: 1
+X-Added-Header: 1
+Content-Length: 10
 
 ``
-- "Host": "127.0.0.1:``"
-- "Accept-Encoding": "identity"
-- "x-request-header": "request"
-- "uuid": "1"
-- "X-Added-Header": "1"
-- "Content-Length": "10"
+0123456789
+``
+HTTP/1.1 200 OK
+x-equal-header: some_content
+x-response-header: response
+x-deleted-header2: this_will_be_deleted
+x-proxy-directive: Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>
+content-length: 32
+uuid: 1
 
+``
+0000000 0000001 0000002 0000003 
 ``Equals Success: Key: "2", Field Name: "content-length", Value: "10240"
 ``Equals Success: Key: "2", Field Name: "x-request-header", Value: "request2"
 ``
-- "x-response-header": "response2"
-- "content-length": "10240"
+GET /a/new/path HTTP/1.1
+Host: 127.0.0.1:``
+Accept-Encoding: identity
+uuid: 2
+x-request-header: request2
+Content-Length: 10240
 
 ``
-``Drained``body of 10240 bytes with content: 0000000 `` 00004ff 
+0000000 `` 00004ff 
 ``
-- "Host": "127.0.0.1:``"
-- "Accept-Encoding": "identity"
-- "uuid": "2"
-- "x-request-header": "request2"
-- "Content-Length": "10240"
+HTTP/1.1 404 Not Found
+x-response-header: response2
+content-length: 10240
 
+``Sent 10240 byte body [CL] for key 2:
+0000000 `` 00004ff 
 ``Equals Success: Key: "3", Field Name: "content-length", Value: "48"
 ``Equals Success: Key: "3", Field Name: "x-request-header", Value: "request3"
 ``
-- "x-response-header": "response3"
-- "content-length": "16"
+GET /a/path2 HTTP/1.1
+Host: 127.0.0.1:``
+Accept-Encoding: identity
+uuid: 3
+x-request-header: request3
+Content-Length: 48
 
 ``
-- "Host": "127.0.0.1:``"
-- "Accept-Encoding": "identity"
-- "uuid": "3"
-- "x-request-header": "request3"
-- "Content-Length": "48"
+0000000 0000001 0000002 0000003 0000004 0000005 
+``
+HTTP/1.1 200 OK
+x-response-header: response3
+content-length: 16
 
+``
+0000000 0000001 
 ``Equals Success: Key: "4", Field Name: "content-length", Value: "64"
 ``Equals Success: Key: "4", Field Name: "x-request-header", Value: "request3"
 ``
-- "x-response-header": "response4"
-- "content-length": "50"
+GET /a/path3 HTTP/1.1
+Host: 127.0.0.1:``
+Accept-Encoding: identity
+uuid: 4
+x-request-header: request3
+Content-Length: 64
 
 ``
-- "Host": "127.0.0.1:``"
-- "Accept-Encoding": "identity"
-- "uuid": "4"
-- "x-request-header": "request3"
-- "Content-Length": "64"
+0000000 0000001 0000002 0000003 0000004 0000005 0000006 0000007 
+``
+HTTP/1.1 200 OK
+x-response-header: response4
+content-length: 50
 
+``
+0000000 0000001 0000002 0000003 0000004 0000005 00
 ``

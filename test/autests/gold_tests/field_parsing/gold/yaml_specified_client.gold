@@ -3,33 +3,35 @@
 ``Presence Success: Key: "1", Field Name: "x-test-header", Value: "backAtYou"
 ``Absence Violation: Present. Key: "2", Field Name: "x-another-response", Value: "response"
 ``
-``Sent the following HTTP/1 GET request:
-- "host": "example.one"
-- "x-test-header": "something"
-- "uuid": "1"
-
-``an HTTP/1 200 response for``
-- "content-type": "text/html"
-- "content-length": "16"
-- "x-test-header": "backAtYou"
-- "uuid": "1"
-
-``Drained ``: 0000000 0000001 
-``
-``Sent the following HTTP/1 GET request:
-- "host": "example.one"
-- "x-another-header": "request"
-- "uuid": "2"
+GET http://example.one/config/settings.yaml HTTP/1.1
+host: example.one
+x-test-header: something
+uuid: 1
 
 ``
-``an HTTP/1 200 response``
-- "content-type": "text/html"
-- "content-length": "32"
-- "x-another-response": "response"
-- "uuid": "2"
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
+x-test-header: backAtYou
+uuid: 1
 
 ``
-``Drained ``: 0000000 0000001 0000002 0000003 
+0000000 0000001 
 ``
-``2 transactions in 1 sessions``
+GET http://example.one/config/settings.yaml HTTP/1.1
+host: example.one
+x-another-header: request
+uuid: 2
+
+``
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 32
+x-another-response: response
+uuid: 2
+
+``
+0000000 0000001 0000002 0000003 
+``
+``2 transactions in 1 session``
 ``

@@ -1,26 +1,29 @@
 ``
-``Sent the following HTTP/1 GET request:
-- "host": "example.one"
-- "uuid": "1"
+GET http://example.one/path/1 HTTP/1.1
+host: example.one
+uuid: 1
 
 ``
-``Received an HTTP/1 200 response for key 1 with headers:
-- "content-type": "text/html"
-- "content-length": "16"
-- "uuid": "1"
-
-``body of 16 bytes with content: 0000000 0000001 
-``Sent the following HTTP/1 GET request:
-- "host": "example.one"
-- "uuid": "2"
-- "x-in-all-messages": "here_i_stand"
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
+uuid: 1
 
 ``
-``Received an HTTP/1 200 response for key 2 with headers:
-- "content-type": "text/html"
-- "content-length": "32"
-- "uuid": "2"
-- "x-in-all-messages": "here_i_stand"
+0000000 0000001 
+``
+GET http://example.one/path/2 HTTP/1.1
+host: example.one
+uuid: 2
+x-in-all-messages: here_i_stand
 
-``body of 32 bytes with content: 0000000 0000001 0000002 0000003 
+``
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 32
+uuid: 2
+x-in-all-messages: here_i_stand
+
+``
+0000000 0000001 0000002 0000003 
 ``

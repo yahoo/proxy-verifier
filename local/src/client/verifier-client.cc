@@ -31,6 +31,7 @@
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
 #include "swoc/swoc_file.h"
+#include "swoc/swoc_ip.h"
 
 namespace swoc
 {
@@ -41,6 +42,7 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, std::chrono::milliseconds ms)
 }
 } // namespace swoc
 
+using swoc::Errata;
 using swoc::TextView;
 using namespace std::literals;
 using std::chrono::duration_cast;
@@ -58,7 +60,7 @@ bool Use_Strict_Checking = false;
 
 std::unordered_set<std::string> Keys_Whitelist;
 
-swoc::TextView specified_interface;
+TextView specified_interface;
 
 std::mutex LoadMutex;
 
@@ -143,13 +145,14 @@ get_start_time(YAML::Node const &node)
       if (t != 0) {
         return TimePoint(nanoseconds(t));
       } else {
-        zret.error(
+        zret.note(
+            S_ERROR,
             R"("{}" node value "{}" that is not a positive integer.)",
             YAML_TIME_START_KEY,
             start_node.Scalar());
       }
     } else {
-      zret.error(R"("{}" key that is not a scalar.)", YAML_TIME_START_KEY);
+      zret.note(S_ERROR, R"("{}" key that is not a scalar.)", YAML_TIME_START_KEY);
     }
   }
   return zret;
@@ -161,15 +164,15 @@ public:
   ClientReplayFileHandler();
   ~ClientReplayFileHandler() = default;
 
-  swoc::Errata ssn_open(YAML::Node const &node) override;
-  swoc::Errata txn_open(YAML::Node const &node) override;
-  swoc::Errata client_request(YAML::Node const &node) override;
-  swoc::Errata proxy_request(YAML::Node const &node) override;
-  swoc::Errata server_response(YAML::Node const &node) override;
-  swoc::Errata proxy_response(YAML::Node const &node) override;
-  swoc::Errata apply_to_all_messages(HttpFields const &all_headers) override;
-  swoc::Errata txn_close() override;
-  swoc::Errata ssn_close() override;
+  Errata ssn_open(YAML::Node const &node) override;
+  Errata txn_open(YAML::Node const &node) override;
+  Errata client_request(YAML::Node const &node) override;
+  Errata proxy_request(YAML::Node const &node) override;
+  Errata server_response(YAML::Node const &node) override;
+  Errata proxy_response(YAML::Node const &node) override;
+  Errata apply_to_all_messages(HttpFields const &all_headers) override;
+  Errata txn_close() override;
+  Errata ssn_close() override;
 
   void txn_reset();
   void ssn_reset();
@@ -225,10 +228,10 @@ ClientReplayFileHandler::txn_reset()
   new (&_txn) Txn{Use_Strict_Checking};
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::ssn_open(YAML::Node const &node)
 {
-  swoc::Errata errata;
+  Errata errata;
   _ssn = std::make_shared<Ssn>();
   _ssn->_path = _path;
   _ssn->_line_no = node.Mark().line;
@@ -279,7 +282,8 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
     auto &&[start_time, start_time_errata] = get_start_time(node);
     if (!start_time_errata.is_ok()) {
       errata.note(std::move(start_time_errata));
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Session at "{}":{} has a bad "{}" key value.)",
           _path,
           _ssn->_line_no,
@@ -293,7 +297,8 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
     auto &&[delay_time, delay_errata] = get_delay_time(node);
     if (!delay_errata.is_ok()) {
       errata.note(std::move(delay_errata));
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Session at "{}":{} has a bad "{}" key value.)",
           _path,
           _ssn->_line_no,
@@ -305,15 +310,16 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
   return errata;
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::txn_open(YAML::Node const &node)
 {
-  swoc::Errata errata;
+  Errata errata;
   _txn_node = &node;
   _txn._req.set_is_request();
   _txn._rsp.set_is_response();
   if (!node[YAML_CLIENT_REQ_KEY]) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Transaction node at "{}":{} does not have a client request [{}].)",
         _path,
         node.Mark().line,
@@ -326,7 +332,8 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
     auto &&[transaction_start_time, start_time_errata] = get_start_time(node);
     if (!start_time_errata.is_ok()) {
       errata.note(std::move(start_time_errata));
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Transaction at "{}":{} has a bad "{}" key value.)",
           _path,
           node.Mark().line,
@@ -348,10 +355,10 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
   return errata;
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::client_request(YAML::Node const &node)
 {
-  swoc::Errata errata;
+  Errata errata;
   if (!Use_Proxy_Request_Directives) {
     if (_ssn->is_h2) {
       _txn._req.set_is_http2();
@@ -360,14 +367,19 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
     }
     errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
-      errata.error(R"(client-request node without a method at "{}":{}.)", _path, node.Mark().line);
+      errata.note(
+          S_ERROR,
+          R"(client-request node without a method at "{}":{}.)",
+          _path,
+          node.Mark().line);
     }
 
     if (node[YAML_TIME_DELAY_KEY]) {
       auto &&[delay_time, delay_errata] = get_delay_time(node);
       if (!delay_errata.is_ok()) {
         errata.note(std::move(delay_errata));
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"(client-request node at "{}":{} has a bad "{}" key value.)",
             _path,
             _ssn->_line_no,
@@ -380,10 +392,10 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
   return errata;
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::proxy_request(YAML::Node const &node)
 {
-  swoc::Errata errata;
+  Errata errata;
   if (Use_Proxy_Request_Directives) {
     if (_ssn->is_h2) {
       _txn._req.set_is_http2();
@@ -392,14 +404,19 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
     }
     errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
-      errata.error(R"(proxy-request node without a method at "{}":{}.)", _path, node.Mark().line);
+      errata.note(
+          S_ERROR,
+          R"(proxy-request node without a method at "{}":{}.)",
+          _path,
+          node.Mark().line);
     }
 
     if (node[YAML_TIME_DELAY_KEY]) {
       auto &&[delay_time, delay_errata] = get_delay_time(node);
       if (!delay_errata.is_ok()) {
         errata.note(std::move(delay_errata));
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"(proxy-request node at "{}":{} has a bad "{}" key value.)",
             _path,
             _ssn->_line_no,
@@ -412,7 +429,7 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
   return errata;
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::proxy_response(YAML::Node const &node)
 {
   if (!Use_Proxy_Request_Directives) {
@@ -429,10 +446,10 @@ ClientReplayFileHandler::proxy_response(YAML::Node const &node)
   return {};
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::server_response(YAML::Node const &node)
 {
-  swoc::Errata errata;
+  Errata errata;
   if (Use_Proxy_Request_Directives) {
     // If we are behaving like the proxy, then replay-client is talking directly
     // with the server and should expect the server's responses.
@@ -444,13 +461,17 @@ ClientReplayFileHandler::server_response(YAML::Node const &node)
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
     errata.note(YamlParser::populate_http_message(node, _txn._rsp));
     if (_txn._rsp._status == 0) {
-      errata.error(R"(server-response node without a status at "{}":{})", _path, node.Mark().line);
+      errata.note(
+          S_ERROR,
+          R"(server-response node without a status at "{}":{})",
+          _path,
+          node.Mark().line);
     }
   }
   return errata;
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
 {
   _txn._req.merge(all_headers);
@@ -458,15 +479,16 @@ ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
   return {};
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::txn_close()
 {
-  swoc::Errata errata;
+  Errata errata;
   const auto &key{_txn._req.get_key()};
   if (key == HttpHeader::TRANSACTION_KEY_NOT_SET) {
     // A key cannot be found for this transaction. Fail parsing for this
     // because this is almost surely not what the user wants.
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Could not find a key of format "{}" for transaction at "{}":{}.)",
         HttpHeader::_key_format,
         _path,
@@ -484,17 +506,18 @@ ClientReplayFileHandler::txn_close()
   return errata;
 }
 
-swoc::Errata
+Errata
 ClientReplayFileHandler::ssn_close()
 {
-  swoc::Errata errata;
+  Errata errata;
   {
     std::lock_guard<std::mutex> lock(LoadMutex);
     if (!_ssn->_transactions.empty()) {
       auto const &e = _ssn->post_process_transactions();
       if (!e.is_ok()) {
         errata.note(e);
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"("{}":{} Could not process transactions in session.)",
             _path,
             _ssn->_line_no);
@@ -510,8 +533,9 @@ ClientReplayFileHandler::ssn_close()
  *
  * This handles parsing and acting on the command line arguments.
  */
-struct Engine
+class Engine
 {
+public:
   ts::ArgParser parser;    ///< Command line argument parser.
   ts::Arguments arguments; ///< Results from argument parsing.
 
@@ -519,6 +543,35 @@ struct Engine
 
   /// The process return code with which to exit.
   static int process_exit_code;
+
+private:
+  /// Parse the user's command line arguments.
+  bool parse_args();
+
+  /// Parse the YAML replay files.
+  bool parse_replay_files();
+
+  /// Initialize the client, such as the various HTTP sessions.
+  bool initialize_client();
+
+  /// Replay the traffic specified in the replay files.
+  bool replay_traffic();
+
+  /// Do any client cleanup after the traffic is replayed.
+  bool cleanup_client();
+
+private:
+  /// The location (file or directory) of the traffic to replay.
+  std::string _replay_location;
+
+  /// The number of sessions after parse_replay_files() is called.
+  size_t _session_count = 0;
+
+  /// The number of transactions after parse_replay_files() is called.
+  size_t _transaction_count = 0;
+
+  /// The maximum Content-Length value after parse_replay_files() is called.
+  size_t _max_content_length = 0;
 };
 
 int Engine::process_exit_code = 0;
@@ -526,11 +579,11 @@ int Engine::process_exit_code = 0;
 void
 Run_Session(Ssn const &ssn, TargetSelector &target_selector)
 {
-  swoc::Errata errata;
   std::unique_ptr<Session> session;
   swoc::IPEndpoint const *real_target = nullptr;
-
-  errata.diag(
+  Errata errata;
+  errata.note(
+      S_DIAG,
       R"(Starting session "{}":{} protocol={}.)",
       ssn._path,
       ssn._line_no,
@@ -539,50 +592,59 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
   if (ssn.is_h3) {
     real_target = target_selector.get_http3_target();
     if (real_target == nullptr) {
-      errata.error("Could not replay an HTTP/3 session because no HTTP/3 ports are provided.");
+      errata.note(
+          S_ERROR,
+          "Could not replay an HTTP/3 session because no HTTP/3 ports are provided.");
     } else {
       session = std::make_unique<H3Session>(ssn._client_sni, ssn._client_verify_mode);
-      errata.diag("Connecting via HTTP/3 over QUIC.");
+      errata.note(S_DIAG, "Connecting via HTTP/3 over QUIC.");
     }
   } else if (ssn.is_h2) {
     real_target = target_selector.get_https_target();
     if (real_target == nullptr) {
-      errata.error("Could not replay an HTTP/2 session because no HTTPS ports are provided.");
+      errata.note(
+          S_ERROR,
+          "Could not replay an HTTP/2 session because no HTTPS ports are provided.");
     } else {
       session = std::make_unique<H2Session>(ssn._client_sni, ssn._client_verify_mode);
-      errata.diag("Connecting via HTTP/2 over TLS.");
+      errata.note(S_DIAG, "Connecting via HTTP/2 over TLS.");
     }
   } else if (ssn.is_tls) {
     real_target = target_selector.get_https_target();
     if (real_target == nullptr) {
-      errata.error("Could not replay an HTTPS session because no HTTPS ports are provided.");
+      errata.note(
+          S_ERROR,
+          "Could not replay an HTTPS session because no HTTPS ports are provided.");
     } else {
       session = std::make_unique<TLSSession>(ssn._client_sni, ssn._client_verify_mode);
-      errata.diag("Connecting via TLS.");
+      errata.note(S_DIAG, "Connecting via TLS.");
     }
   } else {
     real_target = target_selector.get_http_target();
     if (real_target == nullptr) {
-      errata.error("Could not replay an HTTP session because no HTTP ports are provided.");
+      errata.note(S_ERROR, "Could not replay an HTTP session because no HTTP ports are provided.");
     } else {
       session = std::make_unique<Session>();
-      errata.diag("Connecting via HTTP.");
+      errata.note(S_DIAG, "Connecting via HTTP.");
     }
   }
 
-  if (real_target == nullptr) {
+  if (!errata.is_ok() || real_target == nullptr) {
     Engine::process_exit_code = 1;
     return;
   }
-
+  errata.sink();
   errata.note(session->do_connect(specified_interface, real_target));
-  if (errata.is_ok()) {
-    errata.note(session->run_transactions(
-        ssn._transactions,
-        specified_interface,
-        real_target,
-        ssn._rate_multiplier));
+  if (!errata.is_ok()) {
+    Engine::process_exit_code = 1;
+    return;
   }
+  errata.sink();
+  errata.note(session->run_transactions(
+      ssn._transactions,
+      specified_interface,
+      real_target,
+      ssn._rate_multiplier));
   if (!errata.is_ok()) {
     Engine::process_exit_code = 1;
   }
@@ -605,16 +667,16 @@ TF_Client(std::thread *t)
   }
 }
 
-void
-Engine::command_run()
+bool
+Engine::parse_args()
 {
+  Errata errata;
   auto args{arguments.get("run")};
-  swoc::Errata errata;
 
   if (args.size() < 1) {
-    errata.error(R"("run" command requires a directory path as an argument.)");
+    errata.note(S_ERROR, R"("run" command requires a directory path as an argument.)");
     process_exit_code = 1;
-    return;
+    return false;
   }
 
   if (arguments.get("no-proxy")) {
@@ -632,17 +694,18 @@ Engine::command_run()
   auto server_addr_https_arg{arguments.get("connect-https")};
   auto server_addr_http3_arg{arguments.get("connect-http3")};
   if (!server_addr_http_arg && !server_addr_https_arg && !server_addr_http3_arg) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Must provide at least one of "--connect-http", "--connect-https", or "--connect-http3" arguments")");
     process_exit_code = 1;
-    return;
+    return false;
   }
 
   if (server_addr_http_arg) {
     errata.note(resolve_ips(server_addr_http_arg[0], Target_Selector.http_targets));
     if (!errata.is_ok()) {
       process_exit_code = 1;
-      return;
+      return false;
     }
   }
 
@@ -650,7 +713,7 @@ Engine::command_run()
     errata.note(resolve_ips(server_addr_https_arg[0], Target_Selector.https_targets));
     if (!errata.is_ok()) {
       process_exit_code = 1;
-      return;
+      return false;
     }
   }
 
@@ -658,7 +721,7 @@ Engine::command_run()
     errata.note(resolve_ips(server_addr_http3_arg[0], Target_Selector.http3_targets));
     if (!errata.is_ok()) {
       process_exit_code = 1;
-      return;
+      return false;
     }
   }
 
@@ -671,9 +734,9 @@ Engine::command_run()
   if (cert_arg.size() >= 1) {
     errata.note(TLSSession::configure_client_cert(cert_arg[0]));
     if (!errata.is_ok()) {
-      errata.error(R"(Invalid client-cert path "{}")", cert_arg[0]);
+      errata.note(S_ERROR, R"(Invalid client-cert path "{}")", cert_arg[0]);
       process_exit_code = 1;
-      return;
+      return false;
     }
   }
 
@@ -681,9 +744,9 @@ Engine::command_run()
   if (ca_certs_arg.size() >= 1) {
     errata.note(TLSSession::configure_ca_cert(ca_certs_arg[0]));
     if (!errata.is_ok()) {
-      errata.error(R"(Invalid ca-certs path "{}")", ca_certs_arg[0]);
+      errata.note(S_ERROR, R"(Invalid ca-certs path "{}")", ca_certs_arg[0]);
       process_exit_code = 1;
-      return;
+      return false;
     }
   }
 
@@ -696,50 +759,76 @@ Engine::command_run()
 
   auto interface_arg{arguments.get("interface")};
   if (interface_arg.size() > 1) {
-    errata.error(R"("interface" command requires exactly one device name as an argument.)");
+    errata.note(S_ERROR, R"("interface" command requires exactly one device name as an argument.)");
     process_exit_code = 1;
-    return;
+    return false;
   } else if (!interface_arg.empty()) {
     // Copy to global TextView, function does not terminate until joining
     specified_interface = interface_arg[0];
   }
+  if (!errata.is_ok()) {
+    process_exit_code = 1;
+    return false;
+  }
 
-  errata.info(R"(Loading replay data from "{}".)", args[0]);
+  _replay_location = TextView{args[0]};
+
+  return true;
+}
+
+bool
+Engine::parse_replay_files()
+{
+  Errata errata;
+  // Phase 2: Parse the YAML replay files.
+  errata.note(S_INFO, R"(Loading replay data from "{}".)", _replay_location);
   errata.note(YamlParser::load_replay_files(
-      swoc::file::path{args[0]},
-      [](swoc::file::path const &file) -> swoc::Errata {
+      swoc::file::path{_replay_location},
+      [](swoc::file::path const &file) -> Errata {
         ClientReplayFileHandler handler;
         return YamlParser::load_replay_file(file, handler);
       },
       10));
   if (!errata.is_ok()) {
     process_exit_code = 1;
-    return;
+    return false;
   }
+  _session_count = Session_List.size();
+  for (auto ssn : Session_List) {
+    _transaction_count += ssn->_transactions.size();
+    for (auto const &txn : ssn->_transactions) {
+      _max_content_length = std::max<size_t>(_max_content_length, txn._req._content_size);
+    }
+  }
+  errata.note(
+      S_INFO,
+      "Parsed {} transaction{} in {} session{}.",
+      _transaction_count,
+      swoc::bwf::If(_transaction_count != 1, "s"),
+      _session_count,
+      swoc::bwf::If(_session_count != 1, "s"));
+  HttpHeader::set_max_content_length(_max_content_length);
+
+  return true;
+}
+
+bool
+Engine::initialize_client()
+{
+  Errata errata;
 
   // Sort the Session_List and adjust the time offsets
   Session_List.sort([](const std::shared_ptr<Ssn> ssn1, const std::shared_ptr<Ssn> ssn2) {
     return ssn1->_start < ssn2->_start;
   });
 
-  size_t max_content_length = 0;
-  int transaction_count = 0;
-  for (auto ssn : Session_List) {
-    transaction_count += ssn->_transactions.size();
-    for (auto const &txn : ssn->_transactions) {
-      max_content_length = std::max<size_t>(max_content_length, txn._req._content_size);
-    }
-  }
-  auto const session_count = Session_List.size();
-  errata.info("Parsed {} transactions in {} sessions.", transaction_count, session_count);
-  HttpHeader::set_max_content_length(max_content_length);
-
-  errata.note(Session::init(transaction_count));
+  errata.note(Session::init(_transaction_count));
   if (!errata.is_ok()) {
-    return;
+    process_exit_code = 1;
+    return false;
   }
 
-  errata.diag(R"(Initializing TLS)");
+  errata.note(S_DIAG, R"(Initialize TLS)");
   auto tls_secrets_log_file_arg{arguments.get("tls-secrets-log-file")};
   std::string tls_secrets_log_file;
   if (tls_secrets_log_file_arg) {
@@ -747,17 +836,19 @@ Engine::command_run()
   }
   errata.note(TLSSession::init(tls_secrets_log_file));
   if (!errata.is_ok()) {
-    return;
+    process_exit_code = 1;
+    return false;
   }
 
-  errata.diag(R"(Initialize H2)");
+  errata.note(S_DIAG, R"(Initialize H2)");
   errata.note(H2Session::init(&process_exit_code));
   if (!errata.is_ok()) {
     TLSSession::terminate();
-    return;
+    process_exit_code = 1;
+    return false;
   }
 
-  errata.diag(R"(Initialize H3)");
+  errata.note(S_DIAG, R"(Initialize H3)");
   auto qlog_dir_arg{arguments.get("qlog-dir")};
   std::string qlog_dir;
   if (qlog_dir_arg) {
@@ -767,12 +858,18 @@ Engine::command_run()
   if (!errata.is_ok()) {
     TLSSession::terminate();
     H2Session::terminate();
-    return;
+    process_exit_code = 1;
+    return false;
   }
 
-  if (!errata.is_ok()) {
-    return;
-  }
+  errata.note(S_DIAG, "Client initialization complete.");
+  return true;
+}
+
+bool
+Engine::replay_traffic()
+{
+  Errata errata;
 
   auto sleep_limit_arg{arguments.get("sleep-limit")};
   microseconds sleep_limit = 500ms;
@@ -847,23 +944,24 @@ Engine::command_run()
         // Session timing data is not provided, but the user wants a specific
         // rate. We simply need to calculate how much time to sleep between
         // sessions. To simplify the math, our "recording_duration" will simply be
-        // the session_count, i.e, 1 microsecond for each session.
+        // the _session_count, i.e, 1 microsecond for each session.
         auto const sleep_time_raw =
-            static_cast<int>((transaction_count * 1'000'000.0) / (target_rate * session_count));
+            static_cast<int>((_transaction_count * 1'000'000.0) / (target_rate * _session_count));
         auto sleep_time = microseconds(sleep_time_raw);
         sleep_time = std::min(sleep_time, sleep_limit);
         use_sleep_time = true;
       } else {
-        rate_multiplier = (transaction_count * 1'000'000.0) /
+        rate_multiplier = (_transaction_count * 1'000'000.0) /
                           (target_rate * duration_cast<microseconds>(recording_duration).count());
       }
     }
-    errata.info(
+    errata.note(
+        S_INFO,
         "Rate multiplier: {}, per session sleep time: {} ms, transaction count: {}, recording "
         "duration: {} ms",
         rate_multiplier,
         duration_cast<milliseconds>(sleep_time).count(),
-        transaction_count,
+        _transaction_count,
         duration_cast<milliseconds>(recording_duration).count());
   }
 
@@ -896,7 +994,7 @@ Engine::command_run()
       ClientThreadInfo *thread_info =
           dynamic_cast<ClientThreadInfo *>(Client_Thread_Pool.get_worker());
       if (nullptr == thread_info) {
-        errata.error("Failed to get worker thread");
+        errata.note(S_ERROR, "Failed to get worker thread");
       } else {
         // Only pointer to worker thread info.
         {
@@ -914,18 +1012,48 @@ Engine::command_run()
   Client_Thread_Pool.join_threads();
 
   auto replay_duration = duration_cast<milliseconds>(ClockType::now() - replay_start_time);
-  errata.info(
-      "{} transactions in {} sessions (reuse {:.2f}) in {} milliseconds ({:.3f} / "
+  errata.note(
+      S_INFO,
+      "{} transaction{} in {} session{} (reuse {:.2f}) in {} millisecond{} ({:.3f} / "
       "millisecond).",
       n_txn,
+      swoc::bwf::If(n_txn != 1, "s"),
       n_ssn,
+      swoc::bwf::If(n_ssn != 1, "s"),
       n_txn / static_cast<double>(n_ssn),
       replay_duration.count(),
+      swoc::bwf::If(replay_duration.count() != 1, "s"),
       n_txn / static_cast<double>(replay_duration.count()));
+  return true;
+}
 
+bool
+Engine::cleanup_client()
+{
   TLSSession::terminate();
   H2Session::terminate();
   H3Session::terminate();
+  return true;
+}
+
+void
+Engine::command_run()
+{
+  if (!parse_args()) {
+    return;
+  }
+  if (!parse_replay_files()) {
+    return;
+  }
+  if (!initialize_client()) {
+    return;
+  }
+  if (!replay_traffic()) {
+    return;
+  }
+  if (!cleanup_client()) {
+    return;
+  }
 };
 
 int

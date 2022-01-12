@@ -1,23 +1,23 @@
 ``
-``response status 200:
-- "content-type": "text/html"
-- "content-length": "16"
-- "x-test-response": "first"
-- "x-test-response": "second"
-- "x-test-response": "third"
-- "x-response-sequence": "first"
-- "x-response-sequence": "second"
-- "x-response-sequence": "third"
+GET /config/settings.yaml HTTP/1.1
+Accept-Encoding: identity
+Content-Length: 0
+host: example.one
+x-test-request: first
+x-test-request: second
+x-request-sequence: first
+x-request-sequence: second
+uuid: 1
 
 ``
-``Received an HTTP/1 request with key 1:
-- "Accept-Encoding": "identity"
-- "Content-Length": "0"
-- "host": "example.one"
-- "x-test-request": "first"
-- "x-test-request": "second"
-- "x-request-sequence": "first"
-- "x-request-sequence": "second"
-- "uuid": "1"
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
+x-test-response: first
+x-test-response: second
+x-test-response: third
+x-response-sequence: first
+x-response-sequence: second
+x-response-sequence: third
 
 ``

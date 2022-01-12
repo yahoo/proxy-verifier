@@ -107,7 +107,7 @@ proxy.Streams.stdout += Testers.ContainsExpression(
 # The client sent and received HTTP/2 for both transactions because
 # only the server side should down-negotiate HTTP/2, not the proxy.
 client.Streams.stdout += Testers.ContainsExpression(
-    "Received an HTTP/2 response for stream id 1:",
+    "Received an HTTP/2 response for key 1 with stream id 1:",
     "The client should receive an HTTP/2 response for both transactions.")
 client.Streams.stdout += Testers.ExcludesExpression(
     "HTTP/1",
@@ -129,10 +129,10 @@ server.Streams.stdout += Testers.ContainsExpression(
     "HTTP/2 is not negotiated. Assuming HTTP/1",
     "Verify that HTTP/1 was negotiated for one session.")
 server.Streams.stdout += Testers.ContainsExpression(
-    "an HTTP/2 response to request with key 1 with response status 200",
+    "Sent the following HTTP/2 response headers for key 1 with stream id 1",
     "Verify that an HTTP/2 response was sent to the client.")
 server.Streams.stdout += Testers.ContainsExpression(
-    "an HTTP/1 response to request with key 2 with response status 200",
+    "Sent the following HTTP/1 response headers for key 2",
     "Verify that an HTTP/1 response was sent to the client.")
 server.Streams.stdout += Testers.ExcludesExpression(
     "Violation:",

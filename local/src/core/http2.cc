@@ -141,7 +141,10 @@ H2Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
   _ended_streams.pop_front();
   auto stream_map_iter = _stream_map.find(stream_id);
   if (stream_map_iter == _stream_map.end()) {
-    zret.error("Requested request headers for stream id {}, but none are available.", stream_id);
+    zret.note(
+        S_ERROR,
+        "Requested request headers for stream id {}, but none are available.",
+        stream_id);
     return zret;
   }
   auto &stream_state = stream_map_iter->second;
@@ -166,7 +169,7 @@ H2Session::accept()
 {
   Errata errata = TLSSession::accept();
   if (!errata.is_ok()) {
-    errata.error(R"(Failed to accept SSL server object)");
+    errata.note(S_ERROR, R"(Failed to accept SSL server object)");
     return errata;
   }
 
@@ -183,10 +186,14 @@ H2Session::accept()
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10002000L */
 
   if (alpn != nullptr && alpnlen == 2 && memcmp("h2", alpn, 2) == 0) {
-    errata.diag(R"(Negotiated ALPN: {}, HTTP/2 is negotiated.)", TextView{(char *)alpn, alpnlen});
+    errata.note(
+        S_DIAG,
+        R"(Negotiated ALPN: {}, HTTP/2 is negotiated.)",
+        TextView{(char *)alpn, alpnlen});
     _h2_is_negotiated = true;
   } else {
-    errata.diag(
+    errata.note(
+        S_DIAG,
         R"(Negotiated ALPN: {}, HTTP/2 is not negotiated. Assuming HTTP/1)",
         (alpn == nullptr) ? "none" : TextView{(char *)alpn, alpnlen});
     _h2_is_negotiated = false;
@@ -195,7 +202,7 @@ H2Session::accept()
   }
 
   this->server_session_init();
-  errata.diag("Finished accept using H2Session");
+  errata.note(S_DIAG, "Finished accept using H2Session");
   // Send initial H2 session frames
   send_connection_settings();
   send_nghttp2_data(_session, nullptr, 0, 0, this);
@@ -225,10 +232,10 @@ H2Session::connect()
 #endif /* OPENSSL_VERSION_NUMBER >= 0x10002000L */
 
   if (alpn != nullptr && alpnlen == 2 && memcmp("h2", alpn, 2) == 0) {
-    errata.diag(R"(h2 is negotiated.)");
+    errata.note(S_DIAG, R"(h2 is negotiated.)");
     _h2_is_negotiated = true;
   } else {
-    errata.diag(R"(h2 is not negotiated. Assuming HTTP/1)");
+    errata.note(S_DIAG, R"(h2 is not negotiated. Assuming HTTP/1)");
     _h2_is_negotiated = false;
     return errata;
   }
@@ -257,7 +264,7 @@ H2Session::run_transactions(
     if (this->is_closed()) {
       txn_errata.note(this->do_connect(interface, real_target));
       if (!txn_errata.is_ok()) {
-        txn_errata.error(R"(Failed to reconnect HTTP/2 key={}.)", key);
+        txn_errata.note(S_ERROR, R"(Failed to reconnect HTTP/2 key: {})", key);
         // If we don't have a valid connection, there's no point in continuing.
         break;
       }
@@ -289,9 +296,8 @@ H2Session::run_transactions(
     }
     txn_errata.note(this->run_transaction(txn));
     if (!txn_errata.is_ok()) {
-      txn_errata.error(R"(Failed HTTP/2 transaction with key={}.)", key);
+      errata.note(S_ERROR, R"(Failed HTTP/2 transaction with key: {})", key);
     }
-    errata.note(std::move(txn_errata));
   }
   receive_nghttp2_responses(this->get_session(), nullptr, 0, 0, this);
   return errata;
@@ -331,7 +337,8 @@ on_begin_headers_callback(
   case NGHTTP2_HCAT_RESPONSE: {
     auto stream_map_iter = session_data->_stream_map.find(stream_id);
     if (stream_map_iter == session_data->_stream_map.end()) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "Got HTTP/2 headers for an unregistered stream id of {}. Headers category: {}",
           stream_id,
           headers_category);
@@ -345,7 +352,7 @@ on_begin_headers_callback(
   }
   case NGHTTP2_HCAT_PUSH_RESPONSE:
   case NGHTTP2_HCAT_HEADERS:
-    errata.error("Got HTTP/2 headers for an unimplemented category: {}", headers_category);
+    errata.note(S_ERROR, "Got HTTP/2 headers for an unimplemented category: {}", headers_category);
   }
   return 0;
 }
@@ -367,7 +374,8 @@ on_header_callback(
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
   auto stream_map_iter = session_data->_stream_map.find(stream_id);
   if (stream_map_iter == session_data->_stream_map.end()) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         "Got HTTP/2 headers for an unregistered stream id of {}. Headers category: {}",
         stream_id,
         headers_category);
@@ -412,7 +420,10 @@ on_header_callback(
   }
   case NGHTTP2_HCAT_PUSH_RESPONSE:
   case NGHTTP2_HCAT_HEADERS:
-    errata.error("Got HTTP/2 an header for an unimplemented category: {}", headers_category);
+    errata.note(
+        S_ERROR,
+        "Got HTTP/2 an header for an unimplemented category: {}",
+        headers_category);
     return 0;
   }
   return 0;
@@ -439,7 +450,7 @@ send_nghttp2_data(
       // No more data to send.
       break;
     } else if (datalen < 0) {
-      errata.error("Failure calling nghttp2_session_mem_send: {}", datalen);
+      errata.note(S_ERROR, "Failure calling nghttp2_session_mem_send: {}", datalen);
       break;
     }
     int amount_sent = 0;
@@ -476,7 +487,7 @@ receive_nghttp2_data(
   unsigned char buffer[10 * 1024];
 
   if (session_data->is_closed()) {
-    errata.error("Socket closed while waiting for an HTTP/2 response.");
+    errata.note(S_ERROR, "Socket closed while waiting for an HTTP/2 response.");
     return -1;
   }
   int n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
@@ -486,11 +497,14 @@ receive_nghttp2_data(
         session_data->poll_for_data_on_ssl_socket(timeout, ssl_error);
     errata.note(std::move(poll_errata));
     if (!errata.is_ok()) {
-      errata.error(R"(Failed SSL_read for HTTP/2 responses during poll: {}.)", swoc::bwf::Errno{});
+      errata.note(
+          S_ERROR,
+          R"(Failed SSL_read for HTTP/2 responses during poll: {}.)",
+          swoc::bwf::Errno{});
       return -1;
     } else if (poll_return < 0) {
       session_data->close();
-      errata.error("Socket closed while polling for an HTTP/2 response.");
+      errata.note(S_ERROR, "Socket closed while polling for an HTTP/2 response.");
       return -1;
     } else if (poll_return == 0) {
       // Timeout in this context is OK.
@@ -506,7 +520,10 @@ receive_nghttp2_data(
       return 0;
     } else {
       // Assume there was an issue.
-      errata.error("SSL_read error in receive_nghttp2_data: {}", swoc::bwf::SSLError{ssl_error});
+      errata.note(
+          S_ERROR,
+          "SSL_read error in receive_nghttp2_data: {}",
+          swoc::bwf::SSLError{ssl_error});
       return -1;
     }
   }
@@ -514,7 +531,8 @@ receive_nghttp2_data(
   // n > 0: Some bytes have been read. Pass that into the nghttp2 system.
   int rv = nghttp2_session_mem_recv(session_data->get_session(), buffer, (size_t)n);
   if (rv < 0) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         "nghttp2_session_mem_recv failed for HTTP/2 responses: {}",
         nghttp2_strerror((int)rv));
     return -1;
@@ -576,7 +594,8 @@ receive_nghttp2_request(
           session_data->poll_for_data_on_ssl_socket(timeout, ssl_error);
       errata.note(std::move(poll_errata));
       if (!errata.is_ok()) {
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"(Failed SSL_read for HTTP/2 request headers during poll: {}.)",
             swoc::bwf::Errno{});
         return (ssize_t)total_recv;
@@ -591,7 +610,8 @@ receive_nghttp2_request(
     }
     int rv = nghttp2_session_mem_recv(session, buffer, (size_t)n);
     if (rv < 0) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "nghttp2_session_mem_recv failed for response headers: {}",
           nghttp2_strerror((int)rv));
       return -1;
@@ -667,14 +687,18 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
         composed_url.append(request_from_client._authority);
         composed_url.append(request_from_client._path);
         request_from_client.parse_url(composed_url);
-        errata.diag(
-            "Received an HTTP/2 request for stream id {}:\n{}",
+        errata.note(
+            S_DIAG,
+            "Received an HTTP/2 request for key {} with stream id {}:\n{}",
+            stream_state._key,
             stream_id,
             request_from_client);
       } else if (headers_category == NGHTTP2_HCAT_RESPONSE) {
         auto &response_from_wire = *stream_state._response_from_server;
-        errata.diag(
-            "Received an HTTP/2 response for stream id {}:\n{}",
+        errata.note(
+            S_DIAG,
+            "Received an HTTP/2 response for key {} with stream id {}:\n{}",
+            stream_state._key,
             stream_id,
             response_from_wire);
         response_from_wire.derive_key();
@@ -683,7 +707,8 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
           // server push? Maybe? In theory we can support that but currently we
           // do not. Emit a warning for now.
           stream_state._key = response_from_wire.get_key();
-          errata.error(
+          errata.note(
+              S_ERROR,
               "Incoming HTTP/2 response has no key set from the request. Using key from "
               "response: {}.",
               stream_state._key);
@@ -700,7 +725,9 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
         auto const &key = stream_state._key;
         auto const &specified_response = stream_state._specified_response;
         if (response_from_wire.verify_headers(key, *specified_response->_fields_rules)) {
-          errata.error(R"(HTTP/2 response headers did not match expected response headers.)");
+          errata.note(
+              S_ERROR,
+              R"(HTTP/2 response headers did not match expected response headers.)");
           session_data->set_non_zero_exit_status();
         }
         if (specified_response->_status != 0 &&
@@ -708,8 +735,9 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
             (response_from_wire._status != 200 || specified_response->_status != 304) &&
             (response_from_wire._status != 304 || specified_response->_status != 200))
         {
-          errata.error(
-              R"(HTTP/2 Status Violation: expected {} got {}, key={}.)",
+          errata.note(
+              S_ERROR,
+              R"(HTTP/2 Status Violation: expected {} got {}, key: {})",
               specified_response->_status,
               response_from_wire._status,
               key);
@@ -732,11 +760,12 @@ on_stream_close_cb(
     void *user_data)
 {
   Errata errata;
-  errata.diag("HTTP/2 stream is closed with id: {}", stream_id);
+  errata.note(S_DIAG, "HTTP/2 stream is closed with id: {}", stream_id);
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
   auto iter = session_data->_stream_map.find(stream_id);
   if (iter == session_data->_stream_map.end()) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         "HTTP/2 stream is closed with id {} but could not find it tracked internally",
         stream_id);
     return 0;
@@ -746,7 +775,8 @@ on_stream_close_cb(
   auto const message_end = ClockType::now();
   auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start);
   if (elapsed_ms > Transaction_Delay_Cutoff) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(HTTP/2 transaction in stream id {} with key {} took {}.)",
         stream_id,
         stream_state._key,
@@ -769,16 +799,16 @@ on_data_chunk_recv_cb(
   auto *session_data = reinterpret_cast<H2Session *>(user_data);
   auto iter = session_data->_stream_map.find(stream_id);
   if (iter == session_data->_stream_map.end()) {
-    errata.error("Could not find a stream with stream id: {}", stream_id);
+    errata.note(S_ERROR, "Could not find a stream with stream id: {}", stream_id);
     return 0;
   }
   H2StreamState &stream_state = *iter->second;
-  errata.diag(
-      "Drained HTTP/2 body for transaction with key: {}, stream id: {} "
-      "of {} bytes with content: {}",
+  errata.note(
+      S_DIAG,
+      "Received an HTTP/2 body of {} bytes for key {} with stream id {}:\n{}",
+      len,
       stream_state._key,
       stream_id,
-      len,
       TextView(reinterpret_cast<char const *>(data), len));
   return 0;
 }
@@ -898,16 +928,19 @@ data_read_callback(
     auto *session_data = reinterpret_cast<H2Session *>(user_data);
     auto iter = session_data->_stream_map.find(stream_id);
     if (iter == session_data->_stream_map.end()) {
-      errata.error("Could not find a stream with stream id: {}", stream_id);
+      errata.note(S_ERROR, "Could not find a stream with stream id: {}", stream_id);
       return 0;
     }
     stream_state = iter->second.get();
   }
+  TextView body_sent = "";
   if (!stream_state->_wait_for_continue) {
     num_to_copy =
         std::min(length, stream_state->_send_body_length - stream_state->_send_body_offset);
     if (num_to_copy > 0) {
-      memcpy(buf, stream_state->_body_to_send + stream_state->_send_body_offset, num_to_copy);
+      body_sent =
+          TextView{stream_state->_body_to_send + stream_state->_send_body_offset, num_to_copy};
+      memcpy(buf, body_sent.data(), body_sent.length());
       stream_state->_send_body_offset += num_to_copy;
     } else {
       num_to_copy = 0;
@@ -916,7 +949,13 @@ data_read_callback(
       *data_flags |= NGHTTP2_DATA_FLAG_EOF;
     }
   }
-  errata.diag("Writing a {} byte body for stream id: {}", num_to_copy, stream_id);
+  errata.note(
+      S_DIAG,
+      "Sent an HTTP/2 body of {} bytes for key {} of stream id {}:\n{}",
+      num_to_copy,
+      stream_state->_key,
+      stream_id,
+      body_sent);
   return num_to_copy;
 }
 
@@ -935,7 +974,7 @@ H2Session::write(HttpHeader const &hdr)
     stream_id = hdr._stream_id;
     auto stream_map_iter = _stream_map.find(stream_id);
     if (stream_map_iter == _stream_map.end()) {
-      zret.error("Could not find registered stream for stream id: {}", stream_id);
+      zret.note(S_ERROR, "Could not find registered stream for stream id: {}", stream_id);
       return zret;
     }
     stream_state = stream_map_iter->second.get();
@@ -1001,21 +1040,32 @@ H2Session::write(HttpHeader const &hdr)
   if (hdr.is_response()) {
     stream_id = stream_state->get_stream_id();
     if (submit_result < 0) {
-      zret.error(
-          "Submitting an HTTP/2 with stream id {} response failed: {}",
+      zret.note(
+          S_ERROR,
+          "Submitting an HTTP/2 response with stream id {} failed: {}",
           stream_id,
           submit_result);
     }
   } else { // request
     if (submit_result < 0) {
-      zret.error("Submitting an HTTP/2 request failed: {}", submit_result);
+      zret.note(S_ERROR, "Submitting an HTTP/2 request failed: {}", submit_result);
     } else {
       stream_id = submit_result;
       stream_state->set_stream_id(stream_id);
       record_stream_state(stream_id, new_stream_state);
     }
-    // TODO: Move this up to when submit succeeded?
-    zret.diag("Sent the following HTTP/2 headers for stream id {}:\n{}", stream_id, hdr);
+  }
+  if (zret.is_ok()) {
+    zret.note(
+        S_DIAG,
+        "Sent the following HTTP/2 {}{} headers for key {} with stream id {}:\n{}",
+        swoc::bwf::If(hdr.is_request(), "request"),
+        swoc::bwf::If(hdr.is_response(), "response"),
+        stream_state->_key,
+        stream_id,
+        hdr);
+    // Make sure the logging of the headers are emitted before the body.
+    zret.errata().sink();
   }
 
   // Kick off the send logic to put the data on the wire
@@ -1029,7 +1079,7 @@ H2Session::pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_cou
 {
   Errata errata;
   if (!_h2_is_negotiated) {
-    errata.error("Should not be packing headers if h2 is not negotiated.");
+    errata.note(S_ERROR, "Should not be packing headers if h2 is not negotiated.");
     return errata;
   }
   hdr_count = hdr._fields_rules->_fields.size();
@@ -1041,7 +1091,9 @@ H2Session::pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_cou
       hdr_count += 4;
     } else {
       hdr_count = 0;
-      errata.error(R"(Unable to write header: could not determine request/response state.)");
+      errata.note(
+          S_ERROR,
+          R"(Unable to write header: could not determine request/response state.)");
       return errata;
     }
   }
@@ -1097,7 +1149,7 @@ H2Session::send_connection_settings()
   /* client 24 bytes magic string will be sent by nghttp2 library */
   rv = nghttp2_submit_settings(this->_session, NGHTTP2_FLAG_NONE, iv, 1);
   if (rv != 0) {
-    errata.error(R"(Could not submit SETTINGS)");
+    errata.note(S_ERROR, R"(Could not submit SETTINGS)");
   }
   return errata;
 }
@@ -1109,7 +1161,7 @@ H2Session::init(int *process_exit_code)
   H2Session::process_exit_code = process_exit_code;
   Errata errata = H2Session::client_init(h2_client_context);
   errata.note(H2Session::server_init(server_context));
-  errata.diag("Finished H2Session::init");
+  errata.note(S_DIAG, "Finished H2Session::init");
   return errata;
 }
 
@@ -1190,11 +1242,11 @@ H2Session::client_session_init()
   int ret = nghttp2_session_callbacks_new(&this->_callbacks);
 
   if (ret != 0) {
-    errata.error("nghttp2_session_callbacks_new {}", ret);
+    errata.note(S_ERROR, "nghttp2_session_callbacks_new {}", ret);
   }
 
   if (0 != nghttp2_option_new(&_options)) {
-    errata.error("nghttp2_option_new could not allocate memory.");
+    errata.note(S_ERROR, "nghttp2_option_new could not allocate memory.");
   }
   nghttp2_option_set_no_closed_streams(_options, 1);
   nghttp2_option_set_max_deflate_dynamic_table_size(_options, 0);
@@ -1234,12 +1286,12 @@ H2Session::server_session_init()
   // Set up the H2 callback methods
   auto ret = nghttp2_session_callbacks_new(&this->_callbacks);
   if (0 != ret) {
-    errata.error("nghttp2_session_callbacks_new {}", ret);
+    errata.note(S_ERROR, "nghttp2_session_callbacks_new {}", ret);
     return errata;
   }
 
   if (0 != nghttp2_option_new(&_options)) {
-    errata.error("nghttp2_option_new could not allocate memory.");
+    errata.note(S_ERROR, "nghttp2_option_new could not allocate memory.");
     return errata;
   }
   nghttp2_option_set_no_closed_streams(_options, 1);
@@ -1264,7 +1316,7 @@ H2Session::server_session_init()
 
   ret = nghttp2_session_server_new(&this->_session, this->_callbacks, this);
   if (0 != ret) {
-    errata.error("nghttp2_session_server_new could not initialize a new session.");
+    errata.note(S_ERROR, "nghttp2_session_server_new could not initialize a new session.");
     return errata;
   }
 

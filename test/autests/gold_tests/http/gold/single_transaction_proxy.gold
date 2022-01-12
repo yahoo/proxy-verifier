@@ -16,7 +16,7 @@ HTTP/1.1 200 OK
 date: Sat, 16 Mar 2019 03:11:36 GMT
 x-testheader: from_server_response
 content-type: application/octet-stream
-content-length: 0
+content-length: 10
 age: 0
 via: http/1.1 example.data1.com, http/1.1 example.data2.com
 server: ATS
@@ -24,5 +24,5 @@ connection: keep-alive
 
 
 ==== RESPONSE BODY ====
-b''
+b'0000000 00'
 ``

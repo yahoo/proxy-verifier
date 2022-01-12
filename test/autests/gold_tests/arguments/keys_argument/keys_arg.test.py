@@ -23,7 +23,7 @@ proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
 
 for uuid in range(1, 6):
     client.Streams.stdout += Testers.ContainsExpression(
-        f'- "uuid": "{uuid}"',
+        f'uuid: {uuid}',
         f"Client has uuid {uuid}.")
 
 #
@@ -37,12 +37,12 @@ proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
-    '- "uuid": "2"',
+    'uuid: 2',
     "Client has uuid 2.")
 
 for uuid in [1, 3, 4, 5, 6]:
     client.Streams.stdout += Testers.ExcludesExpression(
-        f'- "uuid": "{uuid}"',
+        f'uuid: {uuid}',
         f"Client has uuid {uuid}.")
 
 #
@@ -57,12 +57,12 @@ proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
 
 for uuid in [3, 5]:
     client.Streams.stdout += Testers.ContainsExpression(
-        f'- "uuid": "{uuid}"',
+        f'uuid: {uuid}',
         f"Client has uuid {uuid}.")
 
 for uuid in [1, 2, 4]:
     client.Streams.stdout += Testers.ExcludesExpression(
-        f'- "uuid": "{uuid}"',
+        f'uuid: {uuid}',
         f"Client has uuid {uuid}.")
 
 #

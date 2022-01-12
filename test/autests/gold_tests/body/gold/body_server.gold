@@ -1,19 +1,21 @@
 ``
 ``Equals Success: Key: "1", Field Name: "x-request", Value: "first_request"
 ``
-`` Drained ``: 30``
+30``
 0000000 0000001 0000002 0000003 0000004 0000005 ``
 0``
 ``
 ``Equals Success: Key: "2", Field Name: "x-request", Value: "second_request"
 ``
-`` Drained ``: 0000000 0000001 
+0000000 0000001 
 ``
-``Drained 0 chunked body bytes``
+``chunked body of 0 bytes for key``
+0
+
 ``
-``Drained``: 0123456789
+0123456789
 ``
-``Drained 3 chunked body bytes with chunk stream: 3
+3
 abc
 0
 

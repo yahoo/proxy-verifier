@@ -1,94 +1,100 @@
 ``
-``Equals Success: Key: "1", Field Name: "x-test-duplicate-separate", Values: "one" "two"
-``Received an HTTP/2 response for stream id 1:
-- ":status": "200"
-- "cache-control": "private"
-- "content-encoding": "gzip"
-- "content-type": "application/json;charset=utf-8"
-- "content-length": "16"
-- "date": "Sat, 16 Mar 2019 01:13:21 GMT"
-- "age": "0"
-- "x-test-duplicate-combined": "one"
-- "x-test-duplicate-combined": "two"
-- "x-test-duplicate-separate": "one"
-- "x-test-duplicate-separate": "two"
-- "uuid": "1"
+``Sent the following HTTP/2 request headers for key 1 with stream id 1:
+:method: GET
+:scheme: https
+:authority: example.data.com
+:path: /a/path?q=3
+accept: */*
+accept-language: en-us
+accept-encoding: gzip
+host: example.data.com
+x-test-duplicate-combined: first
+x-test-duplicate-combined: second
+x-test-duplicate-separate: first
+x-test-duplicate-separate: second
+content-length: 0
+uuid: 1
 
-``content: 0123456789abcdef
+``Sent the following HTTP/2 request headers for key 2 with stream id 3:
+:method: POST
+:scheme: https
+:authority: example.data.com
+:path: /a/path
+x-request-header: request
+x-deleted-header: this_will_be_deleted
+x-proxy-directive: Delete=%<x-deleted-header%> Insert=%<X-Added-Header: 1%>
+uuid: 2
+
+``Sent an HTTP/2 body of 10 bytes for key 2 of stream id 3:
+0123456789
+``Sent the following HTTP/2 request headers for key 3 with stream id 5:
+:method: GET
+:scheme: https
+:authority: example.data.com
+:path: /b/path
+x-request-header: test_request
+uuid: 3
+
+``Sent the following HTTP/2 request headers for key 4 with stream id 7:
+:method: GET
+:scheme: https
+:authority: example.data.com
+:path: /b/path
+x-request-header: test_request
+uuid: 4
+
+``Equals Success: Key: "1", Field Name: ":status", Value: "200"
+``Equals Success: Key: "1", Field Name: "content-length", Value: "16"
+``Equals Success: Key: "1", Field Name: "x-test-duplicate-combined", Values: "one" "two"
+``Equals Success: Key: "1", Field Name: "x-test-duplicate-separate", Values: "one" "two"
+``Received an HTTP/2 response for key 1 with stream id 1:
+:status: 200
+cache-control: private
+content-encoding: gzip
+content-type: application/json;charset=utf-8
+content-length: 16
+date: Sat, 16 Mar 2019 01:13:21 GMT
+age: 0
+x-test-duplicate-combined: one
+x-test-duplicate-combined: two
+x-test-duplicate-separate: one
+x-test-duplicate-separate: two
+uuid: 1
+
+``
+0123456789abcdef
 ``
 ``Equals Success: Key: "2", Field Name: ":status", Value: "500"
 ``Absence Success: Key: "2", Field Name: "content-length"
 ``Absence Success: Key: "2", Field Name: "x-deleted-header2"
 ``Equals Success: Key: "2", Field Name: "x-equal-header", Value: "some_content"
 ``Presence Success: Key: "2", Field Name: "x-response-header", Value: "response"
-``Received an HTTP/2 response for stream id 3:
-- ":status": "500"
-- "x-equal-header": "some_content"
-- "x-response-header": "response"
-- "uuid": "2"
-- "x-added-header": "1"
+``Received an HTTP/2 response for key 2 with stream id 3:
+:status: 500
+x-equal-header: some_content
+x-response-header: response
+uuid: 2
+x-added-header: 1
 
-``content: 0000000 0000001 0000002 0000003 
+``
+0000000 0000001 0000002 0000003 
 ``
 ``Equals Success: Key: "3", Field Name: ":status", Value: "200"
 ``Absence Success: Key: "3", Field Name: "content-length"
 ``Equals Success: Key: "3", Field Name: "x-response-header", Value: "response"
-``Received an HTTP/2 response for stream id 5:
-- ":status": "200"
-- "x-response-header": "response"
-- "uuid": "3"
+``Received an HTTP/2 response for key 3 with stream id 5:
+:status: 200
+x-response-header: response
+uuid: 3
 
 ``
 ``Equals Success: Key: "4", Field Name: ":status", Value: "200"
 ``Equals Success: Key: "4", Field Name: "content-length", Value: "0"
 ``Equals Success: Key: "4", Field Name: "x-response-header", Value: "response"
-``Received an HTTP/2 response for stream id 7:
-- ":status": "200"
-- "x-response-header": "response"
-- "content-length": "0"
-- "uuid": "4"
-
-``
-``Sent the following HTTP/2 headers for stream id 1:
-- ":method": "GET"
-- ":scheme": "https"
-- ":authority": "example.data.com"
-- ":path": "/a/path?q=3"
-- "accept": "*/*"
-- "accept-language": "en-us"
-- "accept-encoding": "gzip"
-- "host": "example.data.com"
-- "x-test-duplicate-combined": "first"
-- "x-test-duplicate-combined": "second"
-- "x-test-duplicate-separate": "first"
-- "x-test-duplicate-separate": "second"
-- "content-length": "0"
-- "uuid": "1"
-
-``Sent the following HTTP/2 headers for stream id 3:
-- ":method": "POST"
-- ":scheme": "https"
-- ":authority": "example.data.com"
-- ":path": "/a/path"
-- "x-request-header": "request"
-- "x-deleted-header": "this_will_be_deleted"
-- "x-proxy-directive": "Delete=%<x-deleted-header%> Insert=%<X-Added-Header: 1%>"
-- "uuid": "2"
-
-``Sent the following HTTP/2 headers for stream id 5:
-- ":method": "GET"
-- ":scheme": "https"
-- ":authority": "example.data.com"
-- ":path": "/b/path"
-- "x-request-header": "test_request"
-- "uuid": "3"
-
-``Sent the following HTTP/2 headers for stream id 7:
-- ":method": "GET"
-- ":scheme": "https"
-- ":authority": "example.data.com"
-- ":path": "/b/path"
-- "x-request-header": "test_request"
-- "uuid": "4"
+``Received an HTTP/2 response for key 4 with stream id 7:
+:status: 200
+x-response-header: response
+content-length: 0
+uuid: 4
 
 ``

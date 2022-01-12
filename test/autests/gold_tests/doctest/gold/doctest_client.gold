@@ -1,33 +1,32 @@
 ``
-``Sent the following HTTP/1 POST request:
-- "host": "www.example.com"
-- "content-type": "image/jpeg"
-- "content-length": "399"
-- "uuid": "first-request"
+POST /pictures/flower.jpeg HTTP/1.1
+host: www.example.com
+content-type: image/jpeg
+content-length: 399
+uuid: first-request
 
 ``
-``Received an HTTP/1 200 response for key first-request with headers:
-- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
-- "content-type": "image/jpeg"
-- "transfer-encoding": "chunked"
-- "connection": "keep-alive"
+HTTP/1.1 200 OK
+date: Sat, 16 Mar 2019 03:11:36 GMT
+content-type: image/jpeg
+transfer-encoding: chunked
+connection: keep-alive
 
-   [0]: Drained 3432 chunked body bytes with chunk stream``
+``chunked body of 3432 bytes``
 ``
-``Received an HTTP/2 response for stream id 1:
-- ":status": "200"
-- "date": "Sat, 16 Mar 2019 03:11:36 GMT"
-- "content-type": "image/jpeg"
+:method: POST
+:scheme: https
+:authority: www.example.com
+:path: /pictures/flower.jpeg
+content-type: image/jpeg
+uuid: second-request
 
 ``
-``Sent the following HTTP/2 headers for stream id 1:
-- ":method": "POST"
-- ":scheme": "https"
-- ":authority": "www.example.com"
-- ":path": "/pictures/flower.jpeg"
-- "content-type": "image/jpeg"
-- "uuid": "second-request"
+:status: 200
+date: Sat, 16 Mar 2019 03:11:36 GMT
+content-type: image/jpeg
 
+``
 ``
 ``2 transactions in 2 sessions``
 ``

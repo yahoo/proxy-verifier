@@ -1,22 +1,25 @@
 ``
-``Sent the following HTTP/1 POST request:
-- "content-type": "application/json; charset=utf-8"
-- "content-length": "10"
-- "host": "example.com"
-- "connection": "Keep-Alive"
-- "accept-encoding": "gzip"
-- "uuid": "1"
-
-``
-``Received an HTTP/1 200 response for key 1 with headers:
-- "content-type": "multipart/form-data;snoopy=123456"
-- "date": "Sat, 16 Mar 2019 01:33:27 GMT"
-- "age": "1"
-- "connection": "keep-alive"
-- "content-length": "12"
-
-``
-``Connecting via TLS.
 ``Starting session "``single_transaction.yaml":5 protocol=https.
-``1 transactions in 1 sessions ``
+``Connecting via TLS.
 ``
+POST https://example.data.com/a/path HTTP/1.1
+content-type: application/json; charset=utf-8
+content-length: 10
+host: example.com
+connection: Keep-Alive
+accept-encoding: gzip
+uuid: 1
+
+``
+0000000 00
+``
+HTTP/1.1 200 OK
+content-type: multipart/form-data;snoopy=123456
+date: Sat, 16 Mar 2019 01:33:27 GMT
+age: 1
+connection: keep-alive
+content-length: 12
+
+``
+0000000 0000
+``1 transaction in 1 session ``

@@ -44,7 +44,7 @@ interpret_delay_string(TextView src)
   delay = delay.trim_if(&isspace);
   auto delay_digits = delay.clip_prefix_of(&isdigit);
   if (delay_digits.empty()) {
-    return {0us, Errata().error(R"(No digits found for delay specification: "{}")", src)};
+    return {0us, Errata(S_ERROR, R"(No digits found for delay specification: "{}")", src)};
   }
   auto const raw_delay_number = swoc::svtou(delay_digits);
 
@@ -52,7 +52,7 @@ interpret_delay_string(TextView src)
   auto delay_suffix = delay;
   delay_suffix = delay_suffix.trim_if(&isspace);
   if (delay_suffix.empty()) {
-    return {0us, Errata().error(R"(No unit found for delay specification: "{}")", src)};
+    return {0us, Errata(S_ERROR, R"(No unit found for delay specification: "{}")", src)};
   }
 
   if (delay_suffix == MICROSECONDS_SUFFIX) {
@@ -64,8 +64,11 @@ interpret_delay_string(TextView src)
   }
   return {
       0us,
-      Errata()
-          .error(R"(Unrecognized unit, "{}", for delay specification: "{}")", delay_suffix, src)};
+      Errata(
+          S_ERROR,
+          R"(Unrecognized unit, "{}", for delay specification: "{}")",
+          delay_suffix,
+          src)};
 }
 
 swoc::Rv<microseconds>
@@ -79,7 +82,7 @@ get_delay_time(YAML::Node const &node)
       zret.note(std::move(delay_errata));
       zret = delay;
     } else {
-      zret.error(R"("{}" key that is not a scalar.)", YAML_TIME_DELAY_KEY);
+      zret.note(S_ERROR, R"("{}" key that is not a scalar.)", YAML_TIME_DELAY_KEY);
     }
   }
   return zret;
@@ -107,21 +110,24 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
           if (parsed.size() == text.size() && 0 < n) {
             message._stream_id = n;
           } else {
-            errata.error(
+            errata.note(
+                S_ERROR,
                 R"("{}" value "{}" at {} must be a positive integer.)",
                 YAML_HTTP_STREAM_ID_KEY,
                 text,
                 http_stream_id_node.Mark());
           }
         } else {
-          errata.error(
+          errata.note(
+              S_ERROR,
               R"("{}" at {} must be a positive integer.)",
               YAML_HTTP_STREAM_ID_KEY,
               http_stream_id_node.Mark());
         }
       }
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"("{}" value at {} must be a map of HTTP/2 values.)",
           YAML_HTTP2_KEY,
           http2_node.Mark());
@@ -139,14 +145,16 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         message._status = n;
         message._status_string = std::to_string(message._status);
       } else {
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"("{}" value "{}" at {} must be an integer in the range [1..599].)",
             YAML_HTTP_STATUS_KEY,
             text,
             status_node.Mark());
       }
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"("{}" value at {} must be an integer in the range [1..599].)",
           YAML_HTTP_STATUS_KEY,
           status_node.Mark());
@@ -158,7 +166,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     if (reason_node.IsScalar()) {
       message._reason = Localizer::localize(reason_node.Scalar());
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"("{}" value at {} must be a string.)",
           YAML_HTTP_REASON_KEY,
           reason_node.Mark());
@@ -171,7 +180,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
       message._method = Localizer::localize(method_node.Scalar());
       message.set_is_request();
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"("{}" value at {} must be a string.)",
           YAML_HTTP_REASON_KEY,
           method_node.Mark());
@@ -186,7 +196,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     } else if (url_node.IsSequence()) {
       errata.note(parse_url_rules(url_node, *message._fields_rules, message._verify_strictly));
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"("{}" value at {} must be a string or sequence.)",
           YAML_HTTP_URL_KEY,
           url_node.Mark());
@@ -198,7 +209,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     if (scheme_node.IsScalar()) {
       message._scheme = Localizer::localize(scheme_node.Scalar());
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"("{}" value at {} must be a string.)",
           YAML_HTTP_SCHEME_KEY,
           scheme_node.Mark());
@@ -215,7 +227,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         errata.note(message.update_content_length(message._method));
         errata.note(message.update_transfer_encoding());
       } else {
-        errata.error("Failed to parse response at {}", node.Mark());
+        errata.note(S_ERROR, "Failed to parse response at {}", node.Mark());
         errata.note(std::move(result));
       }
     }
@@ -246,7 +258,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
           // automagically try to frame the body as chunked for the user.
           message._chunked_p = false;
         } else {
-          errata.error(
+          errata.note(
+              S_ERROR,
               R"(Invalid value "{}" for "{}" key at {} in "{}" node at {})",
               xf,
               YAML_CONTENT_TRANSFER_KEY,
@@ -264,7 +277,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
           } else if (0 == strcasecmp("plain"_tv, text)) {
             enc = Localizer::Encoding::TEXT;
           } else {
-            errata.error(R"(Unknown encoding "{}" at {}.)", text, enc_node.Mark());
+            errata.note(S_ERROR, R"(Unknown encoding "{}" at {}.)", text, enc_node.Mark());
           }
         }
         TextView content{Localizer::localize(data_node.Scalar(), enc)};
@@ -274,7 +287,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         // Cross check against previously read content-length header, if any.
         if (message._content_length_p) {
           if (message._content_size != content_size) {
-            errata.diag(
+            errata.note(
+                S_DIAG,
                 R"(Conflicting sizes for "Content-Length", sending header value {} instead of data value {}.)",
                 message._content_size,
                 content_size);
@@ -289,7 +303,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         // Cross check against previously read content-length header, if any.
         if (message._content_length_p) {
           if (message._content_size != content_size) {
-            errata.diag(
+            errata.note(
+                S_DIAG,
                 R"(Conflicting sizes for "Content-Length", sending header value {} instead of rule value {}.)",
                 message._content_size,
                 content_size);
@@ -299,7 +314,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
           message._content_size = content_size;
         }
       } else {
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"("{}" node at {} does not have a "{}" or "{}" key as required.)",
             YAML_CONTENT_KEY,
             node.Mark(),
@@ -307,7 +323,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
             YAML_CONTENT_DATA_KEY);
       }
     } else {
-      errata.error(R"("{}" node at {} is not a map.)", YAML_CONTENT_KEY, content_node.Mark());
+      errata
+          .note(S_ERROR, R"("{}" node at {} is not a map.)", YAML_CONTENT_KEY, content_node.Mark());
     }
   }
 
@@ -328,17 +345,17 @@ YamlParser::parse_global_rules(YAML::Node const &node, HttpFields &fields)
       if (rules_node.size() > 0) {
         auto result{parse_fields_and_rules(rules_node, fields, !ASSUME_EQUALITY_RULE)};
         if (!result.is_ok()) {
-          errata.error("Failed to parse fields and rules at {}", node.Mark());
+          errata.note(S_ERROR, "Failed to parse fields and rules at {}", node.Mark());
           errata.note(std::move(result));
         }
       } else {
-        errata.info(R"(Fields and rules node at {} is an empty list.)", rules_node.Mark());
+        errata.note(S_INFO, R"(Fields and rules node at {} is an empty list.)", rules_node.Mark());
       }
     } else {
-      errata.info(R"(Fields and rules node at {} is not a sequence.)", rules_node.Mark());
+      errata.note(S_INFO, R"(Fields and rules node at {} is not a sequence.)", rules_node.Mark());
     }
   } else {
-    errata.info(R"(Node at {} is missing a fields node.)", node.Mark());
+    errata.note(S_INFO, R"(Node at {} is missing a fields node.)", node.Mark());
   }
   return errata;
 }
@@ -353,12 +370,13 @@ YamlParser::parse_url_rules(
 
   for (auto const &node : url_rules_node) {
     if (!node.IsSequence()) {
-      errata.error("URL rule at {} is not a sequence as required.", node.Mark());
+      errata.note(S_ERROR, "URL rule at {} is not a sequence as required.", node.Mark());
       continue;
     }
     const auto node_size = node.size();
     if (node_size != 2 && node_size != 3) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "URL rule at {} is not a sequence of length 2 "
           "or 3 as required.",
           node.Mark());
@@ -368,7 +386,7 @@ YamlParser::parse_url_rules(
     TextView part_name{Localizer::localize_lower(node[YAML_RULE_KEY_INDEX].Scalar())};
     UrlPart part_id = HttpHeader::parse_url_part(part_name);
     if (part_id == UrlPart::Error) {
-      errata.error("URL rule at {} has an invalid URL part.", node.Mark());
+      errata.note(S_ERROR, "URL rule at {} has an invalid URL part.", node.Mark());
       continue;
     }
     const YAML::Node ValueNode{node[YAML_RULE_VALUE_INDEX]};
@@ -385,7 +403,8 @@ YamlParser::parse_url_rules(
         TextView rule_type{node[YAML_RULE_TYPE_INDEX].Scalar()};
         std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(part_id, value, rule_type);
         if (!tester) {
-          errata.error(
+          errata.note(
+              S_ERROR,
               "URL rule at {} does not have a valid directive ({})",
               node.Mark(),
               rule_type);
@@ -421,7 +440,8 @@ YamlParser::parse_url_rules(
       } else if (assume_equality_rule) {
         rule_type = VERIFICATION_DIRECTIVE_EQUALS;
       } else {
-        errata.info(
+        errata.note(
+            S_INFO,
             "URL rule at {} ignored: no directive, and equality is not assumed",
             node.Mark());
         // Can continue because all URL maps are verification rules, unlike field rules
@@ -435,7 +455,10 @@ YamlParser::parse_url_rules(
           // Single value
           value = Localizer::localize(url_value_node.Scalar());
         } else if (url_value_node.IsSequence()) {
-          errata.error("URL rule at {} has multiple values, which is not allowed.", node.Mark());
+          errata.note(
+              S_ERROR,
+              "URL rule at {} has multiple values, which is not allowed.",
+              node.Mark());
           continue;
         }
       }
@@ -443,14 +466,21 @@ YamlParser::parse_url_rules(
           RuleCheck::make_rule_check(part_id, value, rule_type, is_inverted, is_nocase);
 
       if (!tester) {
-        errata.error("URL rule at {} does not have a valid directive ({})", node.Mark(), rule_type);
+        errata.note(
+            S_ERROR,
+            "URL rule at {} does not have a valid directive ({})",
+            node.Mark(),
+            rule_type);
       } else {
         fields._url_rules[static_cast<size_t>(part_id)].push_back(tester);
       }
     } else if (ValueNode.IsSequence()) {
-      errata.error("URL rule at {} has multiple values, which is not allowed.", node.Mark());
+      errata.note(
+          S_ERROR,
+          "URL rule at {} has multiple values, which is not allowed.",
+          node.Mark());
     } else {
-      errata.error("URL rule at {} is null or malformed.", node.Mark());
+      errata.note(S_ERROR, "URL rule at {} is null or malformed.", node.Mark());
     }
   }
   return errata;
@@ -466,12 +496,13 @@ YamlParser::parse_fields_and_rules(
 
   for (auto const &node : fields_rules_node) {
     if (!node.IsSequence()) {
-      errata.error("Field or rule at {} is not a sequence as required.", node.Mark());
+      errata.note(S_ERROR, "Field or rule at {} is not a sequence as required.", node.Mark());
       continue;
     }
     auto const node_size = node.size();
     if (node_size != 2 && node_size != 3) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "Field or rule at {} is not a sequence of length 2 "
           "or 3 as required.",
           node.Mark());
@@ -494,7 +525,8 @@ YamlParser::parse_fields_and_rules(
         TextView rule_type{node[YAML_RULE_TYPE_INDEX].Scalar()};
         std::shared_ptr<RuleCheck> tester = RuleCheck::make_rule_check(name, value, rule_type);
         if (!tester) {
-          errata.error(
+          errata.note(
+              S_ERROR,
               "Field rule at {} does not have a valid directive ({})",
               node.Mark(),
               rule_type);
@@ -523,7 +555,8 @@ YamlParser::parse_fields_and_rules(
         std::shared_ptr<RuleCheck> tester =
             RuleCheck::make_rule_check(name, std::move(values), rule_type);
         if (!tester) {
-          errata.error(
+          errata.note(
+              S_ERROR,
               "Field rule at {} does not have a valid directive ({})",
               node.Mark(),
               rule_type);
@@ -560,7 +593,8 @@ YamlParser::parse_fields_and_rules(
       } else if (assume_equality_rule) {
         rule_type = VERIFICATION_DIRECTIVE_EQUALS;
       } else {
-        errata.info(
+        errata.note(
+            S_INFO,
             "Field rule at {} ignored: no directive, and equality is not assumed",
             node.Mark());
         // Cannot use continue statement because of client request/server response
@@ -601,10 +635,14 @@ YamlParser::parse_fields_and_rules(
         fields._rules.emplace(name, tester);
       } else if (!rule_type.empty()) {
         // Do not report error if no rule because of client request/server response
-        errata.error("Field rule at {} has an invalid directive ({})", node.Mark(), rule_type);
+        errata.note(
+            S_ERROR,
+            "Field rule at {} has an invalid directive ({})",
+            node.Mark(),
+            rule_type);
       }
     } else {
-      errata.error("Field or rule at {} is null or malformed.", node.Mark());
+      errata.note(S_ERROR, "Field or rule at {} is null or malformed.", node.Mark());
     }
   }
   return errata;
@@ -628,11 +666,13 @@ YamlParser::parsing_is_done()
   Errata errata;
   auto parsing_duration = ClockType::now() - _parsing_start_time;
   if (parsing_duration > 10s) {
-    errata.info(
+    errata.note(
+        S_INFO,
         "Replay file parsing took: {} seconds.",
         duration_cast<seconds>(parsing_duration).count());
   } else {
-    errata.info(
+    errata.note(
+        S_INFO,
         "Replay file parsing took: {} milliseconds.",
         duration_cast<milliseconds>(parsing_duration).count());
   }
@@ -647,7 +687,8 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
   auto pseudo_it = message._fields_rules->_fields.find(YAML_HTTP2_PSEUDO_METHOD_KEY);
   if (pseudo_it != message._fields_rules->_fields.end()) {
     if (!message._method.empty()) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "The {} node is not compatible with the {} pseudo header: {}",
           YAML_HTTP_METHOD_KEY,
           YAML_HTTP2_PSEUDO_METHOD_KEY,
@@ -660,7 +701,8 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
   pseudo_it = message._fields_rules->_fields.find(YAML_HTTP2_PSEUDO_SCHEME_KEY);
   if (pseudo_it != message._fields_rules->_fields.end()) {
     if (!message._scheme.empty()) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "The {} node is not compatible with the {} pseudo header: {}",
           YAML_HTTP_SCHEME_KEY,
           YAML_HTTP2_PSEUDO_SCHEME_KEY,
@@ -676,13 +718,15 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
     if (host_it != message._fields_rules->_fields.end()) {
       // We intentionally allow this, even though contrary to spec, to allow the use
       // of Proxy Verifier to test proxy's handling of this.
-      errata.info(
+      errata.note(
+          S_INFO,
           "Contrary to spec, a transaction is specified with both {} and {} header fields: {}",
           YAML_HTTP2_PSEUDO_AUTHORITY_KEY,
           FIELD_HOST,
           node.Mark());
     } else if (!message._authority.empty()) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "The {} node is not compatible with the {} pseudo header: {}",
           YAML_HTTP_URL_KEY,
           YAML_HTTP2_PSEUDO_AUTHORITY_KEY,
@@ -695,7 +739,8 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
   pseudo_it = message._fields_rules->_fields.find(YAML_HTTP2_PSEUDO_PATH_KEY);
   if (pseudo_it != message._fields_rules->_fields.end()) {
     if (!message._path.empty()) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "The {} node is not compatible with the {} pseudo header: {}",
           YAML_HTTP_URL_KEY,
           YAML_HTTP2_PSEUDO_PATH_KEY,
@@ -708,7 +753,8 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
   pseudo_it = message._fields_rules->_fields.find(YAML_HTTP2_PSEUDO_STATUS_KEY);
   if (pseudo_it != message._fields_rules->_fields.end()) {
     if (message._status != 0) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "The {} node is not compatible with the {} pseudo header: {}",
           YAML_HTTP_STATUS_KEY,
           YAML_HTTP2_PSEUDO_STATUS_KEY,
@@ -721,7 +767,8 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
       message._status = n;
       message._status_string = std::to_string(message._status);
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"("{}" pseudo header value "{}" at {} must be an integer in the range [1..599].)",
           YAML_HTTP2_PSEUDO_STATUS_KEY,
           status_field_value,
@@ -733,10 +780,14 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
   if (number_of_pseudo_headers > 0) {
     // Do some sanity checking on the user's pseudo headers, if provided.
     if (message.is_response() && number_of_pseudo_headers != 1) {
-      errata.error("Found a mixture of request and response pseudo header fields: {}", node.Mark());
+      errata.note(
+          S_ERROR,
+          "Found a mixture of request and response pseudo header fields: {}",
+          node.Mark());
     }
     if (message.is_request() && number_of_pseudo_headers != 4) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           "Did not find all four required pseudo header fields "
           "(:method, :scheme, :authority, :path): {}",
           node.Mark());
@@ -755,20 +806,24 @@ ReplayFileHandler::parse_for_protocol_node(
 {
   swoc::Rv<YAML::Node const> desired_node = YAML::Node{YAML::NodeType::Undefined};
   if (!protocol_node.IsSequence()) {
-    desired_node.error("Protocol node at {} is not a sequence as required.", protocol_node.Mark());
+    desired_node.note(
+        S_ERROR,
+        "Protocol node at {} is not a sequence as required.",
+        protocol_node.Mark());
     return desired_node;
   }
   if (protocol_node.size() == 0) {
-    desired_node.error("Protocol node at {} is an empty sequence.", protocol_node.Mark());
+    desired_node.note(S_ERROR, "Protocol node at {} is an empty sequence.", protocol_node.Mark());
     return desired_node;
   }
   for (auto const &protocol_element : protocol_node) {
     if (!protocol_element.IsMap()) {
-      desired_node.error("Protocol element at {} is not a map.", protocol_element.Mark());
+      desired_node.note(S_ERROR, "Protocol element at {} is not a map.", protocol_element.Mark());
       return desired_node;
     }
     if (!protocol_element[YAML_SSN_PROTOCOL_NAME]) {
-      desired_node.error(
+      desired_node.note(
+          S_ERROR,
           R"(Protocol element at {} does not have a "{}" element.)",
           protocol_element.Mark(),
           YAML_SSN_PROTOCOL_NAME);
@@ -790,7 +845,8 @@ ReplayFileHandler::parse_sni(YAML::Node const &tls_node)
     if (sni_node.IsScalar()) {
       sni.result() = sni_node.Scalar();
     } else {
-      sni.error(
+      sni.note(
+          S_ERROR,
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           YAML_SSN_TLS_SNI_KEY);
     }
@@ -806,7 +862,8 @@ ReplayFileHandler::parse_verify_mode(YAML::Node const &tls_node)
     if (tls_verify_mode.IsScalar()) {
       verify_mode = std::stoi(tls_verify_mode.Scalar());
     } else {
-      verify_mode.error(
+      verify_mode.note(
+          S_ERROR,
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           YAML_SSN_TLS_SNI_KEY);
     }
@@ -820,7 +877,8 @@ ReplayFileHandler::parse_alpn_protocols_node(YAML::Node const &tls_node)
   swoc::Rv<std::string> alpn_protocol_string;
   if (auto alpn_protocols_node{tls_node[YAML_SSN_TLS_ALPN_PROTOCOLS_KEY]}; alpn_protocols_node) {
     if (!alpn_protocols_node.IsSequence()) {
-      alpn_protocol_string.error(
+      alpn_protocol_string.note(
+          S_ERROR,
           R"(Session has a value for key "{}" that is not a sequence as required.)",
           YAML_SSN_TLS_ALPN_PROTOCOLS_KEY);
       return alpn_protocol_string;
@@ -858,14 +916,14 @@ Errata
 YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &handler)
 {
   HandlerOpener opener(handler, path);
-  auto errata = opener.errata;
+  auto errata = std::move(opener.errata);
   if (!errata.is_ok()) {
     return errata;
   }
   std::error_code ec;
   std::string content{swoc::file::load(path, ec)};
   if (ec.value()) {
-    errata.error(R"(Error loading "{}": {})", path, ec);
+    errata.note(S_ERROR, R"(Error loading "{}": {})", path, ec);
     return errata;
   }
   YAML::Node root;
@@ -874,7 +932,7 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
     root = YAML::Load(content);
     yaml_merge(root);
   } catch (std::exception const &ex) {
-    errata.error(R"(Exception: {} in "{}".)", ex.what(), path);
+    errata.note(S_ERROR, R"(Exception: {} in "{}".)", ex.what(), path);
   }
   if (!errata.is_ok()) {
     return errata;
@@ -887,16 +945,23 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
       errata.note(YamlParser::parse_global_rules(globals_node, *global_fields_rules));
     }
   } else {
-    errata.info(R"(No meta node ("{}") at "{}":{}.)", YAML_META_KEY, path, root.Mark().line);
+    errata
+        .note(S_INFO, R"(No meta node ("{}") at "{}":{}.)", YAML_META_KEY, path, root.Mark().line);
   }
   handler.global_config = VerificationConfig{global_fields_rules};
   if (!root[YAML_SSN_KEY]) {
-    errata.error(R"(No sessions list ("{}") at "{}":{}.)", YAML_META_KEY, path, root.Mark().line);
+    errata.note(
+        S_ERROR,
+        R"(No sessions list ("{}") at "{}":{}.)",
+        YAML_META_KEY,
+        path,
+        root.Mark().line);
     return errata;
   }
   auto ssn_list_node{root[YAML_SSN_KEY]};
   if (!ssn_list_node.IsSequence()) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"("{}" value at "{}":{} is not a sequence.)",
         YAML_SSN_KEY,
         path,
@@ -904,7 +969,11 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
     return errata;
   }
   if (ssn_list_node.size() == 0) {
-    errata.diag(R"(Session list at "{}":{} is an empty list.)", path, ssn_list_node.Mark().line);
+    errata.note(
+        S_DIAG,
+        R"(Session list at "{}":{} is an empty list.)",
+        path,
+        ssn_list_node.Mark().line);
     return errata;
   }
   for (auto const &ssn_node : ssn_list_node) {
@@ -912,11 +981,12 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
     auto session_errata{handler.ssn_open(ssn_node)};
     if (!session_errata.is_ok()) {
       errata.note(std::move(session_errata));
-      errata.error(R"(Failure opening session at "{}":{}.)", path, ssn_node.Mark().line);
+      errata.note(S_ERROR, R"(Failure opening session at "{}":{}.)", path, ssn_node.Mark().line);
       continue;
     }
     if (!ssn_node[YAML_TXN_KEY]) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Session at "{}":{} has no "{}" key.)",
           path,
           ssn_node.Mark().line,
@@ -925,14 +995,16 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
     }
     auto txn_list_node{ssn_node[YAML_TXN_KEY]};
     if (!txn_list_node.IsSequence()) {
-      session_errata.error(
+      session_errata.note(
+          S_ERROR,
           R"(Transaction list at {} in session at {} in "{}" is not a list.)",
           txn_list_node.Mark(),
           ssn_node.Mark(),
           path);
     }
     if (txn_list_node.size() == 0) {
-      session_errata.info(
+      session_errata.note(
+          S_INFO,
           R"(Transaction list at {} in session at {} in "{}" is an empty list.)",
           txn_list_node.Mark(),
           ssn_node.Mark(),
@@ -942,7 +1014,8 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
       // HeaderRules txn_rules = ssn_rules;
       auto txn_errata = handler.txn_open(txn_node);
       if (!txn_errata.is_ok()) {
-        session_errata.error(R"(Could not open transaction at {} in "{}".)", txn_node.Mark(), path);
+        session_errata
+            .note(S_ERROR, R"(Could not open transaction at {} in "{}".)", txn_node.Mark(), path);
       }
       HttpFields all_fields;
       if (auto all_node{txn_node[YAML_ALL_MESSAGES_KEY]}; all_node) {
@@ -968,7 +1041,8 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
       }
       txn_errata.note(handler.txn_close());
       if (!txn_errata.is_ok()) {
-        txn_errata.error(R"(Failure with transaction at {} in "{}".)", txn_node.Mark(), path);
+        txn_errata
+            .note(S_ERROR, R"(Failure with transaction at {} in "{}".)", txn_node.Mark(), path);
       }
       session_errata.note(std::move(txn_errata));
     }
@@ -990,7 +1064,7 @@ YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int
 
   auto stat{swoc::file::status(path, ec)};
   if (ec) {
-    errata.error(R"(Invalid test directory "{}": [{}])", path, ec);
+    errata.note(S_ERROR, R"(Invalid test directory "{}": [{}])", path, ec);
     errata.note(parsing_is_done());
     return errata;
   } else if (swoc::file::is_regular_file(stat)) {
@@ -998,7 +1072,7 @@ YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int
     errata.note(parsing_is_done());
     return errata;
   } else if (!swoc::file::is_dir(stat)) {
-    errata.error(R"("{}" is not a file or a directory.)", path);
+    errata.note(S_ERROR, R"("{}" is not a file or a directory.)", path);
     errata.note(parsing_is_done());
     return errata;
   }
@@ -1026,7 +1100,7 @@ YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int
         }
       };
 
-      errata.info("Loading {} replay files.", n_sessions);
+      errata.note(S_INFO, "Loading {} replay files.", n_sessions);
       std::vector<std::thread> threads;
       threads.reserve(n_threads);
       for (int tidx = 0; tidx < n_threads; ++tidx) {
@@ -1041,10 +1115,10 @@ YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int
       free(elements);
 
     } else {
-      errata.error(R"(No replay files found in "{}".)", path);
+      errata.note(S_ERROR, R"(No replay files found in "{}".)", path);
     }
   } else {
-    errata.error(R"(Failed to access directory "{}": {}.)", path, swoc::bwf::Errno{});
+    errata.note(S_ERROR, R"(Failed to access directory "{}": {}.)", path, swoc::bwf::Errno{});
   }
   errata.note(parsing_is_done());
   return errata;

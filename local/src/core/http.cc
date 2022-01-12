@@ -54,13 +54,19 @@ BufferWriter &
 bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
 {
   if (h.is_http2() || h.is_http3()) {
-    if (h._status) {
-      w.print(R"(- ":status": "{}"{})", h._status_string, '\n');
+    if (h.is_response()) {
+      w.print(R"(:status: {}{})", h._status_string, '\n');
     } else {
-      w.print(R"(- ":method": "{}"{})", h._method, '\n');
-      w.print(R"(- ":scheme": "{}"{})", h._scheme, '\n');
-      w.print(R"(- ":authority": "{}"{})", h._authority, '\n');
-      w.print(R"(- ":path": "{}"{})", h._path, '\n');
+      w.print(R"(:method: {}{})", h._method, '\n');
+      w.print(R"(:scheme: {}{})", h._scheme, '\n');
+      w.print(R"(:authority: {}{})", h._authority, '\n');
+      w.print(R"(:path: {}{})", h._path, '\n');
+    }
+  } else {
+    if (h.is_response()) {
+      w.print("HTTP/{} {} {}{}", h._http_version, h._status, h._reason, '\n');
+    } else if (h.is_request()) {
+      w.print("{} {} HTTP/{}{}", h._method, h._url, h._http_version, '\n');
     }
   }
   for (auto const &[key, value] : h._fields_rules->_fields_sequence) {
@@ -68,7 +74,7 @@ bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
       // Pseudo headers are handled specially above. Do not reprint them here.
       continue;
     }
-    w.print(R"(- "{}": "{}"{})", key, value, '\n');
+    w.print(R"({}: {}{})", key, value, '\n');
   }
   return w;
 }
@@ -156,7 +162,7 @@ HttpHeader::serialize(swoc::BufferWriter &w) const
   } else if (is_request()) {
     w.print("{} {} HTTP/{}{}", _method, _url, _http_version, HTTP_EOL);
   } else {
-    errata.error(R"(Unable to write header: could not determine request/response state.)");
+    errata.note(S_ERROR, R"(Unable to write header: could not determine request/response state.)");
   }
 
   for (auto const &[name, value] : _fields_rules->_fields_sequence) {
@@ -376,7 +382,7 @@ bool
 HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rules_) const
 {
   // Remains false if no issue is observed
-  // Setting true does not break loop because test() calls errata.diag()
+  // Setting true does not break loop because test() calls errata.note(S_DIAG, )
   bool issue_exists = false;
   auto const &rules = rules_._rules;
   auto const *url_rules = rules_._url_rules;
@@ -470,6 +476,7 @@ HttpHeader::set_http_protocol(HTTP_PROTOCOL_TYPE protocol)
 void
 HttpHeader::set_is_http1()
 {
+  _http_version = "1.1";
   _http_protocol = HTTP_PROTOCOL_TYPE::HTTP_1;
 }
 
@@ -482,6 +489,7 @@ HttpHeader::is_http1() const
 void
 HttpHeader::set_is_http2()
 {
+  _http_version = "2";
   _http_protocol = HTTP_PROTOCOL_TYPE::HTTP_2;
 }
 
@@ -494,6 +502,7 @@ HttpHeader::is_http2() const
 void
 HttpHeader::set_is_http3()
 {
+  _http_version = "3";
   _http_protocol = HTTP_PROTOCOL_TYPE::HTTP_3;
 }
 
@@ -572,6 +581,7 @@ HttpHeader::parse_request(swoc::TextView data)
       first_line.remove_suffix_if(&isspace);
       _method = first_line.take_prefix_if(&isspace);
       _url = first_line.ltrim_if(&isspace).take_prefix_if(&isspace);
+      _http_version = first_line.take_suffix_at('/');
       parse_url(_url);
       set_is_request();
 
@@ -590,13 +600,13 @@ HttpHeader::parse_request(swoc::TextView data)
           }
         } else {
           zret = PARSE_ERROR;
-          zret.error(R"(Malformed field "{}".)", field);
+          zret.note(S_ERROR, R"(Malformed field "{}".)", field);
         }
       }
       derive_key();
     } else {
       zret = PARSE_ERROR;
-      zret.error("Empty first line in request.");
+      zret.note(S_ERROR, "Empty first line in request.");
     }
   }
   return zret;
@@ -615,14 +625,21 @@ HttpHeader::parse_response(swoc::TextView data)
 
     auto first_line{data.take_prefix_at('\n').rtrim_if(&isspace)};
     if (first_line) {
-      first_line.take_prefix_if(&isspace); // Remove the "HTTP/<version>" prefix.
-      auto status{first_line.ltrim_if(&isspace).take_prefix_if(&isspace)};
+      auto version = first_line.take_prefix_if(&isspace); // Remove the "HTTP/<version>" prefix.
+      auto numeric_version = version.remove_prefix(strlen("HTTP/"));
+      _http_version = numeric_version;
+      auto status_start{first_line.ltrim_if(&isspace)};
+      auto status{status_start.take_prefix_if(&isspace)};
       _status = swoc::svtou(status);
       _status_string = std::string(status);
+
+      auto reason{status_start.ltrim_if(&isspace).take_prefix_if(&isspace)};
+      _reason = reason;
       set_is_response();
 
       if (_status < 1 || _status > 599) {
-        zret.error(
+        zret.note(
+            S_ERROR,
             "Unexpected response status: expected an integer in the range [1..599], got: {}",
             _status);
       }
@@ -639,13 +656,13 @@ HttpHeader::parse_response(swoc::TextView data)
           _fields_rules->add_field(name, value);
         } else {
           zret = PARSE_ERROR;
-          zret.error(R"(Malformed field "{}".)", field);
+          zret.note(S_ERROR, R"(Malformed field "{}".)", field);
         }
       }
       derive_key();
     } else {
       zret = PARSE_ERROR;
-      zret.error("Empty first line in response.");
+      zret.note(S_ERROR, "Empty first line in response.");
     }
   }
   return zret;
@@ -696,24 +713,24 @@ Session::read(swoc::MemSpan<char> span)
       zret.note(std::move(poll_errata));
       if (!zret.is_ok()) {
         zret.note(std::move(poll_errata));
-        zret.error("Failed to poll for data.");
+        zret.note(S_ERROR, "Failed to poll for data.");
         this->close();
       } else if (poll_return > 0) {
         // Simply repeat the read now that poll says something is ready.
         return read(span);
       } else if (poll_return == 0) {
-        zret.error("Poll timed out waiting for content.");
+        zret.note(S_ERROR, "Poll timed out waiting for content.");
         this->close();
       } else if (poll_return < 0) {
         // Connection was closed. Nothing to do.
-        zret.diag("The peer closed the connection while reading during poll.");
+        zret.note(S_DIAG, "The peer closed the connection while reading during poll.");
       }
     } else if (errno == ECONNRESET) {
       // The other end closed the connection.
-      zret.diag("The peer closed the connection while reading.");
+      zret.note(S_DIAG, "The peer closed the connection while reading.");
       this->close();
     } else {
-      zret.error("Error reading from socket: {}", swoc::bwf::Errno{});
+      zret.note(S_ERROR, "Error reading from socket: {}", swoc::bwf::Errno{});
       this->close();
     }
   }
@@ -727,7 +744,7 @@ Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
   auto &&[header_bytes_read, read_header_errata] = read_headers(buffer);
   zret.note(read_header_errata);
   if (!read_header_errata.is_ok()) {
-    zret.error("Could not read the header.");
+    zret.note(S_ERROR, "Could not read the header.");
     return zret;
   }
 
@@ -743,11 +760,11 @@ Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
   zret.note(parse_errata);
 
   if (parse_result != HttpHeader::PARSE_OK || !zret.is_ok()) {
-    zret.error(R"(The received request was malformed.)");
-    zret.diag(R"(Received data: {}.)", received_data);
+    zret.note(S_ERROR, R"(The received request was malformed.)");
+    zret.note(S_DIAG, R"(Received data: {}.)", received_data);
   }
   auto const key = hdr->get_key();
-  zret.diag("Received an HTTP/1 request with key {}:\n{}", key, *hdr);
+  zret.note(S_DIAG, "Received an HTTP/1 request with key {}:\n{}", key, *hdr);
   return zret;
 }
 
@@ -758,7 +775,7 @@ Session::write(TextView view)
   TextView remaining = view;
   while (!remaining.empty()) {
     if (this->is_closed()) {
-      zret.diag("write failed: session is closed");
+      zret.note(S_DIAG, "write failed: session is closed");
       break;
     }
     auto const n = ::write(_fd, remaining.data(), remaining.size());
@@ -766,7 +783,7 @@ Session::write(TextView view)
       remaining = remaining.suffix(remaining.size() - n);
       zret.result() += n;
     } else if (n == 0) {
-      zret.error("Write failed to write any bytes to the socket.");
+      zret.note(S_ERROR, "Write failed to write any bytes to the socket.");
       break;
     } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
       // Poll on the socket for writeability.
@@ -776,17 +793,17 @@ Session::write(TextView view)
         // The socket is available again for writing. Simply repeat the write.
         continue;
       } else if (!zret.is_ok()) {
-        zret.error("Error polling on a socket to write: {}", swoc::bwf::Errno{});
+        zret.note(S_ERROR, "Error polling on a socket to write: {}", swoc::bwf::Errno{});
         break;
       } else if (poll_return == 0) {
-        zret.error("Timed out waiting to write to a socket.");
+        zret.note(S_ERROR, "Timed out waiting to write to a socket.");
         break;
       } else if (poll_return < 0) {
-        zret.diag("write failed during poll: session is closed");
+        zret.note(S_DIAG, "write failed during poll: session is closed");
         break;
       }
     } else {
-      zret.error("Write failed: {}", swoc::bwf::Errno{});
+      zret.note(S_ERROR, "Write failed: {}", swoc::bwf::Errno{});
       break;
     }
   }
@@ -804,12 +821,21 @@ Session::write(HttpHeader const &hdr)
   zret.errata() = hdr.serialize(w);
 
   if (!zret.is_ok()) {
-    zret.error("Header serialization failed for key: {}", hdr.get_key());
+    zret.note(S_ERROR, "Header serialization failed for key: {}", hdr.get_key());
     return zret;
   }
 
   auto &&[header_bytes_written, header_write_errata] = write(w.view());
   zret.note(std::move(header_write_errata));
+  if (zret.is_ok()) {
+    zret.note(
+        S_DIAG,
+        "Sent the following HTTP/1 {}{} headers for key {}:\n{}",
+        swoc::bwf::If(hdr.is_request(), "request"),
+        swoc::bwf::If(hdr.is_response(), "response"),
+        hdr.get_key(),
+        hdr);
+  }
 
   if (header_bytes_written == static_cast<ssize_t>(w.size())) {
     zret.result() = header_bytes_written;
@@ -817,7 +843,8 @@ Session::write(HttpHeader const &hdr)
     zret.note(std::move(body_write_errata));
     zret.result() += body_bytes_written;
   } else {
-    zret.error(
+    zret.note(
+        S_ERROR,
         R"(Header write for key {} failed with {} of {} bytes written: {}.)",
         hdr.get_key(),
         zret.result(),
@@ -831,7 +858,7 @@ swoc::Rv<int>
 Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
 {
   if (is_closed()) {
-    return {-1, Errata().diag("Poll called on a closed connection.")};
+    return {-1, Errata(S_DIAG, "Poll called on a closed connection.")};
   }
   struct pollfd pfd = {.fd = _fd, .events = events, .revents = 0};
   return ::poll(&pfd, 1, timeout.count());
@@ -860,7 +887,8 @@ Session::read_headers(swoc::FixedBufferWriter &w)
       }
     } else {
       if (w.size()) {
-        zret.error(
+        zret.note(
+            S_ERROR,
             R"(Connection closed unexpectedly after {} bytes while waiting for header: {}.)",
             w.size(),
             swoc::bwf::Errno{});
@@ -871,7 +899,7 @@ Session::read_headers(swoc::FixedBufferWriter &w)
     }
   }
   if (zret.is_ok() && zret == -1) {
-    zret.error(R"(Header exceeded maximum size {}.)", w.capacity());
+    zret.note(S_ERROR, R"(Header exceeded maximum size {}.)", w.capacity());
   }
   return zret;
 }
@@ -911,9 +939,11 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
   // chunked, then the equality of size is a coincidence and a few more bytes
   // are needed.
   if (expected_content_size == num_drained_body_bytes && !hdr._chunked_p) {
-    num_drained_body_bytes.diag(
-        "Drained with headers body of {} bytes with content: {}",
+    num_drained_body_bytes.note(
+        S_DIAG,
+        "Received (with headers) an HTTP/1 body of {} bytes for key {} with content:\n{}",
         num_drained_body_bytes.result(),
+        hdr.get_key(),
         initial);
     return num_drained_body_bytes;
   }
@@ -933,7 +963,8 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
       // the proxy may use a slightly different body with a different size. For
       // this reason, we do not fail the transaction based upon such chunked
       // responses having a larger than recorded body size.
-      num_drained_body_bytes.error(
+      num_drained_body_bytes.note(
+          S_ERROR,
           R"(Body overrun: received {} bytes of content, expected {}.)",
           initial.size(),
           expected_content_size);
@@ -954,7 +985,8 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
   assert(expected_content_size > num_drained_body_bytes);
   auto buff_storage_size = expected_content_size;
   if (expected_content_size > MAX_DRAIN_BUFFER_SIZE) {
-    num_drained_body_bytes.diag(
+    num_drained_body_bytes.note(
+        S_DIAG,
         "Truncating the number of body bytes to store from {} to {}.",
         expected_content_size,
         MAX_DRAIN_BUFFER_SIZE);
@@ -968,7 +1000,8 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
   body.reserve(buff_storage_size);
 
   if (is_closed()) {
-    num_drained_body_bytes.error(
+    num_drained_body_bytes.note(
+        S_ERROR,
         R"(Stream closed before finishing reading the body. Read {} bytes of {} expected bytes)",
         num_drained_body_bytes.result(),
         expected_content_size);
@@ -1009,8 +1042,9 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
           // accurate body content. We did the best we could. The
           // num_drained_body_bytes value will, however, be accurate.
           body.resize(0);
-          num_drained_body_bytes.diag(
-              "Drained {} bytes of a chunked body. "
+          num_drained_body_bytes.note(
+              S_DIAG,
+              "Received an HTTP/1 chunked body of {} bytes. "
               "Resetting storage since we hit capacity limit: {}.",
               num_drained_body_bytes.result(),
               buff_storage_size);
@@ -1033,7 +1067,8 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
       }
       if (is_closed()) {
         if (num_drained_body_bytes < expected_content_size) {
-          num_drained_body_bytes.error(
+          num_drained_body_bytes.note(
+              S_ERROR,
               R"(Chunk body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
               num_drained_body_bytes.result(),
               expected_content_size,
@@ -1044,16 +1079,19 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
     }
     // We finished draining. Make sure we got to the DONE chunk.
     if (result != ChunkCodex::DONE && num_drained_body_bytes != expected_content_size) {
-      num_drained_body_bytes.error(
+      num_drained_body_bytes.note(
+          S_ERROR,
           R"(Unexpected chunked content: expected {} bytes, drained {} bytes.)",
           expected_content_size,
           num_drained_body_bytes.result());
     }
     // As described above in the chunk callback comment, this will print the
     // entire chunk stream, including chunk headers.
-    num_drained_body_bytes.diag(
-        "Drained {} chunked body bytes with chunk stream: {}",
+    num_drained_body_bytes.note(
+        S_DIAG,
+        "Received an HTTP/1 chunked body of {} bytes for key {} with chunk stream:\n{}",
         num_drained_body_bytes.result(),
+        hdr.get_key(),
         body);
   } else { // Content-Length instead of chunked.
     while (num_drained_body_bytes < expected_content_size) {
@@ -1061,9 +1099,10 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
         // See the comment above in the corresponding chunk code for an
         // explanation of the logic here.
         body.resize(0);
-        num_drained_body_bytes.diag(
-            "Drained {} of {} expected bytes. Not storing any more since we hit buffer capacity: "
-            "{}.",
+        num_drained_body_bytes.note(
+            S_DIAG,
+            "Received {} of {} expected HTTP/1 body bytes. Not storing any more since we hit "
+            "buffer capacity: {}.",
             num_drained_body_bytes.result(),
             expected_content_size,
             buff_storage_size);
@@ -1078,7 +1117,8 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
         body.resize(old_size);
       }
       if (is_closed()) {
-        num_drained_body_bytes.error(
+        num_drained_body_bytes.note(
+            S_ERROR,
             R"(Content-Length body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
             num_drained_body_bytes.result(),
             expected_content_size,
@@ -1087,12 +1127,18 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
       }
     }
     if (num_drained_body_bytes > expected_content_size) {
-      num_drained_body_bytes.error(
+      num_drained_body_bytes.note(
+          S_ERROR,
           R"(Body overrun while reading it: received {} bytes of content, expected {}.)",
           num_drained_body_bytes.result(),
           expected_content_size);
     }
-    num_drained_body_bytes.diag("Drained body of {} bytes with content: {}", body.size(), body);
+    num_drained_body_bytes.note(
+        S_DIAG,
+        "Received an HTTP/1 Content-Length body of {} bytes for key {} with content:\n{}",
+        body.size(),
+        hdr.get_key(),
+        body);
   }
   return num_drained_body_bytes;
 }
@@ -1103,13 +1149,6 @@ Session::write_body(HttpHeader const &hdr)
   swoc::Rv<ssize_t> bytes_written{0};
   std::error_code ec;
   auto const key = hdr.get_key();
-
-  bytes_written.diag(
-      "Transmit {} byte body {}{} for key {}.",
-      hdr._content_size,
-      swoc::bwf::If(hdr._content_length_p, "[CL]"),
-      swoc::bwf::If(hdr._chunked_p, "[chunked]"),
-      key);
 
   /* Observe that by this point, hdr._content_size will have been adjusted to 0
    * for HEAD requests via update_content_length. */
@@ -1126,6 +1165,14 @@ Session::write_body(HttpHeader const &hdr)
       // HttpHeader::_content.
       content = TextView{HttpHeader::_content.data(), hdr._content_size};
     }
+    bytes_written.note(
+        S_DIAG,
+        "Sent {} byte body {}{} for key {}:\n{}",
+        hdr._content_size,
+        swoc::bwf::If(hdr._content_length_p, "[CL]"),
+        swoc::bwf::If(hdr._chunked_p, "[chunked]"),
+        key,
+        content);
 
     if (hdr._chunked_p) {
       ChunkCodex codex;
@@ -1139,7 +1186,8 @@ Session::write_body(HttpHeader const &hdr)
       if (!hdr._content_length_p && !hdr._has_transfer_encoding_chunked) {
         // Since there is no content-length, close the connection to signal the
         // end of body.
-        bytes_written.diag(
+        bytes_written.note(
+            S_DIAG,
             "No content length, status {}. Closing the connection for key {}.",
             hdr._status,
             key);
@@ -1150,8 +1198,9 @@ Session::write_body(HttpHeader const &hdr)
     if (bytes_written != static_cast<ssize_t>(hdr._content_size) &&
         bytes_written != static_cast<ssize_t>(hdr._recorded_content_size))
     {
-      bytes_written.error(
-          R"(Body write{} failed for key {} with {} of {} bytes written: {}.)",
+      bytes_written.note(
+          S_ERROR,
+          R"(Body write{} failed for key {} with {} of {} bytes written:\n{}.)",
           swoc::bwf::If(hdr._chunked_p, " [chunked]"),
           key,
           bytes_written.result(),
@@ -1179,7 +1228,8 @@ Session::write_body(HttpHeader const &hdr)
     // will result in the client needing to reconnect more frequently than it
     // would otherwise need to, but we have logic for handling this in
     // run_transaction.
-    bytes_written.diag("No CL or TE, status {}: closing conection for key {}.", hdr._status, key);
+    bytes_written
+        .note(S_DIAG, "No CL or TE, status {}: closing conection for key {}.", hdr._status, key);
     close();
   }
 
@@ -1192,7 +1242,6 @@ Session::run_transaction(Txn const &json_txn)
   Errata errata;
   auto &&[bytes_written, write_errata] = this->write(json_txn._req);
   errata.note(std::move(write_errata));
-  errata.diag("Sent the following HTTP/1 {} request:\n{}", json_txn._req._method, json_txn._req);
 
   if (errata.is_ok()) {
     auto const key{json_txn._req.get_key()};
@@ -1203,7 +1252,7 @@ Session::run_transaction(Txn const &json_txn)
     // from the client-request.
     rsp_hdr_from_wire.set_key(key);
     swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
-    errata.diag("Reading response header.");
+    errata.note(S_DIAG, "Reading response header.");
 
     auto read_result{this->read_headers(w)};
     errata.note(read_result);
@@ -1217,13 +1266,14 @@ Session::run_transaction(Txn const &json_txn)
         if (result != HttpHeader::PARSE_OK) {
           // We don't expect this since read_headers loops on reading until we
           // get HTTP_EOH.
-          errata.error(
+          errata.note(
+              S_ERROR,
               R"(Failed to find a well-formed, completed HTTP response: {})",
               (result == HttpHeader::PARSE_INCOMPLETE ? "PARSE_INCOMPLETE" : "PARSE_ERROR"));
           return errata;
         }
         if (rsp_hdr_from_wire._status == 100) {
-          errata.diag("100-Continue response. Read another header.");
+          errata.note(S_DIAG, "100-Continue response. Read another header.");
           rsp_hdr_from_wire = HttpHeader{};
           w.clear();
           auto read_result{this->read_headers(w)};
@@ -1233,15 +1283,16 @@ Session::run_transaction(Txn const &json_txn)
             auto result{rsp_hdr_from_wire.parse_response(TextView(w.data(), _body_offset))};
 
             if (!result.is_ok()) {
-              errata.error(R"(Failed to parse post 100 header.)");
+              errata.note(S_ERROR, R"(Failed to parse post 100 header.)");
               return errata;
             }
           } else {
-            errata.error(R"(Failed to read post 100 header.)");
+            errata.note(S_ERROR, R"(Failed to read post 100 header.)");
             return errata;
           }
         }
-        errata.diag(
+        errata.note(
+            S_DIAG,
             "Received an HTTP/1 {} response for key {} with headers:\n{}",
             rsp_hdr_from_wire._status,
             key,
@@ -1250,8 +1301,9 @@ Session::run_transaction(Txn const &json_txn)
             (rsp_hdr_from_wire._status != 200 || json_txn._rsp._status != 304) &&
             (rsp_hdr_from_wire._status != 304 || json_txn._rsp._status != 200))
         {
-          errata.error(
-              R"(HTTP/1 Status Violation: expected {} got {}, key={}.)",
+          errata.note(
+              S_ERROR,
+              R"(HTTP/1 Status Violation: expected {} got {}, key: {})",
               json_txn._rsp._status,
               rsp_hdr_from_wire._status,
               key);
@@ -1264,20 +1316,20 @@ Session::run_transaction(Txn const &json_txn)
           return errata;
         }
         if (rsp_hdr_from_wire.verify_headers(key, *json_txn._rsp._fields_rules)) {
-          errata.error(R"(Response headers did not match expected response headers.)");
+          errata.note(S_ERROR, R"(Response headers did not match expected response headers.)");
         }
         auto &&[bytes_drained, drain_errata] =
             this->drain_body_internal(rsp_hdr_from_wire, json_txn, w.view());
         errata.note(std::move(drain_errata));
 
         if (!errata.is_ok()) {
-          errata.error("Failed to replay transaction with key: {}", key);
+          errata.note(S_ERROR, "Failed to replay transaction with key: {}", key);
         }
       } else {
-        errata.error(R"(Invalid response. key={})", key);
+        errata.note(S_ERROR, R"(Invalid response. key: {})", key);
       }
     } else {
-      errata.error(R"(Invalid response read key={}.)", key);
+      errata.note(S_ERROR, R"(Invalid response read key: {})", key);
     }
   }
   return errata;
@@ -1301,7 +1353,7 @@ Session::run_transactions(
       // simply reconnect if the connection was closed.
       txn_errata.note(this->do_connect(interface, real_target));
       if (!txn_errata.is_ok()) {
-        txn_errata.error(R"(Failed to reconnect HTTP/1 key={}.)", txn._req.get_key());
+        txn_errata.note(S_ERROR, R"(Failed to reconnect HTTP/1 key: {})", txn._req.get_key());
         session_errata.note(std::move(txn_errata));
         // If we don't have a valid connection, there's no point in continuing.
         break;
@@ -1321,12 +1373,16 @@ Session::run_transactions(
     txn_errata.note(this->run_transaction(txn));
     auto const after = ClockType::now();
     if (!txn_errata.is_ok()) {
-      txn_errata.error(R"(Failed HTTP/1 transaction with key={}.)", txn._req.get_key());
+      txn_errata.note(S_ERROR, R"(Failed HTTP/1 transaction with key: {})", txn._req.get_key());
     }
 
     auto const elapsed_ms = duration_cast<chrono::milliseconds>(after - before);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
-      txn_errata.error(R"(HTTP/1 transaction for key={} took {}.)", txn._req.get_key(), elapsed_ms);
+      txn_errata.note(
+          S_ERROR,
+          R"(HTTP/1 transaction for key {} took {}.)",
+          txn._req.get_key(),
+          elapsed_ms);
     }
     session_errata.note(std::move(txn_errata));
   }
@@ -1361,7 +1417,7 @@ InterfaceNameToEndpoint::find_matching_interface()
   swoc::Rv<struct ifaddrs *> zret{nullptr};
   if (_ifaddr_list_head == nullptr) {
     if (getifaddrs(&_ifaddr_list_head) == -1) {
-      zret.error("getifaddrs failed: {}", swoc::bwf::Errno{});
+      zret.note(S_ERROR, "getifaddrs failed: {}", swoc::bwf::Errno{});
       return zret;
     }
   }
@@ -1393,7 +1449,8 @@ InterfaceNameToEndpoint::find_ip_endpoint()
     if (family_it != family_map.end()) {
       auto const &ip_endpoint = family_it->second;
       zret.result() = ip_endpoint;
-      zret.diag(
+      zret.note(
+          S_DIAG,
           "Using memoized interface from name {} with family {} and ip {}",
           _expected_interface,
           swoc::IPEndpoint::family_name(ip_endpoint.family()),
@@ -1403,7 +1460,7 @@ InterfaceNameToEndpoint::find_ip_endpoint()
   }
 
   if (getifaddrs(&_ifaddr_list_head) == -1) {
-    zret.error("getifaddrs failed: {}", swoc::bwf::Errno{});
+    zret.note(S_ERROR, "getifaddrs failed: {}", swoc::bwf::Errno{});
     return zret;
   }
   auto &&[matching_interface, find_errata] = find_matching_interface();
@@ -1412,7 +1469,8 @@ InterfaceNameToEndpoint::find_ip_endpoint()
     return zret;
   }
   if (matching_interface == nullptr) {
-    zret.error(
+    zret.note(
+        S_ERROR,
         "Could not find an interface named {} with family {}.",
         _expected_interface,
         swoc::IPEndpoint::family_name(_expected_family));
@@ -1422,12 +1480,16 @@ InterfaceNameToEndpoint::find_ip_endpoint()
   ip_endpoint.assign(matching_interface->ifa_addr);
 
   if (!ip_endpoint.is_valid()) {
-    zret.error("Could not form a valid IP from the specified interface {}", _expected_interface);
+    zret.note(
+        S_ERROR,
+        "Could not form a valid IP from the specified interface {}",
+        _expected_interface);
     return zret;
   }
 
   memoized_ip_endpoints[_expected_interface][_expected_family] = ip_endpoint;
-  zret.diag(
+  zret.note(
+      S_DIAG,
       "Found interface from name {} with family {} and ip {}",
       _expected_interface,
       swoc::IPEndpoint::family_name(ip_endpoint.family()),
@@ -1454,12 +1516,16 @@ Session::do_connect(TextView interface, swoc::IPEndpoint const *real_target)
         return errata;
       }
       if (::bind(socket_fd, &device_endpoint.sa, device_endpoint.size()) == -1) {
-        errata.error("Failed to bind on interface {}: {}", interface, swoc::bwf::Errno{});
+        errata.note(S_ERROR, "Failed to bind on interface {}: {}", interface, swoc::bwf::Errno{});
         return errata;
       }
     }
     if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
-      errata.error(R"(Could not set reuseaddr on socket {} - {}.)", socket_fd, swoc::bwf::Errno{});
+      errata.note(
+          S_ERROR,
+          R"(Could not set reuseaddr on socket {} - {}.)",
+          socket_fd,
+          swoc::bwf::Errno{});
     } else {
       errata.note(this->set_fd(socket_fd));
       if (errata.is_ok()) {
@@ -1469,20 +1535,25 @@ Session::do_connect(TextView interface, swoc::IPEndpoint const *real_target)
           if (0 == ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
             errata.note(this->connect());
           } else {
-            errata.error(
+            errata.note(
+                S_ERROR,
                 R"(Failed to make the client socket non-blocking {}: - {})",
                 *real_target,
                 swoc::bwf::Errno{});
           }
         } else {
-          errata.error(R"(Failed to connect socket {}: - {})", *real_target, swoc::bwf::Errno{});
+          errata.note(
+              S_ERROR,
+              R"(Failed to connect socket {}: - {})",
+              *real_target,
+              swoc::bwf::Errno{});
         }
       } else {
-        errata.error(R"(Failed to open session - {})", swoc::bwf::Errno{});
+        errata.note(S_ERROR, R"(Failed to open session - {})", swoc::bwf::Errno{});
       }
     }
   } else {
-    errata.error(R"(Failed to open socket - {})", swoc::bwf::Errno{});
+    errata.note(S_ERROR, R"(Failed to open socket - {})", swoc::bwf::Errno{});
   }
   return errata;
 }
@@ -1513,7 +1584,7 @@ Session::init(int num_transactions)
     if (MAX_NOFILE > static_cast<int>(previous_limit)) {
       lim.rlim_cur = (lim.rlim_max = (rlim_t)MAX_NOFILE);
       if (setrlimit(RLIMIT_NOFILE, &lim) == 0 && getrlimit(RLIMIT_NOFILE, &lim) == 0) {
-        errata.diag("Updated RLIMIT_NOFILE to {} from {}", MAX_NOFILE, previous_limit);
+        errata.note(S_DIAG, "Updated RLIMIT_NOFILE to {} from {}", MAX_NOFILE, previous_limit);
 
         // We could not set the rlimit. This will not be a problem if the user is
         // not testing under load. For instance, if this is run for a correctness
@@ -1522,14 +1593,19 @@ Session::init(int num_transactions)
         // whether the message should raise an error or just emit an info
         // message.
       } else if (num_transactions > 300) {
-        errata.error(
+        errata.note(
+            S_ERROR,
             "Could not setrlimit to {} from {}, errno={}",
             MAX_NOFILE,
             previous_limit,
             errno);
       } else {
-        errata
-            .info("Could not setrlimit to {} from {}, errno={}", MAX_NOFILE, previous_limit, errno);
+        errata.note(
+            S_INFO,
+            "Could not setrlimit to {} from {}, errno={}",
+            MAX_NOFILE,
+            previous_limit,
+            errno);
       }
     }
   }
