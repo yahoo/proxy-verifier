@@ -8,7 +8,7 @@ if path:
     i_path = os.path.join(path, "include")
     env.Append(CPPPATH=[i_path])
     env.ExportCPPPATH([i_path])
-    l_path = os.path.join(path, "lib")
+    l_path = os.path.join(path, "lib64")
     env.Append(LIBPATH=[l_path])
     env.ExportLIBPATH(l_path)
 
@@ -25,7 +25,7 @@ else:
     # No path provided.
     PartVersion(
         GitVersionFromTag(
-            "1.1.1.g",
+            "3.0.1",
             regex=r'\d+\_\d+\_\d+[a-z]',
             converter=lambda ver, env: ver.replace("_", ".")
         )
@@ -73,6 +73,11 @@ else:
             env: [
                 env.Pattern(
                     src_dir=node.Dir("lib"),
+                    includes=env["INSTALL_LIB_PATTERN"] +
+                    env["INSTALL_API_LIB_PATTERN"],
+                    recursive=False),
+                env.Pattern(
+                    src_dir=node.Dir("lib64"),
                     includes=env["INSTALL_LIB_PATTERN"] +
                     env["INSTALL_API_LIB_PATTERN"],
                     recursive=False),

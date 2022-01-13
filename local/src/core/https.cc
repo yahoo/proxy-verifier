@@ -44,7 +44,7 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error)
   // Hand rolled, might not be totally compliant everywhere, but probably close
   // enough. The long string will be locally accurate. Clang requires the double
   // braces.
-  static const std::array<std::string_view, 11> SHORT_NAME = {{
+  static const std::array<std::string_view, 13> SHORT_NAME = {{
       "SSL_ERROR_NONE: ",
       "SSL_ERROR_SSL: ",
       "SSL_ERROR_WANT_READ: ",
@@ -56,6 +56,8 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error)
       "SSL_ERROR_WANT_ACCEPT: ",
       "SSL_ERROR_WANT_ASYNC: ",
       "SSL_ERROR_WANT_ASYNC_JOB: ",
+      "SSL_ERROR_WANT_CLIENT_HELLO_CB: ",
+      "SSL_ERROR_WANT_RETRY_VERIFY: ",
   }};
 
   auto short_name = [](int n) {
@@ -301,14 +303,15 @@ TLSSession::poll_for_data_on_ssl_socket(chrono::milliseconds timeout, int ssl_er
     zret.diag("Poll called on a closed connection.");
     return zret;
   }
-  if (ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL) {
+  if (ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL ||
+      ssl_error == SSL_ERROR_SSL)
+  {
     // Either of these indicates that the peer has closed the connection for
     // writing and no more data can be read.
     zret.diag("Poll called on a TLS session closed by the peer.");
     this->close();
     return zret;
   }
-
   if (ssl_error != SSL_ERROR_WANT_READ && ssl_error != SSL_ERROR_WANT_WRITE) {
     zret.error(
         R"(SSL operation failed: {}, errno: {})",
