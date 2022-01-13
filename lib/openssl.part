@@ -8,8 +8,11 @@ if path:
     i_path = os.path.join(path, "include")
     env.Append(CPPPATH=[i_path])
     env.ExportCPPPATH([i_path])
-    l_path = os.path.join(path, "lib64")
-    env.Append(LIBPATH=[l_path])
+    l_path = os.path.join(path, "lib")
+    if os.path.exists(l_path):
+        env.Append(LIBPATH=[l_path])
+    elif os.path.exists(l_path + '64'):
+        env.Append(LIBPATH=[l_path + '64'])
     env.ExportLIBPATH(l_path)
 
     cfg = env.Configure()

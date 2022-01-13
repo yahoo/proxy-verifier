@@ -56,7 +56,7 @@ cd ngtcp2
 git checkout 9b6fdfb135475e9ed480d87e98c4717683f63e33
 autoreconf -i
 ./configure \
-  PKG_CONFIG_PATH=${install_dir}/openssl/lib64/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
+  PKG_CONFIG_PATH=${install_dir}/openssl/lib64/pkgconfig:${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
   LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib" \
   --prefix=${install_dir}/ngtcp2 \
   --enable-lib-only
