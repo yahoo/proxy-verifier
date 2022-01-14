@@ -32,12 +32,10 @@ mkdir -p ${repo_dir}
 
 # 1. OpenSSL version that supports quic.
 cd ${repo_dir}
-git clone -b openssl-3.0.1+quic --depth 1 https://github.com/quictls/openssl.git openssl
+git clone -b OpenSSL_1_1_1m+quic --depth 1 https://github.com/quictls/openssl.git openssl
 cd openssl
-git checkout ab8b87bdb436b11bf2a10a2a57a897722224f828
-# Installing to lib instead of the default system lib64 makes linking work
-# better in our setup.
-./config --prefix=${install_dir}/openssl --libdir=lib
+git checkout 7c0006ccf891c20cd0b1e9e6a436f9d1f3153b7b
+./config --prefix=${install_dir}/openssl
 make -j4
 ${SUDO} make install_sw
 
@@ -45,7 +43,7 @@ ${SUDO} make install_sw
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/nghttp3
 cd nghttp3/
-git checkout 69e381358697a5c924860dbc256a2d0ee44448a3
+git checkout b9e565cb48e92ded110162a65511f78681fb13c3
 autoreconf -i
 ./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
 make -j4
@@ -55,10 +53,10 @@ ${SUDO} make install
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/ngtcp2
 cd ngtcp2
-git checkout 9b6fdfb135475e9ed480d87e98c4717683f63e33
+git checkout 982502f9ac594a45bc13804416a443522d906f29
 autoreconf -i
 ./configure \
-  PKG_CONFIG_PATH=${install_dir}/openssl/lib64/pkgconfig:${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
+  PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
   LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib" \
   --prefix=${install_dir}/ngtcp2 \
   --enable-lib-only
@@ -73,15 +71,12 @@ cd nghttp2
 # This commit will be removed whenever the nghttp2 author rebases origin/quic.
 # For reference, this commit is currently described as:
 #
-# commit 8a552631b4e64851018947a44b98fa022133fa81 (HEAD -> master, origin/master, origin/HEAD)
-# Merge: cff81069 deb390cf
-# Author: Tatsuhiro Tsujikawa <404610+tatsuhiro-t@users.noreply.github.com>
-# Date:   Tue Jan 11 20:53:08 2022 +0900
+# commit 25f29e7634a2c8c5ba5c63432e5d94217a6535ef
+# Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+# Date:   Mon Aug 16 16:58:11 2021 +0900
 #
-#     Merge pull request #1667 from nghttp2/keep-hd-table-size
-#
-#     Fix decoder table size update
-git checkout 8a552631b4e64851018947a44b98fa022133fa81
+#     Compile with the latest ngtcp2
+git checkout 25f29e7634a2c8c5ba5c63432e5d94217a6535ef
 
 autoreconf -if
 ./configure \
