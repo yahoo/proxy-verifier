@@ -3,7 +3,7 @@ Verify basic HTTP/2 functionality.
 '''
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2022, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
