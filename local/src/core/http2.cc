@@ -10,6 +10,7 @@
 
 #include <cassert>
 #include <netdb.h>
+#include <thread>
 
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
@@ -19,6 +20,7 @@ using swoc::Errata;
 using swoc::TextView;
 using namespace swoc::literals;
 using namespace std::literals;
+using std::this_thread::sleep_for;
 
 namespace chrono = std::chrono;
 using ClockType = std::chrono::system_clock;
@@ -281,9 +283,9 @@ H2Session::run_transactions(
         next_time = (rate_multiplier * start_offset) + first_time;
         delay_time = next_time - current_time;
       }
-      while (delay_time > 0us) {
+      while (delay_time > 0ms) {
         // Make use of our delay time to read any incoming responses.
-        receive_nghttp2_data(
+        auto const ret = receive_nghttp2_data(
             this->get_session(),
             nullptr,
             0,
@@ -292,6 +294,14 @@ H2Session::run_transactions(
             duration_cast<milliseconds>(delay_time));
         current_time = ClockType::now();
         delay_time = next_time - current_time;
+        if (ret < 0) {
+          // There was a problem reading bytes on the socket.
+          txn_errata.note(
+              S_ERROR,
+              "An unexpected error was received reading bytes on a socket while delaying a "
+              "transaction for --rate.");
+          sleep_for(delay_time);
+        }
       }
     }
     txn_errata.note(this->run_transaction(txn));
@@ -555,11 +565,24 @@ receive_nghttp2_responses(
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
   int total_recv = 0;
 
+  auto timeout_count = 0;
   while (!session_data->_stream_map.empty()) {
     auto const received_bytes =
         receive_nghttp2_data(session, nullptr, 0, 0, user_data, Poll_Timeout);
     if (received_bytes < 0) {
       break;
+    }
+    if (received_bytes == 0) { // timeout
+      ++timeout_count;
+      if (timeout_count > 2) {
+        Errata errata;
+        errata.note(S_INFO, "{} timeouts while waiting for the following streams:", timeout_count);
+        for (auto && [id, stream_state]: session_data->_stream_map) {
+          errata.note(S_INFO, "    {}: {}", id, stream_state->_key);
+        }
+      }
+    } else { // Not timeout.
+      timeout_count = 0;
     }
     total_recv += total_recv;
   }
