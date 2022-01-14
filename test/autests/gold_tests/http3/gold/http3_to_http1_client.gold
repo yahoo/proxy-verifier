@@ -1,82 +1,90 @@
 ``
 ``h3 is negotiated.
+``Setting client-side H3 SNI to: "test_sni"
+``
+:method: POST
+:scheme: https
+:authority: example.data.com
+:path: /a/path
+x-request-header: request
+x-deleted-header: this_will_be_deleted
+x-proxy-directive: Delete=%<x-deleted-header%> Insert=%<X-Added-Header: 1%>
+uuid: 1
+
+``
+0123456789
+``
+:method: GET
+:scheme: https
+:authority: example.data.com
+:path: /a/new/path
+uuid: 2
+x-request-header: request2
+
+``
+0000000 `` 00004ff 
+``
 ``Equals Success: Key: "1", Field Name: "content-length", Value: "32"
 ``Absence Success: Key: "1", Field Name: "x-deleted-header2"
 ``Equals Success: Key: "1", Field Name: "x-equal-header", Value: "some_content"
 ``Equals Success: Key: "1", Field Name: "x-response-header", Value: "response"
-``Received an HTTP/3 response for key 1 with stream id 0:
-- ":status": "200"
-- "x-equal-header": "some_content"
-- "x-response-header": "response"
-- "content-length": "32"
-- "uuid": "1"
-- "x-added-header": "1"
+``
+:status: 200
+x-equal-header: some_content
+x-response-header: response
+content-length: 32
+uuid: 1
+x-added-header: 1
 
-``HTTP/3 body for transaction with key: 1, stream id: 0 of 32 bytes with content: 0000000 0000001 0000002 0000003 
+``
+0000000 0000001 0000002 0000003 
 ``
 ``Equals Success: Key: "2", Field Name: "content-length", Value: "10240"
 ``Equals Success: Key: "2", Field Name: "x-response-header", Value: "response2"
-``Received an HTTP/3 response for key 2 with stream id 4:
-- ":status": "404"
-- "x-response-header": "response2"
-- "content-length": "10240"
-
-``Drained HTTP/3 body for transaction with key: 2, stream id: 4 of `` bytes with content: 0000000 ``
 ``
-`` 00004fe 00004ff 
- ``
-``Sent the following HTTP/3 headers for stream id 0:
-- ":method": "POST"
-- ":scheme": "https"
-- ":authority": "example.data.com"
-- ":path": "/a/path"
-- "x-request-header": "request"
-- "x-deleted-header": "this_will_be_deleted"
-- "x-proxy-directive": "Delete=%<x-deleted-header%> Insert=%<X-Added-Header: 1%>"
-- "uuid": "1"
+:status: 404
+x-response-header: response2
+content-length: 10240
 
-``Sent the following HTTP/3 headers for stream id 4:
-- ":method": "GET"
-- ":scheme": "https"
-- ":authority": "example.data.com"
-- ":path": "/a/new/path"
-- "uuid": "2"
-- "x-request-header": "request2"
+``
+:method: GET
+:scheme: https
+:authority: example.data.com
+:path: /a/path2
+uuid: 3
+x-request-header: request3
 
-``Connecting via HTTP/3 over QUIC.
+``
+0000000 0000001 0000002 0000003 0000004 0000005 
+``
+:method: GET
+:scheme: https
+:authority: example.data.com
+:path: /a/path3
+uuid: 4
+x-request-header: request3
+
+``
+0000000 0000001 0000002 0000003 0000004 0000005 0000006 0000007 
+``
 ``Equals Success: Key: "3", Field Name: "content-length", Value: "16"
 ``Equals Success: Key: "3", Field Name: "x-response-header", Value: "response3"
-``Received an HTTP/3 response for key 3 with stream id 0:
-- ":status": "200"
-- "x-response-header": "response3"
-- "content-length": "16"
+``
+:status: 200
+x-response-header: response3
+content-length: 16
 
-``Drained HTTP/3 body for transaction with key: 3, stream id: 0 of 16 bytes with content: 0000000 0000001 
+``
+0000000 0000001 
 ``
 ``Equals Success: Key: "4", Field Name: "content-length", Value: "50"
 ``Equals Success: Key: "4", Field Name: "x-response-header", Value: "response4"
-``Received an HTTP/3 response for key 4 with stream id 4:
-- ":status": "200"
-- "x-response-header": "response4"
-- "content-length": "50"
-
-``Drained HTTP/3 body for transaction with key: 4, stream id: 4 of 50 bytes with content: 0000000 0000001 0000002 0000003 0000004 0000005 00
 ``
-``Sent the following HTTP/3 headers for stream id 0:
-- ":method": "GET"
-- ":scheme": "https"
-- ":authority": "example.data.com"
-- ":path": "/a/path2"
-- "uuid": "3"
-- "x-request-header": "request3"
+:status: 200
+x-response-header: response4
+content-length: 50
 
-``Sent the following HTTP/3 headers for stream id 4:
-- ":method": "GET"
-- ":scheme": "https"
-- ":authority": "example.data.com"
-- ":path": "/a/path3"
-- "uuid": "4"
-- "x-request-header": "request3"
-
-``Connecting via HTTP/3 over QUIC.
 ``
+0000000 0000001 0000002 0000003 0000004 0000005 00
+``
+``4 transactions in 2 sessions``

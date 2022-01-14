@@ -2,20 +2,26 @@
 ``Equals Success: Key: "1", Field Name: "x-response", Value: "first_response"
 ``Equals Success: Key: "2", Field Name: "x-response", Value: "second_response"
 ``
-``Drained ``: 40``
-0000000 0000001 0000002 0000003 0000004 0000005 0000006 0000007 ``
-0``
 ``
-``Drained ``: 0000000 0000001 0000002 0000003 
+40
+0000000 0000001 0000002 0000003 0000004 0000005 0000006 0000007 
+0
+
+
 ``
-``Drained 0 chunked body bytes``
+0000000 0000001 0000002 0000003 
+``
+``chunked body of 0 bytes for key``
+0
+
+
 ``
 ### Heading
 
 * Bullet
 * Points
 ``
-``Drained 15 chunked body bytes with chunk stream: f
+f
 defg0123456789a
 0
 

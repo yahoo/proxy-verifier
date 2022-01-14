@@ -9,6 +9,7 @@
 #include "core/verification.h"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <csignal>
 #include <dirent.h>
@@ -16,9 +17,11 @@
 #include <netdb.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <sstream>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <string>
 #include <thread>
 #include <unistd.h>
 
@@ -36,6 +39,16 @@ using chrono::milliseconds;
 
 bool Verbose = false;
 
+static std::array<swoc::TextView, 5> S_NAMES = {"Success", "DEBUG", "INFO", "WARNING", "ERROR"};
+
+const bool ERRATA_LIB_INIT = []() -> bool {
+  swoc::Errata::SEVERITY_NAMES =
+      swoc::MemSpan<swoc::TextView const>{S_NAMES.data(), S_NAMES.size()};
+  swoc::Errata::DEFAULT_SEVERITY = S_INFO;
+  swoc::Errata::FAILURE_SEVERITY = S_WARN;
+  return true;
+}();
+
 swoc::Rv<int>
 block_sigpipe()
 {
@@ -43,13 +56,13 @@ block_sigpipe()
   sigset_t set;
   if (sigemptyset(&set)) {
     zret = -1;
-    zret.error(R"(Could not empty the signal set: {})", swoc::bwf::Errno{});
+    zret.note(S_ERROR, R"(Could not empty the signal set: {})", swoc::bwf::Errno{});
   } else if (sigaddset(&set, SIGPIPE)) {
     zret = -1;
-    zret.error(R"(Could not add SIGPIPE to the signal set: {})", swoc::bwf::Errno{});
+    zret.note(S_ERROR, R"(Could not add SIGPIPE to the signal set: {})", swoc::bwf::Errno{});
   } else if (pthread_sigmask(SIG_BLOCK, &set, nullptr)) {
     zret = -1;
-    zret.error(R"(Could not block SIGPIPE: {})", swoc::bwf::Errno{});
+    zret.note(S_ERROR, R"(Could not block SIGPIPE: {})", swoc::bwf::Errno{});
   }
   return zret;
 }
@@ -57,21 +70,25 @@ block_sigpipe()
 swoc::Errata
 configure_logging(const std::string_view verbose_argument)
 {
-  swoc::Errata errata;
-  auto severity_cutoff = swoc::Severity::INFO;
+  swoc::Errata errata{};
+  auto severity_cutoff = S_INFO;
   if (strcasecmp(verbose_argument, "error") == 0) {
-    severity_cutoff = swoc::Severity::ERROR;
+    severity_cutoff = S_ERROR;
   } else if (strcasecmp(verbose_argument, "warn") == 0) {
-    severity_cutoff = swoc::Severity::WARN;
+    severity_cutoff = S_WARN;
   } else if (strcasecmp(verbose_argument, "info") == 0) {
-    severity_cutoff = swoc::Severity::INFO;
-  } else if (strcasecmp(verbose_argument, "diag") == 0) {
-    severity_cutoff = swoc::Severity::DIAG;
+    severity_cutoff = S_INFO;
+  } else if (
+      strcasecmp(verbose_argument, "debug") == 0 || strcasecmp(verbose_argument, "diag") == 0) {
+    severity_cutoff = S_DIAG;
   } else {
-    errata.error("Unrecognized verbosity parameter: {}", verbose_argument);
+    errata.note(S_ERROR, "Unrecognized verbosity parameter: {}", verbose_argument);
     return errata;
   }
-  errata.diag("Configuring logging at level {}", severity_cutoff);
+  // Note: FILTER_SEVERITY is nice as it will actually filter the messages at
+  // the point that note() is called, not at the time when it is later emitted.
+  swoc::Errata::FILTER_SEVERITY = severity_cutoff;
+  errata.note(S_DIAG, "Configured logging at level {}", severity_cutoff);
 
   static std::mutex logging_mutex;
 
@@ -79,18 +96,18 @@ configure_logging(const std::string_view verbose_argument)
     if (errata.severity() < severity_cutoff) {
       return;
     }
-    std::string_view lead;
     for (auto const &annotation : errata) {
-      if (annotation.severity() < severity_cutoff) {
+      if (!annotation.has_severity()) {
+        std::cerr << "Runtime error: an annotation without a severity: " << annotation.text()
+                  << std::endl;
         continue;
       }
+      std::ostringstream log_line;
+      log_line << std::string(annotation.level() * 2, ' ') << "[" << S_NAMES[annotation.severity()]
+               << "]: " << annotation.text();
       {
         std::lock_guard<std::mutex> lock(logging_mutex);
-        std::cout << lead << " [" << static_cast<int>(annotation.severity())
-                  << "]: " << annotation.text() << std::endl;
-      }
-      if (lead.size() == 0) {
-        lead = "  "_sv;
+        std::cout << log_line.str() << std::endl;
       }
     }
   });
@@ -122,7 +139,7 @@ parse_ips(std::string addresses, std::deque<swoc::IPEndpoint> &targets)
     offset = new_offset != std::string::npos ? new_offset + 1 : new_offset;
     swoc::IPEndpoint addr;
     if (!addr.parse(name)) {
-      errata.error(R"("{}" is not a valid IP address.)", name);
+      errata.note(S_ERROR, R"("{}" is not a valid IP address.)", name);
       return errata;
     }
     targets.push_back(addr);
@@ -142,7 +159,7 @@ resolve_ips(std::string hostnames, std::deque<swoc::IPEndpoint> &targets)
     offset = new_offset != std::string::npos ? new_offset + 1 : new_offset;
     auto &&[tmp_target, result] = Resolve_FQDN(name);
     if (!result.is_ok()) {
-      errata.error(R"("{}" is not a valid IP address.)", name);
+      errata.note(S_ERROR, R"("{}" is not a valid IP address.)", name);
       return errata;
     }
     targets.push_back(tmp_target);
@@ -180,21 +197,25 @@ Resolve_FQDN(swoc::TextView fqdn)
           auto result = getaddrinfo(buff, nullptr, &hints, &addrs);
           if (0 == result) {
             zret.result().assign(addrs->ai_addr);
-            zret.result().port() = port;
+            zret.result().network_order_port() = port;
             freeaddrinfo(addrs);
           } else {
-            zret.error(R"(Failed to resolve "{}": {}.)", host_str, swoc::bwf::Errno(result));
+            zret.note(
+                S_ERROR,
+                R"(Failed to resolve "{}": {}.)",
+                host_str,
+                swoc::bwf::Errno(result));
           }
         }
       } else {
-        zret.error(R"(Port value {} out of range [ 1 .. {} ].)", port_str, MAX_PORT);
+        zret.note(S_ERROR, R"(Port value {} out of range [ 1 .. {} ].)", port_str, MAX_PORT);
       }
     } else {
-      zret.error(R"(Address "{}" does not have the require port specifier.)", fqdn);
+      zret.note(S_ERROR, R"(Address "{}" does not have the require port specifier.)", fqdn);
     }
 
   } else {
-    zret.error(R"(Malformed address "{}".)", fqdn);
+    zret.note(S_ERROR, R"(Malformed address "{}".)", fqdn);
   }
   return zret;
 }

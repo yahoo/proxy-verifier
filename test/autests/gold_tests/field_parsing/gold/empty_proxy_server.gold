@@ -1,15 +1,15 @@
 ``
-``status 200:
-- "content-type": "text/html"
-- "content-length": "16"
-- "x-response": "testResponse"
+GET /config/settings.yaml HTTP/1.1
+Accept-Encoding: identity
+Content-Length: 0
+host: example.one
+x-request: testRequest
+uuid: 1
 
 ``
-``Received an HTTP/1 request with key 1:
-- "Accept-Encoding": "identity"
-- "Content-Length": "0"
-- "host": "example.one"
-- "x-request": "testRequest"
-- "uuid": "1"
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
+x-response: testResponse
 
 ``

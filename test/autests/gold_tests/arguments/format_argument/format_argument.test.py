@@ -50,7 +50,7 @@ server.Streams.stdout += Testers.ContainsExpression(
     "The third transaction should come up as a violation.")
 
 server.Streams.stdout += Testers.ContainsExpression(
-    "Ready with 1 transactions",
+    "Ready with 1 transaction",
     "Only one transaction should be parsed by the server.")
 
 server.Streams.stdout += Testers.ContainsExpression(

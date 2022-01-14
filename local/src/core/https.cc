@@ -115,10 +115,11 @@ alpn_select_next_proto_cb(
   if (SSL_select_next_proto(const_cast<unsigned char **>(out), outlen, alpn, alpn_len, in, inlen) ==
       OPENSSL_NPN_NEGOTIATED)
   {
-    errata.diag("Negotiated alpn: {}", TextView{(char *)*out, (size_t)*outlen});
+    errata.note(S_DIAG, "Negotiated alpn: {}", TextView{(char *)*out, (size_t)*outlen});
     return SSL_TLSEXT_ERR_OK;
   } else {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Failed to find a an ALPN match: server ALPN list: "{}", client ALPN list: "{}")",
         TextView((char *)alpn, (size_t)alpn_len),
         TextView{(char *)in, (size_t)inlen});
@@ -241,10 +242,13 @@ TLSSession::read(swoc::MemSpan<char> span)
       // Simply repeat the read now that poll says something is ready.
       return read(span);
     } else if (!zret.is_ok()) {
-      zret.error(R"(Failed SSL_read poll for TLS content: {}.)", swoc::bwf::Errno{});
+      zret.note(S_ERROR, R"(Failed SSL_read poll for TLS content: {}.)", swoc::bwf::Errno{});
       this->close();
     } else if (poll_return == 0) {
-      zret.error("SSL_read timed out waiting to TLS content after {} milliseconds.", Poll_Timeout);
+      zret.note(
+          S_ERROR,
+          "SSL_read timed out waiting to TLS content after {} milliseconds.",
+          Poll_Timeout);
       this->close();
     } else if (poll_return < 0) {
       this->close();
@@ -262,7 +266,7 @@ TLSSession::write(TextView view)
   ++write_count;
   while (!remaining.empty()) {
     if (this->is_closed()) {
-      num_written.diag("SSL_write failed: session is closed");
+      num_written.note(S_DIAG, "SSL_write failed: session is closed");
       return num_written;
     }
     auto const n = SSL_write(this->_ssl, remaining.data(), remaining.size());
@@ -278,14 +282,14 @@ TLSSession::write(TextView view)
         // Poll succeeded. Repeat the attempt to write.
         continue;
       } else if (!num_written.is_ok()) {
-        num_written.error(R"(Failed SSL_write: {}.)", swoc::bwf::Errno{});
+        num_written.note(S_ERROR, R"(Failed SSL_write: {}.)", swoc::bwf::Errno{});
         return num_written;
       } else if (poll_return == 0) {
-        num_written.error("Timed out waiting to SSL_write after: {}.", Poll_Timeout);
+        num_written.note(S_ERROR, "Timed out waiting to SSL_write after: {}.", Poll_Timeout);
         return num_written;
       } else if (poll_return < 0) {
         // Connection closed.
-        num_written.diag("SSL_write failed during poll: session is closed");
+        num_written.note(S_DIAG, "SSL_write failed during poll: session is closed");
         return num_written;
       }
     }
@@ -298,19 +302,20 @@ TLSSession::poll_for_data_on_ssl_socket(chrono::milliseconds timeout, int ssl_er
 {
   swoc::Rv<int> zret{-1};
   if (is_closed()) {
-    zret.diag("Poll called on a closed connection.");
+    zret.note(S_DIAG, "Poll called on a closed connection.");
     return zret;
   }
   if (ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL) {
     // Either of these indicates that the peer has closed the connection for
     // writing and no more data can be read.
-    zret.diag("Poll called on a TLS session closed by the peer.");
+    zret.note(S_DIAG, "Poll called on a TLS session closed by the peer.");
     this->close();
     return zret;
   }
 
   if (ssl_error != SSL_ERROR_WANT_READ && ssl_error != SSL_ERROR_WANT_WRITE) {
-    zret.error(
+    zret.note(
+        S_ERROR,
         R"(SSL operation failed: {}, errno: {})",
         swoc::bwf::SSLError{ssl_error},
         swoc::bwf::Errno{});
@@ -332,7 +337,8 @@ TLSSession::accept()
   Errata errata;
   _ssl = SSL_new(server_context);
   if (_ssl == nullptr) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Failed to create SSL server object fd={} server_context={} err={}.)",
         get_fd(),
         server_context,
@@ -340,7 +346,7 @@ TLSSession::accept()
     return errata;
   }
   if (SSL_set_fd(_ssl, get_fd()) == 0) {
-    errata.error(R"(Failed SSL_set_fd: {}.)", swoc::bwf::SSLError{});
+    errata.note(S_ERROR, R"(Failed SSL_set_fd: {}.)", swoc::bwf::SSLError{});
     return errata;
   }
   int retval = SSL_accept(_ssl);
@@ -354,7 +360,8 @@ TLSSession::accept()
     } else if (ssl_error == SSL_ERROR_WANT_READ) {
       events = POLLIN;
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Failed SSL_accept {}, {}.)",
           swoc::bwf::SSLError{_ssl, retval},
           swoc::bwf::Errno{});
@@ -363,19 +370,19 @@ TLSSession::accept()
     auto &&[poll_return, poll_errata] = poll_for_data_on_socket(Poll_Timeout, events);
     errata.note(std::move(poll_errata));
     if (!errata.is_ok()) {
-      errata.error(R"(Failed SSL_accept during poll: {}.)", swoc::bwf::Errno{});
+      errata.note(S_ERROR, R"(Failed SSL_accept during poll: {}.)", swoc::bwf::Errno{});
     } else if (poll_return == 0) {
-      errata.error("Timed out waiting to SSL_accept after {}.", Poll_Timeout);
+      errata.note(S_ERROR, "Timed out waiting to SSL_accept after {}.", Poll_Timeout);
       return errata;
     } else if (poll_return < 0) {
       // Connection closed.
-      errata.diag("Connection closed during poll for SSL_accept.");
+      errata.note(S_DIAG, "Connection closed during poll for SSL_accept.");
       return errata;
     }
     // Poll succeeded.
     retval = SSL_accept(_ssl);
   }
-  errata.diag("Finished accept using TLSSession");
+  errata.note(S_DIAG, "Finished accept using TLSSession");
   return errata;
 }
 Errata
@@ -391,7 +398,8 @@ TLSSession::connect(SSL_CTX *client_context)
   Errata errata;
   _ssl = SSL_new(client_context);
   if (_ssl == nullptr) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Failed to create SSL client object fd={} client_context={} err={}.)",
         get_fd(),
         client_context,
@@ -403,7 +411,8 @@ TLSSession::connect(SSL_CTX *client_context)
     SSL_set_tlsext_host_name(_ssl, _client_sni.c_str());
   }
   if (_client_verify_mode != SSL_VERIFY_NONE) {
-    errata.diag(
+    errata.note(
+        S_DIAG,
         R"(Setting client TLS verification mode against the proxy to: {}.)",
         _client_verify_mode);
     SSL_set_verify(_ssl, _client_verify_mode, nullptr /* No verify_callback is passed */);
@@ -419,7 +428,8 @@ TLSSession::connect(SSL_CTX *client_context)
     } else if (ssl_error == SSL_ERROR_WANT_READ) {
       events = POLLIN;
     } else {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Failed SSL_connect {}, {}.)",
           swoc::bwf::SSLError{_ssl, retval},
           swoc::bwf::Errno{});
@@ -428,15 +438,15 @@ TLSSession::connect(SSL_CTX *client_context)
     auto &&[poll_return, poll_errata] = poll_for_data_on_socket(Poll_Timeout, events);
     errata.note(std::move(poll_errata));
     if (!errata.is_ok()) {
-      errata.error("Failed SSL_connect during poll.");
+      errata.note(S_ERROR, "Failed SSL_connect during poll.");
       return errata;
     } else if (poll_return < 0) {
       // Connection closed.
-      errata.error("Connection closed while performing SSL_connect.");
+      errata.note(S_ERROR, "Connection closed while performing SSL_connect.");
       close();
       return errata;
     } else if (poll_return == 0) {
-      errata.error("Poll timed out for SSL_connect after {}.", Poll_Timeout);
+      errata.note(S_ERROR, "Poll timed out for SSL_connect after {}.", Poll_Timeout);
       return errata;
     }
     // Poll succeeded.
@@ -444,7 +454,8 @@ TLSSession::connect(SSL_CTX *client_context)
   }
 
   auto const verify_result = SSL_get_verify_result(_ssl);
-  errata.diag(
+  errata.note(
+      S_DIAG,
       R"(Proxy TLS verification result: {} ({}).)",
       verify_result,
       (verify_result == X509_V_OK ? "X509_V_OK" : "not X509_V_OK"));
@@ -481,7 +492,7 @@ TLSSession::init(TextView tls_secrets_log_file)
   if (!tls_secrets_log_file.empty()) {
     errata.note(open_tls_secrets_log_file(tls_secrets_log_file));
   }
-  errata.diag("Finished TLSSession::init");
+  errata.note(S_DIAG, "Finished TLSSession::init");
   return errata;
 }
 
@@ -509,13 +520,14 @@ TLSSession::open_tls_secrets_log_file(TextView tls_secrets_log_file)
       S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
   if (tls_secrets_log_file_fd < 0) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         "Failed to open TLS secrets log file {}: {}",
         tls_secrets_log_file,
         swoc::bwf::Errno{});
     return errata;
   }
-  errata.diag("Writing TLS secrets to: {}", tls_secrets_log_file);
+  errata.note(S_DIAG, "Writing TLS secrets to: {}", tls_secrets_log_file);
   return errata;
 }
 
@@ -581,18 +593,19 @@ client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */)
   if (client_sni == nullptr) {
     return ret;
   }
-  errata.diag(R"(Accepted a TLS connection with an SNI of: {}.)", client_sni);
+  errata.note(S_DIAG, R"(Accepted a TLS connection with an SNI of: {}.)", client_sni);
 
   auto const verify_mode = TLSSession::get_verify_mode_for_sni(client_sni);
   if (verify_mode == SSL_VERIFY_NONE) {
     return ret;
   }
-  errata.diag(R"(Sending a certificate request to client with SNI: {}.)", client_sni);
+  errata.note(S_DIAG, R"(Sending a certificate request to client with SNI: {}.)", client_sni);
 
   SSL_set_verify(ssl, verify_mode, nullptr /* no callback specified */);
 
   auto const verify_result = SSL_get_verify_result(ssl);
-  errata.diag(
+  errata.note(
+      S_DIAG,
       R"(Client TLS verification result for client with SNI {}: {}.)",
       client_sni,
       (verify_result == X509_V_OK ? "passed" : "failed"));
@@ -611,7 +624,8 @@ TLSSession::configure_host_cert(
   std::error_code ec;
   cert_path = swoc::file::absolute(cert_path, ec);
   if (ec.value() != 0) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Could not get absolute path for host certificate path "{}": {}.)",
         cert_path,
         ec);
@@ -620,7 +634,7 @@ TLSSession::configure_host_cert(
 
   auto stat{swoc::file::status(cert_path, ec)};
   if (ec.value() != 0) {
-    errata.error(R"(Invalid host certificate path "{}": {}.)", cert_path, ec);
+    errata.note(S_ERROR, R"(Invalid host certificate path "{}": {}.)", cert_path, ec);
     return errata;
   }
 
@@ -656,13 +670,17 @@ TLSSession::configure_ca_cert(std::string_view _cert_path)
   std::error_code ec;
   cert_path = swoc::file::absolute(cert_path, ec);
   if (ec.value() != 0) {
-    errata.error(R"(Could not get absolute path for CA certificate path "{}": {}.)", cert_path, ec);
+    errata.note(
+        S_ERROR,
+        R"(Could not get absolute path for CA certificate path "{}": {}.)",
+        cert_path,
+        ec);
     return errata;
   }
 
   auto stat{swoc::file::status(cert_path, ec)};
   if (ec.value() != 0) {
-    errata.error(R"(Could not stat certificate path "{}": {}.)", cert_path, ec);
+    errata.note(S_ERROR, R"(Could not stat certificate path "{}": {}.)", cert_path, ec);
     return errata;
   }
 
@@ -682,7 +700,8 @@ TLSSession::configure_certificates(SSL_CTX *&context)
   if (!certificate_file.empty()) {
     // A host certificate was provided.
     if (!SSL_CTX_use_certificate_file(context, certificate_file.c_str(), SSL_FILETYPE_PEM)) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Failed to load server cert from "{}": {}.)",
           certificate_file,
           swoc::bwf::SSLError{});
@@ -693,7 +712,8 @@ TLSSession::configure_certificates(SSL_CTX *&context)
       if (!privatekey_file.empty()) {
         // The private key is in a separate file.
         if (!SSL_CTX_use_PrivateKey_file(context, privatekey_file.c_str(), SSL_FILETYPE_PEM)) {
-          errata.error(
+          errata.note(
+              S_ERROR,
               R"(Failed to load server private key from "{}": {}.)",
               privatekey_file,
               swoc::bwf::SSLError{});
@@ -702,7 +722,8 @@ TLSSession::configure_certificates(SSL_CTX *&context)
         // The private key is (well, at least should) be included in the same
         // cert file.
         if (!SSL_CTX_use_PrivateKey_file(context, certificate_file.c_str(), SSL_FILETYPE_PEM)) {
-          errata.error(
+          errata.note(
+              S_ERROR,
               R"(Failed to load server private key from certificate "{}": {}.)",
               certificate_file,
               swoc::bwf::SSLError{});
@@ -719,7 +740,8 @@ TLSSession::configure_certificates(SSL_CTX *&context)
     char const *cert_file = ca_certificate_file.empty() ? nullptr : ca_certificate_file.c_str();
     char const *cert_dir = ca_certificate_dir.empty() ? nullptr : ca_certificate_dir.c_str();
     if (!SSL_CTX_load_verify_locations(context, cert_file, cert_dir)) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Failed to load ca certificates from "{}" and "{}": {}.)",
           ca_certificate_file,
           ca_certificate_dir,
@@ -748,7 +770,7 @@ TLSSession::keylog_callback(SSL const * /* ssl */, char const *line)
   std::scoped_lock _{tls_secrets_log_file_fd_mutex};
   ssize_t rc = ::write(tls_secrets_log_file_fd, line, strlen(line));
   if (rc == -1) {
-    errata.error("Failed to write to TLS secrets log file: {}", swoc::bwf::Errno{});
+    errata.note(S_ERROR, "Failed to write to TLS secrets log file: {}", swoc::bwf::Errno{});
     ::close(tls_secrets_log_file_fd);
     tls_secrets_log_file_fd = -1;
   }
@@ -756,7 +778,7 @@ TLSSession::keylog_callback(SSL const * /* ssl */, char const *line)
   constexpr char const *LF = "\n";
   rc = ::write(tls_secrets_log_file_fd, LF, strlen(LF));
   if (rc == -1) {
-    errata.error("Failed to write to TLS secrets log file: {}", swoc::bwf::Errno{});
+    errata.note(S_ERROR, "Failed to write to TLS secrets log file: {}", swoc::bwf::Errno{});
     ::close(tls_secrets_log_file_fd);
     tls_secrets_log_file_fd = -1;
   }
@@ -769,7 +791,7 @@ TLSSession::client_init(SSL_CTX *&client_context)
   Errata errata;
   client_context = SSL_CTX_new(TLS_client_method());
   if (!client_context) {
-    errata.error(R"(Failed to create client_context: {}.)", swoc::bwf::SSLError{});
+    errata.note(S_ERROR, R"(Failed to create client_context: {}.)", swoc::bwf::SSLError{});
     return errata;
   }
   errata.note(configure_certificates(client_context));
@@ -786,7 +808,7 @@ TLSSession::server_init(SSL_CTX *&server_context)
   Errata errata;
   server_context = SSL_CTX_new(TLS_server_method());
   if (!server_context) {
-    errata.error(R"(Failed to create server_context: {}.)", swoc::bwf::SSLError{});
+    errata.note(S_ERROR, R"(Failed to create server_context: {}.)", swoc::bwf::SSLError{});
     return errata;
   }
   errata.note(configure_certificates(server_context));

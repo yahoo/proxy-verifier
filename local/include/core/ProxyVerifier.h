@@ -23,6 +23,11 @@
 
 extern bool Verbose;
 
+constexpr swoc::Errata::Severity S_DIAG{1};
+constexpr swoc::Errata::Severity S_INFO{2};
+constexpr swoc::Errata::Severity S_WARN{3};
+constexpr swoc::Errata::Severity S_ERROR{4};
+
 /** Configure the process to block SIGPIPE.
  *
  * Unless we block SIGPIPE, the process abruptly stops if SSL_write triggers

@@ -1,17 +1,18 @@
 ``
 ``Listening `` [::1]:``
 ``
-``an HTTP/1 response to request with key 1 with response status 200:
-- "content-type": "text/html"
-- "content-length": "16"
-- "x-test-response": "response"
-- "uuid": "1"
+GET http://example.one/config/settings.yaml HTTP/1.1
+content-length: 0
+host: example.one
+x-test-request: request
+uuid: 1
 
 ``Request with key 1 passed validation.
-``Received an HTTP/1 request with key 1:
-- "content-length": "0"
-- "host": "example.one"
-- "x-test-request": "request"
-- "uuid": "1"
+``
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
+x-test-response: response
+uuid: 1
 
 ``

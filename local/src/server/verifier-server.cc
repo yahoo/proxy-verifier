@@ -165,10 +165,13 @@ sigint_handler(int /* signal */)
 {
   Errata errata;
   if (Engine::process_exit_code == 0) {
-    errata.diag("Handling SIGINT: shutting down and "
-                "exiting with a 0 response code because no errors have been seen.");
+    errata.note(
+        S_DIAG,
+        "Handling SIGINT: shutting down and "
+        "exiting with a 0 response code because no errors have been seen.");
   } else {
-    errata.diag(
+    errata.note(
+        S_DIAG,
         "Handling SIGINT: shutting down and "
         "exiting with response code {} because errors have been seen.",
         Engine::process_exit_code);
@@ -197,7 +200,8 @@ parse_proxy_provided_certificate(YAML::Node const &tls_node)
     if (proxy_provided_certificate_node.IsScalar()) {
       proxy_provided_certificate = proxy_provided_certificate_node.Scalar() == "true" ? 1 : 0;
     } else {
-      proxy_provided_certificate.error(
+      proxy_provided_certificate.note(
+          S_ERROR,
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY);
     }
@@ -225,7 +229,8 @@ parse_request_certificate(YAML::Node const &tls_node)
     if (request_certificate_node.IsScalar()) {
       should_request_certificate = request_certificate_node.Scalar() == "true" ? 1 : 0;
     } else {
-      should_request_certificate.error(
+      should_request_certificate.note(
+          S_ERROR,
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY);
     }
@@ -304,7 +309,8 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
   _txn._rsp.set_is_response();
   Errata errata;
   if (!node[YAML_SERVER_RSP_KEY]) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Transaction node at "{}":{} does not have a server response [{}].)",
         _path,
         node.Mark().line,
@@ -351,7 +357,8 @@ ServerReplayFileHandler::handle_tls_node_directives(
       (should_request_certificate == 1 && verify_mode_node_value == 0) ||
       (should_request_certificate == 0 && verify_mode_node_value > 0))
   {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(The "tls" node at "{}":{} has conflicting {}, {}, and {} values.)",
         _path,
         tls_node.Mark().line,
@@ -364,7 +371,8 @@ ServerReplayFileHandler::handle_tls_node_directives(
   TLSHandshakeBehavior handshake_behavior;
   if (verify_mode_node_value > 0) {
     handshake_behavior.set_verify_mode(verify_mode_node_value);
-    errata.diag(
+    errata.note(
+        S_DIAG,
         R"(Registered an SNI for client certification "{}":{}. SNI: {}, verify_mode: {}.)",
         _path,
         tls_node.Mark().line,
@@ -372,7 +380,8 @@ ServerReplayFileHandler::handle_tls_node_directives(
         verify_mode_node_value.result());
   } else if (should_request_certificate == 1 || proxy_provided_certificate == 1) {
     handshake_behavior.set_verify_mode(SSL_VERIFY_PEER);
-    errata.diag(
+    errata.note(
+        S_DIAG,
         R"(Registered an SNI for client certification "{}":{}. SNI: {}.)",
         _path,
         tls_node.Mark().line,
@@ -383,7 +392,7 @@ ServerReplayFileHandler::handle_tls_node_directives(
   if (!alpn_protocols.result().empty()) {
     handshake_behavior.set_alpn_protocols_string(alpn_protocols.result());
     auto const printable_alpn = get_printable_alpn_string(alpn_protocols.result());
-    errata.diag(R"(Using ALPN protocol string "{}" for SNI "{}")", printable_alpn, sni);
+    errata.note(S_DIAG, R"(Using ALPN protocol string "{}" for SNI "{}")", printable_alpn, sni);
   }
 
   TLSSession::register_tls_handshake_behavior(sni, std::move(handshake_behavior));
@@ -491,13 +500,15 @@ ServerReplayFileHandler::server_response(YAML::Node const &node)
   swoc::Errata errata;
   errata.note(YamlParser::populate_http_message(node, _txn._rsp));
   if (_txn._rsp._status == 0) {
-    errata.error(R"(server-response without a status at "{}":{}.)", _path, node.Mark().line);
+    errata
+        .note(S_ERROR, R"(server-response without a status at "{}":{}.)", _path, node.Mark().line);
   }
   if (node[YAML_TIME_DELAY_KEY]) {
     auto &&[delay_time, delay_errata] = get_delay_time(node);
     if (!delay_errata.is_ok()) {
       errata.note(std::move(delay_errata));
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(server-response node at "{}":{} has a bad "{}" key value.)",
           _path,
           node.Mark().line,
@@ -526,7 +537,8 @@ ServerReplayFileHandler::txn_close()
 {
   swoc::Errata errata;
   if (_key.empty()) {
-    errata.error(
+    errata.note(
+        S_ERROR,
         R"(Could not find a key of format "{}" for transaction at "{}":{}.)",
         HttpHeader::_key_format,
         _path,
@@ -590,7 +602,7 @@ TF_Serve_Connection(std::thread *t)
         // Poll timed out. Loop back around.
         continue;
       } else if (!poll_errata.is_ok()) {
-        thread_errata.error("Poll failed: {}", swoc::bwf::Errno{});
+        thread_errata.note(S_ERROR, "Poll failed: {}", swoc::bwf::Errno{});
         break;
       } else if (poll_return == -1) {
         // Socket closed.
@@ -602,7 +614,7 @@ TF_Serve_Connection(std::thread *t)
       auto &&[req_hdr, read_header_errata] = thread_info._session->read_and_parse_request(w);
       thread_errata.note(std::move(read_header_errata));
       if (!thread_errata.is_ok()) {
-        thread_errata.error("Could not read the header.");
+        thread_errata.note(S_ERROR, "Could not read the header.");
         Engine::process_exit_code = 1;
         break;
       }
@@ -618,7 +630,10 @@ TF_Serve_Connection(std::thread *t)
       auto specified_transaction_it{Transactions.find(key)};
 
       if (specified_transaction_it == Transactions.end()) {
-        thread_errata.error(R"(Proxy request with key "{}" not found, sending a 404.)", key);
+        thread_errata.note(
+            S_ERROR,
+            R"(Proxy request with key "{}" not found, sending a 404.)",
+            key);
         Engine::process_exit_code = 1;
         HttpHeader not_found_response =
             get_not_found_response(stream_id, req_hdr->get_http_protocol());
@@ -654,15 +669,15 @@ TF_Serve_Connection(std::thread *t)
         thread_errata.note(std::move(drain_errata));
 
         if (!thread_errata.is_ok()) {
-          thread_errata.error("Failed to drain the request body for key: {}.", key);
+          thread_errata.note(S_ERROR, "Failed to drain the request body for key: {}.", key);
           break;
         }
       }
       if (req_hdr->verify_headers(key, *specified_transaction._req._fields_rules)) {
-        thread_errata.error(R"(Request headers did not match expected request headers.)");
+        thread_errata.note(S_ERROR, R"(Request headers did not match expected request headers.)");
         Engine::process_exit_code = 1;
       } else {
-        thread_errata.diag(R"(Request with key {} passed validation.)", key);
+        thread_errata.note(S_DIAG, R"(Request with key {} passed validation.)", key);
       }
       // Responses to HEAD requests may have a non-zero Content-Length
       // but will never have a body. update_content_length adjusts
@@ -675,6 +690,8 @@ TF_Serve_Connection(std::thread *t)
       } else if (is_http2) {
         specified_transaction._rsp.set_is_http2();
         specified_transaction._rsp._stream_id = stream_id;
+      } else {
+        specified_transaction._rsp.set_is_http1();
       }
       if (specified_transaction._user_specified_delay_duration > 0us) {
         sleep_for(specified_transaction._user_specified_delay_duration);
@@ -682,16 +699,6 @@ TF_Serve_Connection(std::thread *t)
       auto &&[bytes_written, write_errata] =
           thread_info._session->write(specified_transaction._rsp);
       thread_errata.note(std::move(write_errata));
-      thread_errata.diag(
-          "Wrote {} bytes in an {}{}{} response to request with key {} "
-          "with response status {}:\n{}",
-          bytes_written,
-          swoc::bwf::If(is_http3, "HTTP/3"),
-          swoc::bwf::If(is_http2, "HTTP/2"),
-          swoc::bwf::If(!is_http3 && !is_http2, "HTTP/1"),
-          key,
-          specified_transaction._rsp._status,
-          specified_transaction._rsp);
     }
 
     // cleanup and get ready for another session.
@@ -713,7 +720,7 @@ TF_Accept(int socket_fd, bool do_https, bool do_http3)
       // poll timed out.
       continue;
     } else if (poll_return < 0) {
-      errata.error("poll failed: {}", swoc::bwf::Errno{});
+      errata.note(S_ERROR, "poll failed: {}", swoc::bwf::Errno{});
       continue;
     }
     swoc::IPEndpoint remote_addr;
@@ -721,13 +728,13 @@ TF_Accept(int socket_fd, bool do_https, bool do_http3)
 
     int fd = accept(socket_fd, &remote_addr.sa, &remote_addr_size);
     if (fd < 0) {
-      errata.error("Failed to create a socket via accept: {}", swoc::bwf::Errno{});
+      errata.note(S_ERROR, "Failed to create a socket via accept: {}", swoc::bwf::Errno{});
       continue;
     }
     static const int ONE = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
     if (0 != ::fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)) {
-      errata.error("Failed to make the server socket non-blocking: {}", swoc::bwf::Errno{});
+      errata.note(S_ERROR, "Failed to make the server socket non-blocking: {}", swoc::bwf::Errno{});
     }
     if (do_http3) {
       session = std::make_unique<H3Session>();
@@ -745,7 +752,7 @@ TF_Accept(int socket_fd, bool do_https, bool do_http3)
     ServerThreadInfo *thread_info =
         dynamic_cast<ServerThreadInfo *>(Server_Thread_Pool.get_worker());
     if (nullptr == thread_info) {
-      errata.error("Failed to get worker thread");
+      errata.note(S_ERROR, "Failed to get worker thread");
     } else {
       std::unique_lock<std::mutex> lock(thread_info->_mutex);
       thread_info->_session = session.release();
@@ -774,31 +781,36 @@ do_listen(swoc::IPEndpoint &server_addr, bool do_https, bool do_http3)
     // Be agressive in reusing the port
     static constexpr int ONE = 1;
     if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
-      errata.error(R"(Could not set reuseaddr on socket {}: {}.)", socket_fd, swoc::bwf::Errno{});
+      errata.note(
+          S_ERROR,
+          R"(Could not set reuseaddr on socket {}: {}.)",
+          socket_fd,
+          swoc::bwf::Errno{});
     } else {
       if (0 == ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
         int bind_result = bind(socket_fd, &server_addr.sa, server_addr.size());
         if (bind_result == 0) {
           int listen_result = listen(socket_fd, 16384);
           if (listen_result == 0) {
-            errata.info(R"(Listening for {} at: {})", protocol_description, server_addr);
+            errata.note(S_INFO, R"(Listening for {} at: {})", protocol_description, server_addr);
             auto runner = std::make_unique<std::thread>(TF_Accept, socket_fd, do_https, do_http3);
             Accept_Threads.push_back(std::move(runner));
           } else {
-            errata.error(R"(Could not listen to {}: {}.)", server_addr, swoc::bwf::Errno{});
+            errata.note(S_ERROR, R"(Could not listen to {}: {}.)", server_addr, swoc::bwf::Errno{});
           }
         } else {
-          errata.error(R"(Could not bind to {}: {}.)", server_addr, swoc::bwf::Errno{});
+          errata.note(S_ERROR, R"(Could not bind to {}: {}.)", server_addr, swoc::bwf::Errno{});
         }
       } else {
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"(Could not make socket non-blocking {}: {}.)",
             server_addr,
             swoc::bwf::Errno{});
       }
     }
   } else {
-    errata.error(R"(Could not create socket: {}.)", swoc::bwf::Errno{});
+    errata.note(S_ERROR, R"(Could not create socket: {}.)", swoc::bwf::Errno{});
   }
   if (!errata.is_ok() && socket_fd >= 0) {
     close(socket_fd);
@@ -818,7 +830,8 @@ Engine::command_run()
     auto server_addr_https_arg{arguments.get("listen-https")};
     auto server_addr_http3_arg{arguments.get("listen-http3")};
     if (!server_addr_http_arg && !server_addr_https_arg && !server_addr_http3_arg) {
-      errata.error(
+      errata.note(
+          S_ERROR,
           R"(Must provide at least one of "--listen-http", "--listen-https", or "--listen-http3" arguments")");
       process_exit_code = 1;
       return;
@@ -827,7 +840,7 @@ Engine::command_run()
     swoc::LocalBufferWriter<1024> w;
 
     if (args.size() < 1) {
-      errata.error(R"("run" command requires a directory path as an argument.)");
+      errata.note(S_ERROR, R"("run" command requires a directory path as an argument.)");
       process_exit_code = 1;
       return;
     }
@@ -851,7 +864,9 @@ Engine::command_run()
       if (server_addr_http_arg.size() == 1) {
         errata = parse_ips(server_addr_http_arg[0], server_addrs);
       } else {
-        errata.error(R"(--listen option must have a single value, the listen address and port.)");
+        errata.note(
+            S_ERROR,
+            R"(--listen option must have a single value, the listen address and port.)");
         process_exit_code = 1;
         return;
       }
@@ -859,7 +874,8 @@ Engine::command_run()
 
     if (server_addr_https_arg) {
       if (server_addr_https_arg.size() != 1) {
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"(--listen-https option must have a single value, a comma seaparated list of listen address and port.)");
         process_exit_code = 1;
         return;
@@ -873,7 +889,8 @@ Engine::command_run()
 
     if (server_addr_http3_arg) {
       if (server_addr_http3_arg.size() != 1) {
-        errata.error(
+        errata.note(
+            S_ERROR,
             R"(--listen-https option must have a single value, a comma seaparated list of listen address and port.)");
         process_exit_code = 1;
         return;
@@ -895,7 +912,7 @@ Engine::command_run()
       if (cert_arg.size() >= 1) {
         errata.note(TLSSession::configure_server_cert(cert_arg[0]));
         if (!errata.is_ok()) {
-          errata.error(R"(Invalid server-cert path "{}")", cert_arg[0]);
+          errata.note(S_ERROR, R"(Invalid server-cert path "{}")", cert_arg[0]);
           process_exit_code = 1;
           return;
         }
@@ -904,7 +921,7 @@ Engine::command_run()
       if (ca_certs_arg.size() >= 1) {
         errata.note(TLSSession::configure_ca_cert(ca_certs_arg[0]));
         if (!errata.is_ok()) {
-          errata.error(R"(Invalid ca-certs path "{}")", ca_certs_arg[0]);
+          errata.note(S_ERROR, R"(Invalid ca-certs path "{}")", ca_certs_arg[0]);
           process_exit_code = 1;
           return;
         }
@@ -947,7 +964,11 @@ Engine::command_run()
       }
     }
 
-    errata.info("Ready with {} transactions.", Transactions.size());
+    errata.note(
+        S_INFO,
+        "Ready with {} transaction{}.",
+        Transactions.size(),
+        swoc::bwf::If(Transactions.size() != 1, "s"));
 
     for (auto &server_addr : server_addrs) {
       // Set up listen port.
@@ -993,10 +1014,12 @@ main(int /* argc */, char const *argv[])
 {
   swoc::Errata errata;
   if (block_sigpipe()) {
-    errata.warn("Could not block SIGPIPE. Continuing anyway, but be aware that "
-                "SSL_read "
-                "and SSL_write issues may trigger SIGPIPE which will abruptly "
-                "terminate execution.");
+    errata.note(
+        S_WARN,
+        "Could not block SIGPIPE. Continuing anyway, but be aware that "
+        "SSL_read "
+        "and SSL_write issues may trigger SIGPIPE which will abruptly "
+        "terminate execution.");
   }
 
   struct sigaction sigIntHandler;

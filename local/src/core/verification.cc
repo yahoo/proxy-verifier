@@ -6,6 +6,7 @@
  */
 
 #include "core/verification.h"
+#include "core/ProxyVerifier.h"
 
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
@@ -88,7 +89,7 @@ RuleCheck::make_rule_check(
 
   auto fn_iter = options.find(rule_type);
   if (fn_iter == options.end()) {
-    errata.info(R"(Invalid Test: Key: "{}")", rule_type);
+    errata.note(S_INFO, R"(Invalid Test: Key: "{}")", rule_type);
     return nullptr;
   }
   return fn_iter->second(localized_name, localized_value, is_inverted, is_nocase);
@@ -106,7 +107,7 @@ RuleCheck::make_rule_check(
 
   auto fn_iter = url_rule_options.find(rule_type);
   if (fn_iter == url_rule_options.end()) {
-    errata.info(R"(Invalid Test: Key: "{}")", rule_type);
+    errata.note(S_INFO, R"(Invalid Test: Key: "{}")", rule_type);
     return nullptr;
   }
   return fn_iter->second(url_part, localized_value, is_inverted, is_nocase);
@@ -124,7 +125,7 @@ RuleCheck::make_rule_check(
 
   auto fn_iter = duplicate_field_options.find(rule_type);
   if (fn_iter == duplicate_field_options.end()) {
-    errata.info(R"(Invalid Test: Key: "{}")", rule_type);
+    errata.note(S_INFO, R"(Invalid Test: Key: "{}")", rule_type);
     return nullptr;
   }
   return fn_iter->second(localized_name, std::move(localized_values), is_inverted, is_nocase);
@@ -499,7 +500,8 @@ EqualityCheck::test(TextView key, TextView name, TextView value) const
 {
   Errata errata;
   if (name.empty()) {
-    errata.info(
+    errata.note(
+        S_INFO,
         R"({}Equals {}: Absent. Key: "{}", {}: "{}", Correct Value: "{}")",
         get_subtype(),
         invert_result(false),
@@ -508,7 +510,8 @@ EqualityCheck::test(TextView key, TextView name, TextView value) const
         _name,
         _value);
   } else if ((!_is_nocase && strcmp(value, _value)) || (_is_nocase && strcasecmp(value, _value))) {
-    errata.info(
+    errata.note(
+        S_INFO,
         R"({}Equals {}: Different. Key: "{}", {}: "{}", Correct Value: "{}", Actual Value: "{}")",
         get_subtype(),
         invert_result(false),
@@ -519,7 +522,8 @@ EqualityCheck::test(TextView key, TextView name, TextView value) const
         value);
   } else {
     if (_is_nocase) {
-      errata.info(
+      errata.note(
+          S_INFO,
           R"({}Equals {}: Key: "{}", {}: "{}", Required Value: "{}", Value: "{}")",
           get_subtype(),
           invert_result(true),
@@ -529,7 +533,8 @@ EqualityCheck::test(TextView key, TextView name, TextView value) const
           _value,
           value);
     } else {
-      errata.info(
+      errata.note(
+          S_INFO,
           R"({}Equals {}: Key: "{}", {}: "{}", Value: "{}")",
           get_subtype(),
           invert_result(true),
@@ -560,7 +565,7 @@ EqualityCheck::test(TextView key, TextView name, std::vector<TextView> const &va
     for (auto const &value : _values) {
       message.print(R"( "{}")", value);
     }
-    errata.info(message.view());
+    errata.note(S_INFO, message.view());
     return invert_if_applicable(false);
   }
   bool test_success = true;
@@ -598,7 +603,7 @@ EqualityCheck::test(TextView key, TextView name, std::vector<TextView> const &va
     for (auto const &value : values) {
       message.print(R"( "{}")", value);
     }
-    errata.info(message.view());
+    errata.note(S_INFO, message.view());
   } else {
     MSG_BUFF message;
     message.print(
@@ -623,7 +628,7 @@ EqualityCheck::test(TextView key, TextView name, std::vector<TextView> const &va
         message.print(R"( "{}")", value);
       }
     }
-    errata.info(message.view());
+    errata.note(S_INFO, message.view());
     return invert_if_applicable(true);
   }
   return invert_if_applicable(false);
@@ -634,7 +639,8 @@ PresenceCheck::test(TextView key, TextView name, TextView value) const
 {
   Errata errata;
   if (name.empty()) {
-    errata.info(
+    errata.note(
+        S_INFO,
         R"({}Presence {}: Absent. Key: "{}", {}: "{}")",
         get_subtype(),
         invert_result(false),
@@ -643,7 +649,8 @@ PresenceCheck::test(TextView key, TextView name, TextView value) const
         _name);
     return invert_if_applicable(false);
   }
-  errata.info(
+  errata.note(
+      S_INFO,
       R"({}Presence {}: Key: "{}", {}: "{}", Value: "{}")",
       get_subtype(),
       invert_result(true),
@@ -659,7 +666,8 @@ PresenceCheck::test(TextView key, TextView name, std::vector<TextView> const &va
 {
   Errata errata;
   if (name.empty()) {
-    errata.info(
+    errata.note(
+        S_INFO,
         R"({}Presence {}: Absent. Key: "{}", {}: "{}")",
         get_subtype(),
         invert_result(false),
@@ -679,7 +687,7 @@ PresenceCheck::test(TextView key, TextView name, std::vector<TextView> const &va
   for (auto const &value : values) {
     message.print(R"( "{}")", value);
   }
-  errata.info(message.view());
+  errata.note(S_INFO, message.view());
   return invert_if_applicable(true);
 }
 
@@ -688,7 +696,8 @@ AbsenceCheck::test(TextView key, TextView name, TextView value) const
 {
   Errata errata;
   if (!name.empty()) {
-    errata.info(
+    errata.note(
+        S_INFO,
         R"({}Absence {}: Present. Key: "{}", {}: "{}", Value: "{}")",
         get_subtype(),
         invert_result(false),
@@ -698,7 +707,8 @@ AbsenceCheck::test(TextView key, TextView name, TextView value) const
         value);
     return invert_if_applicable(false);
   }
-  errata.info(
+  errata.note(
+      S_INFO,
       R"({}Absence {}: Key: "{}", {}: "{}")",
       get_subtype(),
       invert_result(true),
@@ -724,10 +734,11 @@ AbsenceCheck::test(TextView key, TextView name, std::vector<TextView> const &val
     for (auto const &value : values) {
       message.print(R"( "{}")", value);
     }
-    errata.info(message.view());
+    errata.note(S_INFO, message.view());
     return invert_if_applicable(false);
   }
-  errata.info(
+  errata.note(
+      S_INFO,
       R"({}Absence {}: Key: "{}", {}: "{}")",
       get_subtype(),
       invert_result(true),
@@ -742,7 +753,8 @@ SubstrCheck::test(TextView key, TextView name, TextView value) const
 {
   Errata errata;
   if (name.empty()) {
-    errata.info(
+    errata.note(
+        S_INFO,
         R"({}{} {}: Absent. Key: "{}", {}: "{}", Required Value: "{}")",
         get_subtype(),
         get_test_name(),
@@ -752,7 +764,8 @@ SubstrCheck::test(TextView key, TextView name, TextView value) const
         _name,
         _value);
   } else if (test_tv(value, _value)) {
-    errata.info(
+    errata.note(
+        S_INFO,
         R"({}{} {}: Not Found. Key: "{}", {}: "{}", Required Value: "{}", Actual Value: "{}")",
         get_subtype(),
         get_test_name(),
@@ -763,7 +776,8 @@ SubstrCheck::test(TextView key, TextView name, TextView value) const
         _value,
         value);
   } else {
-    errata.info(
+    errata.note(
+        S_INFO,
         R"({}{} {}: Key: "{}", {}: "{}", Required Value: "{}", Value: "{}")",
         get_subtype(),
         get_test_name(),
@@ -800,7 +814,7 @@ SubstrCheck::test(TextView key, TextView name, std::vector<TextView> const &valu
     for (auto const &value : values) {
       message.print(R"( "{}")", value);
     }
-    errata.info(message.view());
+    errata.note(S_INFO, message.view());
     return invert_if_applicable(false);
   }
   auto value_it = values.begin();
@@ -825,7 +839,7 @@ SubstrCheck::test(TextView key, TextView name, std::vector<TextView> const &valu
       for (auto const &value : values) {
         message.print(R"( "{}")", value);
       }
-      errata.info(message.view());
+      errata.note(S_INFO, message.view());
       return invert_if_applicable(false);
     }
     ++value_it;
@@ -849,7 +863,7 @@ SubstrCheck::test(TextView key, TextView name, std::vector<TextView> const &valu
   for (auto const &value : values) {
     message.print(R"( "{}")", value);
   }
-  errata.info(message.view());
+  errata.note(S_INFO, message.view());
   return invert_if_applicable(true);
 }
 
