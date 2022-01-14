@@ -9,10 +9,7 @@ if path:
     env.Append(CPPPATH=[i_path])
     env.ExportCPPPATH([i_path])
     l_path = os.path.join(path, "lib")
-    if os.path.exists(l_path):
-        env.Append(LIBPATH=[l_path])
-    elif os.path.exists(l_path + '64'):
-        env.Append(LIBPATH=[l_path + '64'])
+    env.Append(LIBPATH=[l_path])
     env.ExportLIBPATH(l_path)
 
     cfg = env.Configure()
@@ -79,11 +76,6 @@ else:
                     includes=env["INSTALL_LIB_PATTERN"] +
                     env["INSTALL_API_LIB_PATTERN"],
                     recursive=False),
-                env.Pattern(
-                    src_dir=node.Dir("lib64"),
-                    includes=env["INSTALL_LIB_PATTERN"] +
-                    env["INSTALL_API_LIB_PATTERN"],
-                    recursive=False),
             ],
         ),
     )
@@ -112,6 +104,7 @@ else:
         configure_args=[
             'enable-tls1_3',
             '--prefix=$CONFIGURE_PREFIX',
+            '--libdir=lib',
         ],
         # this allows us to call make depends to "finialize" what finial makefile. Prevents a rebuild.
         # however this sort of build twice

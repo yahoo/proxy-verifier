@@ -35,7 +35,9 @@ cd ${repo_dir}
 git clone -b openssl-3.0.1+quic --depth 1 https://github.com/quictls/openssl.git openssl
 cd openssl
 git checkout ab8b87bdb436b11bf2a10a2a57a897722224f828
-./config --prefix=${install_dir}/openssl
+# Installing to lib instead of the default system lib64 makes linking work
+# better in our setup.
+./config --prefix=${install_dir}/openssl --libdir=lib
 make -j4
 ${SUDO} make install_sw
 

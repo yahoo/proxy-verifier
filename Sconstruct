@@ -164,7 +164,6 @@ Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jb
 custom_rpath=[]
 if path_ssl is not None:
   custom_rpath.append(path_ssl + "/lib")
-  custom_rpath.append(path_ssl + "/lib64")
 if path_nghttp2 is not None:
   custom_rpath.append(path_nghttp2 + "/lib")
 if path_ngtcp2 is not None:
