@@ -857,6 +857,7 @@ Session::write(HttpHeader const &hdr)
 swoc::Rv<int>
 Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
 {
+  assert(timeout.count() > 0);
   if (is_closed()) {
     return {-1, Errata(S_DIAG, "Poll called on a closed connection.")};
   }

@@ -305,7 +305,9 @@ TLSSession::poll_for_data_on_ssl_socket(chrono::milliseconds timeout, int ssl_er
     zret.note(S_DIAG, "Poll called on a closed connection.");
     return zret;
   }
-  if (ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL) {
+  if (ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL ||
+      ssl_error == SSL_ERROR_SSL)
+  {
     // Either of these indicates that the peer has closed the connection for
     // writing and no more data can be read.
     zret.note(S_DIAG, "Poll called on a TLS session closed by the peer.");
