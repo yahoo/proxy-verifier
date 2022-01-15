@@ -6,11 +6,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+usage="`basename $0` <scons_arguments>"
+
 tmpdir=/tmp/build_static.$$
 buildout=${tmpdir}/build_output.txt
 staticout=${tmpdir}/build_static_output.txt
 static_command=${tmpdir}/static_command.sh
-libdir=/opt
 
 fail()
 {
@@ -22,7 +23,6 @@ set -e
 
 os=$(uname)
 [ "${os}" = "Linux" -o "${os}" = "Darwin" ] || fail "Unrecognized OS: ${os}"
-[ -d "${libdir}" ] || fail "This script assumes HTTP build tools are in /opt"
 
 #
 # Do the initial build to get the build command.
@@ -45,7 +45,7 @@ for i in `find . -name verifier-client -type f`; do rm $i; done
 for i in `find . -name verifier-server -type f`; do rm $i; done
 
 mkdir -p ${tmpdir}
-pipenv run scons -j${num_threads} --with-libs=/opt > ${buildout} 2>&1 || \
+pipenv run scons -j${num_threads} $@ > ${buildout} 2>&1 || \
   fail "Build command failed, see output in: ${buildout}"
 
 #

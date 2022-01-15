@@ -1145,6 +1145,20 @@ run from the root directory of your repository like so:
 ./tools/build_static 
 ```
 
+By default this builds Proxy Verifier with the following invocation:
+
+```
+pipenv run scons -j$(nproc)
+```
+
+Any arguments passed to `build_static` will be passed through to the scons
+command. Thus, if you desire to build Proxy Verifier with `--with-libs=/opt`,
+run the script like so:
+
+```
+./tools/build_static --with-libs=/opt`
+```
+
 ### Running the Tests
 
 #### Unit Tests
