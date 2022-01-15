@@ -45,7 +45,9 @@ for i in `find . -name verifier-client -type f`; do rm $i; done
 for i in `find . -name verifier-server -type f`; do rm $i; done
 
 mkdir -p ${tmpdir}
-pipenv run scons -j${num_threads} $@ > ${buildout} 2>&1 || \
+command="pipenv run scons -j${num_threads} $@"
+echo "Initial build: \"${command}\""
+$command > ${buildout} 2>&1 || \
   fail "Build command failed, see output in: ${buildout}"
 
 #
@@ -60,13 +62,33 @@ then
     sed 's/$/ -Wl,--whole-archive -lpthread -Wl,--no-whole-archive -ldl/g' > \
     ${static_command}
 else
+  openssl_dir=/opt/openssl
+  if [ -e _destdir/default/openssl ]
+  then
+    openssl_dir=_destdir/default/openssl
+  fi
+  ngtcp2_dir=/opt/ngtcp2
+  if [ -e _destdir/default/ngtcp2 ]
+  then
+    ngtcp2_dir=_destdir/default/ngtcp2
+  fi
+  nghttp2_dir=/opt/nghttp2
+  if [ -e _destdir/default/nghttp2 ]
+  then
+    nghttp2_dir=_destdir/default/nghttp2
+  fi
+  nghttp3_dir=/opt/nghttp3
+  if [ -e _destdir/default/nghttp3 ]
+  then
+    nghttp3_dir=_destdir/default/nghttp3
+  fi
   grep -E 'verifier-(client|server) ' ${buildout} | \
-    sed 's: -lssl : /opt/openssl/lib/libssl.a :g' | \
-    sed 's: -lcrypto : /opt/openssl/lib/libcrypto.a :g' | \
-    sed 's: -lngtcp2_crypto_openssl : /opt/ngtcp2/lib/libngtcp2_crypto_openssl.a :g' | \
-    sed 's: -lngtcp2 : /opt/ngtcp2/lib/libngtcp2.a :g' | \
-    sed 's: -lnghttp2 : /opt/nghttp2/lib/libnghttp2.a :g' | \
-    sed 's: -lnghttp3 : /opt/nghttp3/lib/libnghttp3.a :g' > \
+    sed "s:-lngtcp2_crypto_openssl[^[:space:]]*:${ngtcp2_dir}/lib/libngtcp2_crypto_openssl.a:g" | \
+    sed "s:-lssl[^[:space:]]*:${openssl_dir}/lib/libssl.a:g" | \
+    sed "s:-lcrypto[^[:space:]]*:${openssl_dir}/lib/libcrypto.a:g" | \
+    sed "s:-lngtcp2[^[:space:]]*:${ngtcp2_dir}/lib/libngtcp2.a:g" | \
+    sed "s:-lnghttp2[^[:space:]]*:${nghttp2_dir}/lib/libnghttp2.a:g" | \
+    sed "s:-lnghttp3[^[:space:]]*:${nghttp3_dir}/lib/libnghttp3.a:g" > \
     ${static_command}
 fi
 
@@ -76,6 +98,8 @@ fi
 for i in `find . -name verifier-client -type f`; do rm $i; done
 for i in `find . -name verifier-server -type f`; do rm $i; done
 
+echo "Running:"
+cat ${static_command}
 bash ${static_command} > ${staticout} 2>&1 || \
   fail "Command to statically link failed, see: ${static_command}"
 
