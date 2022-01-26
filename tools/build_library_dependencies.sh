@@ -15,8 +15,26 @@ fail()
   exit 1
 }
 
+os=$(uname)
+[ "${os}" = "Linux" -o "${os}" = "Darwin" ] || fail "Unrecognized OS: ${os}"
+
+#
+# Determine the number of threads to build with.
+#
+if [ "${os}" = "Linux" ]
+then
+  num_threads=$(nproc)
+else
+  # MacOS.
+  num_threads=$(sysctl -n hw.physicalcpu)
+fi
+
 [ $# -eq 1 ] || fail "Please provide a directory in which to install the libraries."
 install_dir=$1
+
+echo
+echo "Building with ${num_threads} threads, installing in ${install_dir}"
+echo
 
 # Only try using sudo if the install directory is not writable by the current
 # user.
@@ -36,7 +54,7 @@ git clone -b OpenSSL_1_1_1m+quic --depth 1 https://github.com/quictls/openssl.gi
 cd openssl
 git checkout 7c0006ccf891c20cd0b1e9e6a436f9d1f3153b7b
 ./config --prefix=${install_dir}/openssl
-make -j4
+make -j ${num_threads}
 ${SUDO} make install_sw
 
 # 2. nghttp3
@@ -46,7 +64,7 @@ cd nghttp3/
 git checkout b9e565cb48e92ded110162a65511f78681fb13c3
 autoreconf -i
 ./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
-make -j4
+make -j ${num_threads}
 ${SUDO} make install
 
 # 3. ngtcp2
@@ -60,7 +78,7 @@ autoreconf -i
   LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib" \
   --prefix=${install_dir}/ngtcp2 \
   --enable-lib-only
-make -j4
+make -j ${num_threads}
 ${SUDO} make install
 
 #4. nghttp2
@@ -83,5 +101,5 @@ autoreconf -if
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
   --prefix=${install_dir}/nghttp2 \
   --enable-lib-only
-make -j $(nproc)
+make -j ${num_threads}
 ${SUDO} make install
