@@ -103,3 +103,10 @@ autoreconf -if
   --enable-lib-only
 make -j ${num_threads}
 ${SUDO} make install
+
+# In case the user's mask restricts access.
+sudo chmod -R ugo+rX \
+  ${install_dir}/ngtcp2 \
+  ${install_dir}/nghttp2 \
+  ${install_dir}/nghttp3 \
+  ${install_dir}/openssl
