@@ -56,6 +56,7 @@ git checkout 7c0006ccf891c20cd0b1e9e6a436f9d1f3153b7b
 ./config --prefix=${install_dir}/openssl
 make -j ${num_threads}
 ${SUDO} make install_sw
+sudo chmod -R ugo+rX ${install_dir}/openssl
 
 # 2. nghttp3
 cd ${repo_dir}
@@ -66,6 +67,7 @@ autoreconf -i
 ./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
 make -j ${num_threads}
 ${SUDO} make install
+sudo chmod -R ugo+rX ${install_dir}/nghttp3
 
 # 3. ngtcp2
 cd ${repo_dir}
@@ -80,6 +82,7 @@ autoreconf -i
   --enable-lib-only
 make -j ${num_threads}
 ${SUDO} make install
+sudo chmod -R ugo+rX ${install_dir}/ngtcp2
 
 #4. nghttp2
 cd ${repo_dir}
@@ -103,10 +106,4 @@ autoreconf -if
   --enable-lib-only
 make -j ${num_threads}
 ${SUDO} make install
-
-# In case the user's mask restricts access.
-sudo chmod -R ugo+rX \
-  ${install_dir}/ngtcp2 \
-  ${install_dir}/nghttp2 \
-  ${install_dir}/nghttp3 \
-  ${install_dir}/openssl
+sudo chmod -R ugo+rX ${install_dir}/nghttp2
