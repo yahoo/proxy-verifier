@@ -577,7 +577,7 @@ receive_nghttp2_responses(
       if (timeout_count > 2) {
         Errata errata;
         errata.note(S_INFO, "{} timeouts while waiting for the following streams:", timeout_count);
-        for (auto && [id, stream_state]: session_data->_stream_map) {
+        for (auto &&[id, stream_state] : session_data->_stream_map) {
           errata.note(S_INFO, "    {}: {}", id, stream_state->_key);
         }
       }

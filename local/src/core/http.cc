@@ -653,6 +653,14 @@ HttpHeader::parse_response(swoc::TextView data)
         auto name{value.take_prefix_at(':')};
         value.trim_if(&isspace);
         if (name) {
+          constexpr TextView CONNECTION_HEADER = "connection";
+          if (name.length() == CONNECTION_HEADER.length() &&
+              ::strncasecmp(name.data(), CONNECTION_HEADER.data(), CONNECTION_HEADER.length()) == 0)
+          {
+            if (value == "close") {
+              this->_contains_connection_close = true;
+            }
+          }
           _fields_rules->add_field(name, value);
         } else {
           zret = PARSE_ERROR;
@@ -1325,6 +1333,15 @@ Session::run_transaction(Txn const &json_txn)
 
         if (!errata.is_ok()) {
           errata.note(S_ERROR, "Failed to replay transaction with key: {}", key);
+        }
+
+        // Check whether the server asked us to close the connection.
+        if (rsp_hdr_from_wire._contains_connection_close) {
+          errata.note(
+              S_DIAG,
+              R"(Response contained "Connection: close". Closing the connection for key: {}.)",
+              key);
+          this->close();
         }
       } else {
         errata.note(S_ERROR, R"(Invalid response. key: {})", key);
