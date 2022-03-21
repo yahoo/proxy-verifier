@@ -409,6 +409,9 @@ public:
   /// No Content-Length - close after sending body.
   bool _content_length_p = false;
 
+  /// The parsed headers contain "Connection: close" header.
+  bool _contains_connection_close = false;
+
   /// Format string to generate a key from a transaction.
   static std::string _key_format;
 
