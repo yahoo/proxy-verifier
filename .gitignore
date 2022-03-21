@@ -45,6 +45,8 @@
 .clangd/
 .ropeproject/
 compile_commands.json
+/.cache
+*.plist
 
 # Default parts directories
 \.parts\.cache
