@@ -160,7 +160,7 @@ else:
     mode=['SKIP_DOCS'],
   )
 
-Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="yaml-cpp-0.6.3"), package_group="proxy-verifier")
+Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="yaml-cpp-0.7.0"), package_group="proxy-verifier")
 
 custom_rpath=[]
 if path_ssl is not None:
