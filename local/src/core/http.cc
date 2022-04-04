@@ -637,10 +637,10 @@ HttpHeader::parse_response(swoc::TextView data)
       _reason = reason;
       set_is_response();
 
-      if (_status < 1 || _status > 599) {
+      if ((_status < 1 || _status > 599) && (_status != 999)) {
         zret.note(
             S_ERROR,
-            "Unexpected response status: expected an integer in the range [1..599], got: {}",
+            "Unexpected response status: expected an integer in the range [1..599] or 999, got: {}",
             _status);
       }
 
