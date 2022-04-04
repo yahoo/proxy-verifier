@@ -100,8 +100,8 @@ else:
     "#lib/openssl.part",
     vcs_type=VcsGit(server="github.com", repository="quictls/openssl",
                     protocol="https",
-                    # A pinned commit from branch OpenSSL_1_1_1m+quic.
-                    revision="7c0006ccf891c20cd0b1e9e6a436f9d1f3153b7b"
+                    # A pinned commit from branch OpenSSL_1_1_1n+quic.
+                    revision="c3d4eb57dc74ba18ce70acee68b9a086ccc806aa"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -120,12 +120,12 @@ else:
                         # author rebases origin/quic.  For reference, this
                         # commit is currently described as:
 
-                        # commit 25f29e7634a2c8c5ba5c63432e5d94217a6535ef
+                        # commit f277dafe1ef946dac8d7bd57ac4d30e722b654d9 (HEAD -> master, origin/master, origin/HEAD)
                         # Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-                        # Date:   Mon Aug 16 16:58:11 2021 +0900
+                        # Date:   Sun Apr 3 21:56:47 2022 +0900
                         #
-                        #     Compile with the latest ngtcp2
-                        revision="25f29e7634a2c8c5ba5c63432e5d94217a6535ef"
+                        #     Bump macos
+                        revision="f277dafe1ef946dac8d7bd57ac4d30e722b654d9"
                         ),
         mode=['SKIP_DOCS'],
     )
@@ -140,7 +140,7 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/ngtcp2",
                     protocol="https",
                     # A pinned commit on branch main.
-                    revision="982502f9ac594a45bc13804416a443522d906f29"
+                    revision="8907d1e539a463f6522854919bcbbd7f12f3b9b7"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -155,7 +155,7 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/nghttp3",
                     protocol="https",
                     # A pinned commit on branch main.
-                    revision="b9e565cb48e92ded110162a65511f78681fb13c3"
+                    revision="0ad0c613764e9e55dae0312bcd59e6a7e104fdbb"
                     ),
     mode=['SKIP_DOCS'],
   )

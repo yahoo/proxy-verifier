@@ -549,6 +549,7 @@ static ngtcp2_callbacks client_ngtcp2_callbacks = {
     nullptr, /* lost_datagram */
     ngtcp2_crypto_get_path_challenge_data_cb,
     cb_stream_stop_sending,
+    nullptr, /* version_negotiation */
 };
 
 // TODO: fill this out when we add server-side code.
@@ -662,10 +663,18 @@ ngtcp2_process_ingress(H3Session &session, milliseconds timeout)
   // Process the packet.
   int rv = ngtcp2_conn_read_pkt(qs.qconn, &path, &pi, buf, num_bytes_received, ts);
   if (rv != 0) {
-    zret.note(
-        S_ERROR,
-        "ngtcp2_process_ingress: ngtcp2_conn_read_pkt() had an error return: {}",
-        Ngtcp2Error{rv});
+    if (rv == NGTCP2_ERR_CRYPTO) {
+      zret.note(
+          S_ERROR,
+          "ngtcp2_process_ingress: ngtcp2_conn_read_pkt() had an error return "
+          "(likely a certificate verification problem): {}",
+          Ngtcp2Error{rv});
+    } else {
+      zret.note(
+          S_ERROR,
+          "ngtcp2_process_ingress: ngtcp2_conn_read_pkt() had an error return: {}",
+          Ngtcp2Error{rv});
+    }
     zret = -1;
     return zret;
   }
@@ -1052,6 +1061,7 @@ static int
 cb_h3_end_headers(
     nghttp3_conn * /* conn */,
     int64_t stream_id,
+    int /* fin */,
     void *conn_user_data,
     void *stream_user_data)
 {
@@ -1731,6 +1741,28 @@ H3Session::H3Session(TextView const &client_sni, int client_verify_mode)
 H3Session::~H3Session()
 {
   _last_added_stream.reset();
+  char buffer[NGTCP2_MAX_UDP_PAYLOAD_SIZE] = {0};
+  ngtcp2_tstamp ts = 0;
+  ngtcp2_ssize rc = 0;
+  ngtcp2_connection_close_error error_code;
+  memset(&error_code, 0, sizeof(error_code));
+
+  ngtcp2_connection_close_error_set_application_error(&error_code, NGHTTP3_H3_NO_ERROR, nullptr, 0);
+  ts = timestamp();
+  // Create the CONNECTION_CLOSE content in buffer.
+  rc = ngtcp2_conn_write_connection_close(
+      quic_socket.qconn,
+      nullptr, /* path */
+      nullptr, /* pkt_info */
+      (uint8_t *)buffer,
+      sizeof(buffer),
+      &error_code,
+      ts);
+  if (rc > 0) {
+    // Send the CONNECTION_CLOSE.
+    while ((send(get_fd(), buffer, rc, 0) == -1) && errno == EINTR)
+      ;
+  }
 }
 
 swoc::Rv<ssize_t> H3Session::read(swoc::MemSpan<char> /* span */)
