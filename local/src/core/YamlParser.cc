@@ -141,13 +141,13 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
       TextView text{status_node.Scalar()};
       TextView parsed;
       auto n = swoc::svtou(text, &parsed);
-      if (parsed.size() == text.size() && 0 < n && n <= 599) {
+      if (parsed.size() == text.size() && ((0 < n && n <= 599) || n == 999)) {
         message._status = n;
         message._status_string = std::to_string(message._status);
       } else {
         errata.note(
             S_ERROR,
-            R"("{}" value "{}" at {} must be an integer in the range [1..599].)",
+            R"("{}" value "{}" at {} must be an integer in the range [1..599] or 999.)",
             YAML_HTTP_STATUS_KEY,
             text,
             status_node.Mark());
@@ -155,7 +155,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     } else {
       errata.note(
           S_ERROR,
-          R"("{}" value at {} must be an integer in the range [1..599].)",
+          R"("{}" value at {} must be an integer in the range [1..599] or 999.)",
           YAML_HTTP_STATUS_KEY,
           status_node.Mark());
     }
@@ -763,13 +763,13 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
     auto const &status_field_value = pseudo_it->second;
     TextView parsed;
     auto n = swoc::svtou(status_field_value, &parsed);
-    if (parsed.size() == status_field_value.size() && 0 < n && n <= 599) {
+    if (parsed.size() == status_field_value.size() && ((0 < n && n <= 599) || n == 999)) {
       message._status = n;
       message._status_string = std::to_string(message._status);
     } else {
       errata.note(
           S_ERROR,
-          R"("{}" pseudo header value "{}" at {} must be an integer in the range [1..599].)",
+          R"("{}" pseudo header value "{}" at {} must be an integer in the range [1..599] or 999.)",
           YAML_HTTP2_PSEUDO_STATUS_KEY,
           status_field_value,
           node.Mark());
