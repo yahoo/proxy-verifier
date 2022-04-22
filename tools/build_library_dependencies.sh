@@ -26,7 +26,7 @@ then
   num_threads=$(nproc)
 else
   # MacOS.
-  num_threads=$(sysctl -n hw.physicalcpu)
+  num_threads=$(sysctl hw.logicalcpu)
 fi
 
 [ $# -eq 1 ] || fail "Please provide a directory in which to install the libraries."
