@@ -43,12 +43,9 @@
 #include "swoc/swoc_ip.h"
 #include "yaml-cpp/yaml.h"
 
-using swoc::BufferWriter;
 using swoc::Errata;
-using swoc::TextView;
 
 using std::this_thread::sleep_for;
-namespace chrono = std::chrono;
 using namespace std::literals;
 constexpr auto const Thread_Sleep_Interval = 100ms;
 
