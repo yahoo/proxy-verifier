@@ -18,6 +18,7 @@ autest = "==1.10.0"
 hyper = "*"
 pyOpenSSL = "*"
 eventlet = "*"
+ruamel_yaml = "*"
 
 asyncio = "*"
 aioquic = "*"

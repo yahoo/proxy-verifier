@@ -14,10 +14,25 @@ import datetime
 import pathlib
 import shutil
 import copy
-import ipaddress
-import re
 import sys
 from urllib.parse import urlparse
+
+try:
+    from ruamel.yaml import YAML
+    from ruamel.yaml.comments import CommentedSeq
+
+    has_yaml = True
+    yaml = YAML()
+
+    def flow_style_list(l):
+        fsl = CommentedSeq(l)
+        fsl.fa.set_flow_style()
+        return fsl
+
+except ModuleNotFoundError:
+    has_yaml = False
+    print('Module "ruamel.yaml" not found, please install using command "pip install ruamel.yaml".')
+    print('Continuing with JSON format replay files.')
 
 http_status_codes = {
     100: 'Continue',
@@ -94,8 +109,8 @@ class ReplaySession:
         self.url = ''
         self.hostname = ''
         self.tls_ver = 0
-        self.http_ver = '1.1'
-        self.ip_ver = '4'
+        self.http_ver = 1.1
+        self.ip_ver = 4
         self.session = {}
         self.transactions = []
         return
@@ -119,7 +134,7 @@ class ReplaySession:
 
         if h2_trans and self.tls_ver > 1.1:
             if not tls_trans:
-                self.http_ver = '2'
+                self.http_ver = 2
             else:
                 self.random_http_ver()
 
@@ -157,11 +172,11 @@ class ReplaySession:
         return
 
     def random_http_ver(self):
-        self.http_ver = random.choice(['1.1', '2'])
+        self.http_ver = random.choice([1.1, 2])
         return
 
     def random_ip_ver(self):
-        self.ip_ver = random.choice(['4', '6'])
+        self.ip_ver = random.choice([4, 6])
         return
 
     def random_transaction(self):
@@ -175,6 +190,10 @@ class ReplaySession:
         new_uuid = new_uuid[:8] + '-' + new_uuid[8:12] + '-' + \
             new_uuid[12:16] + '-' + new_uuid[16:20] + '-' + new_uuid[20:]
         transaction['all']['headers']['fields'].append(['uuid', new_uuid])
+
+        if has_yaml:
+            for i, field in enumerate(transaction['all']['headers']['fields']):
+                transaction['all']['headers']['fields'][i] = flow_style_list(field)
 
         transaction['client-request'] = {}
         transaction['client-request']['version'] = '1.1'
@@ -191,6 +210,10 @@ class ReplaySession:
         else:
             request_size = 0
         req_headers['fields'].append(['Host', self.hostname])
+
+        if has_yaml:
+            for i, field in enumerate(req_headers['fields']):
+                req_headers['fields'][i] = flow_style_list(field)
 
         transaction['client-request']['headers'] = req_headers
 
@@ -215,13 +238,17 @@ class ReplaySession:
         if res_headers['fields'][-1][-1] == 'keep-alive':
             res_headers['fields'].append(['Keep-Alive', 'timeout=1, max=100'])
 
+        if has_yaml:
+            for i, field in enumerate(res_headers['fields']):
+                res_headers['fields'][i] = flow_style_list(field)
+
         transaction['server-response']['headers'] = res_headers
 
         transaction['server-response']['content'] = {}
         transaction['server-response']['content']['encoding'] = 'plain'
         transaction['server-response']['content']['size'] = response_size
 
-        transaction['proxy-response'] = transaction['server-response']
+        transaction['proxy-response'] = copy.deepcopy(transaction['server-response'])
         return transaction
 
     @staticmethod
@@ -275,9 +302,12 @@ class RepalyFile:
         self.sess_count = sess_num
         return self.trans_count, False
 
-    def dump_to_disk(self, print_info):
+    def dump_to_disk(self, print_info, out_json):
         with open(self.f_name, 'w') as out_file:
-            out_file.write(json.dumps(self.replay_file, indent=2))
+            if out_json:
+                out_file.write(json.dumps(self.replay_file, indent=2))
+            else:
+                yaml.dump(self.replay_file, out_file)
 
         if print_info:
             print('Generated file {0}, with {1} sessions and {2} transactions.'.format(
@@ -317,11 +347,20 @@ def parse_args():
                         help='Path to a directory where the replay files are generated.')
     parser.add_argument('-p', '--prefix', dest='prefix', type=str, default='',
                         help='Prefix for the replay file names.')
+    parser.add_argument(
+        '-j',
+        '--out-json',
+        dest='out_json',
+        default=False,
+        action='store_true',
+        help='Dump replay files in JSON format. By default replay files will be formatted as YAML.')
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+
+    out_json = (not has_yaml) or args.out_json
 
     http_trans = False
     tls_trans = False
@@ -374,8 +413,10 @@ def main():
     random.seed()
 
     while True:
-        f_name = pathlib.PurePath(args.output).joinpath('{0}{1}.json'.format(
-            args.prefix + '_' if args.prefix != '' else '', file_count))
+        prefix = f'{args.prefix}_' if args.prefix else ''
+        suffix = 'json' if out_json else 'yaml'
+        f_name = pathlib.PurePath(args.output).joinpath(f'{prefix}{file_count}.{suffix}')
+
         replay_file = RepalyFile(f_name)
         trans_count, finished = replay_file.random_populate(
             curr_trans_num=curr_trans_num,
@@ -390,7 +431,7 @@ def main():
             tls_trans=tls_trans
         )
         curr_trans_num += trans_count
-        replay_file.dump_to_disk(True)
+        replay_file.dump_to_disk(True, out_json)
         file_count += 1
 
         if finished:
