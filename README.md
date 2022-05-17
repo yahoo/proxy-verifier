@@ -52,6 +52,21 @@ Table of Contents
             * [--thread-limit &lt;number&gt;](#--thread-limit-number)
             * [--qlog-dir &lt;directory&gt;](#--qlog-dir-directory)
             * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
+      * [Tools](#tools)
+         * [Replay Gen](#replay-gen-replay_genpytoolsreplay_genpy)
+            * [-n,--number &lt;NUMBER&gt;](#-n--number-number)
+            * [-tl,--trans-lower &lt;TRANS_LOWER&gt;](#-tl--trans-lower-trans_lower)
+            * [-tu,--trans-upper &lt;TRANS_UPPER&gt;](#-tu--trans-upper-trans_upper)
+            * [-sl,--sess-lower &lt;SESS_LOWER&gt;](#-sl--sess-lower-sess_lower)
+            * [-su,--sess-upper &lt;SESS_UPPER&gt;](#-su--sess-upper-sess_upper)
+            * [-tp,--trans-protocols &lt;TRANS_PROTOCOLS&gt;](#-tp--trans-protocols-trans_protocols)
+            * [-u,--url-file &lt;URL_FILE&gt;](#-u--url-file-url_file)
+            * [-o,--output &lt;OUTPUT&gt;](#-o--output-output)
+            * [-p,--prefix &lt;PREFIX&gt;](#-p--prefix-prefix)
+            * [-j,--out-json](#[-j--out-json)
+         * [Remap Config to URL List](#remap-config-to-url-list-remap_config_to_url_listpytoolsremap_config_to_url_listpy)
+            * [-o,--output &lt;OUTPUT_FILE&gt;](#-o--output-output_file)
+            * [--no-ip](#--no-ip)
       * [Contribute](#contribute)
       * [License](#license)
 
@@ -1142,7 +1157,7 @@ is provided which automatically links the Verifier binaries statically. It is
 run from the root directory of your repository like so:
 
 ```
-./tools/build_static 
+./tools/build_static
 ```
 
 By default this builds Proxy Verifier with the following invocation:
@@ -1471,6 +1486,55 @@ replayed traffic. If this option is used, TLS key logging will be appended to
 the specified filename. This file can then be provided to protocol analyzers
 such as Wireshark to decrypt the traffic. TLS key logging is disabled by
 default.
+
+## Tools
+This section describes how to use some of the scripts under the [tools](tools) directory.
+
+### Replay Gen [replay_gen.py](tools/replay_gen.py)
+This tool is used to generate mock replay files for easy testing.
+Listed below are the available arguments for this script.
+
+#### -n,--number \<NUMBER\>
+Number of total transactions.
+
+#### -tl,--trans-lower \<TRANS_LOWER\>
+The lower limit of transactions per session.
+
+#### -tu,--trans-upper \<TRANS_UPPER\>
+The upper limit of transactions per session.
+
+#### -sl,--sess-lower \<SESS_LOWER\>
+The lower limit of sessions per file.
+
+#### -su,--sess-upper \<SESS_UPPER\>
+The upper limit of sessions per file.
+
+#### -tp,--trans-protocols \<TRANS_PROTOCOLS\>
+A comma separated list of protocols that are allowed to be generated.
+Available options are: http, tls, h2, all.
+
+#### -u,--url-file \<URL_FILE\>
+Path to a file with the list of URLs that can be used.
+The URL list file can be acquired by running the [Remap Config to URL List]() script described below.
+
+#### -o,--output \<OUTPUT\>
+Path to a directory where the replay files are generated.
+
+#### -p,--prefix \<PREFIX\>
+Prefix for the replay file names.
+
+#### -j,--out-json
+Dump replay files in JSON format. By default replay files will be formatted as YAML.
+
+### Remap Config to URL List [remap_config_to_url_list.py](tools/remap_config_to_url_list.py)
+This tool converts a `remap.config` file to a URL list file that is used by [Replay Gen](#replay-gen-replay_genpytoolsreplay_genpy)
+Listed below are the available arguments for this script.
+
+#### -o,--output \<OUTPUT_FILE\>
+A filename to which to write the list of URLs. Defaults to `stdout`.
+
+#### --no-ip
+Ignore ip address (in the "replacement" section) in the `remap.config` file.
 
 ## Contribute
 
