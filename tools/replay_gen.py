@@ -180,36 +180,39 @@ class ReplaySession:
         return
 
     def random_transaction(self):
-        transaction = {}
-        transaction['connection-time'] = int(datetime.datetime.utcnow().timestamp() * 1000000000)
-
-        transaction['all'] = {}
-        transaction['all']['headers'] = {}
-        transaction['all']['headers']['fields'] = []
         new_uuid = uuid.uuid4().hex
         new_uuid = new_uuid[:8] + '-' + new_uuid[8:12] + '-' + \
             new_uuid[12:16] + '-' + new_uuid[16:20] + '-' + new_uuid[20:]
-        transaction['all']['headers']['fields'].append(['uuid', new_uuid])
 
-        if has_yaml:
-            for i, field in enumerate(transaction['all']['headers']['fields']):
-                transaction['all']['headers']['fields'][i] = flow_style_list(field)
+        transaction = {}
+        transaction['connection-time'] = int(datetime.datetime.utcnow().timestamp() * 1000000000)
 
         transaction['client-request'] = {}
-        transaction['client-request']['version'] = '1.1'
-        transaction['client-request']['scheme'] = 'https' if self.tls_ver > 0 else 'http'
-        transaction['client-request']['method'] = random.choice(['GET'])
-        transaction['client-request']['url'] = self.url
 
-        req_headers = {}
-        req_headers['encoding'] = 'esc_json'
-        req_headers['fields'] = []
-        if transaction['client-request']['method'] != 'GET':
-            request_size = random.randint(1, 1000)
-            req_headers['fields'].append(['Content-Length', str(request_size)])
+        request_method = random.choice(['GET', 'POST'])
+        request_size = random.randint(1, 1000) if request_method != 'GET' else 0
+
+        if self.http_ver == 1.1:
+            transaction['client-request']['method'] = request_method
+            transaction['client-request']['scheme'] = 'https' if self.tls_ver > 0 else 'http'
+            transaction['client-request']['url'] = self.url
+            transaction['client-request']['version'] = str(self.http_ver)
+
+            req_headers = {}
+            req_headers['fields'] = []
+            req_headers['fields'].append(['Host', self.hostname])
         else:
-            request_size = 0
-        req_headers['fields'].append(['Host', self.hostname])
+            req_headers = {}
+            req_headers['fields'] = []
+            req_headers['fields'].append([':method', request_method])
+            req_headers['fields'].append([':scheme', 'https' if self.tls_ver > 0 else 'http'])
+            req_headers['fields'].append([':authority', self.hostname])
+            req_headers['fields'].append([':path', self.url])
+
+        if request_method == 'POST':
+            req_headers['fields'].append(['Content-Type', 'application/json; charset=utf-8'])
+
+        req_headers['fields'].append(['uuid', new_uuid])
 
         if has_yaml:
             for i, field in enumerate(req_headers['fields']):
@@ -222,21 +225,30 @@ class ReplaySession:
         transaction['client-request']['content']['size'] = request_size
 
         transaction['proxy-request'] = copy.deepcopy(transaction['client-request'])
-        # transaction['proxy-request']['url'] = '/'
 
         transaction['server-response'] = {}
-        transaction['server-response']['status'] = random.choice([200])
-        transaction['server-response']['reason'] = http_status_codes[transaction['server-response']['status']]
 
+        response_status = random.choice([200, 404])
         response_size = random.randint(1, 1000)
-        res_headers = {}
-        res_headers['encoding'] = 'esc_json'
-        res_headers['fields'] = []
-        res_headers['fields'].append(['Content-Length', str(response_size)])
-        res_headers['fields'].append(['Connection', random.choices(
-            ['close', 'keep-alive'], weights=[1, 10], k=1)[0]])
-        if res_headers['fields'][-1][-1] == 'keep-alive':
-            res_headers['fields'].append(['Keep-Alive', 'timeout=1, max=100'])
+
+        if self.http_ver == 1.1:
+            transaction['server-response']['status'] = response_status
+            transaction['server-response']['reason'] = http_status_codes[response_status]
+
+            res_headers = {}
+            res_headers['fields'] = []
+            res_headers['fields'].append(['Content-Type', 'text/html'])
+            if random.choices([1, 2]) == 1:
+                res_headers['fields'].append(['Transfer-Encoding', 'chunked'])
+            res_headers['fields'].append(['Connection', random.choices(
+                ['close', 'keep-alive'], weights=[1, 10], k=1)[0]])
+        else:
+            res_headers = {}
+            res_headers['fields'] = []
+            res_headers['fields'].append([':status', response_status])
+            res_headers['fields'].append(['Content-Type', 'text/html'])
+
+        res_headers['fields'].append(['uuid', new_uuid])
 
         if has_yaml:
             for i, field in enumerate(res_headers['fields']):
@@ -310,8 +322,8 @@ class RepalyFile:
                 yaml.dump(self.replay_file, out_file)
 
         if print_info:
-            print('Generated file {0}, with {1} sessions and {2} transactions.'.format(
-                self.f_name, self.sess_count, self.trans_count))
+            print(
+                f'Generated file {self.f_name}, with {self.sess_count} sessions and {self.trans_count} transactions.')
 
         return
 
@@ -378,7 +390,7 @@ def main():
             tls_trans = True
             h2_trans = True
         else:
-            print('Invalid protocol value {0}, ignoring...'.format(p))
+            print(f'Invalid protocol value {p}, ignoring...')
 
     if not http_trans and not tls_trans and not h2_trans:
         all_protocols = input(
