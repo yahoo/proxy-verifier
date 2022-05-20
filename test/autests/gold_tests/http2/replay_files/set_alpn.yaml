@@ -49,7 +49,8 @@ sessions:
 
       headers:
         fields:
-        - [ Host, { value: example.data.com, as: equal } ]
+        # Our Python httpx test proxy does not send a Host header.
+        #- [ Host, { value: example.data.com, as: equal } ]
         - [ Content-Length, { value: "0", as: equal } ]
 
     server-response:

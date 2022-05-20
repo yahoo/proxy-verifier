@@ -313,10 +313,6 @@
                                     "0"
                                 ],
                                 [
-                                    "Content-Encoding",
-                                    "gzip"
-                                ],
-                                [
                                     "Vary",
                                     "Accept-Encoding"
                                 ],
@@ -352,10 +348,6 @@
                                 [
                                     "Age",
                                     "0"
-                                ],
-                                [
-                                    "Content-Encoding",
-                                    "gzip"
                                 ],
                                 [
                                     "Vary",
@@ -473,10 +465,6 @@
                                     "0"
                                 ],
                                 [
-                                    "Content-Encoding",
-                                    "gzip"
-                                ],
-                                [
                                     "Vary",
                                     "Accept-Encoding"
                                 ],
@@ -512,10 +500,6 @@
                                 [
                                     "Age",
                                     "0"
-                                ],
-                                [
-                                    "Content-Encoding",
-                                    "gzip"
                                 ],
                                 [
                                     "Vary",

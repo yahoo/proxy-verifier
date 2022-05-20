@@ -5,10 +5,10 @@
 :scheme: https
 :authority: example.data.com
 :path: /a/path?q=3
+user-agent: ``
 accept: */*
 accept-language: en-us
 accept-encoding: gzip
-host: example.data.com
 x-test-duplicate-combined: first
 x-test-duplicate-combined: second
 x-test-duplicate-separate: first
@@ -19,7 +19,6 @@ uuid: 1
 ``
 :status: 200
 cache-control: private
-content-encoding: gzip
 content-type: application/json;charset=utf-8
 content-length: 16
 date: Sat, 16 Mar 2019 01:13:21 GMT
@@ -33,18 +32,21 @@ uuid: 1
 ``
 :method: POST
 :scheme: https
-:authority: example.data.com
+:authority: ``
 :path: /a/path
+accept: ``
+accept-encoding: ``
+user-agent: ``
 x-request-header: request
 uuid: 2
 x-added-header: 1
+content-length: 10
 
 ``Received an HTTP/2 body of 10 bytes for key 2 with stream id 3:
 0123456789
-``Equals Success: Key: "2", Field Name: ":authority", Value: "example.data.com"
+`` Contains Success: Key: "2", Field Name: ":authority", Required Value: "127.0.0.1", Value: "127.0.0.1:``"
 ``Equals Success: Key: "2", Field Name: ":method", Value: "POST"
 ``Equals Success: Key: "2", Field Name: ":scheme", Value: "https"
-``Absence Success: Key: "2", Field Name: "content-length"
 ``Presence Success: Key: "2", Field Name: "x-added-header", Value: "1"
 ``Absence Success: Key: "2", Field Name: "x-deleted-header"
 ``Presence Success: Key: "2", Field Name: "x-request-header", Value: "request"
@@ -59,8 +61,11 @@ uuid: 2
 ``
 :method: GET
 :scheme: https
-:authority: example.data.com
+:authority: 127.0.0.1:``
 :path: /b/path
+accept: ``
+accept-encoding: ``
+user-agent: ``
 x-request-header: test_request
 uuid: 3
 
@@ -73,8 +78,11 @@ uuid: 3
 ``Received an HTTP/2 request for key 4 with stream id 7:
 :method: GET
 :scheme: https
-:authority: example.data.com
+:authority: 127.0.0.1:``
 :path: /b/path
+accept: ``
+accept-encoding: ``
+user-agent: ``
 x-request-header: test_request
 uuid: 4
 

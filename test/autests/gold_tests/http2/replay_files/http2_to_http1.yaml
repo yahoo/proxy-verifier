@@ -35,7 +35,6 @@ sessions:
         encoding: esc_json
         fields:
         - [ Cache-Control, private ]
-        - [ Content-Encoding, gzip ]
         - [ Content-Type, application/json;charset=utf-8 ]
         - [ Content-Length, '16' ]
         - [ Date, "Sat, 16 Mar 2019 01:13:21 GMT" ]
