@@ -698,6 +698,11 @@ public:
   std::tuple<ssize_t, std::error_code>
   transmit(Session &session, swoc::TextView data, size_t chunk_size = 4096);
 
+public:
+  /** The content of a zero-sized chunk, which is the final chunk that is sent.
+   */
+  static constexpr swoc::TextView ZERO_CHUNK{"0\r\n\r\n"};
+
 protected:
   size_t _size = 0; ///< Size of the current chunking being decoded.
   size_t _off = 0;  ///< Number of bytes in the current chunk already sent to the callback.

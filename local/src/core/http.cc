@@ -1018,6 +1018,11 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
   }
 
   if (hdr._chunked_p) {
+    // This is the total number of drained chunked bytes, including chunk
+    // headers and the body. This is in contrast with num_drained_body_bytes
+    // which will just be the number of body bytes transmitted in chunks and
+    // will not include chunk headers.
+    auto num_drained_chunk_bytes = initial.size();
     ChunkCodex::ChunkCallback cb{
         // TODO: Note that @a block is the set of body bytes in this chunk and
         // does not include chunk header content. It would be more accurate to
@@ -1033,10 +1038,10 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
     ChunkCodex codex;
 
     // num_drained_body_bytes was initialized to initial.size(), which was
-    // sufficient and handy in the above code. However, for chunked content it
-    // is slightly inaccurate because it includes chunk headers and EOL
-    // trailers.  We reset it to zero here and count the body bytes accurately
-    // via the chunk parsing callback.
+    // sufficient and handy in the above code. However, for chunked content
+    // initial.size() is slightly inaccurate because it includes chunk headers
+    // and EOL trailers.  We reset it to zero here and count the body bytes
+    // accurately via the chunk parsing callback.
     num_drained_body_bytes = 0;
     auto result = codex.parse(initial, cb);
     while (result == ChunkCodex::CONTINUE) {
@@ -1070,6 +1075,7 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
       ssize_t const n = read({body.data() + old_size, buff_storage_size - old_size});
       if (n > 0) {
         body.resize(old_size + n);
+        num_drained_chunk_bytes += n;
         result = codex.parse(TextView(body.data() + old_size, n), cb);
       } else {
         body.resize(old_size);
@@ -1090,9 +1096,18 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
     if (result != ChunkCodex::DONE && num_drained_body_bytes != expected_content_size) {
       num_drained_body_bytes.note(
           S_ERROR,
-          R"(Unexpected chunked content: expected {} bytes, drained {} bytes.)",
+          R"(Unexpected chunked content for key {}: expected {} bytes, drained {} bytes.)",
+          hdr.get_key(),
           expected_content_size,
           num_drained_body_bytes.result());
+    } else if (num_drained_chunk_bytes < ChunkCodex::ZERO_CHUNK.size()) {
+      num_drained_body_bytes.note(
+          S_ERROR,
+          "Unexpected chunked content for key {}: too small. Expected at least {} chunk bytes, "
+          "including chunk headers, but only received {} chunk bytes.",
+          hdr.get_key(),
+          ChunkCodex::ZERO_CHUNK.size(),
+          num_drained_chunk_bytes);
     }
     // As described above in the chunk callback comment, this will print the
     // entire chunk stream, including chunk headers.
@@ -1110,8 +1125,9 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
         body.resize(0);
         num_drained_body_bytes.note(
             S_DIAG,
-            "Received {} of {} expected HTTP/1 body bytes. Not storing any more since we hit "
-            "buffer capacity: {}.",
+            "Received {} of {} expected HTTP/1 body bytes for key {}. Not storing any more since "
+            "we hit buffer capacity: {}.",
+            hdr.get_key(),
             num_drained_body_bytes.result(),
             expected_content_size,
             buff_storage_size);
@@ -1128,7 +1144,8 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
       if (is_closed()) {
         num_drained_body_bytes.note(
             S_ERROR,
-            R"(Content-Length body underrun: received {} bytes of content, expected {}, when file closed because {}.)",
+            R"(Content-Length body underrun for key {}: received {} bytes of content, expected {}, when file closed because {}.)",
+            hdr.get_key(),
             num_drained_body_bytes.result(),
             expected_content_size,
             swoc::bwf::Errno{});
@@ -1138,7 +1155,8 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
     if (num_drained_body_bytes > expected_content_size) {
       num_drained_body_bytes.note(
           S_ERROR,
-          R"(Body overrun while reading it: received {} bytes of content, expected {}.)",
+          R"(Body overrun for key{}: received {} bytes of content, expected {}.)",
+          hdr.get_key(),
           num_drained_body_bytes.result(),
           expected_content_size);
     }
@@ -1709,7 +1727,6 @@ std::tuple<ssize_t, std::error_code>
 ChunkCodex::transmit(Session &session, swoc::TextView data, size_t chunk_size)
 {
   static const std::error_code NO_ERROR;
-  static constexpr swoc::TextView ZERO_CHUNK{"0\r\n\r\n"};
 
   swoc::LocalBufferWriter<10> w; // 8 bytes of size (32 bits) CR LF
   ssize_t n = 0;
