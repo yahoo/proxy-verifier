@@ -16,7 +16,6 @@ uuid: 1
 ==== RESPONSE HEADERS ====
 :status: 200
 cache-control: private
-content-encoding: gzip
 content-type: application/json;charset=utf-8
 content-length: 16
 date: Sat, 16 Mar 2019 01:13:21 GMT

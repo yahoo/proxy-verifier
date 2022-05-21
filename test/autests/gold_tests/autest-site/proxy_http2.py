@@ -11,7 +11,8 @@ Implement HTTP/2 proxy behavior in Python.
 from email.message import EmailMessage as HttpHeaders
 import sys
 import ssl
-import hyper
+from OpenSSL.SSL import Error as SSLError
+import httpx
 import http.client
 import urllib.parse
 import threading
@@ -82,7 +83,10 @@ class Http2ConnectionManager(object):
             self.client_sni = None
 
         while True:
-            data = self.sock.recv(65535)
+            try:
+                data = self.sock.recv(65535)
+            except SSLError:
+                data = None
             if not data:
                 # Connection ended.
                 for http_conn in self.tls.http_conns.values():
@@ -138,7 +142,7 @@ class Http2ConnectionManager(object):
         if not isinstance(request_headers, HttpHeaders):
             request_headers_message = HttpHeaders()
             for name, value in request_headers:
-                request_headers_message.add_header(name, value)
+                request_headers_message.add_header(name.decode("utf-8"), value.decode("utf-8"))
             request_headers = request_headers_message
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
@@ -197,6 +201,17 @@ class Http2ConnectionManager(object):
             res.reason)
         return response_headers, response_body
 
+    def _remove_pseudo_headers(self, old_headers):
+        new_headers = HttpHeaders()
+        for name, value in old_headers.items():
+            if (name == ':method' or
+                    name == ':path' or
+                    name == ':authority' or
+                    name == ':scheme'):
+                continue
+            new_headers.add_header(name, value)
+        return new_headers
+
     def _send_http2_request_to_server(self, request_headers, req_body, client_stream_id):
         if not self.is_h2_to_server:
             raise RuntimeError(
@@ -204,43 +219,44 @@ class Http2ConnectionManager(object):
 
         request_headers_message = HttpHeaders()
         for name, value in request_headers:
-            request_headers_message.add_header(name, value)
+            request_headers_message.add_header(name.decode("utf-8"), value.decode("utf-8"))
         request_headers = request_headers_message
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
+
         scheme = request_headers[':scheme']
         replay_server = f"127.0.0.1:{self.server_port}"
-        method = request_headers[':method']
         path = request_headers[':path']
+        url = f'{scheme}://{replay_server}{path}'
+        method = request_headers[':method']
+
+        original_request_headers = request_headers
+        request_headers = self._remove_pseudo_headers(request_headers)
 
         try:
             origin = (scheme, replay_server, self.client_sni)
             if origin not in self.tls.http_conns:
-                gcontext = hyper.tls.init_context(cert_path=self.ca_file, cert=self.cert_file)
+                ssl_context = httpx.create_ssl_context(cert=self.cert_file, verify=False)
                 if self.client_sni:
-                    setattr(gcontext, "old_wrap_socket", gcontext.wrap_socket)
+                    setattr(ssl_context, "old_wrap_socket", ssl_context.wrap_socket)
 
                     def new_wrap_socket(sock, *args, **kwargs):
                         kwargs['server_hostname'] = self.client_sni
-                        gcontext.check_hostname = False
-                        return gcontext.old_wrap_socket(sock, *args, **kwargs)
-                    setattr(gcontext, "wrap_socket", new_wrap_socket)
+                        return ssl_context.old_wrap_socket(sock, *args, **kwargs)
+                    setattr(ssl_context, "wrap_socket", new_wrap_socket)
 
-                http2_connection = hyper.HTTP20Connection(
-                    '127.0.0.1', port=self.server_port, secure=True, ssl_context=gcontext)
-                try:
-                    http2_connection.connect()
-                except AssertionError:
-                    # This will happen if the ALPN negotiation refuses HTTP2. Try with HTTP/1.
-                    print("HTTP/2 negotiation failed. Trying with HTTP/1")
-                    return self._send_http1_request_to_server(
-                        request_headers, req_body, client_stream_id)
+                http2_connection = httpx.Client(
+                    verify=ssl_context,
+                    http2=True)
 
                 self.tls.http_conns[origin] = http2_connection
 
-            connection_to_server = self.tls.http_conns[origin]
-            server_stream_id = connection_to_server.request(method, path, req_body, request_headers)
-            res = connection_to_server.get_response(server_stream_id)
-            response_body = res.read(decode_content=False)
+            client = self.tls.http_conns[origin]
+            response_from_server = client.request(
+                method=method,
+                url=url,
+                headers=request_headers.items(),
+                content=req_body)
+            response_body = response_from_server.content
         except Exception as e:
             if origin in self.tls.http_conns:
                 del self.tls.http_conns[origin]
@@ -252,13 +268,16 @@ class Http2ConnectionManager(object):
             traceback.print_exc(file=sys.stdout)
             return
 
-        setattr(res, 'headers', ProxyRequestHandler.filter_headers(res.headers))
+        setattr(
+            response_from_server,
+            'headers',
+            ProxyRequestHandler.filter_headers(response_from_server.headers))
         response_headers = (
-            (':status', str(res.status)),
+            (':status', str(response_from_server.status_code)),
         )
         previous_k = b''
         previous_v = b''
-        for k, v in res.headers:
+        for k, v in response_from_server.headers.raw:
             if k == b'date' and k == previous_k:
                 # This happens with date, which HTTPHeaderMap annoyingly splits
                 # on the comma:
@@ -271,13 +290,17 @@ class Http2ConnectionManager(object):
                 response_headers = response_headers[0:-1]
             response_headers += ((k, v),)
             previous_k, previous_v = k, v
+
+        # httpx will insert a reason phrase for HTTP/2, but there technically
+        # isn't one, so don't confuse the output with it.
+        empty_reason_phrase = ''
         self.print_info(
-            request_headers,
+            original_request_headers,
             req_body,
             response_headers,
             response_body,
-            res.status,
-            res.reason)
+            response_from_server.status_code,
+            empty_reason_phrase)
         return response_headers, response_body
 
     def request_received(self, request_headers, req_body, stream_id):

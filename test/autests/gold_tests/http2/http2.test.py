@@ -100,9 +100,6 @@ proxy.Streams.stdout += Testers.ContainsExpression(
 proxy.Streams.stdout += Testers.ContainsExpression(
     "Got SNI from client: b'test_sni_with_h2'",
     "Verify that the SNI associated with HTTP/2 support was sent.")
-proxy.Streams.stdout += Testers.ContainsExpression(
-    "HTTP/2 negotiation failed. Trying with HTTP/1",
-    "Verify that the proxy detected that HTTP/2 was rejected.")
 
 # The client sent and received HTTP/2 for both transactions because
 # only the server side should down-negotiate HTTP/2, not the proxy.

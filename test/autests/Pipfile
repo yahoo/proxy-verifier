@@ -14,8 +14,8 @@ autopep8 = "*"
 pyflakes = "*"
 
 [packages]
-autest = "==1.10.0"
-hyper = "*"
+autest = "==1.10.1"
+"httpx[http2]" = "*"
 pyOpenSSL = "*"
 eventlet = "*"
 ruamel_yaml = "*"
@@ -25,9 +25,4 @@ aioquic = "*"
 wsproto = "*"
 
 [requires]
-# We have to pin to 3.8 because MacOS 3.9 has an issue which produces this
-# message in many packages (we see it in selectors):
-# TypeError: changelist must be an iterable of select.kevent objects
-#
-# Do a google search on that...most package issues say to use pre-3.9 Python.
-python_version = "3.8"
+python_version = "3"
