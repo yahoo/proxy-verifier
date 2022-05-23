@@ -25,6 +25,7 @@ Table of Contents
          * [Field Verification](#field-verification)
          * [URL Verification](#url-verification)
          * [Status Verification](#status-verification)
+         * [Body Verification](#body-verification)
          * [Example Replay File](#example-replay-file)
       * [Installing](#installing)
          * [Prebuilt Binaries](#prebuilt-binaries)
@@ -53,7 +54,7 @@ Table of Contents
             * [--qlog-dir &lt;directory&gt;](#--qlog-dir-directory)
             * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
       * [Tools](#tools)
-         * [Replay Gen](#replay-gen-replay_genpytoolsreplay_genpy)
+         * [Replay Gen](#replay-gen-replay_genpy)
             * [-n,--number &lt;NUMBER&gt;](#-n--number-number)
             * [-tl,--trans-lower &lt;TRANS_LOWER&gt;](#-tl--trans-lower-trans_lower)
             * [-tu,--trans-upper &lt;TRANS_UPPER&gt;](#-tu--trans-upper-trans_upper)
@@ -64,7 +65,7 @@ Table of Contents
             * [-o,--output &lt;OUTPUT&gt;](#-o--output-output)
             * [-p,--prefix &lt;PREFIX&gt;](#-p--prefix-prefix)
             * [-j,--out-json](#[-j--out-json)
-         * [Remap Config to URL List](#remap-config-to-url-list-remap_config_to_url_listpytoolsremap_config_to_url_listpy)
+         * [Remap Config to URL List](#remap-config-to-url-list-remap_config_to_url_listpy)
             * [-o,--output &lt;OUTPUT_FILE&gt;](#-o--output-output_file)
             * [--no-ip](#--no-ip)
       * [Contribute](#contribute)
@@ -798,6 +799,42 @@ the field verification mechanism described above.
 Verification of HTTP response reason strings, such as "Not Found", is not
 currently supported.
 
+### Body Verification
+
+In a manner similar to field verification described above, a mechanism exists
+to verify the body content of a request or response. To specify a rule for
+verifying body content, a new `verify` node should be added under the `content`
+node. The rules follow the same map syntax as described for field verification.
+
+```YAML
+  proxy-request:
+  content:
+    verify: {value: test1, as: equal}
+
+  proxy-response:
+  content:
+    verify: {value: test2, as: contains}
+```
+
+The `value` node in the `verify` node can be ommited if the `data` node is used
+to specify the content, since body content can get very long, and/or multi-lined.
+However, `value` node has priority over the `data` node, meaning if there is a
+`value` node, then the `data` will be ignored.
+
+```YAML
+  proxy-request:
+  content:
+    encoding: plain
+    data: test1
+    verify: {as: equal}
+
+  proxy-response:
+  content:
+    encoding: plain
+    data: test2
+    verify: {as: contains}
+```
+
 ### Example Replay File
 
 The sections leading up to this one have described each of the major components
@@ -953,6 +990,77 @@ sessions:
     #
     proxy-response:
       status: 200
+
+#
+# For the third session, we demonstrate how body verification should be specified.
+#
+- protocol:
+  - name: http
+    version: 1.1
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+
+  transactions:
+
+  #
+  # Direct the Proxy Verifier client to send a POST request with a body of
+  # 11 bytes.
+  #
+  - client-request:
+      method: POST
+      url: /a/path
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.data.com ]
+        - [ Content-Type, text/html ]
+        - [ Content-Length, '11' ]
+        - [ uuid, third-request ]
+      content:
+        encoding: plain
+        data: client_test
+        size: 11
+
+    #
+    # Direct the Proxy Verifier server to verify that the request received from
+    # the proxy has body content "client_test".
+    #
+    proxy-request:
+      content:
+        verify: { value: client_test, as: equal }
+
+    #
+    # Direct the Proxy Verifier server to reply with a 200 OK response with a body
+    # of 11 bytes.
+    #
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, '11' ]
+      content:
+        encoding: plain
+        data: |-
+          server
+          test
+        size: 11
+
+    #
+    # Direct the Proxy Verifier client to verify that the response received from
+    # the proxy has body content "server\ntest".
+    #
+    proxy-response:
+      content:
+        encoding: plain
+        data: |-
+          server
+          test
+        verify: { as: equal }
 ```
 
 ## Installing

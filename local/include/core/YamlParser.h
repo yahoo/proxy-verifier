@@ -1,7 +1,7 @@
 /** @file
  * Declaration of YamlParser, the YAML file parsing class.
  *
- * Copyright 2021, Verizon Media
+ * Copyright 2022, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -24,6 +24,7 @@
 
 class HttpFields;
 class HttpHeader;
+class RuleCheck;
 
 // Delay specification units.
 static const std::string MICROSECONDS_SUFFIX{"us"};
@@ -72,6 +73,7 @@ static const std::string YAML_HTTP_URL_KEY{"url"};
 static const std::string YAML_CONTENT_KEY{"content"};
 static const std::string YAML_CONTENT_SIZE_KEY{"size"};
 static const std::string YAML_CONTENT_DATA_KEY{"data"};
+static const std::string YAML_CONTENT_VERIFY_KEY{"verify"};
 static const std::string YAML_CONTENT_ENCODING_KEY{"encoding"};
 static const std::string YAML_CONTENT_TRANSFER_KEY{"transfer"};
 
@@ -337,6 +339,20 @@ private:
    */
   static swoc::Errata
   parse_url_rules(YAML::Node const &url_rules, HttpFields &fields, bool assume_equality_rule);
+
+  /** Process URL information from the node
+   *
+   * @param[in] node The YAML node for body verification.
+   * @param[out] rule_check The object to populate with body verification rule from node.
+   * @param[in] content Optional content from data node if present.
+   *
+   * @return Any errata from parsing the node.
+   */
+  static swoc::Errata parse_body_verification(
+      YAML::Node const &node,
+      std::shared_ptr<RuleCheck> &rule_check,
+      bool assume_equality_rule,
+      swoc::TextView content = "");
 
 private:
   using ClockType = std::chrono::system_clock;

@@ -1,7 +1,7 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2021, Verizon Media
+ * Copyright 2022, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -223,10 +223,18 @@ public:
   /// The HTTP response headers for this stream.
   std::shared_ptr<HttpHeader> response_from_server;
 
+  /// The request the YAML file indicated should be received from the client.
+  //
+  // This is only used when will_receive_request is True
+  HttpHeader const *specified_request = nullptr;
+
   /// The response the YAML file indicated should be received from the server.
   //
   // This is only used when will_receive_response is True.
   HttpHeader const *specified_response = nullptr;
+
+  /// The body received.
+  std::string body_received;
 
   /// The body that will be sent for this message.
   swoc::TextView body_to_send;
@@ -277,7 +285,8 @@ public:
   swoc::Rv<size_t> drain_body(
       HttpHeader const &hdr,
       size_t expected_content_size,
-      swoc::TextView bytes_read) override;
+      swoc::TextView bytes_read,
+      std::shared_ptr<RuleCheck> rule_check = nullptr) override;
 
   /** Perform the server-side QUIC handshake for a connection. */
   swoc::Errata accept() override;

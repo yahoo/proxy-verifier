@@ -31,7 +31,8 @@ RuleCheck::options_init()
   // Overloaded resolution works with function pointers, but not with
   // std::functions. We have to help out the compiler, therefore, via casting
   // to the correct function type.
-  using single_field_function_type = std::shared_ptr<RuleCheck> (*)(TextView, TextView, bool, bool);
+  using single_field_function_type =
+      std::shared_ptr<RuleCheck> (*)(TextView, TextView, bool, bool, bool);
   options[TextView(VERIFICATION_DIRECTIVE_EQUALS)] =
       static_cast<single_field_function_type>(make_equality);
   options[TextView(VERIFICATION_DIRECTIVE_PRESENCE)] =
@@ -46,7 +47,7 @@ RuleCheck::options_init()
       static_cast<single_field_function_type>(make_suffix);
 
   url_rule_options = URLRuleOptions();
-  using url_function_type = std::shared_ptr<RuleCheck> (*)(UrlPart, TextView, bool, bool);
+  using url_function_type = std::shared_ptr<RuleCheck> (*)(UrlPart, TextView, bool, bool, bool);
   url_rule_options[TextView(VERIFICATION_DIRECTIVE_EQUALS)] =
       static_cast<url_function_type>(make_equality);
   url_rule_options[TextView(VERIFICATION_DIRECTIVE_PRESENCE)] =
@@ -62,7 +63,7 @@ RuleCheck::options_init()
 
   duplicate_field_options = DuplicateFieldRuleOptions();
   using duplicate_field_function_type =
-      std::shared_ptr<RuleCheck> (*)(TextView, std::vector<TextView> &&, bool, bool);
+      std::shared_ptr<RuleCheck> (*)(TextView, std::vector<TextView> &&, bool, bool, bool);
   duplicate_field_options[TextView(VERIFICATION_DIRECTIVE_EQUALS)] =
       static_cast<duplicate_field_function_type>(make_equality);
   duplicate_field_options[TextView(VERIFICATION_DIRECTIVE_PRESENCE)] =
@@ -83,7 +84,8 @@ RuleCheck::make_rule_check(
     TextView localized_value,
     TextView rule_type,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   Errata errata;
 
@@ -92,7 +94,7 @@ RuleCheck::make_rule_check(
     errata.note(S_INFO, R"(Invalid Test: Key: "{}")", rule_type);
     return nullptr;
   }
-  return fn_iter->second(localized_name, localized_value, is_inverted, is_nocase);
+  return fn_iter->second(localized_name, localized_value, is_inverted, is_nocase, is_body);
 }
 
 std::shared_ptr<RuleCheck>
@@ -101,7 +103,8 @@ RuleCheck::make_rule_check(
     TextView localized_value,
     TextView rule_type,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   Errata errata;
 
@@ -110,7 +113,7 @@ RuleCheck::make_rule_check(
     errata.note(S_INFO, R"(Invalid Test: Key: "{}")", rule_type);
     return nullptr;
   }
-  return fn_iter->second(url_part, localized_value, is_inverted, is_nocase);
+  return fn_iter->second(url_part, localized_value, is_inverted, is_nocase, is_body);
 }
 
 std::shared_ptr<RuleCheck>
@@ -119,7 +122,8 @@ RuleCheck::make_rule_check(
     std::vector<TextView> &&localized_values,
     TextView rule_type,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   Errata errata;
 
@@ -128,19 +132,32 @@ RuleCheck::make_rule_check(
     errata.note(S_INFO, R"(Invalid Test: Key: "{}")", rule_type);
     return nullptr;
   }
-  return fn_iter->second(localized_name, std::move(localized_values), is_inverted, is_nocase);
+  return fn_iter
+      ->second(localized_name, std::move(localized_values), is_inverted, is_nocase, is_body);
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_equality(TextView name, TextView value, bool is_inverted, bool is_nocase)
+RuleCheck::make_equality(
+    TextView name,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new EqualityCheck(name, value, is_inverted, is_nocase));
+  return std::shared_ptr<RuleCheck>(
+      new EqualityCheck(name, value, is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_equality(UrlPart url_part, TextView value, bool is_inverted, bool is_nocase)
+RuleCheck::make_equality(
+    UrlPart url_part,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new EqualityCheck(url_part, value, is_inverted, is_nocase));
+  return std::shared_ptr<RuleCheck>(
+      new EqualityCheck(url_part, value, is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -148,10 +165,11 @@ RuleCheck::make_equality(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   return std::shared_ptr<RuleCheck>(
-      new EqualityCheck(name, std::move(values), is_inverted, is_nocase));
+      new EqualityCheck(name, std::move(values), is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -159,10 +177,11 @@ RuleCheck::make_presence(
     TextView name,
     TextView /* value */,
     bool is_inverted,
-    bool /* is_nocase */)
+    bool /* is_nocase */,
+    bool is_body)
 {
   return std::shared_ptr<RuleCheck>(
-      new PresenceCheck(name, !EXPECTS_DUPLICATE_FIELDS, is_inverted));
+      new PresenceCheck(name, !EXPECTS_DUPLICATE_FIELDS, is_inverted, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -170,9 +189,10 @@ RuleCheck::make_presence(
     UrlPart url_part,
     TextView /* value */,
     bool is_inverted,
-    bool /* is_nocase */)
+    bool /* is_nocase */,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new PresenceCheck(url_part, is_inverted));
+  return std::shared_ptr<RuleCheck>(new PresenceCheck(url_part, is_inverted, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -180,15 +200,23 @@ RuleCheck::make_presence(
     TextView name,
     std::vector<TextView> && /* values */,
     bool is_inverted,
-    bool /* is_nocase */)
+    bool /* is_nocase */,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new PresenceCheck(name, EXPECTS_DUPLICATE_FIELDS, is_inverted));
+  return std::shared_ptr<RuleCheck>(
+      new PresenceCheck(name, EXPECTS_DUPLICATE_FIELDS, is_inverted, is_body));
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_absence(TextView name, TextView /* value */, bool is_inverted, bool /* is_nocase */)
+RuleCheck::make_absence(
+    TextView name,
+    TextView /* value */,
+    bool is_inverted,
+    bool /* is_nocase */,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new AbsenceCheck(name, !EXPECTS_DUPLICATE_FIELDS, is_inverted));
+  return std::shared_ptr<RuleCheck>(
+      new AbsenceCheck(name, !EXPECTS_DUPLICATE_FIELDS, is_inverted, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -196,9 +224,10 @@ RuleCheck::make_absence(
     UrlPart url_part,
     TextView /* value */,
     bool is_inverted,
-    bool /* is_nocase */)
+    bool /* is_nocase */,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new AbsenceCheck(url_part, is_inverted));
+  return std::shared_ptr<RuleCheck>(new AbsenceCheck(url_part, is_inverted, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -206,21 +235,35 @@ RuleCheck::make_absence(
     TextView name,
     std::vector<TextView> && /* values */,
     bool is_inverted,
-    bool /* is_nocase */)
+    bool /* is_nocase */,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new AbsenceCheck(name, EXPECTS_DUPLICATE_FIELDS, is_inverted));
+  return std::shared_ptr<RuleCheck>(
+      new AbsenceCheck(name, EXPECTS_DUPLICATE_FIELDS, is_inverted, is_body));
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_contains(TextView name, TextView value, bool is_inverted, bool is_nocase)
+RuleCheck::make_contains(
+    TextView name,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new ContainsCheck(name, value, is_inverted, is_nocase));
+  return std::shared_ptr<RuleCheck>(
+      new ContainsCheck(name, value, is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_contains(UrlPart url_part, TextView value, bool is_inverted, bool is_nocase)
+RuleCheck::make_contains(
+    UrlPart url_part,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new ContainsCheck(url_part, value, is_inverted, is_nocase));
+  return std::shared_ptr<RuleCheck>(
+      new ContainsCheck(url_part, value, is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -228,22 +271,34 @@ RuleCheck::make_contains(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   return std::shared_ptr<RuleCheck>(
-      new ContainsCheck(name, std::move(values), is_inverted, is_nocase));
+      new ContainsCheck(name, std::move(values), is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_prefix(TextView name, TextView value, bool is_inverted, bool is_nocase)
+RuleCheck::make_prefix(
+    TextView name,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new PrefixCheck(name, value, is_inverted, is_nocase));
+  return std::shared_ptr<RuleCheck>(new PrefixCheck(name, value, is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_prefix(UrlPart url_part, TextView value, bool is_inverted, bool is_nocase)
+RuleCheck::make_prefix(
+    UrlPart url_part,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new PrefixCheck(url_part, value, is_inverted, is_nocase));
+  return std::shared_ptr<RuleCheck>(
+      new PrefixCheck(url_part, value, is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -251,22 +306,34 @@ RuleCheck::make_prefix(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   return std::shared_ptr<RuleCheck>(
-      new PrefixCheck(name, std::move(values), is_inverted, is_nocase));
+      new PrefixCheck(name, std::move(values), is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_suffix(TextView name, TextView value, bool is_inverted, bool is_nocase)
+RuleCheck::make_suffix(
+    TextView name,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new SuffixCheck(name, value, is_inverted, is_nocase));
+  return std::shared_ptr<RuleCheck>(new SuffixCheck(name, value, is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
-RuleCheck::make_suffix(UrlPart url_part, TextView value, bool is_inverted, bool is_nocase)
+RuleCheck::make_suffix(
+    UrlPart url_part,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
-  return std::shared_ptr<RuleCheck>(new SuffixCheck(url_part, value, is_inverted, is_nocase));
+  return std::shared_ptr<RuleCheck>(
+      new SuffixCheck(url_part, value, is_inverted, is_nocase, is_body));
 }
 
 std::shared_ptr<RuleCheck>
@@ -274,10 +341,11 @@ RuleCheck::make_suffix(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   return std::shared_ptr<RuleCheck>(
-      new SuffixCheck(name, std::move(values), is_inverted, is_nocase));
+      new SuffixCheck(name, std::move(values), is_inverted, is_nocase, is_body));
 }
 
 swoc::TextView
@@ -285,6 +353,8 @@ RuleCheck::target_type() const
 {
   if (_is_field) {
     return "Field Name";
+  } else if (_is_body) {
+    return "Content Data";
   } else {
     return "URI Part";
   }
@@ -333,20 +403,32 @@ RuleCheck::invert_if_applicable(bool input) const
   }
 }
 
-EqualityCheck::EqualityCheck(TextView name, TextView value, bool is_inverted, bool is_nocase)
+EqualityCheck::EqualityCheck(
+    TextView name,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
   _name = name;
   _value = value;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
 
-EqualityCheck::EqualityCheck(UrlPart url_part, TextView value, bool is_inverted, bool is_nocase)
+EqualityCheck::EqualityCheck(
+    UrlPart url_part,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool /* is_body */)
 {
   _name = URL_PART_NAMES[url_part];
   _value = value;
   _is_field = false;
+  _is_body = false;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
@@ -355,64 +437,90 @@ EqualityCheck::EqualityCheck(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   _name = name;
   _values = std::move(values);
   _expects_duplicate_fields = true;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
 
-PresenceCheck::PresenceCheck(TextView name, bool expects_duplicate_fields, bool is_inverted)
+PresenceCheck::PresenceCheck(
+    TextView name,
+    bool expects_duplicate_fields,
+    bool is_inverted,
+    bool is_body)
 {
   _name = name;
   _expects_duplicate_fields = expects_duplicate_fields;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = false;
 }
 
-PresenceCheck::PresenceCheck(UrlPart url_part, bool is_inverted)
+PresenceCheck::PresenceCheck(UrlPart url_part, bool is_inverted, bool /* is_body */)
 {
   _name = URL_PART_NAMES[url_part];
   _is_field = false;
+  _is_body = false;
   _is_inverted = is_inverted;
   _is_nocase = false;
 }
 
-AbsenceCheck::AbsenceCheck(TextView name, bool expects_duplicate_fields, bool is_inverted)
+AbsenceCheck::AbsenceCheck(
+    TextView name,
+    bool expects_duplicate_fields,
+    bool is_inverted,
+    bool is_body)
 {
   _name = name;
   _expects_duplicate_fields = expects_duplicate_fields;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = false;
 }
 
-AbsenceCheck::AbsenceCheck(UrlPart url_part, bool is_inverted)
+AbsenceCheck::AbsenceCheck(UrlPart url_part, bool is_inverted, bool /* is_body */)
 {
   _name = URL_PART_NAMES[url_part];
   _is_field = false;
+  _is_body = false;
   _is_inverted = is_inverted;
   _is_nocase = false;
 }
 
-ContainsCheck::ContainsCheck(TextView name, TextView value, bool is_inverted, bool is_nocase)
+ContainsCheck::ContainsCheck(
+    TextView name,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
   _name = name;
   _value = value;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
 
-ContainsCheck::ContainsCheck(UrlPart url_part, TextView value, bool is_inverted, bool is_nocase)
+ContainsCheck::ContainsCheck(
+    UrlPart url_part,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool /* is_body */)
 {
   _name = URL_PART_NAMES[url_part];
   _value = value;
   _is_field = false;
+  _is_body = false;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
@@ -421,30 +529,44 @@ ContainsCheck::ContainsCheck(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   _name = name;
   _values = std::move(values);
   _expects_duplicate_fields = true;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
 
-PrefixCheck::PrefixCheck(TextView name, TextView value, bool is_inverted, bool is_nocase)
+PrefixCheck::PrefixCheck(
+    TextView name,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
   _name = name;
   _value = value;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
 
-PrefixCheck::PrefixCheck(UrlPart url_part, TextView value, bool is_inverted, bool is_nocase)
+PrefixCheck::PrefixCheck(
+    UrlPart url_part,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool /* is_body */)
 {
   _name = URL_PART_NAMES[url_part];
   _value = value;
   _is_field = false;
+  _is_body = false;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
@@ -453,30 +575,44 @@ PrefixCheck::PrefixCheck(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   _name = name;
   _values = std::move(values);
   _expects_duplicate_fields = true;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
 
-SuffixCheck::SuffixCheck(TextView name, TextView value, bool is_inverted, bool is_nocase)
+SuffixCheck::SuffixCheck(
+    TextView name,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
 {
   _name = name;
   _value = value;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
 
-SuffixCheck::SuffixCheck(UrlPart url_part, TextView value, bool is_inverted, bool is_nocase)
+SuffixCheck::SuffixCheck(
+    UrlPart url_part,
+    TextView value,
+    bool is_inverted,
+    bool is_nocase,
+    bool /* is_body */)
 {
   _name = URL_PART_NAMES[url_part];
   _value = value;
   _is_field = false;
+  _is_body = false;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }
@@ -485,12 +621,14 @@ SuffixCheck::SuffixCheck(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
-    bool is_nocase)
+    bool is_nocase,
+    bool is_body)
 {
   _name = name;
   _values = std::move(values);
   _expects_duplicate_fields = true;
-  _is_field = true;
+  _is_field = !is_body;
+  _is_body = is_body;
   _is_inverted = is_inverted;
   _is_nocase = is_nocase;
 }

@@ -7,6 +7,7 @@
 
 #include "core/http3.h"
 #include "core/https.h"
+#include "core/verification.h"
 #include "core/ProxyVerifier.h"
 
 #include <cassert>
@@ -952,6 +953,25 @@ cb_h3_stream_close(
     return 0;
   }
   auto &stream_state = *reinterpret_cast<H3StreamState *>(stream_user_data);
+
+  if (stream_state.will_receive_request()) {
+    if (stream_state.specified_request->_content_rule) {
+      if (!stream_state.specified_request->_content_rule
+               ->test(stream_state.key, "body", swoc::TextView(stream_state.body_received)))
+      {
+        errata.note(S_DIAG, R"(Body content did not match expected value.)");
+      }
+    }
+  } else {
+    if (stream_state.specified_response->_content_rule) {
+      if (!stream_state.specified_response->_content_rule
+               ->test(stream_state.key, "body", swoc::TextView(stream_state.body_received)))
+      {
+        errata.note(S_DIAG, R"(Body content did not match expected value.)");
+      }
+    }
+  }
+
   auto const &message_start = stream_state.stream_start;
   auto const message_end = ClockType::now();
   auto const elapsed_ms = duration_cast<milliseconds>(message_end - message_start);
@@ -991,6 +1011,7 @@ cb_h3_recv_data(
       stream_state->key,
       stream_id,
       TextView(reinterpret_cast<char const *>(buf), buflen));
+  stream_state->body_received += std::string(reinterpret_cast<char const *>(buf), buflen);
   return 0;
 }
 
@@ -1080,6 +1101,13 @@ cb_h3_end_headers(
     composed_url.append(request_from_client._authority);
     composed_url.append(request_from_client._path);
     request_from_client.parse_url(composed_url);
+    if (auto spot{
+            request_from_client._fields_rules->_fields.find(HttpHeader::FIELD_CONTENT_LENGTH)};
+        spot != request_from_client._fields_rules->_fields.end())
+    {
+      size_t expected_size = swoc::svtou(spot->second);
+      stream_state->body_received.reserve(expected_size);
+    }
     errata.note(
         S_DIAG,
         "Received an HTTP/3 request for key {} with stream id {}:\n{}",
@@ -1108,6 +1136,12 @@ cb_h3_end_headers(
       // wire. If they are looking into issues, debug logging will show
       // the fields of both the request and response.
       response_from_wire.set_key(stream_state->key);
+    }
+    if (auto spot{response_from_wire._fields_rules->_fields.find(HttpHeader::FIELD_CONTENT_LENGTH)};
+        spot != response_from_wire._fields_rules->_fields.end())
+    {
+      size_t expected_size = swoc::svtou(spot->second);
+      stream_state->body_received.reserve(expected_size);
     }
     errata.note(
         S_DIAG,
@@ -1557,7 +1591,8 @@ swoc::Rv<size_t>
 H3Session::drain_body(
     HttpHeader const & /* hdr */,
     size_t /* expected_content_size */,
-    TextView /* initial */)
+    TextView /* initial */,
+    std::shared_ptr<RuleCheck> /* rule_check */)
 {
   // For HTTP/3, we process entire streams once they are ended. Therefore there
   // is never body to drain.

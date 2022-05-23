@@ -661,13 +661,34 @@ TF_Serve_Connection(std::thread *t)
         if (req_hdr->_chunked_p) {
           req_hdr->_content_size = specified_transaction._req._content_size;
         }
-        auto &&[bytes_drained, drain_errata] =
-            thread_info._session->drain_body(*req_hdr, req_hdr->_content_size, w.view());
+        auto &&[bytes_drained, drain_errata] = thread_info._session->drain_body(
+            *req_hdr,
+            req_hdr->_content_size,
+            w.view(),
+            specified_transaction._req._content_rule);
         thread_errata.note(std::move(drain_errata));
 
         if (!thread_errata.is_ok()) {
           thread_errata.note(S_ERROR, "Failed to drain the request body for key: {}.", key);
           break;
+        }
+      } else if (is_http2) {
+        H2Session *h2session = dynamic_cast<H2Session *>(thread_info._session);
+        auto iter = h2session->_stream_map.find(stream_id);
+        if (iter == h2session->_stream_map.end()) {
+          thread_errata.note(S_ERROR, "Failed to find HTTP/2 stream with id {}.", stream_id);
+        } else {
+          H2StreamState &stream_state = *iter->second;
+          stream_state._specified_request = &specified_transaction._req;
+        }
+      } else if (is_http3) {
+        H3Session *h3session = dynamic_cast<H3Session *>(thread_info._session);
+        auto iter = h3session->stream_map.find(stream_id);
+        if (iter == h3session->stream_map.end()) {
+          thread_errata.note(S_ERROR, "Failed to find HTTP/3 stream with id {}.", stream_id);
+        } else {
+          H3StreamState &stream_state = *iter->second;
+          stream_state.specified_request = &specified_transaction._req;
         }
       }
       if (req_hdr->verify_headers(key, *specified_transaction._req._fields_rules)) {

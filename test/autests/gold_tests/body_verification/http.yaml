@@ -1,0 +1,130 @@
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 1.1
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  transactions:
+  - client-request:
+      method: POST
+      url: /a/path
+      version: '1.1'
+      headers:
+        fields:
+        - [Host, example.data.com]
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+        - [uuid, 1]
+      content:
+        encoding: plain
+        data: client_test
+        size: 11
+
+    proxy-request:
+      content:
+        verify: {value: client_test, as: equal}
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+      content:
+        encoding: plain
+        data: |-
+          server
+          test
+        size: 11
+
+    proxy-response:
+      content:
+        encoding: plain
+        data: |-
+          server
+          test
+        verify: { as: equal }
+
+  - client-request:
+      method: POST
+      url: /a/path
+      version: '1.1'
+      headers:
+        fields:
+        - [Host, example.data.com]
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+        - [uuid, 2]
+      content:
+        encoding: plain
+        data: client_test
+        size: 11
+
+    proxy-request:
+      content:
+        encoding: plain
+        data: client
+        verify: {as: contains}
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+      content:
+        encoding: plain
+        data: server_test
+        size: 11
+
+    proxy-response:
+      content:
+        encoding: plain
+        data: server
+        verify: {as: contains}
+
+  - client-request:
+      method: POST
+      url: /a/path
+      version: '1.1'
+      headers:
+        fields:
+        - [Host, example.data.com]
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+        - [uuid, 3]
+      content:
+        encoding: plain
+        data: client_test
+        size: 11
+
+    proxy-request:
+      content:
+        encoding: plain
+        data: wrong
+        verify: {as: equal}
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+      content:
+        encoding: plain
+        data: server_test
+        size: 11
+
+    proxy-response:
+      content:
+        encoding: plain
+        data: wrong
+        verify: {as: equal}

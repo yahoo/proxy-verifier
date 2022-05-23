@@ -365,6 +365,8 @@ public:
 
   char const *_content_data = nullptr; ///< Literal data for the content.
 
+  std::shared_ptr<RuleCheck> _content_rule;
+
   /// The size of content we should prepare to send.
   size_t _content_size = 0;
 
@@ -574,8 +576,11 @@ public:
    * initial. This count is strictly the number of body bytes and does not
    * include any chunk header bytes (if chunk encoding was used).
    */
-  virtual swoc::Rv<size_t>
-  drain_body(HttpHeader const &hdr, size_t expected_content_size, swoc::TextView bytes_read);
+  virtual swoc::Rv<size_t> drain_body(
+      HttpHeader const &hdr,
+      size_t expected_content_size,
+      swoc::TextView bytes_read,
+      std::shared_ptr<RuleCheck> rule_check = nullptr);
 
   virtual swoc::Errata do_connect(swoc::TextView interface, swoc::IPEndpoint const *real_target);
 

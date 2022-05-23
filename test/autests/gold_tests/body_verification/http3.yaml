@@ -1,0 +1,97 @@
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 3
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  transactions:
+  - client-request:
+      headers:
+        fields:
+        - [:method, POST]
+        - [:scheme, https]
+        - [:authority, example.data.com]
+        - [:path, /a/path]
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+        - [uuid, 1]
+      content:
+        encoding: plain
+        data: client_test
+        size: 11
+
+    proxy-request:
+      # HTTP/1 on the server-side.
+      protocol:
+      - name: http
+        version: 1
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+      content:
+        verify: {value: wrong, not: equal}
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+      content:
+        encoding: plain
+        data: server_test
+        size: 11
+
+    proxy-response:
+      content:
+        verify: {value: wrong, not: contains}
+
+  - client-request:
+      headers:
+        fields:
+        - [:method, POST]
+        - [:scheme, https]
+        - [:authority, example.data.com]
+        - [:path, /a/path]
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+        - [uuid, 2]
+      content:
+        encoding: plain
+        data: client_test
+        size: 11
+
+    proxy-request:
+      # HTTP/1 on the server-side.
+      protocol:
+      - name: http
+        version: 1
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+      content:
+        verify: {value: Client_Test, not: equal, case: ignore}
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+      content:
+        encoding: plain
+        data: server_test
+        size: 11
+
+    proxy-response:
+      content:
+        verify: {value: Server, not: contains,  case: ignore}
