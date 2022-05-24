@@ -32,7 +32,7 @@ then
   num_threads=$(nproc)
 else
   # MacOS.
-  num_threads=$(sysctl hw.logicalcpu)
+  num_threads=$(sysctl -n hw.logicalcpu)
 fi
 [ -f Sconstruct ] || fail "Not in the root directory of proxy-verifier."
 
