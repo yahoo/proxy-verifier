@@ -297,6 +297,18 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         } else {
           message._content_size = content_size;
         }
+
+        if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
+          if (verify_node.IsMap()) {
+            // Verification is specified as a map, such as:
+            // verify: {value: test, as: equal, case: ignore }
+            errata.note(parse_body_verification(
+                verify_node,
+                message._content_rule,
+                message._verify_strictly,
+                content));
+          }
+        }
       } else if (auto size_node{content_node[YAML_CONTENT_SIZE_KEY]}; size_node) {
         const size_t content_size = swoc::svtou(size_node.Scalar());
         message._recorded_content_size = content_size;
@@ -313,14 +325,34 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         } else {
           message._content_size = content_size;
         }
+        if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
+          if (verify_node.IsMap()) {
+            // Verification is specified as a map, such as:
+            // verify: {value: test, as: equal, case: ignore }
+            errata.note(parse_body_verification(
+                verify_node,
+                message._content_rule,
+                message._verify_strictly));
+          }
+        }
+      } else if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
+        if (verify_node.IsMap()) {
+          // Verification is specified as a map, such as:
+          // verify: {value: test, as: equal, case: ignore }
+          errata.note(parse_body_verification(
+              verify_node,
+              message._content_rule,
+              message._verify_strictly));
+        }
       } else {
         errata.note(
             S_ERROR,
-            R"("{}" node at {} does not have a "{}" or "{}" key as required.)",
+            R"("{}" node at {} does not have a "{}", "{}" or "{}" key as required.)",
             YAML_CONTENT_KEY,
             node.Mark(),
             YAML_CONTENT_SIZE_KEY,
-            YAML_CONTENT_DATA_KEY);
+            YAML_CONTENT_DATA_KEY,
+            YAML_CONTENT_VERIFY_KEY);
       }
     } else {
       errata
@@ -442,7 +474,7 @@ YamlParser::parse_url_rules(
       } else {
         errata.note(
             S_INFO,
-            "URL rule at {} ignored: no directive, and equality is not assumed",
+            "URL rule at {} invalid: no directive, and equality is not assumed.",
             node.Mark());
         // Can continue because all URL maps are verification rules, unlike field rules
         continue;
@@ -468,7 +500,7 @@ YamlParser::parse_url_rules(
       if (!tester) {
         errata.note(
             S_ERROR,
-            "URL rule at {} does not have a valid directive ({})",
+            "URL rule at {} does not have a valid directive ({}).",
             node.Mark(),
             rule_type);
       } else {
@@ -595,7 +627,7 @@ YamlParser::parse_fields_and_rules(
       } else {
         errata.note(
             S_INFO,
-            "Field rule at {} ignored: no directive, and equality is not assumed",
+            "Field rule at {} invalid: no directive, and equality is not assumed.",
             node.Mark());
         // Cannot use continue statement because of client request/server response
       }
@@ -637,7 +669,7 @@ YamlParser::parse_fields_and_rules(
         // Do not report error if no rule because of client request/server response
         errata.note(
             S_ERROR,
-            "Field rule at {} has an invalid directive ({})",
+            "Field rule at {} has an invalid directive ({}).",
             node.Mark(),
             rule_type);
       }
@@ -645,6 +677,72 @@ YamlParser::parse_fields_and_rules(
       errata.note(S_ERROR, "Field or rule at {} is null or malformed.", node.Mark());
     }
   }
+  return errata;
+}
+
+Errata
+YamlParser::parse_body_verification(
+    YAML::Node const &node,
+    std::shared_ptr<RuleCheck> &rule_check,
+    bool assume_equality_rule,
+    TextView content)
+{
+  Errata errata;
+
+  // Get case setting (default false)
+  auto const rule_case_node{node[YAML_RULE_CASE_MAP_KEY]};
+  bool is_nocase = false;
+  if (rule_case_node && rule_case_node.IsScalar()) {
+    TextView case_str = Localizer::localize(rule_case_node.Scalar());
+    if (case_str == VERIFICATION_DIRECTIVE_IGNORE) {
+      is_nocase = true;
+    }
+  }
+
+  // Get rule type for "as: equal" structure, or "not: equal" if "as" fails
+  TextView rule_type;
+  bool is_inverted = false;
+  if (auto const rule_type_node_as = node[YAML_RULE_TYPE_MAP_KEY]; rule_type_node_as) {
+    rule_type = rule_type_node_as.Scalar();
+  } else if (auto const rule_type_node_not = node[YAML_RULE_TYPE_MAP_KEY_NOT]; rule_type_node_not) {
+    rule_type = rule_type_node_not.Scalar();
+    is_inverted = true;
+  } else if (assume_equality_rule) {
+    rule_type = VERIFICATION_DIRECTIVE_EQUALS;
+  } else {
+    errata.note(
+        S_INFO,
+        "Body rule at {} invalid: no directive, and equality is not assumed.",
+        node.Mark());
+  }
+
+  std::shared_ptr<RuleCheck> tester;
+  auto const body_value_node{node[YAML_RULE_VALUE_MAP_KEY]};
+  if (body_value_node) {
+    if (body_value_node.IsScalar()) {
+      // Single value
+      TextView value = Localizer::localize(body_value_node.Scalar());
+      tester = RuleCheck::make_rule_check("body", value, rule_type, is_inverted, is_nocase, true);
+    } else if (body_value_node.IsSequence()) {
+      errata.note(
+          S_ERROR,
+          "Body rule at {} has multiple values, which is not allowed.",
+          node.Mark());
+    }
+  } else {
+    tester = RuleCheck::make_rule_check("body", content, rule_type, is_inverted, is_nocase, true);
+  }
+
+  if (!tester) {
+    errata.note(
+        S_ERROR,
+        "Body rule at {} does not have a valid directive ({}).",
+        node.Mark(),
+        rule_type);
+  } else {
+    rule_check = tester;
+  }
+
   return errata;
 }
 

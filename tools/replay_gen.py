@@ -2,7 +2,7 @@
 
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2022, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -108,6 +108,7 @@ class ReplaySession:
     def __init__(self):
         self.url = ''
         self.hostname = ''
+        self.path = ''
         self.tls_ver = 0
         self.http_ver = 1.1
         self.ip_ver = 4
@@ -161,7 +162,7 @@ class ReplaySession:
 
     def random_hostname(self, url_list):
         self.url = random.choice(url_list)
-        self.hostname, is_tls = self.get_hostname_from_url(self.url)
+        self.hostname, self.path, is_tls = self.get_hostname_from_url(self.url)
         return is_tls
 
     def random_tls_ver(self, h2_only):
@@ -187,6 +188,14 @@ class ReplaySession:
         transaction = {}
         transaction['connection-time'] = int(datetime.datetime.utcnow().timestamp() * 1000000000)
 
+        transaction['all'] = {}
+        transaction['all']['headers'] = {}
+        transaction['all']['headers']['fields'] = []
+        if has_yaml:
+            transaction['all']['headers']['fields'].append(flow_style_list(['uuid', new_uuid]))
+        else:
+            transaction['all']['headers']['fields'].append(['uuid', new_uuid])
+
         transaction['client-request'] = {}
 
         request_method = random.choice(['GET', 'POST'])
@@ -195,7 +204,7 @@ class ReplaySession:
         if self.http_ver == 1.1:
             transaction['client-request']['method'] = request_method
             transaction['client-request']['scheme'] = 'https' if self.tls_ver > 0 else 'http'
-            transaction['client-request']['url'] = self.url
+            transaction['client-request']['url'] = self.path
             transaction['client-request']['version'] = str(self.http_ver)
 
             req_headers = {}
@@ -207,12 +216,11 @@ class ReplaySession:
             req_headers['fields'].append([':method', request_method])
             req_headers['fields'].append([':scheme', 'https' if self.tls_ver > 0 else 'http'])
             req_headers['fields'].append([':authority', self.hostname])
-            req_headers['fields'].append([':path', self.url])
+            req_headers['fields'].append([':path', self.path])
 
         if request_method == 'POST':
-            req_headers['fields'].append(['Content-Type', 'application/json; charset=utf-8'])
-
-        req_headers['fields'].append(['uuid', new_uuid])
+            req_headers['fields'].append(['Content-Type', 'test/html'])
+            req_headers['fields'].append(['Content-Length', request_size])
 
         if has_yaml:
             for i, field in enumerate(req_headers['fields']):
@@ -237,7 +245,6 @@ class ReplaySession:
 
             res_headers = {}
             res_headers['fields'] = []
-            res_headers['fields'].append(['Content-Type', 'text/html'])
             if random.choices([1, 2]) == 1:
                 res_headers['fields'].append(['Transfer-Encoding', 'chunked'])
             res_headers['fields'].append(['Connection', random.choices(
@@ -246,9 +253,9 @@ class ReplaySession:
             res_headers = {}
             res_headers['fields'] = []
             res_headers['fields'].append([':status', response_status])
-            res_headers['fields'].append(['Content-Type', 'text/html'])
 
-        res_headers['fields'].append(['uuid', new_uuid])
+        res_headers['fields'].append(['Content-Type', 'text/html'])
+        res_headers['fields'].append(['Content-Length', response_size])
 
         if has_yaml:
             for i, field in enumerate(res_headers['fields']):
@@ -267,7 +274,7 @@ class ReplaySession:
     def get_hostname_from_url(url):
         parsed = urlparse(url)
         is_tls = True if parsed.scheme == "https" else False
-        return ''.join(parsed[1:2]), is_tls
+        return parsed.netloc, parsed.path, is_tls
 
 
 class RepalyFile:

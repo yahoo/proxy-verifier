@@ -1,7 +1,7 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2021, Verizon Media
+ * Copyright 2022, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -58,6 +58,7 @@ public:
   void store_nv_request_headers_to_free(nghttp2_nv *hdrs);
 
 public:
+  std::string _body_received;
   char const *_body_to_send = nullptr;
   size_t _send_body_length = 0;
   size_t _send_body_offset = 0;
@@ -71,6 +72,7 @@ public:
    */
   std::string _composed_url;
   std::chrono::time_point<std::chrono::system_clock> _stream_start;
+  HttpHeader const *_specified_request = nullptr;
   HttpHeader const *_specified_response = nullptr;
 
   /// The HTTP request headers for this stream.
@@ -107,7 +109,8 @@ public:
   swoc::Rv<size_t> drain_body(
       HttpHeader const &hdr,
       size_t expected_content_size,
-      swoc::TextView bytes_read) override;
+      swoc::TextView bytes_read,
+      std::shared_ptr<RuleCheck> rule_check = nullptr) override;
 
   swoc::Errata accept() override;
   swoc::Errata connect() override;

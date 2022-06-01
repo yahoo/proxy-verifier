@@ -6,6 +6,7 @@
  */
 
 #include "core/http2.h"
+#include "core/verification.h"
 #include "core/ProxyVerifier.h"
 
 #include <cassert>
@@ -155,10 +156,14 @@ H2Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
 }
 
 swoc::Rv<size_t>
-H2Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextView initial)
+H2Session::drain_body(
+    HttpHeader const &hdr,
+    size_t expected_content_size,
+    TextView initial,
+    std::shared_ptr<RuleCheck> rule_check)
 {
   if (!_h2_is_negotiated) {
-    return TLSSession::drain_body(hdr, expected_content_size, initial);
+    return TLSSession::drain_body(hdr, expected_content_size, initial, rule_check);
   }
   // For HTTP/2, we process entire streams once they are ended. Therefore there
   // is never body to drain.
@@ -710,6 +715,13 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
         composed_url.append(request_from_client._authority);
         composed_url.append(request_from_client._path);
         request_from_client.parse_url(composed_url);
+        if (auto spot{
+                request_from_client._fields_rules->_fields.find(HttpHeader::FIELD_CONTENT_LENGTH)};
+            spot != request_from_client._fields_rules->_fields.end())
+        {
+          size_t expected_size = swoc::svtou(spot->second);
+          stream_state._body_received.reserve(expected_size);
+        }
         errata.note(
             S_DIAG,
             "Received an HTTP/2 request for key {} with stream id {}:\n{}",
@@ -718,12 +730,6 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
             request_from_client);
       } else if (headers_category == NGHTTP2_HCAT_RESPONSE) {
         auto &response_from_wire = *stream_state._response_from_server;
-        errata.note(
-            S_DIAG,
-            "Received an HTTP/2 response for key {} with stream id {}:\n{}",
-            stream_state._key,
-            stream_id,
-            response_from_wire);
         response_from_wire.derive_key();
         if (stream_state._key.empty()) {
           // A response for which we didn't process the request, presumably. A
@@ -745,6 +751,19 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
           // the fields of both the request and response.
           response_from_wire.set_key(stream_state._key);
         }
+        if (auto spot{
+                response_from_wire._fields_rules->_fields.find(HttpHeader::FIELD_CONTENT_LENGTH)};
+            spot != response_from_wire._fields_rules->_fields.end())
+        {
+          size_t expected_size = swoc::svtou(spot->second);
+          stream_state._body_received.reserve(expected_size);
+        }
+        errata.note(
+            S_DIAG,
+            "Received an HTTP/2 response for key {} with stream id {}:\n{}",
+            stream_state._key,
+            stream_id,
+            response_from_wire);
         auto const &key = stream_state._key;
         auto const &specified_response = stream_state._specified_response;
         if (response_from_wire.verify_headers(key, *specified_response->_fields_rules)) {
@@ -794,6 +813,25 @@ on_stream_close_cb(
     return 0;
   }
   H2StreamState &stream_state = *iter->second;
+
+  if (session_data->get_is_server()) {
+    if (stream_state._specified_request->_content_rule) {
+      if (!stream_state._specified_request->_content_rule
+               ->test(stream_state._key, "body", swoc::TextView(stream_state._body_received)))
+      {
+        errata.note(S_DIAG, R"(Body content did not match expected value.)");
+      }
+    }
+  } else {
+    if (stream_state._specified_response->_content_rule) {
+      if (!stream_state._specified_response->_content_rule
+               ->test(stream_state._key, "body", swoc::TextView(stream_state._body_received)))
+      {
+        errata.note(S_DIAG, R"(Body content did not match expected value.)");
+      }
+    }
+  }
+
   auto const &message_start = stream_state._stream_start;
   auto const message_end = ClockType::now();
   auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start);
@@ -833,6 +871,7 @@ on_data_chunk_recv_cb(
       stream_state._key,
       stream_id,
       TextView(reinterpret_cast<char const *>(data), len));
+  stream_state._body_received += std::string(reinterpret_cast<char const *>(data), len);
   return 0;
 }
 

@@ -927,15 +927,22 @@ Session::drain_body_internal(HttpHeader &rsp_hdr_from_wire, Txn const &json_txn,
     // The response specifies the content length. Use that specified length.
     expected_content_size = rsp_hdr_from_wire._content_size;
   }
-  auto &&[bytes_drained, drain_errata] =
-      this->drain_body(rsp_hdr_from_wire, expected_content_size, initial);
+  auto &&[bytes_drained, drain_errata] = this->drain_body(
+      rsp_hdr_from_wire,
+      expected_content_size,
+      initial,
+      json_txn._rsp._content_rule);
   num_drained_body_bytes = bytes_drained;
   num_drained_body_bytes.note(std::move(drain_errata));
   return num_drained_body_bytes;
 }
 
 swoc::Rv<size_t>
-Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextView bytes_read)
+Session::drain_body(
+    HttpHeader const &hdr,
+    size_t expected_content_size,
+    TextView bytes_read,
+    std::shared_ptr<RuleCheck> rule_check)
 {
   // The number of content body bytes drained. initial contains the body bytes
   // already drained, so we initialize it to that size.
@@ -954,6 +961,11 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
         num_drained_body_bytes.result(),
         hdr.get_key(),
         initial);
+    if (rule_check != nullptr) {
+      if (!rule_check->test(hdr.get_key(), "body", swoc::TextView(initial))) {
+        num_drained_body_bytes.note(S_DIAG, R"(Body content did not match expected value.)");
+      }
+    }
     return num_drained_body_bytes;
   }
   if (expected_content_size < initial.size()) {
@@ -1166,6 +1178,12 @@ Session::drain_body(HttpHeader const &hdr, size_t expected_content_size, TextVie
         body.size(),
         hdr.get_key(),
         body);
+  }
+
+  if (rule_check != nullptr) {
+    if (!rule_check->test(hdr.get_key(), "body", swoc::TextView(body))) {
+      num_drained_body_bytes.note(S_DIAG, R"(Body content did not match expected value.)");
+    }
   }
   return num_drained_body_bytes;
 }

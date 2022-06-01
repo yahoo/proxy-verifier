@@ -1,7 +1,7 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2021, Verizon Media
+ * Copyright 2022, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -93,21 +93,21 @@ class RuleCheck
 {
   /// References the make_* functions below.
   using MakeRuleFunction =
-      std::function<std::shared_ptr<RuleCheck>(swoc::TextView, swoc::TextView, bool, bool)>;
+      std::function<std::shared_ptr<RuleCheck>(swoc::TextView, swoc::TextView, bool, bool, bool)>;
   using RuleOptions = std::unordered_map<swoc::TextView, MakeRuleFunction, Hash, Hash>;
   static RuleOptions options; ///< Returns function to construct a RuleCheck child class for a
                               ///< given rule type ("equals", "presence", "absence",
                               ///< "contains", "prefix", "or "suffix")
 
   using MakeURLRuleFunction =
-      std::function<std::shared_ptr<RuleCheck>(UrlPart, swoc::TextView, bool, bool)>;
+      std::function<std::shared_ptr<RuleCheck>(UrlPart, swoc::TextView, bool, bool, bool)>;
   using URLRuleOptions = std::unordered_map<swoc::TextView, MakeURLRuleFunction, Hash, Hash>;
   static URLRuleOptions url_rule_options; ///< Returns function to construct a RuleCheck child class
                                           ///< for a given URL rule type ("equals", "presence",
                                           ///< "absence", "contains", "prefix", "or "suffix")
 
   using MakeDuplicateFieldRuleFunction = std::function<
-      std::shared_ptr<RuleCheck>(swoc::TextView, std::vector<swoc::TextView> &&, bool, bool)>;
+      std::shared_ptr<RuleCheck>(swoc::TextView, std::vector<swoc::TextView> &&, bool, bool, bool)>;
   using DuplicateFieldRuleOptions =
       std::unordered_map<swoc::TextView, MakeDuplicateFieldRuleFunction, Hash, Hash>;
   static DuplicateFieldRuleOptions
@@ -123,6 +123,7 @@ protected:
   /// All rules have a name of the field that needs to be checked.
   swoc::TextView _name;
   bool _is_field;
+  bool _is_body;
   bool _is_inverted; ///< Whether the Rule inverts its result.
   bool _is_nocase;   ///< Whether the Rule looks at upper/lower case the same.
 
@@ -148,7 +149,8 @@ public:
       swoc::TextView localized_value,
       swoc::TextView rule_type,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a RuleCheck with @a node with factory pattern.
    *
@@ -164,7 +166,8 @@ public:
       swoc::TextView localized_value,
       swoc::TextView rule_type,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /**
    * @param values The values of the field. This should be localized.
@@ -174,7 +177,8 @@ public:
       std::vector<swoc::TextView> &&localized_values,
       swoc::TextView rule_type,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a EqualityCheck, invoked by the factory function when the
    * "equals" flag is present for a field check.
@@ -189,7 +193,8 @@ public:
       swoc::TextView name,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a EqualityCheck, invoked by the factory function when the
    * "equals" flag is present.
@@ -204,7 +209,8 @@ public:
       UrlPart url_part,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /**
    * @param values The list of values to expect in the response.
@@ -213,7 +219,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a PresenceCheck, invoked by the factory function when the
    * "absence" flag is present.
@@ -228,7 +235,8 @@ public:
       swoc::TextView name,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a PresenceCheck, invoked by the factory function when the
    * "absence" flag is present.
@@ -243,7 +251,8 @@ public:
       UrlPart url_part,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /**
    * @param values (unused) The list of values specified in the YAML node.
@@ -252,7 +261,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a AbsenceCheck, invoked by the factory function when the
    * "absence" flag is present.
@@ -267,7 +277,8 @@ public:
       swoc::TextView name,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a AbsenceCheck, invoked by the factory function when the
    * "absence" flag is present.
@@ -282,7 +293,8 @@ public:
       UrlPart url_part,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /**
    * @param values (unused) The list of values specified in the YAML node.
@@ -291,7 +303,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a ContainsCheck, invoked by the factory function when the
    * "contains" flag is present.
@@ -306,7 +319,8 @@ public:
       swoc::TextView name,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a ContainsCheck, invoked by the factory function when the
    * "contains" flag is present.
@@ -321,7 +335,8 @@ public:
       UrlPart url_part,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /**
    * @param values The list of values to expect in the response.
@@ -330,7 +345,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a PrefixCheck, invoked by the factory function when the
    * "prefix" flag is present.
@@ -345,7 +361,8 @@ public:
       swoc::TextView name,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a PrefixCheck, invoked by the factory function when the
    * "prefix" flag is present.
@@ -360,7 +377,8 @@ public:
       UrlPart url_part,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /**
    * @param values The list of values to expect in the response.
@@ -369,7 +387,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a SuffixCheck, invoked by the factory function when the
    * "suffix" flag is present.
@@ -384,7 +403,8 @@ public:
       swoc::TextView name,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Generate @a SuffixCheck, invoked by the factory function when the
    * "suffix" flag is present.
@@ -399,7 +419,8 @@ public:
       UrlPart url_part,
       swoc::TextView value,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /**
    * @param values (unused) The list of values specified in the YAML node.
@@ -408,7 +429,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted = false,
-      bool is_nocase = false);
+      bool is_nocase = false,
+      bool is_body = false);
 
   /** Pure virtual function to test whether the input name and value fulfill the
    * rules for the test
@@ -468,7 +490,12 @@ public:
    * @param value The associated value with the target field,
    * that is used with strcasecmp comparisons
    */
-  EqualityCheck(swoc::TextView name, swoc::TextView value, bool is_inverted, bool is_nocase);
+  EqualityCheck(
+      swoc::TextView name,
+      swoc::TextView value,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
 
   /** Construct @a EqualityCheck with a given URL part and value.
    *
@@ -476,7 +503,12 @@ public:
    * @param value The associated value with the target URL part,
    * that is used with strcasecmp comparisons
    */
-  EqualityCheck(UrlPart url_part, swoc::TextView value, bool is_inverted, bool is_nocase);
+  EqualityCheck(
+      UrlPart url_part,
+      swoc::TextView value,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
 
   /** Construct @a EqualityCheck with a given name and set of expected values.
    *
@@ -488,7 +520,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted,
-      bool is_nocase);
+      bool is_nocase,
+      bool is_body);
 
   /** Test whether the name and value both match the expected name and value
    * per the values instantiated in construction.
@@ -541,13 +574,13 @@ public:
    * @param expects_duplicate_fields Whether the rule should be configured for
    * duplicate fields.
    */
-  PresenceCheck(swoc::TextView name, bool expects_duplicate_fields, bool is_inverted);
+  PresenceCheck(swoc::TextView name, bool expects_duplicate_fields, bool is_inverted, bool is_body);
 
   /** Construct @a PresenceCheck with a given URL part.
    *
    * @param part The ID of the target URL part
    */
-  PresenceCheck(UrlPart url_part, bool is_inverted);
+  PresenceCheck(UrlPart url_part, bool is_inverted, bool is_body);
 
   /** Test whether the name matches the expected name. Reports errors in verbose
    * mode.
@@ -592,7 +625,7 @@ public:
    * @param expects_duplicate_fields Whether the rule should be configured for
    * duplicate fields.
    */
-  AbsenceCheck(swoc::TextView name, bool expects_duplicate_fields, bool is_inverted);
+  AbsenceCheck(swoc::TextView name, bool expects_duplicate_fields, bool is_inverted, bool is_body);
 
   /** Construct @a AbsenceCheck with a given URL part.
    *
@@ -600,7 +633,7 @@ public:
    * @param expects_duplicate_fields Whether the rule should be configured for
    * duplicate fields.
    */
-  AbsenceCheck(UrlPart url_part, bool is_inverted);
+  AbsenceCheck(UrlPart url_part, bool is_inverted, bool is_body);
 
   /** Test whether the name is null (does not match the expected name). Reports
    * errors in verbose mode.
@@ -694,7 +727,12 @@ public:
    * @param value The associated "contains" value with the target field,
    * that is used with strcasecmp comparisons
    */
-  ContainsCheck(swoc::TextView name, swoc::TextView value, bool is_inverted, bool is_nocase);
+  ContainsCheck(
+      swoc::TextView name,
+      swoc::TextView value,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
 
   /** Construct @a ContainsCheck with a given URL part and value.
    *
@@ -702,7 +740,12 @@ public:
    * @param value The associated value with the target URL part,
    * that is used with strcasecmp comparisons
    */
-  ContainsCheck(UrlPart url_part, swoc::TextView value, bool is_inverted, bool is_nocase);
+  ContainsCheck(
+      UrlPart url_part,
+      swoc::TextView value,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
 
   /** Construct @a ContainsCheck with a given name and set of "contains" values.
    *
@@ -714,7 +757,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted,
-      bool is_nocase);
+      bool is_nocase,
+      bool is_body);
 
   /** Whether this Rule is configured for duplicate fields.
    *
@@ -747,7 +791,12 @@ public:
    * @param value The associated value with the target field,
    * that is used with strcasecmp comparisons
    */
-  PrefixCheck(swoc::TextView name, swoc::TextView value, bool is_inverted, bool is_nocase);
+  PrefixCheck(
+      swoc::TextView name,
+      swoc::TextView value,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
 
   /** Construct @a PrefixCheck with a given URL part and value.
    *
@@ -755,7 +804,12 @@ public:
    * @param value The associated value with the target URL part,
    * that is used with strcasecmp comparisons
    */
-  PrefixCheck(UrlPart url_part, swoc::TextView value, bool is_inverted, bool is_nocase);
+  PrefixCheck(
+      UrlPart url_part,
+      swoc::TextView value,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
 
   /** Construct @a PrefixCheck with a given name and set of expected values.
    *
@@ -767,7 +821,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted,
-      bool is_nocase);
+      bool is_nocase,
+      bool is_body);
 
   /** Whether this Rule is configured for duplicate fields.
    *
@@ -800,7 +855,12 @@ public:
    * @param value The associated "suffix" value with the target field,
    * that is used with strcasecmp comparisons
    */
-  SuffixCheck(swoc::TextView name, swoc::TextView value, bool is_inverted, bool is_nocase);
+  SuffixCheck(
+      swoc::TextView name,
+      swoc::TextView value,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
 
   /** Construct @a SuffixCheck with a given URL part and value.
    *
@@ -808,7 +868,12 @@ public:
    * @param value The associated value with the target URL part,
    * that is used with strcasecmp comparisons
    */
-  SuffixCheck(UrlPart url_part, swoc::TextView value, bool is_inverted, bool is_nocase);
+  SuffixCheck(
+      UrlPart url_part,
+      swoc::TextView value,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
 
   /** Construct @a SuffixCheck with a given name and set of expected values.
    *
@@ -820,7 +885,8 @@ public:
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted,
-      bool is_nocase);
+      bool is_nocase,
+      bool is_body);
 
   /** Whether this Rule is configured for duplicate fields.
    *
