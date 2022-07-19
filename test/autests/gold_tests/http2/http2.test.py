@@ -120,7 +120,7 @@ server.Streams.stdout += Testers.ContainsExpression(
     'Using ALPN protocol string "http/1.1,http1.1" for SNI "test_sni_no_h2"',
     "Verify that the correctly parsed ALPN string for the SNI not supporting HTTP/2.")
 server.Streams.stdout += Testers.ContainsExpression(
-    "Negotiated alpn: h2",
+    "Negotiated ALPN: h2",
     "Verify that HTTP/2 was negotiated for one session.")
 server.Streams.stdout += Testers.ContainsExpression(
     "HTTP/2 is not negotiated. Assuming HTTP/1",
