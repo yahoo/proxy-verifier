@@ -115,7 +115,9 @@ alpn_select_next_proto_cb(
   if (SSL_select_next_proto(const_cast<unsigned char **>(out), outlen, alpn, alpn_len, in, inlen) ==
       OPENSSL_NPN_NEGOTIATED)
   {
-    errata.note(S_DIAG, "Negotiated ALPN from client ALPN list: {}: {}",
+    errata.note(
+        S_DIAG,
+        "Negotiated ALPN from client ALPN list: {}: {}",
         TextView{(char *)in, (size_t)inlen},
         TextView{(char *)*out, (size_t)*outlen});
     return SSL_TLSEXT_ERR_OK;
