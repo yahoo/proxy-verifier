@@ -25,8 +25,13 @@
 
 class HttpHeader;
 
-constexpr unsigned char protocol_negotiation_string[] =
-    {2, 'h', '2', 7, 'h', 't', 't', 'p', '1', '.', '1'};
+// clang-format off
+constexpr unsigned char protocol_negotiation_string[] = {
+  2, 'h', '2',
+  8, 'h', 't', 't', 'p', '/', '1', '.', '1',
+};
+// clang-format on
+
 constexpr int protocol_negotiation_len = sizeof(protocol_negotiation_string);
 
 int client_hello_callback(SSL *ssl, int * /* al */, void * /* arg */);
