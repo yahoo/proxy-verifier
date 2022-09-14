@@ -504,6 +504,13 @@ public:
 
   std::deque<H2Frame> _h2_frame_sequence;
 
+  // Note that _client_rst_stream_after will only be set for Verifier clients, and
+  // _server_rst_stream_after will only be set for verifier servers.
+  int _client_rst_stream_after = -1;
+  int _client_rst_stream_error = -1;
+  int _server_rst_stream_after = -1;
+  int _server_rst_stream_error = -1;
+
   /// Body is chunked.
   bool _chunked_p = false;
   /// Whether there is a "Transfer-Encoding: chunked" HTTP header field in this

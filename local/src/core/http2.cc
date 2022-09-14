@@ -697,11 +697,50 @@ receive_nghttp2_request(
 }
 
 static int
-on_frame_send_cb(
-    nghttp2_session * /* session */,
-    nghttp2_frame const * /* frame */,
-    void * /* user_data */)
+on_frame_send_cb(nghttp2_session *session, nghttp2_frame const *frame, void *user_data)
 {
+  auto *session_data = reinterpret_cast<H2Session *>(user_data);
+  auto const stream_id = frame->hd.stream_id;
+  auto stream_map_iter = session_data->_stream_map.find(stream_id);
+  if (stream_map_iter == session_data->_stream_map.end()) {
+    // Nothing to do if this is not in our stream map.
+    return 0;
+  }
+  H2StreamState &stream_state = *stream_map_iter->second;
+  Errata errata;
+
+  errata.note(
+      S_DIAG,
+      "Sent frame for key {}: {}",
+      stream_state._key,
+      H2FrameNames[static_cast<H2Frame>(frame->hd.type)]);
+
+  if (stream_id != 0) {
+    auto const frame_type = stream_state._client_rst_stream_after == -1 ?
+                                stream_state._server_rst_stream_after :
+                                stream_state._client_rst_stream_after;
+    auto const error_code = stream_state._client_rst_stream_error == -1 ?
+                                stream_state._server_rst_stream_error :
+                                stream_state._client_rst_stream_error;
+    if (frame->hd.type == frame_type) {
+      errata.note(
+          S_DIAG,
+          "Submitting RST_STREAM frame for key {} after {} frame with error code {}.",
+          stream_state._key,
+          H2FrameNames[static_cast<H2Frame>(frame_type)],
+          H2ErrorCodeNames[static_cast<H2ErrorCode>(error_code)]);
+      errata.sink();
+      int const submit_status = nghttp2_submit_rst_stream(session, 0, stream_id, error_code);
+      if (submit_status) {
+        errata.note(
+            S_DIAG,
+            "Failed to submit RST_STREAM frame for key {} after {} frame: {}.",
+            stream_state._key,
+            H2FrameNames[static_cast<H2Frame>(frame_type)],
+            submit_status);
+      }
+    }
+  }
   return 0;
 }
 
@@ -868,7 +907,7 @@ on_stream_close_cb(
   H2StreamState &stream_state = *iter->second;
 
   if (session_data->get_is_server()) {
-    if (stream_state._specified_request->_content_rule) {
+    if (stream_state._specified_request && stream_state._specified_request->_content_rule) {
       if (!stream_state._specified_request->_content_rule
                ->test(stream_state._key, "body", swoc::TextView(stream_state._body_received)))
       {
@@ -876,7 +915,7 @@ on_stream_close_cb(
       }
     }
   } else {
-    if (stream_state._specified_response->_content_rule) {
+    if (stream_state._specified_response && stream_state._specified_response->_content_rule) {
       if (!stream_state._specified_response->_content_rule
                ->test(stream_state._key, "body", swoc::TextView(stream_state._body_received)))
       {
@@ -1080,6 +1119,7 @@ H2Session::write(HttpHeader const &hdr)
   if (!_h2_is_negotiated) {
     return Session::write(hdr);
   }
+
   swoc::Rv<ssize_t> zret{0};
   int32_t stream_id = 0;
   int32_t submit_result = 0;
@@ -1096,6 +1136,14 @@ H2Session::write(HttpHeader const &hdr)
   } else {
     new_stream_state = std::make_shared<H2StreamState>();
     stream_state = new_stream_state.get();
+  }
+
+  if (hdr.is_request()) {
+    stream_state->_client_rst_stream_after = hdr._client_rst_stream_after;
+    stream_state->_client_rst_stream_error = hdr._client_rst_stream_error;
+  } else if (hdr.is_response()) {
+    stream_state->_server_rst_stream_after = hdr._server_rst_stream_after;
+    stream_state->_server_rst_stream_error = hdr._server_rst_stream_error;
   }
 
   // grab header, send to session

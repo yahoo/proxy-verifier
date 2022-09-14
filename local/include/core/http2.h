@@ -80,6 +80,13 @@ public:
   /// The HTTP response headers for this stream.
   std::shared_ptr<HttpHeader> _response_from_server;
 
+  // Note that _client_rst_stream_after will only be set for Verifier clients, and
+  // _server_rst_stream_after will only be set for verifier servers.
+  int _client_rst_stream_after = -1;
+  int _client_rst_stream_error = -1;
+  int _server_rst_stream_after = -1;
+  int _server_rst_stream_error = -1;
+
 private:
   int32_t _stream_id = -1;
   std::deque<nghttp2_rcbuf *> _rcbufs_to_free;
