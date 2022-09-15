@@ -43,6 +43,7 @@ SUDO=""
     mkdir -p ${install_dir} || \
     sudo mkdir -p ${install_dir}
 [ -w "${install_dir}" ] || SUDO=sudo
+sudo chmod -R ugo+rX ${install_dir}
 
 mkdir -p ${install_dir}
 repo_dir=/var/tmp/http3_dependency_repos_$$
