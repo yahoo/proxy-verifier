@@ -1,0 +1,24 @@
+``
+==== REQUEST HEADERS ====
+:method: POST
+:scheme: https
+:path: /a/path
+:authority: example.data.com
+content-type: text/html
+content-length: 11
+uuid: 1
+
+==== REQUEST BODY ====
+b'client_test'
+
+==== RESPONSE ====
+200
+
+==== RESPONSE HEADERS ====
+:status: 200
+content-type: text/html
+content-length: 11
+
+==== RESPONSE BODY ====
+b'server_test'
+``

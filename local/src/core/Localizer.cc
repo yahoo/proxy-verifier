@@ -26,17 +26,19 @@ swoc::MemArena Localizer::_arena{8000};
 bool Localizer::_frozen = false;
 
 swoc::TextView
-Localizer::localize_helper(TextView text, bool should_lower)
+Localizer::localize_helper(TextView text, LocalizeFlag flag)
 {
   assert(!_frozen);
   auto span{_arena.alloc(text.size()).rebind<char>()};
-  if (should_lower) {
+  if (flag == LocalizeFlag::Lower) {
     std::transform(text.begin(), text.end(), span.begin(), &tolower);
+  } else if (flag == LocalizeFlag::Upper) {
+    std::transform(text.begin(), text.end(), span.begin(), &toupper);
   } else {
     std::copy(text.begin(), text.end(), span.begin());
   }
   TextView local{span.data(), text.size()};
-  if (should_lower) {
+  if (flag == LocalizeFlag::Lower || flag == LocalizeFlag::Upper) {
     _names.insert(local);
   }
   return local;
@@ -51,7 +53,7 @@ Localizer::freeze_localization()
 swoc::TextView
 Localizer::localize(char const *text)
 {
-  return localize_helper(TextView{text, strlen(text) + 1}, !SHOULD_LOWER);
+  return localize_helper(TextView{text, strlen(text) + 1}, LocalizeFlag::None);
 }
 
 swoc::TextView
@@ -61,9 +63,15 @@ Localizer::localize_lower(char const *text)
 }
 
 swoc::TextView
+Localizer::localize_upper(char const *text)
+{
+  return localize_upper(TextView{text, strlen(text) + 1});
+}
+
+swoc::TextView
 Localizer::localize(TextView text)
 {
-  return localize_helper(text, !SHOULD_LOWER);
+  return localize_helper(text, LocalizeFlag::None);
 }
 
 swoc::TextView
@@ -76,7 +84,20 @@ Localizer::localize_lower(TextView text)
   if (spot != _names.end()) {
     return *spot;
   }
-  return localize_helper(text, SHOULD_LOWER);
+  return localize_helper(text, LocalizeFlag::Lower);
+}
+
+swoc::TextView
+Localizer::localize_upper(TextView text)
+{
+  // _names.find() does a case insensitive lookup, so cache lookup via
+  // _names only should be used for case-insensitive localization. It's
+  // value applies to well-known, common strings such as HTTP headers.
+  auto spot = _names.find(text);
+  if (spot != _names.end()) {
+    return *spot;
+  }
+  return localize_helper(text, LocalizeFlag::Upper);
 }
 
 swoc::TextView

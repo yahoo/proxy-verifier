@@ -364,6 +364,8 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
       _txn._req.set_is_http2();
     } else if (_ssn->is_h3) {
       _txn._req.set_is_http3();
+    } else {
+      _txn._req.set_is_http1();
     }
     errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
@@ -373,7 +375,6 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
           _path,
           node.Mark().line);
     }
-
     if (node[YAML_TIME_DELAY_KEY]) {
       auto &&[delay_time, delay_errata] = get_delay_time(node);
       if (!delay_errata.is_ok()) {
@@ -401,6 +402,8 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
       _txn._req.set_is_http2();
     } else if (_ssn->is_h3) {
       _txn._req.set_is_http3();
+    } else {
+      _txn._req.set_is_http1();
     }
     errata.note(YamlParser::populate_http_message(node, _txn._req));
     if (_txn._req._method.empty()) {
@@ -432,6 +435,8 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
 Errata
 ClientReplayFileHandler::proxy_response(YAML::Node const &node)
 {
+  Errata errata;
+
   if (!Use_Proxy_Request_Directives) {
     // We only expect proxy responses when we are behaving according to the
     // client-request directives and there is a proxy.
@@ -439,11 +444,13 @@ ClientReplayFileHandler::proxy_response(YAML::Node const &node)
       _txn._rsp.set_is_http2();
     } else if (_ssn->is_h3) {
       _txn._rsp.set_is_http3();
+    } else {
+      _txn._rsp.set_is_http1();
     }
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-    return YamlParser::populate_http_message(node, _txn._rsp);
+    errata.note(YamlParser::populate_http_message(node, _txn._rsp));
   }
-  return {};
+  return errata;
 }
 
 Errata
@@ -457,6 +464,8 @@ ClientReplayFileHandler::server_response(YAML::Node const &node)
       _txn._rsp.set_is_http2();
     } else if (_ssn->is_h3) {
       _txn._rsp.set_is_http3();
+    } else {
+      _txn._rsp.set_is_http1();
     }
     _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
     errata.note(YamlParser::populate_http_message(node, _txn._rsp));
