@@ -28,6 +28,49 @@ using ClockType = std::chrono::system_clock;
 using chrono::duration_cast;
 using chrono::milliseconds;
 
+namespace swoc
+{
+inline namespace SWOC_VERSION_NS
+{
+BufferWriter &
+bwformat(BufferWriter &w, bwf::Spec const &spec, nghttp2_settings const &settings)
+{
+  static const std::array<std::string_view, 6> SETTING_NAME = {{
+      "HEADER_TABLE_SIZE"_sv,
+      "ENABLE_PUSH"_sv,
+      "MAX_CONCURRENT_STREAMS"_sv,
+      "INITIAL_WINDOW_SIZE"_sv,
+      "MAX_FRAME_SIZE"_sv,
+      "MAX_HEADER_LIST_SIZE"_sv,
+  }};
+  auto setting_name = [](int n) {
+    return 0 <= n && n < int(SETTING_NAME.size()) ? SETTING_NAME[n] : "Unknown: "sv;
+  };
+  static const bwf::Format number_fmt{"{}:{}"sv}; // numeric value format.
+  for (size_t i = 0; i < settings.niv; ++i) {
+    nghttp2_settings_entry const &setting{settings.iv[i]};
+    if (i > 0) {
+      w.print(", "sv);
+    }
+    if (spec.has_numeric_type()) {
+      w.print(number_fmt, setting.settings_id, setting.value);
+    } else {
+      w.print(number_fmt, setting_name(setting.settings_id - 1), setting.value);
+    }
+  }
+  return w;
+}
+
+BufferWriter &
+bwformat(BufferWriter &w, bwf::Spec const & /* spec */, nghttp2_window_update const &window_update)
+{
+  static const bwf::Format fmt{"{}"sv};
+  return w.print(fmt, window_update.window_size_increment);
+}
+
+} // namespace SWOC_VERSION_NS
+} // namespace swoc
+
 static ssize_t send_nghttp2_data(
     nghttp2_session *session,
     uint8_t const *inputdata,
@@ -674,19 +717,29 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
     break;
   case NGHTTP2_HEADERS:
     break;
-  case NGHTTP2_PRIORITY: // Not doing anything here
+  case NGHTTP2_PRIORITY:
     break;
-  case NGHTTP2_RST_STREAM: // Close down the stream, now
+  case NGHTTP2_RST_STREAM:
     break;
-  case NGHTTP2_SETTINGS: // Don't do anything here
+  case NGHTTP2_SETTINGS: {
+    nghttp2_settings const &settings_frame{frame->settings};
+    errata.note(
+        S_DIAG,
+        "Received SETTINGS frame with stream id {}: {}",
+        frame->hd.stream_id,
+        settings_frame);
+  } break;
+  case NGHTTP2_WINDOW_UPDATE: {
+    nghttp2_window_update const &window_update_frame{frame->window_update};
+    errata.note(
+        S_DIAG,
+        "Received WINDOW_UPDATE frame with stream id {}: {}",
+        frame->hd.stream_id,
+        window_update_frame);
+  } break;
+  case NGHTTP2_PUSH_PROMISE:
     break;
-  case NGHTTP2_WINDOW_UPDATE: // Don't do anything here
-    // May need to make sure we don't overrun windows for large uploads
-    // Or hopefully the underlying system does that...
-    break;
-  case NGHTTP2_PUSH_PROMISE: // Don't do anything here
-    break;
-  case NGHTTP2_GOAWAY: // Take down the session now
+  case NGHTTP2_GOAWAY:
     break;
   }
   auto const flags = frame->hd.flags;
