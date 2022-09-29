@@ -188,7 +188,7 @@ class HttpRequestHandler:
             print(f"\n==== REQUEST BODY ====\n{req_body}")
 
         print("\n==== RESPONSE ====")
-        status_line = f"{response_status} {response_reason}"
+        status_line = f"{response_status} {response_reason}".strip()
         print(status_line)
 
         print("\n==== RESPONSE HEADERS ====")

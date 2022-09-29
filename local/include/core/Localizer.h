@@ -38,9 +38,11 @@ public:
 
   static swoc::TextView localize(char const *text);
   static swoc::TextView localize_lower(char const *text);
+  static swoc::TextView localize_upper(char const *text);
 
   static swoc::TextView localize(swoc::TextView text);
   static swoc::TextView localize_lower(swoc::TextView text);
+  static swoc::TextView localize_upper(swoc::TextView text);
 
   /// Encoding for input text.
   enum class Encoding {
@@ -53,9 +55,9 @@ public:
 private:
   /** A convenience boolean for the corresponding parameter to localize_helper.
    */
-  static constexpr bool SHOULD_LOWER = true;
+  enum class LocalizeFlag { None = 0, Upper = 1, Lower = 2 };
 
-  static swoc::TextView localize_helper(swoc::TextView text, bool should_lower);
+  static swoc::TextView localize_helper(swoc::TextView text, LocalizeFlag flag);
 
 private:
   using NameSet = std::unordered_set<swoc::TextView, Hash, Hash>;

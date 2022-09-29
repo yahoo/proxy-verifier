@@ -93,11 +93,6 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
 {
   Errata errata;
 
-  if (node[YAML_HTTP_VERSION_KEY]) {
-    message._http_version = Localizer::localize_lower(node[YAML_HTTP_VERSION_KEY].Scalar());
-  } else {
-    message._http_version = "1.1";
-  }
   if (node[YAML_HTTP2_KEY]) {
     auto http2_node{node[YAML_HTTP2_KEY]};
     if (http2_node.IsMap()) {
@@ -134,9 +129,44 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  if (node[YAML_HTTP_STATUS_KEY]) {
+  auto headers_frame = node;
+  auto data_frame = node;
+  if (node[YAML_FRAMES_KEY]) {
+    auto frames_node{node[YAML_FRAMES_KEY]};
+    if (frames_node.IsSequence()) {
+      for (const auto &frame : frames_node) {
+        for (const auto &&[key, value] : frame) {
+          auto frame_name = Localizer::localize_upper(key.as<std::string>());
+          message._h2_frame_sequence.push_back(H2FrameNames[frame_name]);
+          switch (H2FrameNames[frame_name]) {
+          case H2Frame::HEADERS:
+            headers_frame = value;
+            break;
+          case H2Frame::DATA:
+            data_frame = value;
+            break;
+          default:
+            errata.note(
+                S_ERROR,
+                R"("{}" at {} is an invalid HTTP/2 frame name.)",
+                key.as<std::string>(),
+                frames_node.Mark());
+            continue;
+          }
+        }
+      }
+    } else {
+      errata.note(
+          S_ERROR,
+          R"("{}" at {} must be a sequence of frames.)",
+          YAML_FRAMES_KEY,
+          frames_node.Mark());
+    }
+  }
+
+  if (headers_frame[YAML_HTTP_STATUS_KEY]) {
     message.set_is_response();
-    auto status_node{node[YAML_HTTP_STATUS_KEY]};
+    auto status_node{headers_frame[YAML_HTTP_STATUS_KEY]};
     if (status_node.IsScalar()) {
       TextView text{status_node.Scalar()};
       TextView parsed;
@@ -161,8 +191,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  if (node[YAML_HTTP_REASON_KEY]) {
-    auto reason_node{node[YAML_HTTP_REASON_KEY]};
+  if (headers_frame[YAML_HTTP_REASON_KEY]) {
+    auto reason_node{headers_frame[YAML_HTTP_REASON_KEY]};
     if (reason_node.IsScalar()) {
       message._reason = Localizer::localize(reason_node.Scalar());
     } else {
@@ -174,8 +204,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  if (node[YAML_HTTP_METHOD_KEY]) {
-    auto method_node{node[YAML_HTTP_METHOD_KEY]};
+  if (headers_frame[YAML_HTTP_METHOD_KEY]) {
+    auto method_node{headers_frame[YAML_HTTP_METHOD_KEY]};
     if (method_node.IsScalar()) {
       message._method = Localizer::localize(method_node.Scalar());
       message.set_is_request();
@@ -183,13 +213,13 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
       errata.note(
           S_ERROR,
           R"("{}" value at {} must be a string.)",
-          YAML_HTTP_REASON_KEY,
+          YAML_HTTP_METHOD_KEY,
           method_node.Mark());
     }
   }
 
-  if (node[YAML_HTTP_URL_KEY]) {
-    auto url_node{node[YAML_HTTP_URL_KEY]};
+  if (headers_frame[YAML_HTTP_URL_KEY]) {
+    auto url_node{headers_frame[YAML_HTTP_URL_KEY]};
     if (url_node.IsScalar()) {
       message._url = Localizer::localize(url_node.Scalar());
       message.parse_url(message._url);
@@ -204,8 +234,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  if (node[YAML_HTTP_SCHEME_KEY]) {
-    auto scheme_node{node[YAML_HTTP_SCHEME_KEY]};
+  if (headers_frame[YAML_HTTP_SCHEME_KEY]) {
+    auto scheme_node{headers_frame[YAML_HTTP_SCHEME_KEY]};
     if (scheme_node.IsScalar()) {
       message._scheme = Localizer::localize(scheme_node.Scalar());
     } else {
@@ -217,8 +247,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  if (node[YAML_HDR_KEY]) {
-    auto hdr_node{node[YAML_HDR_KEY]};
+  if (headers_frame[YAML_HDR_KEY]) {
+    auto hdr_node{headers_frame[YAML_HDR_KEY]};
     if (hdr_node[YAML_FIELDS_KEY]) {
       auto field_list_node{hdr_node[YAML_FIELDS_KEY]};
       Errata result =
@@ -245,7 +275,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   }
 
   // Do this after parsing fields so it can override transfer encoding.
-  if (auto content_node{node[YAML_CONTENT_KEY]}; content_node) {
+  if (auto content_node{data_frame[YAML_CONTENT_KEY]}; content_node) {
     if (content_node.IsMap()) {
       if (auto xf_node{content_node[YAML_CONTENT_TRANSFER_KEY]}; xf_node) {
         TextView xf{xf_node.Scalar()};

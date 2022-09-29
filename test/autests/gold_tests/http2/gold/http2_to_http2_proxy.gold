@@ -16,7 +16,7 @@ content-length: 0
 uuid: 1
 
 ==== RESPONSE ====
-200 
+200
 
 ==== RESPONSE HEADERS ====
 :status: 200
@@ -47,7 +47,7 @@ X-Added-Header: 1
 b'0123456789'
 
 ==== RESPONSE ====
-500 
+500
 
 ==== RESPONSE HEADERS ====
 :status: 500
@@ -68,7 +68,7 @@ x-request-header: test_request
 uuid: 3
 
 ==== RESPONSE ====
-200 
+200
 
 ==== RESPONSE HEADERS ====
 :status: 200
@@ -87,7 +87,7 @@ x-request-header: test_request
 uuid: 4
 
 ==== RESPONSE ====
-200 
+200
 
 ==== RESPONSE HEADERS ====
 :status: 200

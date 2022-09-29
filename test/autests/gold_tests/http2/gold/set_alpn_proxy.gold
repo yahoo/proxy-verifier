@@ -12,7 +12,7 @@ content-length: 0
 host: example.data.com
 
 ==== RESPONSE ====
-200 
+200
 
 ==== RESPONSE HEADERS ====
 :status: 200
@@ -32,7 +32,7 @@ content-length: 0
 host: example.data.com
 
 ==== RESPONSE ====
-200 
+200
 
 ==== RESPONSE HEADERS ====
 :status: 200

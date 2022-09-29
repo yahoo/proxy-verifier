@@ -438,6 +438,9 @@ ServerReplayFileHandler::handle_protocol_node(YAML::Node const &proxy_request_no
     } else if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "3") {
       _txn._req.set_is_http3();
       _txn._rsp.set_is_http3();
+    } else {
+      _txn._req.set_is_http1();
+      _txn._rsp.set_is_http1();
     }
   }
 
@@ -497,8 +500,11 @@ ServerReplayFileHandler::server_response(YAML::Node const &node)
   swoc::Errata errata;
   errata.note(YamlParser::populate_http_message(node, _txn._rsp));
   if (_txn._rsp._status == 0) {
-    errata
-        .note(S_ERROR, R"(server-response without a status at "{}":{}.)", _path, node.Mark().line);
+    errata.note(
+        S_ERROR,
+        R"(server-response node without a status at "{}":{}.)",
+        _path,
+        node.Mark().line);
   }
   if (node[YAML_TIME_DELAY_KEY]) {
     auto &&[delay_time, delay_errata] = get_delay_time(node);

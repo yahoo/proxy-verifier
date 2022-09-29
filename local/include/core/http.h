@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <list>
+#include <deque>
 #include <map>
 #include <unordered_map>
 #include <nghttp2/nghttp2.h>
@@ -57,6 +58,104 @@ static const swoc::Lexicon<UrlPart> URL_PART_NAMES{
      {UrlPart::Query, {URL_PART_QUERY}},
      {UrlPart::Fragment, {URL_PART_FRAGMENT}}},
     {UrlPart::Error}};
+
+// This should be in the same order as "nghttp2_frame_type".
+enum class H2Frame {
+  DATA = 0x00,
+  HEADERS = 0x01,
+  PRIORITY = 0x02,
+  RST_STREAM = 0x03,
+  SETTINGS = 0x04,
+  PUSH_PROMISE = 0x05,
+  PING = 0x06,
+  GOAWAY = 0x07,
+  WINDOW_UPDATE = 0x08,
+  CONTINUATION = 0x09,
+  ALTSVC = 0x0a,
+  ORIGIN = 0x0c,
+  INVALID = -0x01
+};
+
+static const std::string H2_FRAME_DATA{"DATA"};
+static const std::string H2_FRAME_HEADERS{"HEADERS"};
+static const std::string H2_FRAME_PRIORITY{"PRIORITY"};
+static const std::string H2_FRAME_RST_STREAM{"RST_STREAM"};
+static const std::string H2_FRAME_SETTINGS{"SETTINGS"};
+static const std::string H2_FRAME_PUSH_PROMISE{"PUSH_PROMISE"};
+static const std::string H2_FRAME_PING{"PING"};
+static const std::string H2_FRAME_GOAWAY{"GOAWAY"};
+static const std::string H2_FRAME_WINDOW_UPDATE{"WINDOW_UPDATE"};
+static const std::string H2_FRAME_CONTINUATION{"CONTINUATION"};
+static const std::string H2_FRAME_ALTSVC{"ALTSVC"};
+static const std::string H2_FRAME_ORIGIN{"ORIGIN"};
+
+static const swoc::Lexicon<H2Frame> H2FrameNames{
+    {{H2Frame::DATA, H2_FRAME_DATA},
+     {H2Frame::HEADERS, H2_FRAME_HEADERS},
+     {H2Frame::PRIORITY, H2_FRAME_PRIORITY},
+     {H2Frame::RST_STREAM, H2_FRAME_RST_STREAM},
+     {H2Frame::SETTINGS, H2_FRAME_SETTINGS},
+     {H2Frame::PUSH_PROMISE, H2_FRAME_PUSH_PROMISE},
+     {H2Frame::PING, H2_FRAME_PING},
+     {H2Frame::GOAWAY, H2_FRAME_GOAWAY},
+     {H2Frame::WINDOW_UPDATE, H2_FRAME_WINDOW_UPDATE},
+     {H2Frame::CONTINUATION, H2_FRAME_CONTINUATION},
+     {H2Frame::ALTSVC, H2_FRAME_ALTSVC},
+     {H2Frame::ORIGIN, H2_FRAME_ORIGIN}},
+    "INVALID_FRAME",
+    H2Frame::INVALID};
+
+// The status codes for the RST_STREAM and GOAWAY frames.
+enum class H2ErrorCode {
+  NO_ERROR = 0x00,
+  PROTOCOL_ERROR = 0x01,
+  INTERNAL_ERROR = 0x02,
+  FLOW_CONTROL_ERROR = 0x03,
+  SETTINGS_TIMEOUT = 0x04,
+  STREAM_CLOSED = 0x05,
+  FRAME_SIZE_ERROR = 0x06,
+  REFUSED_STREAM = 0x07,
+  CANCEL = 0x08,
+  COMPRESSION_ERROR = 0x09,
+  CONNECT_ERROR = 0x0a,
+  ENHANCE_YOUR_CALM = 0x0b,
+  INADEQUATE_SECURITY = 0x0c,
+  HTTP_1_1_REQUIRED = 0x0d,
+  INVALID = -0x01
+};
+
+static const std::string H2_ERROR_CODE_NO_ERROR{"NO_ERROR"};
+static const std::string H2_ERROR_CODE_PROTOCOL_ERROR{"PROTOCOL_ERROR"};
+static const std::string H2_ERROR_CODE_INTERNAL_ERROR{"INTERNAL_ERROR"};
+static const std::string H2_ERROR_CODE_FLOW_CONTROL_ERROR{"FLOW_CONTROL_ERROR"};
+static const std::string H2_ERROR_CODE_SETTINGS_TIMEOUT{"SETTINGS_TIMEOUT"};
+static const std::string H2_ERROR_CODE_STREAM_CLOSED{"STREAM_CLOSED"};
+static const std::string H2_ERROR_CODE_FRAME_SIZE_ERROR{"FRAME_SIZE_ERROR"};
+static const std::string H2_ERROR_CODE_REFUSED_STREAM{"REFUSED_STREAM"};
+static const std::string H2_ERROR_CODE_CANCEL{"CANCEL"};
+static const std::string H2_ERROR_CODE_COMPRESSION_ERROR{"COMPRESSION_ERROR"};
+static const std::string H2_ERROR_CODE_CONNECT_ERROR{"CONNECT_ERROR"};
+static const std::string H2_ERROR_CODE_ENHANCE_YOUR_CALM{"ENHANCE_YOUR_CALM"};
+static const std::string H2_ERROR_CODE_INADEQUATE_SECURITY{"INADEQUATE_SECURITY"};
+static const std::string H2_ERROR_CODE_HTTP_1_1_REQUIRED{"HTTP_1_1_REQUIRED"};
+
+static const swoc::Lexicon<H2ErrorCode> H2ErrorCodeNames{
+    {{H2ErrorCode::NO_ERROR, H2_ERROR_CODE_NO_ERROR},
+     {H2ErrorCode::PROTOCOL_ERROR, H2_ERROR_CODE_PROTOCOL_ERROR},
+     {H2ErrorCode::INTERNAL_ERROR, H2_ERROR_CODE_INTERNAL_ERROR},
+     {H2ErrorCode::FLOW_CONTROL_ERROR, H2_ERROR_CODE_FLOW_CONTROL_ERROR},
+     {H2ErrorCode::SETTINGS_TIMEOUT, H2_ERROR_CODE_SETTINGS_TIMEOUT},
+     {H2ErrorCode::STREAM_CLOSED, H2_ERROR_CODE_STREAM_CLOSED},
+     {H2ErrorCode::FRAME_SIZE_ERROR, H2_ERROR_CODE_FRAME_SIZE_ERROR},
+     {H2ErrorCode::REFUSED_STREAM, H2_ERROR_CODE_REFUSED_STREAM},
+     {H2ErrorCode::CANCEL, H2_ERROR_CODE_CANCEL},
+     {H2ErrorCode::COMPRESSION_ERROR, H2_ERROR_CODE_COMPRESSION_ERROR},
+     {H2ErrorCode::CONNECT_ERROR, H2_ERROR_CODE_CONNECT_ERROR},
+     {H2ErrorCode::ENHANCE_YOUR_CALM, H2_ERROR_CODE_ENHANCE_YOUR_CALM},
+     {H2ErrorCode::INADEQUATE_SECURITY, H2_ERROR_CODE_INADEQUATE_SECURITY},
+     {H2ErrorCode::HTTP_1_1_REQUIRED, H2_ERROR_CODE_HTTP_1_1_REQUIRED}},
+    "INVALID_ERROR_CODE",
+    H2ErrorCode::INVALID};
 
 static constexpr size_t MAX_HDR_SIZE = 131072; // The max ATS is configured for.
 static constexpr size_t MAX_DRAIN_BUFFER_SIZE = 1 << 20;
@@ -402,6 +501,8 @@ public:
 
   /// Maps field names to functors (rules) and field names to values (fields)
   std::shared_ptr<HttpFields> _fields_rules = nullptr;
+
+  std::deque<H2Frame> _h2_frame_sequence;
 
   /// Body is chunked.
   bool _chunked_p = false;
