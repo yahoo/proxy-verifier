@@ -340,16 +340,16 @@ H2Session::run_transactions(
             0,
             this,
             duration_cast<milliseconds>(delay_time));
-        current_time = ClockType::now();
-        delay_time = next_time - current_time;
         if (ret < 0) {
           // There was a problem reading bytes on the socket.
           txn_errata.note(
               S_ERROR,
               "An unexpected error was received reading bytes on a socket while delaying a "
               "transaction for --rate.");
-          sleep_for(delay_time);
+          return errata;
         }
+        current_time = ClockType::now();
+        delay_time = next_time - current_time;
       }
     }
     txn_errata.note(this->run_transaction(txn));
