@@ -19,6 +19,9 @@ Table of Contents
       * [Traffic Replay Specification](#traffic-replay-specification)
          * [HTTP Specification](#http-specification)
             * [Server Response Lookup](#server-response-lookup)
+         * [HTTP/2 Specification](#http2-specification)
+            * [HEADERS and DATA frame](#headers-and-data-frame)
+            * [RST_STREAM frame](#rst_stream-frame)
          * [Protocol Specification](#protocol-specification)
          * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
       * [Traffic Verification Specification](#traffic-verification-specification)
@@ -212,27 +215,6 @@ simplified to:
       - [ uuid, 1234 ]
 ```
 
-For HTTP/2, the protocol describes the initial request line values with pseudo
-header fields. For that protocol, therefore, the user need not specify the
-`method`, `url`, and `version` nodes and would instead specify these values
-more naturally as pseudo headers in the `fields` sequence. Here is an example of
-an HTTP/2 `client-request` analogous to the HTTP/1 request above (note that the
-`Content-Length` header field is optional in HTTP/2 and as such is omitted here):
-
-```YAML
-  client-request:
-    headers:
-      fields:
-      - [ :method, POST ]
-      - [ :scheme, https ]
-      - [ :authority, www.example.com ]
-      - [ :path, /pictures/flower.jpeg ]
-      - [ Content-Type, image/jpeg ]
-      - [ uuid, 1234 ]
-    content:
-      size: 399
-```
-
 `server-response` nodes indicate how the Proxy Verifier server should respond
 to HTTP requests. In place of `method`, `url`, and `version`, HTTP/1 responses
 take the following nodes:
@@ -265,23 +247,6 @@ Verifier supports chunk encoding for both requests and responses and will use
 this when it detects the `Transfer-Encoding: chunked` header field. In this
 case, the 3,432 bytes will be the size of the chunked body payload without the
 bytes for the chunk protocol (chunk headers, etc.).
-
-For HTTP/2, the status code is described in the `:status` pseudo header field.
-Also, HTTP/2 does not allow for chunk encoding nor does it use the `Connection`
-header field, using instead its framing mechanism to describe the body and
-session lifetime. An analogous HTTP/2 response to the HTTP/1 request above,
-therefore, would look like the following:
-
-```YAML
-  server-response:
-    headers:
-      fields:
-      - [ :status, 200 ]
-      - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
-      - [ Content-Type, image/jpeg ]
-    content:
-      size: 3432
-```
 
 Finally, here is an example of a response with specific body content sent (YAML
 in this case) as opposed to the generated content specified by the
@@ -318,12 +283,12 @@ example:
 
 ```YAML
   client-request:
+    method: POST
+    url: /pictures/flower.jpeg
+    version: '1.1'
     headers:
       fields:
-      - [ :method, POST ]
-      - [ :scheme, https ]
-      - [ :authority, www.example.com ]
-      - [ :path, /pictures/flower.jpeg ]
+      - [ Host, www.example.com ]
       - [ Content-Type, image/jpeg ]
       - [ Content-Length, '399' ]
       - [ uuid, 1234 ]
@@ -358,6 +323,163 @@ non-zero return if either parses a transaction for which they cannot derive a
 key.  If during the traffic processing phase the Verifier server somehow
 receives a request for which it cannot derive a key, it will return a *404 Not
 Found* response and close the connection upon which it received the request.
+
+
+### HTTP/2 Specification
+
+For HTTP/2, the protocol describes the initial request line values with pseudo
+header fields. For that protocol, therefore, the user need not specify the
+`method`, `url`, and `version` nodes and would instead specify these values
+more naturally as pseudo headers in the `fields` sequence. Here is an example of
+an HTTP/2 `client-request` analogous to the HTTP/1 request above (note that the
+`Content-Length` header field is optional in HTTP/2 and as such is omitted here):
+
+```YAML
+  client-request:
+    headers:
+      fields:
+      - [ :method, POST ]
+      - [ :scheme, https ]
+      - [ :authority, www.example.com ]
+      - [ :path, /pictures/flower.jpeg ]
+      - [ Content-Type, image/jpeg ]
+      - [ uuid, 1234 ]
+    content:
+      size: 399
+```
+
+The status code is described in the `:status` pseudo header field.
+Also, HTTP/2 does not allow for chunk encoding nor does it use the `Connection`
+header field, using instead its framing mechanism to describe the body and
+session lifetime. An analogous HTTP/2 response to the HTTP/1 request above,
+therefore, would look like the following:
+
+```YAML
+  server-response:
+    headers:
+      fields:
+      - [ :status, 200 ]
+      - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+      - [ Content-Type, image/jpeg ]
+    content:
+      size: 3432
+```
+
+It is also possible to specify everything as a sequence of frames. The available
+options for the frame sequence are:
+* `DATA`
+* `HEADERS`
+* `RST_STREAM`
+
+Here's an example replay file:
+
+```YAML
+  client-request:
+    frames:
+    - HEADERS:
+        headers:
+          fields:
+          - [ :method, POST ]
+          - [ :scheme, https ]
+          - [ :authority, www.example.com ]
+          - [ :path, /pictures/flower.jpeg ]
+          - [ Content-Type, image/jpeg ]
+          - [ uuid, 1234 ]
+    - DATA:
+        content:
+          size: 399
+    - RST_STREAM:
+          error-code: STREAM_CLOSED
+
+  server-response:
+    frames:
+    - HEADERS:
+        headers:
+          fields:
+          - [ :status, 200 ]
+          - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+          - [ Content-Type, image/jpeg ]
+    - DATA:
+        content:
+          size: 3432
+```
+
+#### HEADERS and DATA frame
+
+The `HEADERS` and `DATA` frame nodes are designed to be specified in a way that is consistent
+with their HTTP/1 counterparts. From a parsing perspective, this means they simply wrap the
+`headers` and `content` nodes that are used for HTTP/1 specification as described above. For
+an example, see the `RST_STREAM` frame section below.
+
+#### RST_STREAM frame
+
+In some cases, there might be a need to test the behavior of the proxy when the
+client or server terminates the stream, either because of an unexpected error or intentionally
+cancelling the stream. In HTTP/2, peers terminate a transaction by sending a `RST_STREAM` frame
+which includes an error code. In the replay file, this is specified via a `RST_STREAM` frame
+node which is ordered within the stream to indicate when it should be sent and includes an
+`error-code` node to specify which error code should be used.
+
+The following sample replay file snippet demonstrate how to specify such a test scenario:
+
+```YAML
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  transactions:
+  - client-request:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:method, POST]
+            - [:scheme, https]
+            - [:authority, example.data.com]
+            - [:path, /a/path]
+            - [Content-Type, text/html]
+            - [Content-Length, '11']
+            - [uuid, 1]
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test
+            size: 11
+      - RST_STREAM:
+          error-code: INTERNAL_ERROR
+```
+
+Note that this example specifies the following:
+* Specifies a sequence of frames to be sent under the `client-request` node. The order
+  of the frames listed is the order of the frames that Proxy Verifier will send during
+  the traffic replay of the stream.
+* Thus, in this case, the client terminates the stream after sending the DATA frame since
+  the `RST_STREAM` is specified after the DATA frame in the sequence.
+* The client terminates with the error code `INTERNAL_ERROR`, specified by `error-code` under
+  the `RST_STREAM` frame.
+
+The server side stream termination can be set in the same way, but under the `server-response` node.
+
+The available options for `error-code` are:
+* NO_ERROR
+* PROTOCOL_ERROR
+* INTERNAL_ERROR
+* FLOW_CONTROL_ERROR
+* SETTINGS_TIMEOUT
+* STREAM_CLOSED
+* FRAME_SIZE_ERROR
+* REFUSED_STREAM
+* CANCEL
+* COMPRESSION_ERROR
+* CONNECT_ERROR
+* ENHANCE_YOUR_CALM
+* INADEQUATE_SECURITY
+* HTTP_1_1_REQUIRED
 
 ### Protocol Specification
 

@@ -12,6 +12,7 @@ from email.message import EmailMessage as HttpHeaders
 import sys
 import ssl
 from OpenSSL.SSL import Error as SSLError
+from OpenSSL.SSL import SysCallError as SSLSysCallError
 import httpx
 import http.client
 import urllib.parse
@@ -24,7 +25,9 @@ import eventlet
 from eventlet.green.OpenSSL import SSL, crypto
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import StreamEnded, RequestReceived, DataReceived
+from h2.events import StreamEnded, RequestReceived, DataReceived, StreamReset
+from h2.errors import ErrorCodes as H2ErrorCodes
+from h2.exceptions import StreamClosedError
 
 
 class WrapSSSLContext(ssl.SSLContext):
@@ -66,6 +69,7 @@ class Http2ConnectionManager(object):
         self.tls = threading.local()
         self.tls.http_conns = {}
         self.sock = sock
+        self.sock.settimeout(1.0)
         self.listening_conn = H2Connection(config=listening_config)
         self.is_h2_to_server = h2_to_server
         self.request_infos = {}
@@ -74,19 +78,42 @@ class Http2ConnectionManager(object):
     def run_forever(self):
         self.listening_conn.initiate_connection()
 
-        self.sock.sendall(self.listening_conn.data_to_send())
+        try:
+            self.sock.sendall(self.listening_conn.data_to_send())
+        except (SSLError, SSLSysCallError) as e:
+            print(f'Ignoring exception for now: {e}')
+            pass
+
         ssl_conn = self.sock.fd
         # See servername_callback for where this is set with set_app_data().
         try:
             self.client_sni = ssl_conn.get_app_data()['sni']
-        except KeyError:
+        except (KeyError, TypeError):
             self.client_sni = None
 
+        stream_id_list = set()
+        frame_sequences = {}
+        resp_from_server = {}
         while True:
             try:
                 data = self.sock.recv(65535)
             except SSLError:
                 data = None
+            except TimeoutError:
+                data = None
+                for stream_id in resp_from_server.keys():
+                    response_headers, response_body = resp_from_server[stream_id]
+                    try:
+                        self.listening_conn.send_headers(stream_id, response_headers)
+                        self.listening_conn.send_data(stream_id, response_body, end_stream=True)
+                    except StreamClosedError as e:
+                        print(e)
+                try:
+                    self.sock.sendall(self.listening_conn.data_to_send())
+                except (SSLError, SSLSysCallError) as e:
+                    print(f'Ignoring exception for now: {e}')
+                    pass
+
             if not data:
                 # Connection ended.
                 for http_conn in self.tls.http_conns.values():
@@ -105,26 +132,50 @@ class Http2ConnectionManager(object):
                     # Flow control frames aren't important to us.
                     continue
                 stream_id = event.stream_id
-                if stream_id in self.request_infos:
-                    request_info = self.request_infos[stream_id]
-                else:
+                if stream_id not in self.request_infos:
                     self.request_infos[stream_id] = RequestInfo(stream_id)
-                    request_info = self.request_infos[stream_id]
+                    frame_sequences[stream_id] = []
+
+                request_info = self.request_infos[stream_id]
+                frame_seq = frame_sequences[stream_id]
 
                 if isinstance(event, DataReceived):
+                    frame_seq.append('DATA')
                     if request_info._body_bytes is None:
                         request_info._body_bytes = b''
                     request_info._body_bytes += event.data
 
                 if isinstance(event, RequestReceived):
+                    frame_seq.append('HEADERS')
                     request_info._headers = event.headers
 
-                if isinstance(event, StreamEnded):
-                    self.request_received(
-                        request_info._headers, request_info._body_bytes, stream_id)
-                    del self.request_infos[stream_id]
+                if isinstance(event, StreamReset):
+                    frame_seq.append('RST_STREAM')
+                    f_str = ', '.join(frame_seq)
+                    print(f'Frame sequence from client: {f_str}')
+                    stream_id_list.add(stream_id)
+                    err = H2ErrorCodes(event.error_code).name
+                    print(
+                        f'Received RST_STREAM frame with error code {err} on stream {event.stream_id}.')
 
-            self.sock.sendall(self.listening_conn.data_to_send())
+                if isinstance(event, StreamEnded):
+                    stream_id_list.add(stream_id)
+                    ret_vals = self.request_received(
+                        request_info._headers, request_info._body_bytes, stream_id)
+                    if ret_vals is not None:
+                        resp_from_server[stream_id] = ret_vals
+
+            for stream_id in stream_id_list:
+                if self.listening_conn.streams[stream_id].closed:
+                    del self.request_infos[stream_id]
+            stream_id_list = set(
+                [id for id in stream_id_list if not self.listening_conn.streams[id].closed])
+
+            try:
+                self.sock.sendall(self.listening_conn.data_to_send())
+            except (SSLError, SSLSysCallError) as e:
+                print(f'Ignoring exception for now: {e}')
+                pass
 
     @staticmethod
     def convert_headers_to_http1(headers):
@@ -178,7 +229,11 @@ class Http2ConnectionManager(object):
         except Exception as e:
             if origin in self.tls.http_conns:
                 del self.tls.http_conns[origin]
-            self.listening_conn.send_headers(stream_id, ((':status', '502')), end_stream=True)
+            try:
+                self.listening_conn.send_headers(
+                    stream_id, [(':status', '502')], end_stream=True)
+            except StreamClosedError as err:
+                print(err)
             authority = request_headers.get(':authority', '')
             print(f"Connection to '{replay_server}' initiated with request to "
                   f"'{scheme}://{authority}{path}' failed: {e}")
@@ -187,11 +242,11 @@ class Http2ConnectionManager(object):
 
         setattr(res, 'headers', ProxyRequestHandler.filter_headers(res.headers))
 
-        response_headers = (
+        response_headers = [
             (':status', str(res.status)),
-        )
+        ]
         for k, v in res.headers.items():
-            response_headers += ((k, v),)
+            response_headers.append((k, v))
         self.print_info(
             request_headers,
             req_body,
@@ -257,11 +312,14 @@ class Http2ConnectionManager(object):
                 headers=request_headers.items(),
                 content=req_body)
             response_body = response_from_server.content
-        except Exception as e:
+        except (Exception, httpx.RemoteProtocolError) as e:
             if origin in self.tls.http_conns:
                 del self.tls.http_conns[origin]
-            self.listening_conn.send_headers(
-                client_stream_id, ((':status', '502')), end_stream=True)
+            try:
+                self.listening_conn.send_headers(
+                    client_stream_id, [(':status', '502')], end_stream=True)
+            except StreamClosedError as err:
+                print(err)
             authority = request_headers.get(':authority', '')
             print(f"Connection to '{replay_server}' initiated with request to "
                   f"'{scheme}://{authority}{path}' failed: {e}")
@@ -272,9 +330,9 @@ class Http2ConnectionManager(object):
             response_from_server,
             'headers',
             ProxyRequestHandler.filter_headers(response_from_server.headers))
-        response_headers = (
+        response_headers = [
             (':status', str(response_from_server.status_code)),
-        )
+        ]
         previous_k = b''
         previous_v = b''
         for k, v in response_from_server.headers.raw:
@@ -288,7 +346,7 @@ class Http2ConnectionManager(object):
                 # (b'date', b'16 Mar 2019 01:13:21 GMT')
                 v = previous_v + b', ' + v
                 response_headers = response_headers[0:-1]
-            response_headers += ((k, v),)
+            response_headers.append((k, v))
             previous_k, previous_v = k, v
 
         # httpx will insert a reason phrase for HTTP/2, but there technically
@@ -305,14 +363,11 @@ class Http2ConnectionManager(object):
 
     def request_received(self, request_headers, req_body, stream_id):
         if self.is_h2_to_server:
-            response_headers, response_body = self._send_http2_request_to_server(
+            return self._send_http2_request_to_server(
                 request_headers, req_body, stream_id)
         else:
-            response_headers, response_body = self._send_http1_request_to_server(
+            return self._send_http1_request_to_server(
                 request_headers, req_body, stream_id)
-
-        self.listening_conn.send_headers(stream_id, response_headers)
-        self.listening_conn.send_data(stream_id, response_body, end_stream=True)
 
     def print_info(self, request_headers, req_body, response_headers, res_body,
                    response_status, response_reason):

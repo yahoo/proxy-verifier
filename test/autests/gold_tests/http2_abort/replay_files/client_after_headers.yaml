@@ -22,6 +22,8 @@ sessions:
             - [Content-Type, text/html]
             - [Content-Length, '11']
             - [uuid, 1]
+      - RST_STREAM:
+          error-code: STREAM_CLOSED
       - DATA:
           content:
             encoding: plain
@@ -29,31 +31,24 @@ sessions:
             size: 11
 
     proxy-request:
-      frames:
-      - DATA:
-          content:
-            encoding: plain
-            data: client_test
-            verify: {as: equal}
+      content:
+        encoding: plain
+        data: client_test
+        verify: {as: equal}
 
     server-response:
-      frames:
-      - HEADERS:
-          headers:
-            fields:
-            - [:status, 200]
-            - [Content-Type, text/html]
-            - [Content-Length, '11']
-      - DATA:
-          content:
-            encoding: plain
-            data: server_test
-            size: 11
+      headers:
+        fields:
+        - [:status, 200]
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+      content:
+        encoding: plain
+        data: server_test
+        size: 11
 
     proxy-response:
-      frames:
-      - DATA:
-          content:
-            encoding: plain
-            data: server_test
-            verify: {as: equal}
+      content:
+        encoding: plain
+        data: server_test
+        verify: {as: equal}

@@ -129,21 +129,26 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  auto headers_frame = node;
-  auto data_frame = node;
+  YAML::Node headers_frame = node;
+  YAML::Node data_frame = node;
+  YAML::Node rst_stream_frame;
+  int rst_stream_index = -1;
   if (node[YAML_FRAMES_KEY]) {
     auto frames_node{node[YAML_FRAMES_KEY]};
     if (frames_node.IsSequence()) {
       for (const auto &frame : frames_node) {
         for (const auto &&[key, value] : frame) {
           auto frame_name = Localizer::localize_upper(key.as<std::string>());
-          message._h2_frame_sequence.push_back(H2FrameNames[frame_name]);
           switch (H2FrameNames[frame_name]) {
           case H2Frame::HEADERS:
             headers_frame = value;
             break;
           case H2Frame::DATA:
             data_frame = value;
+            break;
+          case H2Frame::RST_STREAM:
+            rst_stream_frame = value;
+            rst_stream_index = message._h2_frame_sequence.size();
             break;
           default:
             errata.note(
@@ -153,6 +158,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
                 frames_node.Mark());
             continue;
           }
+          message._h2_frame_sequence.push_back(H2FrameNames[frame_name]);
         }
       }
     } else {
@@ -263,7 +269,38 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  errata.note(process_pseudo_headers(node, message));
+  errata.note(process_pseudo_headers(headers_frame, message));
+
+  if (!rst_stream_frame.IsNull()) {
+    if (rst_stream_index > 0) {
+      auto error_code_node{rst_stream_frame[YAML_ERROR_CODE_KEY]};
+      if (error_code_node.IsScalar()) {
+        auto error_code = Localizer::localize_upper(error_code_node.Scalar());
+        auto abort_error = H2ErrorCodeNames[error_code];
+        auto abort_frame = message._h2_frame_sequence[rst_stream_index - 1];
+        if (abort_error != H2ErrorCode::INVALID && message.is_request()) {
+          message._client_rst_stream_after = static_cast<int>(abort_frame);
+          message._client_rst_stream_error = static_cast<int>(abort_error);
+        } else if (abort_error != H2ErrorCode::INVALID && message.is_response()) {
+          message._server_rst_stream_after = static_cast<int>(abort_frame);
+          message._server_rst_stream_error = static_cast<int>(abort_error);
+        } else {
+          errata.note(
+              S_ERROR,
+              R"("{}" is not a valid error code.)",
+              Localizer::localize_upper(error_code_node.Scalar()));
+        }
+      } else {
+        errata.note(
+            S_ERROR,
+            R"("{}" value at {} must be a string.)",
+            YAML_ERROR_CODE_KEY,
+            error_code_node.Mark());
+      }
+    } else {
+      errata.note(S_ERROR, "The RST_STREAM frame node must NOT be the first in the frame sequence");
+    }
+  }
 
   if (!message._method.empty() && message._authority.empty()) {
     // The URL didn't have the authority. Get it from the Host header if it
