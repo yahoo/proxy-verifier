@@ -156,7 +156,9 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   YAML::Node headers_frame = node;
   YAML::Node data_frame = node;
   YAML::Node rst_stream_frame;
+  YAML::Node goaway_frame;
   int rst_stream_index = -1;
+  int goaway_index = -1;
   if (node[YAML_FRAMES_KEY]) {
     auto frames_node{node[YAML_FRAMES_KEY]};
     if (frames_node.IsSequence()) {
@@ -173,6 +175,16 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
           case H2Frame::RST_STREAM:
             rst_stream_frame = value;
             rst_stream_index = message._h2_frame_sequence.size();
+            if (goaway_index != -1) {
+              errata.note(S_ERROR, "GOAWAY frame has already been specified.");
+            }
+            break;
+          case H2Frame::GOAWAY:
+            goaway_frame = value;
+            goaway_index = message._h2_frame_sequence.size();
+            if (rst_stream_index != -1) {
+              errata.note(S_ERROR, "RST_STREAM frame has already been specified.");
+            }
             break;
           default:
             errata.note(
@@ -340,6 +352,37 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
       }
     } else {
       errata.note(S_ERROR, "The RST_STREAM frame node must NOT be the first in the frame sequence");
+    }
+  }
+
+  if (!goaway_frame.IsNull()) {
+    if (goaway_index > 0) {
+      auto error_code_node{goaway_frame[YAML_ERROR_CODE_KEY]};
+      if (error_code_node.IsScalar()) {
+        auto error_code = Localizer::localize_upper(error_code_node.Scalar());
+        auto abort_error = H2ErrorCodeNames[error_code];
+        auto abort_frame = message._h2_frame_sequence[goaway_index - 1];
+        if (abort_error != H2ErrorCode::INVALID && message.is_request()) {
+          message._client_goaway_after = static_cast<int>(abort_frame);
+          message._client_goaway_error = static_cast<int>(abort_error);
+        } else if (abort_error != H2ErrorCode::INVALID && message.is_response()) {
+          message._server_goaway_after = static_cast<int>(abort_frame);
+          message._server_goaway_error = static_cast<int>(abort_error);
+        } else {
+          errata.note(
+              S_ERROR,
+              R"("{}" is not a valid error code.)",
+              Localizer::localize_upper(error_code_node.Scalar()));
+        }
+      } else {
+        errata.note(
+            S_ERROR,
+            R"("{}" value at {} must be a string.)",
+            YAML_ERROR_CODE_KEY,
+            error_code_node.Mark());
+      }
+    } else {
+      errata.note(S_ERROR, "The GOAWAY frame node must NOT be the first in the frame sequence");
     }
   }
 

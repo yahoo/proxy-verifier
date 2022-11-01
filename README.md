@@ -22,6 +22,7 @@ Table of Contents
          * [HTTP/2 Specification](#http2-specification)
             * [HEADERS and DATA frame](#headers-and-data-frame)
             * [RST_STREAM frame](#rst_stream-frame)
+            * [GOAWAY frame](#goaway-frame)
             * [Await](#await)
          * [Protocol Specification](#protocol-specification)
          * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
@@ -373,6 +374,7 @@ options for the frame sequence are:
 * `DATA`
 * `HEADERS`
 * `RST_STREAM`
+* `GOAWAY`
 
 Here's an example replay file:
 
@@ -483,6 +485,12 @@ The available options for `error-code` are:
 * ENHANCE_YOUR_CALM
 * INADEQUATE_SECURITY
 * HTTP_1_1_REQUIRED
+
+#### GOAWAY frame
+
+The `GOAWAY` frame acts similar to the `RST_STREAM` frame shown above. But rather than terminating
+a stream, `GOAWAY` frame terminates the connection. It also uses the same set of `error-code` listed
+above.
 
 #### Await
 

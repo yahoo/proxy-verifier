@@ -25,7 +25,7 @@ import eventlet
 from eventlet.green.OpenSSL import SSL, crypto
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import StreamEnded, RequestReceived, DataReceived, StreamReset
+from h2.events import StreamEnded, RequestReceived, DataReceived, StreamReset, ConnectionTerminated
 from h2.errors import ErrorCodes as H2ErrorCodes
 from h2.exceptions import StreamClosedError, StreamIDTooLowError
 
@@ -82,7 +82,6 @@ class Http2ConnectionManager(object):
             self.sock.sendall(self.listening_conn.data_to_send())
         except (SSLError, SSLSysCallError) as e:
             print(f'Ignoring exception for now: {e}')
-            pass
 
         ssl_conn = self.sock.fd
         # See servername_callback for where this is set with set_app_data().
@@ -114,7 +113,6 @@ class Http2ConnectionManager(object):
                     self.sock.sendall(self.listening_conn.data_to_send())
                 except (SSLError, SSLSysCallError) as e:
                     print(f'Ignoring exception for now: {e}')
-                    pass
 
                 # Loop back around to receive more data.
                 continue
@@ -132,43 +130,51 @@ class Http2ConnectionManager(object):
             # expects that there is some body and doesn't end the stream
             # correctly.
             for event in events:
-                if not hasattr(event, 'stream_id'):
-                    # All the frame types interesting to us have a stream id.
-                    # Flow control frames aren't important to us.
-                    continue
-                stream_id = event.stream_id
-                if stream_id not in self.request_infos:
-                    self.request_infos[stream_id] = RequestInfo(stream_id)
-                    frame_sequences[stream_id] = []
+                if hasattr(event, 'stream_id'):
+                    stream_id = event.stream_id
+                    if stream_id not in self.request_infos:
+                        self.request_infos[stream_id] = RequestInfo(stream_id)
+                        frame_sequences[stream_id] = []
 
-                request_info = self.request_infos[stream_id]
-                frame_seq = frame_sequences[stream_id]
+                    request_info = self.request_infos[stream_id]
+                    frame_seq = frame_sequences[stream_id]
 
-                if isinstance(event, DataReceived):
-                    frame_seq.append('DATA')
-                    if request_info._body_bytes is None:
-                        request_info._body_bytes = b''
-                    request_info._body_bytes += event.data
+                    if isinstance(event, DataReceived):
+                        frame_seq.append('DATA')
+                        if request_info._body_bytes is None:
+                            request_info._body_bytes = b''
+                        request_info._body_bytes += event.data
 
-                if isinstance(event, RequestReceived):
-                    frame_seq.append('HEADERS')
-                    request_info._headers = event.headers
+                    if isinstance(event, RequestReceived):
+                        frame_seq.append('HEADERS')
+                        request_info._headers = event.headers
 
-                if isinstance(event, StreamReset):
-                    frame_seq.append('RST_STREAM')
-                    f_str = ', '.join(frame_seq)
-                    print(f'Frame sequence from client: {f_str}')
-                    stream_id_list.add(stream_id)
-                    err = H2ErrorCodes(event.error_code).name
-                    print(
-                        f'Received RST_STREAM frame with error code {err} on stream {event.stream_id}.')
+                    if isinstance(event, StreamReset):
+                        frame_seq.append('RST_STREAM')
+                        f_str = ', '.join(frame_seq)
+                        print(f'Frame sequence from client: {f_str}')
+                        stream_id_list.add(stream_id)
+                        err = H2ErrorCodes(event.error_code).name
+                        print(
+                            f'Received RST_STREAM frame with error code {err} on stream {event.stream_id}.')
 
-                if isinstance(event, StreamEnded):
-                    stream_id_list.add(stream_id)
-                    ret_vals = self.request_received(
-                        request_info._headers, request_info._body_bytes, stream_id)
-                    if ret_vals is not None:
-                        resp_from_server[stream_id] = ret_vals
+                    if isinstance(event, StreamEnded):
+                        print('StreamEnded')
+                        stream_id_list.add(stream_id)
+                        ret_vals = self.request_received(
+                            request_info._headers, request_info._body_bytes, stream_id)
+                        if ret_vals is not None:
+                            resp_from_server[stream_id] = ret_vals
+
+                else:
+                    if isinstance(event, ConnectionTerminated):
+                        frame_seq.append('GOAWAY')
+                        f_str = ', '.join(frame_seq)
+                        print(f'Frame sequence from client: {f_str}')
+                        err = H2ErrorCodes(event.error_code).name
+                        print(
+                            f'Received GOAWAY frame with error code {err} on with last stream id {event.last_stream_id}.')
+                        self.listening_conn.close_connection()
 
             for stream_id in stream_id_list:
                 try:
@@ -327,8 +333,13 @@ class Http2ConnectionManager(object):
             if origin in self.tls.http_conns:
                 del self.tls.http_conns[origin]
             try:
-                self.listening_conn.send_headers(
-                    client_stream_id, [(':status', '502')], end_stream=True)
+                if 'StreamReset' in str(e):
+                    self.listening_conn.reset_stream(client_stream_id)
+                if 'ConnectionTerminated' in str(e):
+                    self.listening_conn.close_connection(last_stream_id=0)
+                else:
+                    self.listening_conn.send_headers(
+                        client_stream_id, [(':status', '502')], end_stream=True)
             except StreamClosedError as err:
                 print(err)
             authority = request_headers.get(':authority', '')

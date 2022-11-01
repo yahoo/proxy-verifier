@@ -511,6 +511,11 @@ public:
   int _server_rst_stream_after = -1;
   int _server_rst_stream_error = -1;
 
+  int _client_goaway_after = -1;
+  int _client_goaway_error = -1;
+  int _server_goaway_after = -1;
+  int _server_goaway_error = -1;
+
   /// Body is chunked.
   bool _chunked_p = false;
   /// Whether there is a "Transfer-Encoding: chunked" HTTP header field in this

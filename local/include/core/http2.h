@@ -88,6 +88,11 @@ public:
   int _server_rst_stream_after = -1;
   int _server_rst_stream_error = -1;
 
+  int _client_goaway_after = -1;
+  int _client_goaway_error = -1;
+  int _server_goaway_after = -1;
+  int _server_goaway_error = -1;
+
 private:
   int32_t _stream_id = -1;
   std::deque<nghttp2_rcbuf *> _rcbufs_to_free;
@@ -152,6 +157,8 @@ public:
   {
     return _session;
   }
+
+  bool sent_goaway_frame = false;
 
   /** Indicate that the stream has ended (received the END_STREAM flag).
    *
