@@ -17,6 +17,7 @@
 #include <nghttp2/nghttp2.h>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "swoc/BufferWriter.h"
 #include "swoc/Errata.h"
@@ -156,8 +157,10 @@ public:
    *
    * @param[in] stream_id The stream identifier for which the end stream has
    * been processed.
+   *
+   * @param[in] key The key for the finished stream.
    */
-  void set_stream_has_ended(int32_t stream_id);
+  void set_stream_has_ended(int32_t stream_id, std::string_view key);
 
   /// Whether an entire stream has been received and is ready for processing.
   bool get_a_stream_has_ended() const;
@@ -198,6 +201,13 @@ private:
   nghttp2_nv tv_to_nv(char const *name, swoc::TextView v);
   void set_expected_response_for_last_request(HttpHeader const &response);
 
+  /** Determine whether the transaction is still awaiting upon other configured streams.
+   *
+   * @param[in] txn The transaction to check.
+   * @return Whether the transaction is still awaiting upon other configured streams.
+   */
+  bool request_has_outstanding_stream_dependencies(HttpHeader const &request) const;
+
 private:
   /// Whether this session is for a listening server.
   bool _is_server = false;
@@ -228,4 +238,7 @@ private:
 
   /// The system status code. This is set to non-zero if problems are detected.
   static int *process_exit_code;
+
+  /// The set of streams which have completed already.
+  std::unordered_set<std::string> _finished_streams;
 };

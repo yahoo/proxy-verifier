@@ -6,6 +6,7 @@
  */
 
 #include "core/http2.h"
+#include "core/http.h"
 #include "core/verification.h"
 #include "core/ProxyVerifier.h"
 
@@ -167,9 +168,12 @@ H2Session::get_a_stream_has_ended() const
 }
 
 void
-H2Session::set_stream_has_ended(int32_t stream_id)
+H2Session::set_stream_has_ended(int32_t stream_id, std::string_view key)
 {
   _ended_streams.push_back(stream_id);
+  if (!key.empty()) {
+    _finished_streams.emplace(key);
+  }
 }
 
 swoc::Rv<std::shared_ptr<HttpHeader>>
@@ -317,6 +321,24 @@ H2Session::run_transactions(
         txn_errata.note(S_ERROR, R"(Failed to reconnect HTTP/2 key: {})", key);
         // If we don't have a valid connection, there's no point in continuing.
         break;
+      }
+    }
+
+    auto const start_time = ClockType::now();
+    while (this->request_has_outstanding_stream_dependencies(txn._req)) {
+      auto current_time = ClockType::now();
+      if (current_time - start_time > 3 * Poll_Timeout) {
+        txn_errata.note(S_ERROR, R"(Timed out waiting for dependencies for key: {})", key);
+        break;
+      }
+      auto const ret = receive_nghttp2_data(this->get_session(), nullptr, 0, 0, this, Poll_Timeout);
+      if (ret < 0) {
+        // There was a problem reading bytes on the socket.
+        txn_errata.note(
+            S_ERROR,
+            "An unexpected error was received reading bytes on a socket while delaying a "
+            "transaction for --rate.");
+        return errata;
       }
     }
     if (rate_multiplier != 0 || txn._user_specified_delay_duration > 0us) {
@@ -880,7 +902,7 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
     }
     if (flags & NGHTTP2_FLAG_END_STREAM) {
       // We already verified above that this is in our _stream_map.
-      session_data->set_stream_has_ended(stream_id);
+      session_data->set_stream_has_ended(stream_id, stream_map_iter->second->_key);
     }
   }
   return 0;
@@ -1300,6 +1322,17 @@ H2Session::tv_to_nv(char const *name, TextView v)
   return res;
 }
 
+bool
+H2Session::request_has_outstanding_stream_dependencies(HttpHeader const &request) const
+{
+  for (auto const &stream_dependency : request._keys_to_await) {
+    if (this->_finished_streams.find(stream_dependency) == this->_finished_streams.end()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 SSL_CTX *H2Session::h2_client_context = nullptr;
 
 Errata
@@ -1386,6 +1419,10 @@ H2Session::server_init(SSL_CTX *&server_context)
 #else
   static_assert(false, "Error must be at least openssl 1.0.2");
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
+
+  if (TLSSession::tls_secrets_are_being_logged()) {
+    SSL_CTX_set_keylog_callback(server_context, TLSSession::keylog_callback);
+  }
   return errata;
 }
 

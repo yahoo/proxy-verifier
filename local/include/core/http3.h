@@ -20,6 +20,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "swoc/BufferWriter.h"
@@ -343,8 +344,10 @@ public:
    *
    * @param[in] stream_id The stream identifier for which the end stream has
    * been processed.
+   *
+   * @param[in] key The key for the stream which ended.
    */
-  void set_stream_has_ended(int64_t stream_id);
+  void set_stream_has_ended(int64_t stream_id, std::string_view key);
 
   /// Whether an entire stream has been received and is ready for processing.
   bool get_a_stream_has_ended() const;
@@ -390,12 +393,22 @@ private:
 
   swoc::Errata receive_responses();
 
+  /** Determine whether the transaction is still awaiting upon other configured streams.
+   *
+   * @param[in] txn The transaction to check.
+   * @return Whether the transaction is still awaiting upon other configured streams.
+   */
+  bool request_has_outstanding_stream_dependencies(HttpHeader const &request) const;
+
 private:
   /** The streams which have completed */
   std::deque<int64_t> _ended_streams;
   swoc::IPEndpoint const *_endpoint = nullptr;
 
   std::shared_ptr<H3StreamState> _last_added_stream;
+
+  /// The set of streams which have completed already.
+  std::unordered_set<std::string> _finished_streams;
 
   /** The client context to use for HTTP/3 connections.
    *

@@ -129,6 +129,30 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
+  if (auto const &await{node[YAML_HTTP_AWAIT_KEY]}; await) {
+    if (await.IsScalar()) {
+      message._keys_to_await.emplace_back(await.Scalar());
+    } else if (await.IsSequence()) {
+      for (auto const &key : await) {
+        if (key.IsScalar()) {
+          message._keys_to_await.emplace_back(key.Scalar());
+        } else {
+          errata.note(
+              S_ERROR,
+              R"("{}" value at {} must be a scalar or a sequence of scalars.)",
+              YAML_HTTP_AWAIT_KEY,
+              key.Mark());
+        }
+      }
+    } else {
+      errata.note(
+          S_ERROR,
+          R"("{}" at {} must be a scalar or sequence.)",
+          YAML_HTTP_AWAIT_KEY,
+          await.Mark());
+    }
+  }
+
   YAML::Node headers_frame = node;
   YAML::Node data_frame = node;
   YAML::Node rst_stream_frame;
