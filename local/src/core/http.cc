@@ -633,7 +633,7 @@ HttpHeader::parse_response(swoc::TextView data)
       _status = swoc::svtou(status);
       _status_string = std::string(status);
 
-      auto reason{status_start.ltrim_if(&isspace).take_prefix_if(&isspace)};
+      auto reason{status_start.trim_if(&isspace)};
       _reason = reason;
       set_is_response();
 
