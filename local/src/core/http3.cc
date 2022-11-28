@@ -1176,6 +1176,50 @@ cb_h3_end_headers(
 }
 
 static int
+cb_h3_end_stream(
+    nghttp3_conn * /* conn */,
+    int64_t stream_id,
+    void *conn_user_data,
+    void *stream_user_data)
+{
+  Errata errata;
+  auto *session_data = reinterpret_cast<H3Session *>(conn_user_data);
+  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
+  std::string key;
+  if (stream_state->will_receive_request()) {
+    auto &request_from_client = *stream_state->request_from_client;
+    request_from_client.derive_key();
+    key = request_from_client.get_key();
+  } else { // stream_state receives a response
+    auto &response_from_wire = *stream_state->response_from_server;
+    response_from_wire.derive_key();
+    if (stream_state->key.empty()) {
+      // A response for which we didn't process the request, presumably. A
+      // server push? Maybe? In theory we can support that but currently we
+      // do not. Emit a warning for now.
+      stream_state->key = response_from_wire.get_key();
+      errata.note(
+          S_ERROR,
+          "Incoming HTTP/3 response has no key set from the request. Using key from "
+          "response: {}.",
+          stream_state->key);
+    } else {
+      // Make sure the key is set and give preference to the associated
+      // request over the content of the response. There shouldn't be a
+      // difference, but if there is, the user has the YAML file with the
+      // request's key in front of them, and identifying that transaction
+      // is more helpful than so some abberant response's key from the
+      // wire. If they are looking into issues, debug logging will show
+      // the fields of both the request and response.
+      response_from_wire.set_key(stream_state->key);
+    }
+    key = stream_state->key;
+  }
+  session_data->set_stream_has_ended(stream_id, key);
+  return 0;
+}
+
+static int
 cb_h3_send_stop_sending(
     nghttp3_conn * /* conn */,
     int64_t /* stream_id */,
@@ -1204,7 +1248,7 @@ static nghttp3_callbacks nghttp3_client_callbacks = {
     cb_h3_recv_header,
     nullptr, /* end_trailers */
     cb_h3_send_stop_sending,
-    nullptr, /* end_stream */
+    cb_h3_end_stream,
     nullptr, /* reset_stream */
     nullptr, /* shutdown */
 };
@@ -1559,9 +1603,12 @@ H3Session::record_stream_state(int64_t stream_id, std::shared_ptr<H3StreamState>
 }
 
 void
-H3Session::set_stream_has_ended(int64_t stream_id)
+H3Session::set_stream_has_ended(int64_t stream_id, std::string_view key)
 {
   _ended_streams.push_back(stream_id);
+  if (!key.empty()) {
+    _finished_streams.emplace(key);
+  }
 }
 
 swoc::Rv<std::shared_ptr<HttpHeader>>
@@ -1675,6 +1722,13 @@ H3Session::run_transactions(
         break;
       }
     }
+    while (this->request_has_outstanding_stream_dependencies(transaction._req)) {
+      txn_errata.note(nghttp3_receive_and_send_data(*this, Poll_Timeout));
+      if (!txn_errata.is_ok()) {
+        errata.note(S_ERROR, R"(Failed HTTP/3 transaction with key: {}.)", key);
+        return errata;
+      }
+    }
     if (rate_multiplier != 0 || transaction._user_specified_delay_duration > 0us) {
       std::chrono::duration<double, std::micro> delay_time = 0ms;
       auto current_time = ClockType::now();
@@ -1703,6 +1757,17 @@ H3Session::run_transactions(
   }
   errata.note(receive_responses());
   return errata;
+}
+
+bool
+H3Session::request_has_outstanding_stream_dependencies(HttpHeader const &request) const
+{
+  for (auto const &stream_dependency : request._keys_to_await) {
+    if (this->_finished_streams.find(stream_dependency) == this->_finished_streams.end()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 Errata

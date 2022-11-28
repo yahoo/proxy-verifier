@@ -534,6 +534,13 @@ public:
 
   bool _verify_strictly;
 
+  /** The keys upon which to await a response before running this transaction.
+   *
+   * Since HTTP/1 transactions are serialized anyway, this has no impact there.
+   * But for HTTP/2 and HTTP/3 transactions, this can be helpful.
+   */
+  std::vector<std::string> _keys_to_await;
+
 protected:
   class Binding : public swoc::bwf::NameBinding
   {

@@ -22,6 +22,7 @@ Table of Contents
          * [HTTP/2 Specification](#http2-specification)
             * [HEADERS and DATA frame](#headers-and-data-frame)
             * [RST_STREAM frame](#rst_stream-frame)
+            * [Await](#await)
          * [Protocol Specification](#protocol-specification)
          * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
       * [Traffic Verification Specification](#traffic-verification-specification)
@@ -57,7 +58,7 @@ Table of Contents
             * [--qlog-dir &lt;directory&gt;](#--qlog-dir-directory)
             * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
       * [Tools](#tools)
-         * [Replay Gen](#replay-gen-replay_genpy)
+         * [Replay Gen <a href="tools/replay_gen.py">replay_gen.py</a>](#replay-gen-replay_genpy)
             * [-n,--number &lt;NUMBER&gt;](#-n--number-number)
             * [-tl,--trans-lower &lt;TRANS_LOWER&gt;](#-tl--trans-lower-trans_lower)
             * [-tu,--trans-upper &lt;TRANS_UPPER&gt;](#-tu--trans-upper-trans_upper)
@@ -67,12 +68,14 @@ Table of Contents
             * [-u,--url-file &lt;URL_FILE&gt;](#-u--url-file-url_file)
             * [-o,--output &lt;OUTPUT&gt;](#-o--output-output)
             * [-p,--prefix &lt;PREFIX&gt;](#-p--prefix-prefix)
-            * [-j,--out-json](#[-j--out-json)
-         * [Remap Config to URL List](#remap-config-to-url-list-remap_config_to_url_listpy)
+            * [-j,--out-json](#-j--out-json)
+         * [Remap Config to URL List <a href="tools/remap_config_to_url_list.py">remap_config_to_url_list.py</a>](#remap-config-to-url-list-remap_config_to_url_listpy)
             * [-o,--output &lt;OUTPUT_FILE&gt;](#-o--output-output_file)
             * [--no-ip](#--no-ip)
       * [Contribute](#contribute)
       * [License](#license)
+
+Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
 
 # Proxy Verifier
 
@@ -480,6 +483,130 @@ The available options for `error-code` are:
 * ENHANCE_YOUR_CALM
 * INADEQUATE_SECURITY
 * HTTP_1_1_REQUIRED
+
+#### Await
+
+By protocol specification, HTTP/1 transactions are serialized. That is, apart
+from the rarely used pipelined request protocol feature (which is not supported
+by Proxy Verifier), each HTTP/1 transaction in a connection is not exchanged
+until the request and response of the previous one is completed. By contrast,
+the HTTP/2 protocol specifies that streams (i.e., HTTP/2 transactions) are
+multiplexed within their sessions (i.e., HTTP/2 connections). For the Verifier
+client, this means that, by default, requests for streams within a session are
+each sent immediately in the order that they are specified in the replay file
+without waiting for their respective responses. That is, if a replay file
+specifies three streams within a session, then the client will send the request
+for each stream as quickly as it can serialize it on the socket for the
+session before waiting for any responses.
+
+The timing for sending the stream requests can be modified from this default
+behavior in several ways. As with replaying HTTP/1 traffic, if the streams
+contain timing specification nodes, then the client can be configured to replay
+the streams at a rate scaled to that timing information. See the documentation
+for the [--rate](#--rate-requestssecond) argument for a description of how
+this works. Also, the user can include
+[delay](#session-and-transaction-delay-specification) nodes to space out the
+replay of each stream.
+
+In addition to these configurations supported in HTTP/1 traffic replay, for
+HTTP/2 and HTTP/3 the Verifier client supports the `await` node to control when
+it starts streams. This node takes a transaction key or a sequence of
+transaction keys, the responses of which are dependencies for sending the request
+for the associated stream. That is, a stream with an `await` node will not be
+sent until all the responses are received for the listed keys.
+
+As an example, consider the specification of the following session with two
+streams:
+
+```YAML
+
+# Specify an HTTP/2 session
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+
+  # Stream 1
+  - client-request:
+      headers:
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ Content-Type, image/jpeg ]
+        - [ uuid, first-stream ]
+
+    server-response:
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Content-Type, image/jpeg ]
+        - [ X-Response, first-response ]
+      content:
+        size: 3432
+
+  # Stream 2
+  - client-request:
+
+      # This await will cause the Verifier client to hold off on sending this
+      # request until the response to first-stream is received.
+      await: first-request
+
+      headers:
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ Content-Type, image/jpeg ]
+        - [ uuid, second-stream ]
+
+    server-response:
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Content-Type, image/jpeg ]
+        - [ X-Response, second-response ]
+      content:
+        size: 3432
+```
+
+Notice that the second transaction with key `second-stream` contains an
+`await` node. Without this node, the Verifier client would send both requests
+back to back. That is, the `second-stream` request would be sent immediately
+after the `first-stream` request was sent. With the `await` node specifying a
+dependency upon the `first-stream` transaction, however, the Verifier client
+will instead delay sending the `second-stream` request until the response to
+`first-stream` was received from the proxy.
+
+There are a few things related to `await` nodes to be cognizant of:
+
+* `await` nodes can be used in conjunction with `delay` nodes for
+  `client-request` specifications. When both are used, the Verifier client will
+  first hold off on sending the request until all dependant responses specified
+  by the keys in `await` are processed. Once the dependant responses are
+  received, then the `delay` node is processed and the request is further
+  delayed for the amount of time specified by the value of the `delay` node.
+  Then the request is sent after the delay.
+* As stated before, the Verifier client is designed to processes streams and
+  their directives in the order that they are specified in the `transactions`
+  sequence for their stream. This means that any `await` or `delay` nodes for
+  one transaction causes a corresponding delay for later nodes before they are
+  processed. That is to say, if a session is specified with five streams, and
+  the third stream has an `await` specified for the first two streams, then the
+  fourth and fifth streams will also be delayed behind the third stream while
+  it awaits the responses for the first and second streams, even if streams
+  four and five contain no `await` nor `delay` nodes themselves.
+* Transaction keys specified via `await` can only be for earlier transactions
+  in the same session that the `client-request` node is in. That is, the
+  Verifier client does not support a stream in one session to `await` the
+  response to a stream in a different session.
 
 ### Protocol Specification
 

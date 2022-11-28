@@ -3,7 +3,7 @@ Implement HTTP/2 proxy behavior in Python.
 '''
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2022, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -27,7 +27,7 @@ from h2.config import H2Configuration
 from h2.connection import H2Connection
 from h2.events import StreamEnded, RequestReceived, DataReceived, StreamReset
 from h2.errors import ErrorCodes as H2ErrorCodes
-from h2.exceptions import StreamClosedError
+from h2.exceptions import StreamClosedError, StreamIDTooLowError
 
 
 class WrapSSSLContext(ssl.SSLContext):
@@ -108,11 +108,16 @@ class Http2ConnectionManager(object):
                         self.listening_conn.send_data(stream_id, response_body, end_stream=True)
                     except StreamClosedError as e:
                         print(e)
+                    except StreamIDTooLowError as e:
+                        print(e)
                 try:
                     self.sock.sendall(self.listening_conn.data_to_send())
                 except (SSLError, SSLSysCallError) as e:
                     print(f'Ignoring exception for now: {e}')
                     pass
+
+                # Loop back around to receive more data.
+                continue
 
             if not data:
                 # Connection ended.
@@ -166,10 +171,16 @@ class Http2ConnectionManager(object):
                         resp_from_server[stream_id] = ret_vals
 
             for stream_id in stream_id_list:
-                if self.listening_conn.streams[stream_id].closed:
-                    del self.request_infos[stream_id]
-            stream_id_list = set(
-                [id for id in stream_id_list if not self.listening_conn.streams[id].closed])
+                try:
+                    if self.listening_conn.streams[stream_id].closed:
+                        del self.request_infos[stream_id]
+                except KeyError:
+                    pass
+            try:
+                stream_id_list = set(
+                    [id for id in stream_id_list if not self.listening_conn.streams[id].closed])
+            except KeyError:
+                pass
 
             try:
                 self.sock.sendall(self.listening_conn.data_to_send())

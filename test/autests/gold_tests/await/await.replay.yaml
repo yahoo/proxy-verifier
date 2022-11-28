@@ -1,0 +1,121 @@
+# @file
+#
+# Copyright 2022, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+    version: '1.0'
+
+sessions:
+
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+
+  - client-request:
+      headers:
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ Content-Type, image/jpeg ]
+        - [ uuid, first-request ]
+
+    proxy-request:
+      url:
+      - [ path, { value: flower.jpeg, as: contains } ]
+
+    server-response:
+
+      # Make the server slow to respond in order to verify that the await
+      # directive worked as expected.
+      delay: 2s
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Content-Type, image/jpeg ]
+        - [ X-Response, first-response ]
+      content:
+        size: 3432
+
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ X-Response, first-response ]
+
+  - client-request:
+
+      # This await should cause the client to hold off on sending this request until
+      # first-request is completed.
+      await: first-request
+
+      headers:
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ Content-Type, image/jpeg ]
+        - [ uuid, second-request ]
+
+    proxy-request:
+      url:
+      - [ path, { value: flower.jpeg, as: contains } ]
+
+    server-response:
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Content-Type, image/jpeg ]
+        - [ X-Response, second-response ]
+      content:
+        size: 3432
+
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ X-Response, second-response ]
+
+  - client-request:
+
+      # This await should cause the client to hold off on sending this request
+      # until both first-request and second-request responses are received.
+      await: [first-request, second-request]
+
+      headers:
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ Content-Type, image/jpeg ]
+        - [ uuid, third-request ]
+
+    proxy-request:
+      url:
+      - [ path, { value: flower.jpeg, as: contains } ]
+
+    server-response:
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Content-Type, image/jpeg ]
+        - [ X-Response, third-response ]
+      content:
+        size: 3432
+
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ X-Response, third-response ]
