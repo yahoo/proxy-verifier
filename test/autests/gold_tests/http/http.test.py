@@ -57,6 +57,10 @@ client.Streams.stdout += Testers.ContainsExpression(
     "Loading 2 replay files.",
     "Verify that 2 replay files were parsesd.")
 
+client.Streams.stdout += Testers.ContainsExpression(
+    "204 No Content",
+    "Verify the No Content reason string.")
+
 client.Streams.stdout += Testers.ExcludesExpression(
     "Violation:",
     "There should be no verification errors because there are none added.")
