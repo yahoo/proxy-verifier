@@ -189,6 +189,9 @@ ArgParser::parse(const char **argv)
     }
     command->help_message(msg);
   }
+  if (!ret.has_action()) {
+    _top_level_command.help_message("No command or top-level option provided");
+  }
   return ret;
 }
 
