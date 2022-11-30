@@ -63,6 +63,7 @@ static const std::string YAML_HTTP_STATUS_KEY{"status"};
 static const std::string YAML_HTTP_REASON_KEY{"reason"};
 static const std::string YAML_HTTP_METHOD_KEY{"method"};
 static const std::string YAML_HTTP_SCHEME_KEY{"scheme"};
+static const std::string YAML_HTTP_VERSION_KEY{"version"};
 static const std::string YAML_HTTP_AWAIT_KEY{"await"};
 static const std::string YAML_HTTP2_KEY{"http2"};
 static const std::string YAML_HTTP2_PSEUDO_METHOD_KEY{":method"};
