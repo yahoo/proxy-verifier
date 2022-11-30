@@ -33,8 +33,12 @@ old_version=$(\
   tail -1 | \
   sed 's:refs/tags/v::g')
 
+[ -n "${old_version}" ] || fail "Got an empty old version string."
+
 # Go back: the file paths are relative to the user's current working directory.
 cd - 2>&1 > /dev/null
+grep -q "${old_version}" "${parts_file}" || fail "Could not find old version $old_version in \"${parts_file}\""
+grep -q "${old_version}" "${src_file}" || fail "Could not find old version  $old_version in \"${src_file}\""
 sed -i'.bak' "s/${old_version}/${new_version}/g" "${parts_file}"  && rm "${parts_file}.bak"
 sed -i'.bak' "s/${old_version}/${new_version}/g" "${src_file}" && rm "${src_file}.bak"
 
