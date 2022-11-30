@@ -1,0 +1,32 @@
+# @file
+#
+# Copyright 2022, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+  version: "1.0"
+
+sessions:
+- transactions:
+  - client-request:
+      method: "POST"
+      version: "1.0"
+      url: /some/request
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ Content-Length, 32 ]
+        - [ uuid, 51 ]
+        - [ X-Request, request ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, 16 ]
+        - [ X-Response, response ]
+
+    proxy-response:
+      status: 200
