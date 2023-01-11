@@ -1,0 +1,90 @@
+# @file
+#
+# Copyright 2023, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  transactions:
+  - client-request:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:method, POST]
+            - [:scheme, https]
+            - [:authority, example.data.com]
+            - [:path, /a/path]
+            - [Content-Type, text/html]
+            - [Content-Length, '11']
+            - [uuid, 1]
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test
+            size: 11
+
+    proxy-request:
+      content:
+        encoding: plain
+        data: client_test
+        verify: {as: equal}
+
+    server-response:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:status, 200]
+            - [Content-Type, text/html]
+            - [Content-Length, '11']
+      - GOAWAY:
+          error-code: STREAM_CLOSED
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test
+            size: 11
+
+    proxy-response:
+      content:
+        encoding: plain
+        data: server_test
+        verify: {as: equal}
+
+  - client-request:
+      delay: 500ms
+      headers:
+        fields:
+        - [:method, POST]
+        - [:scheme, https]
+        - [:authority, example.data.com]
+        - [:path, /a/path]
+        - [Content-Type, text/html]
+        - [Content-Length, '15']
+        - [uuid, 2]
+      content:
+        encoding: plain
+        data: should_not_send
+        size: 15
+
+    server-response:
+      headers:
+        fields:
+        - [:status, 200]
+        - [Content-Type, text/html]
+        - [Content-Length, '15']
+      content:
+        encoding: plain
+        data: should_not_send
+        size: 15

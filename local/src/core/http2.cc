@@ -315,6 +315,7 @@ H2Session::run_transactions(
   for (auto const &txn : txn_list) {
     Errata txn_errata;
     auto const key{txn._req.get_key()};
+
     if (this->is_closed()) {
       txn_errata.note(this->do_connect(interface, real_target));
       if (!txn_errata.is_ok()) {
@@ -377,6 +378,10 @@ H2Session::run_transactions(
     txn_errata.note(this->run_transaction(txn));
     if (!txn_errata.is_ok()) {
       errata.note(S_ERROR, R"(Failed HTTP/2 transaction with key: {})", key);
+    }
+    if (this->sent_goaway_frame) {
+      this->close();
+      this->terminate();
     }
   }
   receive_nghttp2_responses(this->get_session(), nullptr, 0, 0, this);
@@ -636,7 +641,7 @@ receive_nghttp2_responses(
   int total_recv = 0;
 
   auto timeout_count = 0;
-  while (!session_data->_stream_map.empty()) {
+  while (!session_data->_stream_map.empty() && !session_data->sent_goaway_frame) {
     auto const received_bytes =
         receive_nghttp2_data(session, nullptr, 0, 0, user_data, Poll_Timeout);
     if (received_bytes < 0) {
@@ -731,35 +736,61 @@ on_frame_send_cb(nghttp2_session *session, nghttp2_frame const *frame, void *use
   H2StreamState &stream_state = *stream_map_iter->second;
   Errata errata;
 
-  errata.note(
-      S_DIAG,
-      "Sent frame for key {}: {}",
-      stream_state._key,
-      H2FrameNames[static_cast<H2Frame>(frame->hd.type)]);
-
   if (stream_id != 0) {
-    auto const frame_type = stream_state._client_rst_stream_after == -1 ?
-                                stream_state._server_rst_stream_after :
-                                stream_state._client_rst_stream_after;
-    auto const error_code = stream_state._client_rst_stream_error == -1 ?
-                                stream_state._server_rst_stream_error :
-                                stream_state._client_rst_stream_error;
-    if (frame->hd.type == frame_type) {
+    auto const rst_stream_after = stream_state._client_rst_stream_after == -1 ?
+                                      stream_state._server_rst_stream_after :
+                                      stream_state._client_rst_stream_after;
+    auto const rst_stream_error = stream_state._client_rst_stream_error == -1 ?
+                                      stream_state._server_rst_stream_error :
+                                      stream_state._client_rst_stream_error;
+    auto const goaway_after = stream_state._client_goaway_after == -1 ?
+                                  stream_state._server_goaway_after :
+                                  stream_state._client_goaway_after;
+    auto const goaway_error = stream_state._client_goaway_error == -1 ?
+                                  stream_state._server_goaway_error :
+                                  stream_state._client_goaway_error;
+    if (frame->hd.type == rst_stream_after) {
       errata.note(
           S_DIAG,
           "Submitting RST_STREAM frame for key {} after {} frame with error code {}.",
           stream_state._key,
-          H2FrameNames[static_cast<H2Frame>(frame_type)],
-          H2ErrorCodeNames[static_cast<H2ErrorCode>(error_code)]);
+          H2FrameNames[static_cast<H2Frame>(rst_stream_after)],
+          H2ErrorCodeNames[static_cast<H2ErrorCode>(rst_stream_error)]);
       errata.sink();
-      int const submit_status = nghttp2_submit_rst_stream(session, 0, stream_id, error_code);
-      if (submit_status) {
+      int const submit_status = nghttp2_submit_rst_stream(session, 0, stream_id, rst_stream_error);
+      if (submit_status != 0) {
         errata.note(
             S_DIAG,
             "Failed to submit RST_STREAM frame for key {} after {} frame: {}.",
             stream_state._key,
-            H2FrameNames[static_cast<H2Frame>(frame_type)],
+            H2FrameNames[static_cast<H2Frame>(rst_stream_after)],
             submit_status);
+      } else {
+        errata.note(
+            S_DIAG,
+            "Sent RST_STREAM frame for key {} on stream {}.",
+            stream_state._key,
+            stream_id);
+      }
+    } else if (frame->hd.type == goaway_after) {
+      errata.note(
+          S_DIAG,
+          "Submitting GOAWAY frame for key {} after {} frame with error code {}.",
+          stream_state._key,
+          H2FrameNames[static_cast<H2Frame>(goaway_after)],
+          H2ErrorCodeNames[static_cast<H2ErrorCode>(goaway_error)]);
+      errata.sink();
+      int const submit_status = nghttp2_session_terminate_session2(session, 0, goaway_error);
+      if (submit_status != 0) {
+        errata.note(
+            S_DIAG,
+            "Failed to submit GOAWAY frame for key {} after {} frame: {}.",
+            stream_state._key,
+            H2FrameNames[static_cast<H2Frame>(goaway_after)],
+            submit_status);
+      } else {
+        session_data->sent_goaway_frame = true;
+        errata.note(S_DIAG, "Sent GOAWAY frame for key {}.", stream_state._key);
       }
     }
   }
@@ -780,8 +811,14 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
     break;
   case NGHTTP2_PRIORITY:
     break;
-  case NGHTTP2_RST_STREAM:
-    break;
+  case NGHTTP2_RST_STREAM: {
+    // nghttp2_rst_stream const &rst_stream_frame{frame->rst_stream};
+    errata.note(
+        S_DIAG,
+        "Received RST_STREAM frame with stream id {}, error code {}",
+        frame->hd.stream_id,
+        frame->rst_stream.error_code);
+  } break;
   case NGHTTP2_SETTINGS: {
     nghttp2_settings const &settings_frame{frame->settings};
     errata.note(
@@ -800,8 +837,14 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
   } break;
   case NGHTTP2_PUSH_PROMISE:
     break;
-  case NGHTTP2_GOAWAY:
-    break;
+  case NGHTTP2_GOAWAY: {
+    // nghttp2_goaway const &goaway_frame{frame->goaway};
+    errata.note(
+        S_DIAG,
+        "Received GOAWAY frame with last stream id {}, error code {}",
+        frame->goaway.last_stream_id,
+        frame->goaway.error_code);
+  } break;
   }
   auto const flags = frame->hd.flags;
   // `flags` have to be processed here. They are not communicated via
@@ -1163,9 +1206,13 @@ H2Session::write(HttpHeader const &hdr)
   if (hdr.is_request()) {
     stream_state->_client_rst_stream_after = hdr._client_rst_stream_after;
     stream_state->_client_rst_stream_error = hdr._client_rst_stream_error;
+    stream_state->_client_goaway_after = hdr._client_goaway_after;
+    stream_state->_client_goaway_error = hdr._client_goaway_error;
   } else if (hdr.is_response()) {
     stream_state->_server_rst_stream_after = hdr._server_rst_stream_after;
     stream_state->_server_rst_stream_error = hdr._server_rst_stream_error;
+    stream_state->_server_goaway_after = hdr._server_goaway_after;
+    stream_state->_server_goaway_error = hdr._server_goaway_error;
   }
 
   // grab header, send to session

@@ -113,19 +113,9 @@ else:
     Part(
         "nghttp2",
         "#lib/nghttp2.part",
-        vcs_type=VcsGit(server="github.com", repository="tatsuhiro-t/nghttp2",
+        vcs_type=VcsGit(server="github.com", repository="nghttp2/nghttp2",
                         protocol="https",
-                        # A pinned commit from branch quic.
-                        # This commit will be removed whenever the nghttp2
-                        # author rebases origin/quic.  For reference, this
-                        # commit is currently described as:
-
-                        # commit f277dafe1ef946dac8d7bd57ac4d30e722b654d9 (HEAD -> master, origin/master, origin/HEAD)
-                        # Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-                        # Date:   Sun Apr 3 21:56:47 2022 +0900
-                        #
-                        #     Bump macos
-                        revision="f277dafe1ef946dac8d7bd57ac4d30e722b654d9"
+                        tag="v1.51.0"
                         ),
         mode=['SKIP_DOCS'],
     )
