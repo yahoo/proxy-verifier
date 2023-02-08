@@ -297,7 +297,10 @@ public:
 
   /** Establish a QUIC connection from the given interface to the given IP
    * address. */
-  swoc::Errata do_connect(swoc::TextView interface, swoc::IPEndpoint const *target) override;
+  swoc::Errata do_connect(
+      swoc::TextView interface,
+      swoc::IPEndpoint const *target,
+      ProxyProtocolVersion pp_version = ProxyProtocolVersion::NONE) override;
 
   /** Perform HTTP/3 global initialization.
    *

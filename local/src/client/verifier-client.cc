@@ -276,6 +276,21 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
         _ssn->is_h3 = true;
       }
     }
+    // parse the proxy protocol node
+    auto const pp_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_PP_NAME);
+    if (!pp_node.is_ok()) {
+      errata.note(std::move(pp_node.errata()));
+      return errata;
+    }
+    if (pp_node.result().IsDefined()) {
+      errata.note(S_DIAG, "Enabling proxy protocol for this session.");
+      // set proxy protocol header version if specified
+      auto const &pp_version_node = pp_node.result()[YAML_SSN_PROTOCOL_VERSION];
+      // for unspecified or unknown versions, default to v1
+      _ssn->pp_version = (pp_version_node && pp_version_node.Scalar() == "2") ?
+                             ProxyProtocolVersion::V2 :
+                             ProxyProtocolVersion::V1;
+    }
   }
 
   if (node[YAML_TIME_START_KEY]) {
@@ -643,7 +658,10 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
     return;
   }
   errata.sink();
-  errata.note(session->do_connect(specified_interface, real_target));
+
+  // The PROXY protocol needs to be sent when the connection is established.
+  // Thus, sending the header in do_connect()
+  errata.note(session->do_connect(specified_interface, real_target, ssn.pp_version));
   if (!errata.is_ok()) {
     Engine::process_exit_code = 1;
     return;

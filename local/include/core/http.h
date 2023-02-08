@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 
+#include "core/proxy_protocol_util.h"
+
 #include "swoc/BufferWriter.h"
 #include "swoc/Errata.h"
 #include "swoc/Lexicon.h"
@@ -167,6 +169,7 @@ static constexpr swoc::TextView HTTP_EOH{"\r\n\r\n"};
 class HttpHeader;
 class RuleCheck;
 struct Txn;
+class ProxyProtocolUtil;
 
 constexpr auto Transaction_Delay_Cutoff = std::chrono::seconds{10};
 constexpr auto Poll_Timeout = std::chrono::seconds{5};
@@ -176,6 +179,10 @@ namespace swoc
 inline namespace SWOC_VERSION_NS
 {
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const &h);
+
+// formatter for ProxyProtocolUtil which prety-prints the proxy protocol in v1
+// format
+BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, ProxyProtocolUtil const &h);
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
 
@@ -614,6 +621,9 @@ struct Ssn
   bool is_tls = false;
   bool is_h2 = false;
   bool is_h3 = false;
+  // The PROXY protocol version to use for this session. If NONE, no PROXY
+  // header is sent
+  ProxyProtocolVersion pp_version = ProxyProtocolVersion::NONE;
 
   swoc::Errata post_process_transactions();
 };
@@ -683,6 +693,22 @@ public:
 
   virtual swoc::Rv<std::shared_ptr<HttpHeader>> read_and_parse_request(swoc::FixedBufferWriter &w);
 
+  /**
+   * Peeks at the socket for PROXY header data. Consume from the session socket
+   * and parse it if it detects a valid header.
+   */
+  virtual swoc::Errata read_and_parse_proxy_hdr();
+
+  /** Send the PROXY header to the target as the connection is established.
+   *
+   * @param[in] real_target The target of the session
+   * @param[in] pp_version The version of the PROXY protocol to use
+   *
+   */
+  virtual swoc::Errata send_proxy_header(
+      swoc::IPEndpoint const *real_target,
+      ProxyProtocolVersion pp_version);
+
   /** Read body bytes out of the socket.
    *
    * @param[in] hdr The headers which specify how many body bytes to read.
@@ -702,7 +728,10 @@ public:
       swoc::TextView bytes_read,
       std::shared_ptr<RuleCheck> rule_check = nullptr);
 
-  virtual swoc::Errata do_connect(swoc::TextView interface, swoc::IPEndpoint const *real_target);
+  virtual swoc::Errata do_connect(
+      swoc::TextView interface,
+      swoc::IPEndpoint const *real_target,
+      ProxyProtocolVersion pp_version = ProxyProtocolVersion::NONE);
 
   /** Write the content in data to the socket.
    *
@@ -752,6 +781,14 @@ protected:
    * @return The number of bytes read and an errata with any messaging.
    */
   virtual swoc::Rv<ssize_t> read(swoc::MemSpan<char> span);
+
+  /** Read from the stream's socket into span, without actually consuming it.
+   *
+   * @param[in] span The destination for the bytes read from the socket.
+   *
+   * @return The number of bytes read and an errata with any messaging.
+   */
+  virtual swoc::Rv<ssize_t> peek(swoc::MemSpan<char> span);
 
   /** Read the headers to a buffer.
    *

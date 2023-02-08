@@ -20,6 +20,7 @@ import threading
 import traceback
 
 from proxy_http1 import ProxyRequestHandler
+from proxy_protocol_context import ProxyProtocolUtil
 
 import eventlet
 from eventlet.green.OpenSSL import SSL, crypto
@@ -47,6 +48,9 @@ class WrapSSSLContext(ssl.SSLContext):
         self._server_hostname = server_hostname
 
     def wrap_socket(self, sock, *args, **kwargs):
+        # send proxy protocol header first before TLS handshake
+        ProxyProtocolUtil.send_proxy_header(
+            sock, ProxyProtocolUtil.pp_version)
         kwargs['server_hostname'] = self._server_hostname
         return super().wrap_socket(sock, *args, **kwargs)
 
@@ -65,7 +69,8 @@ class Http2ConnectionManager(object):
     """
 
     def __init__(self, sock, h2_to_server=False):
-        listening_config = H2Configuration(client_side=False, validate_inbound_headers=False)
+        listening_config = H2Configuration(
+            client_side=False, validate_inbound_headers=False)
         self.tls = threading.local()
         self.tls.http_conns = {}
         self.sock = sock
@@ -103,8 +108,10 @@ class Http2ConnectionManager(object):
                 for stream_id in resp_from_server.keys():
                     response_headers, response_body = resp_from_server[stream_id]
                     try:
-                        self.listening_conn.send_headers(stream_id, response_headers)
-                        self.listening_conn.send_data(stream_id, response_body, end_stream=True)
+                        self.listening_conn.send_headers(
+                            stream_id, response_headers)
+                        self.listening_conn.send_data(
+                            stream_id, response_body, end_stream=True)
                     except StreamClosedError as e:
                         print(e)
                     except StreamIDTooLowError as e:
@@ -210,7 +217,8 @@ class Http2ConnectionManager(object):
         if not isinstance(request_headers, HttpHeaders):
             request_headers_message = HttpHeaders()
             for name, value in request_headers:
-                request_headers_message.add_header(name.decode("utf-8"), value.decode("utf-8"))
+                request_headers_message.add_header(
+                    name.decode("utf-8"), value.decode("utf-8"))
             request_headers = request_headers_message
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
@@ -291,7 +299,8 @@ class Http2ConnectionManager(object):
 
         request_headers_message = HttpHeaders()
         for name, value in request_headers:
-            request_headers_message.add_header(name.decode("utf-8"), value.decode("utf-8"))
+            request_headers_message.add_header(
+                name.decode("utf-8"), value.decode("utf-8"))
         request_headers = request_headers_message
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
@@ -307,11 +316,16 @@ class Http2ConnectionManager(object):
         try:
             origin = (scheme, replay_server, self.client_sni)
             if origin not in self.tls.http_conns:
-                ssl_context = httpx.create_ssl_context(cert=self.cert_file, verify=False)
+                ssl_context = httpx.create_ssl_context(
+                    cert=self.cert_file, verify=False)
                 if self.client_sni:
-                    setattr(ssl_context, "old_wrap_socket", ssl_context.wrap_socket)
+                    setattr(ssl_context, "old_wrap_socket",
+                            ssl_context.wrap_socket)
 
                     def new_wrap_socket(sock, *args, **kwargs):
+                        # send proxy protocol header first before TLS handshake
+                        ProxyProtocolUtil.send_proxy_header(
+                            sock, ProxyProtocolUtil.pp_version)
                         kwargs['server_hostname'] = self.client_sni
                         return ssl_context.old_wrap_socket(sock, *args, **kwargs)
                     setattr(ssl_context, "wrap_socket", new_wrap_socket)
@@ -457,6 +471,11 @@ def configure_http2_server(listen_port, server_port, https_pem, ca_pem, h2_to_se
     context.set_tmp_ecdh(crypto.get_elliptic_curve('prime256v1'))
 
     server = eventlet.listen(('0.0.0.0', listen_port))
+
+    print("wrapping socket with proxy protocol")
+    # wrap the socket with proxy protocol socket. Here we don't pass in the SSL
+    # info as SSL stuff will be taken care later in SSL.Connection()
+    server = ProxyProtocolUtil.wrap_socket(server)
     server = SSL.Connection(context, server)
     server_side_proto = "HTTP/2" if h2_to_server else "HTTP/1.x"
     print(f"Serving HTTP/2 Proxy on 127.0.0.1:{listen_port} with pem "
