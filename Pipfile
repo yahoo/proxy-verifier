@@ -14,4 +14,4 @@ python_version = "3"
 
 [packages]
 scons = "*"
-scons-parts = "==v0.17.0"
+scons-parts = "*"
