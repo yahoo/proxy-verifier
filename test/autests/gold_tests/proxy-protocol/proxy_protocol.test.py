@@ -121,3 +121,51 @@ proxy.Streams.stdout += Testers.ExcludesExpression(
 server.Streams.stdout += Testers.ExcludesExpression(
     "Received PROXY header",
     "The server should not receive the PROXY header.")
+
+#
+# Test 6: Verify the PROXY v1 message can be sent and received on IPv6
+# connection.
+#
+r = Test.AddTestRun("Verify the PROXY message can be sent and received on IPv6 connection")
+server = r.AddServerProcess("ipv6-server1", "replay_files/single_transaction_ipv6_pp_v1.replay.yaml",
+                            use_ipv6=True)
+client = r.AddClientProcess("ipv6-client1", "replay_files/single_transaction_ipv6_pp_v1.replay.yaml",
+                            use_ipv6=True, http_ports=[server.Variables.http_port],
+                            other_args="--no-proxy")
+
+# Verify successful transaction despite PROXY protocol processing
+client.Streams.stdout = "gold/ipv6_client.gold"
+server.Streams.stdout = "gold/ipv6_server.gold"
+
+# Verify the PROXY protocol related logs
+client.Streams.stdout += Testers.ContainsExpression(
+    f"Sending PROXY header from \[::a00:.*:0:0\]:[0-9]+ to \[::1\]:{server.Variables.http_port}",
+    "Verify that the PROXY header is sent from the client to the server.")
+
+server.Streams.stdout += Testers.ContainsExpression(
+    f"Received PROXY header v1:.*\nPROXY TCP6 ::a00:.*:0:0 ::1 [0-9]+ {server.Variables.http_port}",
+    "Verify that the server receives the PROXY header and parsed sucessfully.", reflags=re.MULTILINE)
+
+#
+# Test 6: Verify the PROXY v2 message can be sent and received on IPv6
+# connection.
+#
+r = Test.AddTestRun("Verify the PROXY message can be sent and received on IPv6 connection")
+server = r.AddServerProcess("ipv6-server2", "replay_files/single_transaction_ipv6_pp_v2.replay.yaml",
+                            use_ipv6=True)
+client = r.AddClientProcess("ipv6-client2", "replay_files/single_transaction_ipv6_pp_v2.replay.yaml",
+                            use_ipv6=True, http_ports=[server.Variables.http_port],
+                            other_args="--no-proxy")
+
+# Verify successful transaction despite PROXY protocol processing
+client.Streams.stdout = "gold/ipv6_client.gold"
+server.Streams.stdout = "gold/ipv6_server.gold"
+
+# Verify the PROXY protocol related logs
+client.Streams.stdout += Testers.ContainsExpression(
+    f"Sending PROXY header from \[::a00:.*:0:0\]:[0-9]+ to \[::1\]:{server.Variables.http_port}",
+    "Verify that the PROXY header is sent from the client to the server.")
+
+server.Streams.stdout += Testers.ContainsExpression(
+    f"Received PROXY header v2:.*\nPROXY TCP6 ::a00:.*:0:0 ::1 [0-9]+ {server.Variables.http_port}",
+    "Verify that the server receives the PROXY header and parsed sucessfully.", reflags=re.MULTILINE)

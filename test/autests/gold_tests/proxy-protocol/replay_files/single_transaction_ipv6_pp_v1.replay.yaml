@@ -1,0 +1,49 @@
+meta:
+  version: "1.0"
+
+sessions:
+- protocol: [ { name: tcp }, {name: ip}, {name: proxy-protocol, version: 1}]
+  transactions:
+  - all: { headers: { fields: [ [ uuid, 1 ] ] } }
+
+    client-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Host, example.one ]
+        - [ X-Test-Request, request ]
+        - [ Content-Length, 0 ]
+
+    proxy-request:
+      version: "1.1"
+      scheme: "http"
+      method: "GET"
+      url: "http://example.one/config/settings.yaml"
+      headers:
+        fields:
+        - [ Content-Length, 0 ]
+        - [ Host, { value: example.one, as: equal } ]
+        - [ X-Test-Request, { value: request, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ Content-Type, text/html ]
+        - [ Content-Length, 16 ]
+        - [ X-Test-Response, response ]
+
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        size: 16
+      headers:
+        fields:
+        - [ X-Test-Response, { value: response, as: equal } ]

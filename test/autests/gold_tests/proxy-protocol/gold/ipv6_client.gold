@@ -1,0 +1,15 @@
+``
+GET http://example.one/config/settings.yaml HTTP/1.1
+content-length: 0
+host: example.one
+x-test-request: request
+uuid: 1
+
+``
+HTTP/1.1 200 OK
+content-type: text/html
+content-length: 16
+x-test-response: response
+uuid: 1
+
+``
