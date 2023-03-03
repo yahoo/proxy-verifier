@@ -20,7 +20,6 @@ ProxyProtocolUtil::parse_pp_header_v1(swoc::TextView data)
   // signature to to enter this function
   swoc::Rv<ssize_t> zret{-1};
   size_t size = 0;
-  _version = ProxyProtocolVersion::V1;
   auto offset = data.find(PROXY_V1_EOH);
   if (offset == TextView::npos) {
     // partial or invalid header
@@ -74,7 +73,12 @@ ProxyProtocolUtil::parse_pp_header_v1(swoc::TextView data)
   // assign the source and destination addresses
   _src_addr.assign(srcIP, htons(srcPort));
   _dst_addr.assign(dstIP, htons(dstPort));
-  // return the size of the PROXY header
+  if (!_src_addr.is_valid() || !_dst_addr.is_valid()) {
+    zret.note(S_ERROR, "Invalid PROXY header: IP address not valid");
+    return zret;
+  }
+  // valid PORXY header, return the size of it
+  _version = ProxyProtocolVersion::V1;
   zret = size;
   return zret;
 }
@@ -88,8 +92,6 @@ ProxyProtocolUtil::parse_pp_header_v2(swoc::TextView data)
   auto receivedBytes = data.size();
   auto const *hdr = reinterpret_cast<const ProxyHdr *>(data.data());
   size_t size = 0;
-  // PROXY header v2
-  _version = ProxyProtocolVersion::V2;
   // this size of the header
   size = 16 + ntohs(hdr->v2.len);
   if (receivedBytes < size) {
@@ -112,16 +114,11 @@ ProxyProtocolUtil::parse_pp_header_v2(swoc::TextView data)
       break;
     case 0x21: /* TCPv6 */
     {
-      IP6Addr srcAddrNetworkOrder(
-          swoc::TextView(reinterpret_cast<const char *>(hdr->v2.addr.ip6.src_addr), 16));
-      IP6Addr dstAddrNetworkOrder(
-          swoc::TextView(reinterpret_cast<const char *>(hdr->v2.addr.ip6.dst_addr), 16));
-      // the network_order() is essentially reordering the byte order. In this
-      // case, the function converts from address in network byte order to host
-      // byte order. This is confusing, but seems to be a convenient way to do
-      // this operation for IPv6.
-      _src_addr.assign(IP6Addr(srcAddrNetworkOrder.network_order()), hdr->v2.addr.ip6.src_port);
-      _dst_addr.assign(IP6Addr(dstAddrNetworkOrder.network_order()), hdr->v2.addr.ip6.dst_port);
+      // IPv6 address doesn't have to handle endianess
+      IPAddr srcAddr(reinterpret_cast<const in6_addr&>(hdr->v2.addr.ip6.src_addr));
+      IPAddr dstAddr(reinterpret_cast<const in6_addr&>(hdr->v2.addr.ip6.dst_addr));
+      _src_addr.assign(srcAddr, hdr->v2.addr.ip6.src_port);
+      _dst_addr.assign(dstAddr, hdr->v2.addr.ip6.dst_port);
       break;
     }
     default:
@@ -134,7 +131,12 @@ ProxyProtocolUtil::parse_pp_header_v2(swoc::TextView data)
     zret.note(S_DIAG, "unsupported command found in PROXY header");
     return zret; /* not a supported command */
   }
-  // return the size of the PROXY v2 header
+  if (!_src_addr.is_valid() || !_dst_addr.is_valid()) {
+    zret.note(S_ERROR, "Invalid PROXY header: IP address not valid");
+    return zret;
+  }
+  // valid PORXY header, return the size of it
+  _version = ProxyProtocolVersion::V2;
   zret = size;
   return zret;
 }
@@ -177,8 +179,8 @@ ProxyProtocolUtil::construct_v1_header(swoc::BufferWriter &buf) const
       _src_addr,
       _dst_addr);
   errata.note(
-      S_INFO,
-      "construcuting {} bytes of proxy protocol v1 header content {}",
+      S_DIAG,
+      "construcuting {} bytes of proxy protocol v1 header content:\n{}",
       buf.size(),
       buf);
   return errata;
@@ -206,18 +208,12 @@ ProxyProtocolUtil::construct_v2_header(swoc::BufferWriter &buf) const
     proxy_hdr.v2.fam = 0x21;
     addr_len = sizeof(proxy_hdr.v2.addr.ip6);
     proxy_hdr.v2.len = htons(addr_len);
-    memcpy(
-        proxy_hdr.v2.addr.ip6.src_addr,
-        reinterpret_cast<const uint8_t *>(&_src_addr.sa6.sin6_addr),
-        16);
-    memcpy(
-        proxy_hdr.v2.addr.ip6.dst_addr,
-        reinterpret_cast<const uint8_t *>(&_src_addr.sa6.sin6_addr),
-        16);
+    memcpy(proxy_hdr.v2.addr.ip6.src_addr, _src_addr.sa6.sin6_addr.s6_addr, 16);
+    memcpy(proxy_hdr.v2.addr.ip6.dst_addr, _dst_addr.sa6.sin6_addr.s6_addr, 16);
     proxy_hdr.v2.addr.ip6.src_port = _src_addr.network_order_port();
     proxy_hdr.v2.addr.ip6.dst_port = _dst_addr.network_order_port();
   }
   buf.write(&proxy_hdr, addr_len + 16);
-  errata.note(S_INFO, "construcuting {} bytes of proxy protocol v2 header", buf.size());
+  errata.note(S_DIAG, "construcuting {} bytes of proxy protocol v2 header", buf.size());
   return errata;
 }
