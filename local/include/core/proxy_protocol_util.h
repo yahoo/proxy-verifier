@@ -12,26 +12,28 @@
 #include "swoc/TextView.h"
 #include "swoc/swoc_ip.h"
 
-// PROXY header version
+/// PROXY header version
 enum class ProxyProtocolVersion { NONE = 0, V1 = 1, V2 = 2 };
 
-// PROXY header v1 end of header.
+/// PROXY header v1 end of header.
 static constexpr swoc::TextView PROXY_V1_EOH{"\r\n"};
 
-// The maximum size of a PROXY header(v1 and v2) without the TLV support.  This
-// is used to specify the data size to peek from the socket.
+/// The maximum size of a PROXY header(v1 and v2) without the TLV support.  This
+/// is used to specify the data size to peek from the socket.
 static constexpr size_t MAX_PP_HDR_SIZE = 108;
 
-// V1 and V2 header signatures
+/// V1 and V2 header signatures
 using namespace std::literals;
 static const swoc::TextView V1SIG("PROXY");
 constexpr swoc::TextView V2SIG = "\x0D\x0A\x0D\x0A\x00\x0D\x0A\x51\x55\x49\x54\x0A"sv;
 
 static constexpr char PP_V1_DELIMITER = ' ';
 
-// This is the union taken from the RFC that specifies v1 and v2 PROXY header.
-// Note that the linux socket address is removed from the v2 header, as it is
-// not supported in Proxy Verifier.
+/// This is the union structure taken from the PROXY protocol specification that
+/// defines v1 and v2 PROXY header:
+/// https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt. Note
+/// that the linux socket address is removed from the v2 header, as it is not
+/// supported in Proxy Verifier.
 union ProxyHdr {
   struct
   {
@@ -84,8 +86,25 @@ public:
    * @param[out] buf The buffer to write the PROXY header.
    */
   swoc::Errata serialize(swoc::BufferWriter &buf) const;
+
+  /** Return the version of the parsed PROXY header.
+   *
+   * @return the version of the PROXY header.
+   */
   ProxyProtocolVersion get_version() const;
+
+  /** Return the IP endpoint representing the source address
+   * in the PROXY header.
+   *
+   * @return the source IP endpoint.
+   */
   swoc::IPEndpoint get_src_ep() const;
+
+  /** Return the IP endpoint representing the destination address
+   * in the PROXY header.
+   *
+   * @return the destination IP endpoint.
+   */
   swoc::IPEndpoint get_dst_ep() const;
 
 private:

@@ -180,8 +180,13 @@ inline namespace SWOC_VERSION_NS
 {
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const &h);
 
-// formatter for ProxyProtocolUtil which prety-prints the proxy protocol in v1
-// format
+/** Formatter for ProxyProtocolUtil which pretty-prints the proxy protocol in
+ * the human-readable v1 format
+ * @param[out] w The BufferWriter to write to.
+ * @param[in] spec Format specifier for output.
+ * @param[in] h The ProxyProtocolUtil to print out.
+ * @return w The BufferWriter passed in.
+ */
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, ProxyProtocolUtil const &h);
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
@@ -621,8 +626,8 @@ struct Ssn
   bool is_tls = false;
   bool is_h2 = false;
   bool is_h3 = false;
-  // The PROXY protocol version to use for this session. If NONE, no PROXY
-  // header is sent
+  /// The PROXY protocol version to use for this session. If NONE, no PROXY
+  /// header is sent.
   ProxyProtocolVersion pp_version = ProxyProtocolVersion::NONE;
 
   swoc::Errata post_process_transactions();

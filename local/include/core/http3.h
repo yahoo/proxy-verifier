@@ -296,7 +296,12 @@ public:
   swoc::Errata connect() override;
 
   /** Establish a QUIC connection from the given interface to the given IP
-   * address. */
+   * address.
+   *
+   * @note: the pp_version parameter is added to fit the override signature of
+   * do_connect(). There is no current support for PROXY Protocol for QUIC
+   * connections.
+   */
   swoc::Errata do_connect(
       swoc::TextView interface,
       swoc::IPEndpoint const *target,
