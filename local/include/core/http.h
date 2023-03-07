@@ -698,8 +698,7 @@ public:
 
   virtual swoc::Rv<std::shared_ptr<HttpHeader>> read_and_parse_request(swoc::FixedBufferWriter &w);
 
-  /**
-   * Peeks at the socket for PROXY header data. Consume from the session socket
+  /** Peeks at the socket for PROXY header data. Consume from the session socket
    * and parse it if it detects a valid header.
    */
   virtual swoc::Errata read_and_parse_proxy_hdr();
@@ -708,7 +707,6 @@ public:
    *
    * @param[in] real_target The target of the session
    * @param[in] pp_version The version of the PROXY protocol to use
-   *
    */
   virtual swoc::Errata send_proxy_header(
       swoc::IPEndpoint const *real_target,

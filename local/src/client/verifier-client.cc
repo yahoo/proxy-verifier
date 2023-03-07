@@ -283,13 +283,19 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
       return errata;
     }
     if (pp_node.result().IsDefined()) {
-      errata.note(S_DIAG, "Enabling proxy protocol for this session.");
-      // set proxy protocol header version if specified
       auto const &pp_version_node = pp_node.result()[YAML_SSN_PROTOCOL_VERSION];
-      // for unspecified or unknown versions, default to v1
-      _ssn->pp_version = (pp_version_node && pp_version_node.Scalar() == "2") ?
-                             ProxyProtocolVersion::V2 :
-                             ProxyProtocolVersion::V1;
+      if (pp_version_node.IsDefined() &&
+          (pp_version_node.Scalar() == "1" || pp_version_node.Scalar() == "2"))
+      {
+        errata.note(S_DIAG, "Enabling PROXY protocol for this session.");
+        // set proxy protocol header version as specified
+        _ssn->pp_version =
+            (pp_version_node.Scalar() == "1") ? ProxyProtocolVersion::V1 : ProxyProtocolVersion::V2;
+      } else {
+        // unspecified or invalid versions
+        errata.note(S_ERROR, "Invalid PROXY protocol version specified.");
+        return errata;
+      }
     }
   }
 
