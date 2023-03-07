@@ -1706,13 +1706,6 @@ Session::do_connect(
           setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
           if (0 == ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
             if (pp_version != ProxyProtocolVersion::NONE) {
-              // The following sleep is to allow the client to postpone
-              // initiating the SSL handshake later. It's observed previously
-              // that sometimes the client would timeout and close the
-              // connection.  Commenting it out works fine currently so this
-              // might be resolved but just leaving it in here in case this
-              // issue arise in the future.
-              // std::this_thread::sleep_for(std::chrono::seconds(1));
               send_proxy_header(real_target, pp_version);
             }
             errata.note(this->connect());
