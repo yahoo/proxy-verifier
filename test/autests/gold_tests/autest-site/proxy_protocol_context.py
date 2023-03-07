@@ -1,3 +1,13 @@
+'''
+Implement the PROXY protocol utility class and the socket wrapper class.
+'''
+# @file
+#
+# Copyright 2023, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+
 import socket
 import struct
 import time

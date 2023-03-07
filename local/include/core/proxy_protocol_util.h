@@ -1,5 +1,5 @@
 /** @file
- * Common data structures and definitions for Proxy Verifier tools.
+ * Common data structures and definitions for the PROXY protocol utility
  *
  * Copyright 2023, Verizon Media
  * SPDX-License-Identifier: Apache-2.0

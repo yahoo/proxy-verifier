@@ -1,3 +1,10 @@
+/** @file
+ * Implementation for the PROXY protocol utility functions.
+ *
+ * Copyright 2023, Verizon Media
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include "core/proxy_protocol_util.h"
 #include "core/ProxyVerifier.h"
 #include <codecvt>
@@ -9,9 +16,6 @@
 using swoc::Errata;
 using swoc::TextView;
 using swoc::IPAddr;
-using swoc::IP4Addr;
-using swoc::IP6Addr;
-using swoc::IPEndpoint;
 
 swoc::Rv<ssize_t>
 ProxyProtocolUtil::parse_pp_header_v1(swoc::TextView data)
@@ -115,8 +119,8 @@ ProxyProtocolUtil::parse_pp_header_v2(swoc::TextView data)
     case 0x21: /* TCPv6 */
     {
       // IPv6 address doesn't have to handle endianess
-      IPAddr srcAddr(reinterpret_cast<const in6_addr&>(hdr->v2.addr.ip6.src_addr));
-      IPAddr dstAddr(reinterpret_cast<const in6_addr&>(hdr->v2.addr.ip6.dst_addr));
+      IPAddr srcAddr(reinterpret_cast<const in6_addr &>(hdr->v2.addr.ip6.src_addr));
+      IPAddr dstAddr(reinterpret_cast<const in6_addr &>(hdr->v2.addr.ip6.dst_addr));
       _src_addr.assign(srcAddr, hdr->v2.addr.ip6.src_port);
       _dst_addr.assign(dstAddr, hdr->v2.addr.ip6.dst_port);
       break;
