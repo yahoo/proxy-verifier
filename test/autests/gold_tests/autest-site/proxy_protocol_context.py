@@ -143,7 +143,8 @@ class ProxyProtocolUtil:
         """
         # Construct the PROXY protocol v1 header
         family_desc = 'TCP4' if family == socket.AF_INET else 'TCP6'
-        return f"PROXY {family_desc} {src_addr[0]} {dst_addr[0]} {src_addr[1]} {dst_addr[1]}\r\n".encode()
+        return f"PROXY {family_desc} {src_addr[0]} {dst_addr[0]} {src_addr[1]} {dst_addr[1]}\r\n".encode(
+        )
 
     @staticmethod
     def construct_proxy_header_v2(src_addr, dst_addr, family):

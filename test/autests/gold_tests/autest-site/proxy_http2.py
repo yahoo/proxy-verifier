@@ -51,7 +51,7 @@ class WrapSSSLContext(ssl.SSLContext):
         # send proxy protocol header first before TLS handshake
         if ProxyProtocolUtil.pp_version != ProxyProtocolVersion.NONE:
             ProxyProtocolUtil.send_proxy_header(
-            sock, ProxyProtocolUtil.pp_version)
+                sock, ProxyProtocolUtil.pp_version)
         kwargs['server_hostname'] = self._server_hostname
         return super().wrap_socket(sock, *args, **kwargs)
 
@@ -327,7 +327,7 @@ class Http2ConnectionManager(object):
                         # send proxy protocol header first before TLS handshake
                         if ProxyProtocolUtil.pp_version != ProxyProtocolVersion.NONE:
                             ProxyProtocolUtil.send_proxy_header(
-                            sock, ProxyProtocolUtil.pp_version)
+                                sock, ProxyProtocolUtil.pp_version)
                         kwargs['server_hostname'] = self.client_sni
                         return ssl_context.old_wrap_socket(sock, *args, **kwargs)
                     setattr(ssl_context, "wrap_socket", new_wrap_socket)
