@@ -1868,16 +1868,14 @@ H3Session::~H3Session()
   }
 }
 
-swoc::Rv<ssize_t>
-H3Session::read(swoc::MemSpan<char> /* span */)
+swoc::Rv<ssize_t> H3Session::read(swoc::MemSpan<char> /* span */)
 {
   swoc::Rv<ssize_t> zret{0};
   zret.note(S_ERROR, "HTTP/3 read() called for the unsupported MemSpan overload.");
   return zret;
 }
 
-swoc::Rv<ssize_t>
-H3Session::write(TextView /* data */)
+swoc::Rv<ssize_t> H3Session::write(TextView /* data */)
 {
   swoc::Rv<ssize_t> zret{0};
   zret.note(S_ERROR, "HTTP/3 write() called for the unsupported TextView overload.");

@@ -147,7 +147,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                         replay_server, timeout=self.timeout)
 
             # wrap_create_connection.  here, we monkey patch the
-            # create_connection method so that the proxy protocol is sent as the connection is established
+            # create_connection method so that the proxy protocol is sent as the
+            # connection is established
             self.tls.conns[origin]._create_connection = ProxyProtocolUtil.create_connection_and_send_pp
             conn = self.tls.conns[origin]
 
