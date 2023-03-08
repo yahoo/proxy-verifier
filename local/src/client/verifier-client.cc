@@ -276,6 +276,31 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
         _ssn->is_h3 = true;
       }
     }
+    // parse the proxy protocol node
+    auto const pp_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_PP_NAME);
+    if (!pp_node.is_ok()) {
+      errata.note(std::move(pp_node.errata()));
+      return errata;
+    }
+    if (pp_node.result().IsDefined()) {
+      auto const &pp_version_node = pp_node.result()[YAML_SSN_PROTOCOL_VERSION];
+      if (pp_version_node.IsDefined() &&
+          (pp_version_node.Scalar() == "1" || pp_version_node.Scalar() == "2"))
+      {
+        errata.note(S_DIAG, "Enabling PROXY protocol for this session.");
+        // set proxy protocol header version as specified
+        _ssn->pp_version =
+            (pp_version_node.Scalar() == "1") ? ProxyProtocolVersion::V1 : ProxyProtocolVersion::V2;
+      } else {
+        // unspecified or invalid versions
+        errata.note(
+            S_ERROR,
+            R"(Invalid PROXY protocol version specified in session at "{}":{}.)",
+            _path,
+            _ssn->_line_no);
+        return errata;
+      }
+    }
   }
 
   if (node[YAML_TIME_START_KEY]) {
@@ -643,7 +668,10 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
     return;
   }
   errata.sink();
-  errata.note(session->do_connect(specified_interface, real_target));
+
+  // The PROXY protocol needs to be sent when the connection is established.
+  // Thus, sending the header in do_connect()
+  errata.note(session->do_connect(specified_interface, real_target, ssn.pp_version));
   if (!errata.is_ok()) {
     Engine::process_exit_code = 1;
     return;

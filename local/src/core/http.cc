@@ -21,10 +21,13 @@
 #include <sys/uio.h>
 #include <thread>
 #include <unistd.h>
+#include <locale>
+#include <codecvt>
 
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
+#include "swoc/swoc_ip.h"
 
 using swoc::Errata;
 using swoc::TextView;
@@ -76,6 +79,21 @@ bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
     }
     w.print(R"({}: {}{})", key, value, '\n');
   }
+  return w;
+}
+// custom formatting for the proxy header
+BufferWriter &
+bwformat(BufferWriter &w, bwf::Spec const & /*spec*/, ProxyProtocolUtil const &h)
+{
+  auto src_addr = h.get_src_ep();
+  auto dst_addr = h.get_dst_ep();
+  w.print("Received PROXY header v{}:\n", static_cast<int>(h.get_version()));
+  w.print(
+      "PROXY {}{} {2::a} {3::a} {2::p} {3::p}",
+      swoc::bwf::If(src_addr.is_ip4(), "TCP4"),
+      swoc::bwf::If(src_addr.is_ip6(), "TCP6"),
+      src_addr,
+      dst_addr);
   return w;
 }
 } // namespace SWOC_VERSION_NS
@@ -417,7 +435,8 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
         }
       } else {
         if (!rule_check
-                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second))) {
+                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second)))
+        {
           issue_exists = true;
         }
       }
@@ -684,7 +703,8 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
   if (name.starts_with_nocase(FIELD_PREFIX)) {
     name.remove_prefix(FIELD_PREFIX.size());
     if (auto spot{_hdr._fields_rules->_fields.find(name)};
-        spot != _hdr._fields_rules->_fields.end()) {
+        spot != _hdr._fields_rules->_fields.end())
+    {
       bwformat(w, spec, spot->second);
     } else {
       bwformat(w, spec, TRANSACTION_KEY_NOT_SET);
@@ -708,6 +728,45 @@ Session::~Session()
   this->close();
 }
 
+swoc::Rv<ssize_t>
+Session::peek(swoc::MemSpan<char> span)
+{
+  // This is pretty similar to the Session::read() method but here we are
+  // calling recv() with MSG_PEEK to get the data without removing it from the
+  // socket buffer.
+  swoc::Rv<ssize_t> zret{::recv(_fd, span.data(), span.size(), MSG_PEEK)};
+  if (zret == 0) {
+    // End of file.
+    this->close();
+  } else if (zret < 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      auto &&[poll_return, poll_errata] = poll_for_data_on_socket(Poll_Timeout);
+      zret.note(std::move(poll_errata));
+      if (!zret.is_ok()) {
+        zret.note(std::move(poll_errata));
+        zret.note(S_ERROR, "Failed to poll for data.");
+        this->close();
+      } else if (poll_return > 0) {
+        // Simply repeat the read now that poll says something is ready.
+        return peek(span);
+      } else if (poll_return == 0) {
+        zret.note(S_ERROR, "Poll timed out waiting for content.");
+        this->close();
+      } else if (poll_return < 0) {
+        // Connection was closed. Nothing to do.
+        zret.note(S_DIAG, "The peer closed the connection while reading during poll.");
+      }
+    } else if (errno == ECONNRESET) {
+      // The other end closed the connection.
+      zret.note(S_DIAG, "The peer closed the connection while reading.");
+      this->close();
+    } else {
+      zret.note(S_ERROR, "Error reading from socket: {}", swoc::bwf::Errno{});
+      this->close();
+    }
+  }
+  return zret;
+}
 swoc::Rv<ssize_t>
 Session::read(swoc::MemSpan<char> span)
 {
@@ -776,6 +835,42 @@ Session::read_and_parse_request(swoc::FixedBufferWriter &buffer)
   return zret;
 }
 
+swoc::Errata
+Session::read_and_parse_proxy_hdr()
+{
+  // reading the PROXY data if any. A signle recv() should be sufficient as mentioned in the RFC
+  swoc::Errata errata;
+  swoc::LocalBufferWriter<MAX_PP_HDR_SIZE> w;
+  // Peek at the data to make sure it's a PROXY header
+  errata.note(S_DIAG, "Peeking at the socketdata to check PROXY header");
+  auto zret = peek(w.aux_span());
+  if (!zret.is_ok()) {
+    errata.note(S_ERROR, "Failed to peek at the socket data");
+    errata.note(std::move(zret.errata()));
+    return errata;
+  }
+  errata.note(std::move(zret.errata()));
+  if (zret.result() <= 0) {
+    // peek gets no data
+    return errata;
+  }
+  w.commit(zret.result());
+  // try to parse the PROXY header
+  ProxyProtocolUtil ppUtil;
+  errata.note(S_DIAG, "Attempting to parse PROXY header", w.size());
+  auto &&[ppNumBytes, ppParseErrata] = ppUtil.parse_header(w.view());
+  errata.note(std::move(ppParseErrata));
+  if (ppNumBytes > 0) {
+    errata.note(S_DIAG, "Got {} of pp bytes. consuming it from socket.", ppNumBytes);
+    char unusedBuf[ppNumBytes];
+    recv(_fd, unusedBuf, ppNumBytes, 0); // Peek at the data
+    // print the proxy message
+    errata.note(S_INFO, "{}", ppUtil);
+  } else {
+    errata.note(S_DIAG, "No valid PROXY header found, passing through.");
+  }
+  return errata;
+}
 swoc::Rv<ssize_t>
 Session::write(TextView view)
 {
@@ -816,6 +911,26 @@ Session::write(TextView view)
     }
   }
   return zret;
+}
+swoc::Errata
+Session::send_proxy_header(swoc::IPEndpoint const *real_target, ProxyProtocolVersion pp_version)
+{
+  swoc::Errata errata;
+  // get source/local endpoint
+  struct sockaddr addr;
+  socklen_t len = sizeof(addr);
+  getsockname(_fd, &addr, &len);
+  swoc::IPEndpoint source_endpoint{&addr};
+  // construct the PROXY header
+  ProxyProtocolUtil ppUtil(source_endpoint, *real_target, pp_version);
+  swoc::LocalBufferWriter<MAX_PP_HDR_SIZE> w;
+  auto pp_serialize_errata = ppUtil.serialize(w);
+  errata.note(std::move(pp_serialize_errata));
+  // send the data
+  errata.note(S_DIAG, "Sending PROXY header from {} to {}", source_endpoint, *real_target);
+  // write to socket
+  Session::write(w.view());
+  return errata;
 }
 
 swoc::Rv<ssize_t>
@@ -1552,7 +1667,10 @@ InterfaceNameToEndpoint::find_ip_endpoint()
 }
 
 Errata
-Session::do_connect(TextView interface, swoc::IPEndpoint const *real_target)
+Session::do_connect(
+    TextView interface,
+    swoc::IPEndpoint const *real_target,
+    ProxyProtocolVersion pp_version)
 {
   Errata errata;
   int socket_fd = socket(real_target->family(), SOCK_STREAM, 0);
@@ -1587,6 +1705,9 @@ Session::do_connect(TextView interface, swoc::IPEndpoint const *real_target)
           static const int ONE = 1;
           setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
           if (0 == ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
+            if (pp_version != ProxyProtocolVersion::NONE) {
+              send_proxy_header(real_target, pp_version);
+            }
             errata.note(this->connect());
           } else {
             errata.note(

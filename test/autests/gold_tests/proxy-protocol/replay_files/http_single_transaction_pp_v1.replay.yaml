@@ -1,0 +1,89 @@
+# @file
+#
+# Copyright 2023, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+  version: '1.0'
+
+# This file is taken largely from a sample Traffic Dump file.
+sessions:
+- connection-time: 1552705896896003926
+  protocol: [ { name: tcp }, {name: ip}, {name: proxy-protocol, version: 1} ]
+
+  transactions:
+  - start-time: 1552705896896042340
+    uuid: cb9b4e94-5d42-43d4-8545-320033298ba2-226381119
+
+    client-request:
+      method: POST
+      url: http://example.com/client.do
+      version: '1.1'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Length, '399' ]
+        - [ Content-Type, application/octet-stream ]
+        - [ Host, example.com ]
+        - [ Connection, Keep-Alive ]
+        - [ X-CANDY, cane ]
+        - [ X-SomeID, fda39dfad1 ]
+        - [ uuid, cb9b4e94-5d42-43d4-8545-320033298ba2-226381119 ]
+      content:
+        encoding: plain
+        size: 399
+
+    proxy-request:
+      content:
+        encoding: plain
+        size: 399
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Length, '399' ]
+        - [ Content-Type, application/octet-stream ]
+        - [ Host, example.com ]
+        - [ Client-ip, 10.10.10.1 ]
+        - [ X-Forwarded-For, 10.10.10.2 ]
+        - [ Via, http/1.1 example.data.com (Poland) ]
+        - [ X-SomeId, fda39dfad1 ]
+        - [ uuid, cb9b4e94-5d42-43d4-8545-320033298ba2-226381119 ]
+      method: POST
+      url: /proxy.do
+      version: '1.1'
+
+    proxy-response:
+      content:
+        encoding: plain
+        size: 0
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+        - [ X-TestHeader, from_proxy_response ]
+        - [ Content-Type, application/octet-stream ]
+        - [ Content-Length, '10' ]
+        - [ Age, '0' ]
+        - [ Server, ATS ]
+        - [ Connection, keep-alive ]
+      reason: OK
+      status: 200
+
+    server-response:
+      content:
+        encoding: plain
+        size: 0
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+        - [ X-TestHeader, from_server_response ]
+        - [ Content-Type, application/octet-stream ]
+        - [ Content-Length, '10' ]
+        - [ Age, '0' ]
+        - [ Via, "http/1.1 example.data1.com, http/1.1 example.data2.com" ]
+        - [ Server, ATS ]
+        - [ Connection, keep-alive ]
+      reason: OK
+      status: 200

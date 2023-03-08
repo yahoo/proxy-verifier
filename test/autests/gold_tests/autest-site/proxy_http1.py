@@ -19,6 +19,8 @@ import re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from directive_engine import DirectiveEngine
+from proxy_protocol_context import ProxyProtocolUtil
+import socket
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
@@ -99,7 +101,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             req.headers['Content-length'] = str(len(req_body))
 
         u = urllib.parse.urlsplit(req.path)
-        scheme, netloc, path = u.scheme, u.netloc, (u.path + '?' + u.query if u.query else u.path)
+        scheme, netloc, path = u.scheme, u.netloc, (
+            u.path + '?' + u.query if u.query else u.path)
         assert scheme in ('http', 'https')
         final_url = self.get_url(req.headers, path)
         setattr(req, 'headers', self.filter_headers(req.headers))
@@ -142,6 +145,10 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                 else:
                     self.tls.conns[origin] = http.client.HTTPConnection(
                         replay_server, timeout=self.timeout)
+
+            # wrap_create_connection.  here, we monkey patch the
+            # create_connection method so that the proxy protocol is sent as the connection is established
+            self.tls.conns[origin]._create_connection = ProxyProtocolUtil.create_connection_and_send_pp
             conn = self.tls.conns[origin]
 
             if 'transfer-encoding' in req.headers and req.headers['transfer-encoding'] == 'chunked':
@@ -209,7 +216,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     do_options = do_GET
 
     def relay_streaming(self, res):
-        self.wfile.write(f"{self.protocol_version} {res.status} {res.reason}\r\n")
+        self.wfile.write(
+            f"{self.protocol_version} {res.status} {res.reason}\r\n")
         for line in res.headers.headers:
             self.wfile.write(line)
         self.end_headers()
@@ -321,13 +329,16 @@ def configure_http1_server(HandlerClass, ServerClass, protocol,
     HandlerClass.server_port = server_port
     HandlerClass.cert_file = https_pem
     httpd = ServerClass(listen_address, HandlerClass)
+    client_to_proxy_context = None
+    use_ssl = False
     if https_pem:
         client_to_proxy_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         client_to_proxy_context.load_cert_chain(certfile=https_pem)
         client_to_proxy_context.set_servername_callback(servername_callback)
-        httpd.socket = client_to_proxy_context.wrap_socket(
-            httpd.socket, server_side=True)
-
+        use_ssl = True
+    # wrap the socket with proxy protocol socket
+    httpd.socket = ProxyProtocolUtil.wrap_socket(
+        httpd.socket, use_ssl=use_ssl, ssl_ctx=client_to_proxy_context)
     sa = httpd.socket.getsockname()
     print(
         f"Serving HTTP Proxy on {sa[0]}:{sa[1]}, forwarding to "

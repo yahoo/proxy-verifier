@@ -43,5 +43,6 @@ def build(env):
             "ProxyVerifier.cc",
             "verification.cc",
             "YamlParser.cc",
+            "proxy_protocol_util.cc",
         ])
     )
