@@ -153,8 +153,8 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  YAML::Node headers_frame = node;
-  YAML::Node data_frame = node;
+  YAML::Node headers_frame;
+  YAML::Node data_frame;
   YAML::Node rst_stream_frame;
   YAML::Node goaway_frame;
   int rst_stream_index = -1;
@@ -204,6 +204,15 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
           YAML_FRAMES_KEY,
           frames_node.Mark());
     }
+  }
+
+  // If frame elements didn't set the headers and data frames, set them from
+  // the top level node.
+  if (headers_frame.IsNull()) {
+    headers_frame = node;
+  }
+  if (!data_frame.IsNull()) {
+    data_frame = node;
   }
 
   if (headers_frame[YAML_HTTP_STATUS_KEY]) {

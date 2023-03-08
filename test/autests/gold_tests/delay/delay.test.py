@@ -28,11 +28,11 @@ proxy = r.AddProxyProcess("proxy_https_client_delay", listen_port=client.Variabl
                           use_ssl=True, use_http2_to_2=True)
 
 server.Streams.stdout += Testers.ContainsExpression(
-    "Ready with 2 transactions.",
+    "Ready with 3 transactions.",
     "The server should have parsed 2 transactions.")
 
 client.Streams.stdout += Testers.ContainsExpression(
-    "2 transactions in 2 sessions .* in .* milliseconds",
+    "3 transactions in 2 sessions .* in .* milliseconds",
     "The client should have reported running the transactions with timing data.")
 
 client.Streams.stdout += Testers.ExcludesExpression(
@@ -49,7 +49,7 @@ server.Streams.stdout += Testers.ExcludesExpression(
 r = Test.AddTestRun("Verify the client-side delay replay took an expected amount of time to run.")
 verifier_script = 'verify_duration.py'
 client_output = client.Streams.stdout.AbsTestPath
-expected_min_delay_ms = "1500"
+expected_min_delay_ms = "3000"
 r.Processes.Default.Setup.Copy(verifier_script)
 
 r.Processes.Default.Command = \
