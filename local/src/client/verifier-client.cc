@@ -293,7 +293,11 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
             (pp_version_node.Scalar() == "1") ? ProxyProtocolVersion::V1 : ProxyProtocolVersion::V2;
       } else {
         // unspecified or invalid versions
-        errata.note(S_ERROR, "Invalid PROXY protocol version specified.");
+        errata.note(
+            S_ERROR,
+            R"(Invalid PROXY protocol version specified in session at "{}":{}.)",
+            _path,
+            _ssn->_line_no);
         return errata;
       }
     }
