@@ -72,15 +72,58 @@ sessions:
   transactions:
 
   - client-request:
-      delay: 500ms
+      delay: 1000ms
+
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [ :method, POST ]
+            - [ :scheme, https ]
+            - [ :authority, www.example.com ]
+            - [ :path, /pictures/flower.jpeg ]
+            - [ Content-Type, image/jpeg ]
+            - [ uuid, second-request ]
+      content:
+        size: 399
+
+    proxy-request:
+      url:
+      - [ path, { value: flower.jpeg, as: contains } ]
+
       headers:
         fields:
         - [ :method, POST ]
         - [ :scheme, https ]
         - [ :authority, www.example.com ]
-        - [ :path, /pictures/flower.jpeg ]
+        - [ :path,        { value: flower.jpeg, as: contains } ]
+        - [ Content-Type, { value: image/jpeg,  as: equal } ]
+
+    server-response:
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
         - [ Content-Type, image/jpeg ]
-        - [ uuid, second-request ]
+      content:
+        size: 3432
+
+    proxy-response:
+      status: 200
+
+  - client-request:
+      delay: 1000000us
+
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [ :method, POST ]
+            - [ :scheme, https ]
+            - [ :authority, www.example.com ]
+            - [ :path, /pictures/flower.jpeg ]
+            - [ Content-Type, image/jpeg ]
+            - [ uuid, third-request ]
       content:
         size: 399
 

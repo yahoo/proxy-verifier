@@ -347,6 +347,11 @@ H2Session::run_transactions(
       auto current_time = ClockType::now();
       auto next_time = current_time + delay_time;
       if (txn._user_specified_delay_duration > 0us) {
+        txn_errata.note(
+            S_DIAG,
+            "Delaying transaction per transaction delay specification: {}ms",
+            duration_cast<milliseconds>(txn._user_specified_delay_duration).count());
+
         delay_time = txn._user_specified_delay_duration;
         next_time = current_time + delay_time;
       } else {
