@@ -460,7 +460,7 @@ sessions:
 ```
 
 Note that this example specifies the following:
-* Specifies a sequence of frames to be sent under the `client-request` node. The order
+* A sequence of frames to be sent under the `client-request` node. The order
   of the frames listed is the order of the frames that Proxy Verifier will send during
   the traffic replay of the stream.
 * Thus, in this case, the client terminates the stream after sending the DATA frame since
@@ -486,11 +486,30 @@ The available options for `error-code` are:
 * INADEQUATE_SECURITY
 * HTTP_1_1_REQUIRED
 
+Finer grained frame ordering with respect to the server's response frames can
+also be specified via an `await` node which specifies which server response
+frame to wait for before sending the `RST_STREAM`. For example, to await
+sending a `RST_STREAM` until the server's response `HEADERS` frame is sent,
+specify an `await: HEADERS` directive like so:
+
+```YAML
+      - RST_STREAM:
+          error-code: INTERNAL_ERROR
+          await: HEADERS
+```
+
+Currently, the following values are supported for the `await` directive in `RST_STREAM` nodes:
+
+* `HEADERS`: await response headers from the server before sending a
+  `RST_STREAM` frame.
+* `DATA_COMPLETE`: await the entire response body via all `DATA` frames before
+  sending a `RST_STREAM` frame.
+
 #### GOAWAY frame
 
-The `GOAWAY` frame acts similar to the `RST_STREAM` frame shown above. But rather than terminating
-a stream, `GOAWAY` frame terminates the connection. It also uses the same set of `error-code` listed
-above.
+The `GOAWAY` frame acts similar to the `RST_STREAM` frame shown above. However, rather than terminating
+a stream, `GOAWAY` frame terminates the connection. It supports `error-code` and `await` as described
+for `RST_STREAM` above.
 
 #### Await
 
