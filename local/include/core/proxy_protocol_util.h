@@ -64,10 +64,12 @@ union ProxyHdr {
   } v2;
 };
 
+// TODO: may need to change the name to ProxyProtocolMsg or ProxyProtocolHdr
 class ProxyProtocolUtil
 {
 public:
   ProxyProtocolUtil() = default;
+  ProxyProtocolUtil(ProxyProtocolVersion version) : _version(version){};
   ProxyProtocolUtil(swoc::IPEndpoint src_ep, swoc::IPEndpoint dst_ep, ProxyProtocolVersion version)
     : _version(version)
     , _src_addr(src_ep)
@@ -106,6 +108,11 @@ public:
    * @return the destination IP endpoint.
    */
   swoc::IPEndpoint get_dst_ep() const;
+
+  /** Set the IP endpoints representing the source and destination address in
+   * the PROXY header.
+   */
+  void set_endpoints(const swoc::IPEndpoint &src_ep, const swoc::IPEndpoint &dst_ep);
 
 private:
   swoc::Rv<ssize_t> parse_pp_header_v1(swoc::TextView data);

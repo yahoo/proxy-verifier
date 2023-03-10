@@ -1541,7 +1541,7 @@ Errata
 H3Session::do_connect(
     swoc::TextView interface,
     swoc::IPEndpoint const *target,
-    ProxyProtocolVersion /*pp_version*/)
+    ProxyProtocolUtil * /*pp_msg*/)
 {
   Errata errata = configure_udp_socket(interface, target);
   if (!errata.is_ok()) {
@@ -1868,14 +1868,16 @@ H3Session::~H3Session()
   }
 }
 
-swoc::Rv<ssize_t> H3Session::read(swoc::MemSpan<char> /* span */)
+swoc::Rv<ssize_t>
+H3Session::read(swoc::MemSpan<char> /* span */)
 {
   swoc::Rv<ssize_t> zret{0};
   zret.note(S_ERROR, "HTTP/3 read() called for the unsupported MemSpan overload.");
   return zret;
 }
 
-swoc::Rv<ssize_t> H3Session::write(TextView /* data */)
+swoc::Rv<ssize_t>
+H3Session::write(TextView /* data */)
 {
   swoc::Rv<ssize_t> zret{0};
   zret.note(S_ERROR, "HTTP/3 write() called for the unsupported TextView overload.");

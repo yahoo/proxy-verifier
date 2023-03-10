@@ -289,8 +289,30 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
       {
         errata.note(S_DIAG, "Enabling PROXY protocol for this session.");
         // set proxy protocol header version as specified
-        _ssn->pp_version =
-            (pp_version_node.Scalar() == "1") ? ProxyProtocolVersion::V1 : ProxyProtocolVersion::V2;
+        _ssn->_pp_hdr = std::make_unique<ProxyProtocolUtil>(
+            (pp_version_node.Scalar() == "1") ? ProxyProtocolVersion::V1 :
+                                                ProxyProtocolVersion::V2);
+        // see if the addresses are specified
+        auto const &pp_src_addr_node = pp_node.result()[YAML_SSN_PP_SRC_ADDR_KEY];
+        auto const &pp_dst_addr_node = pp_node.result()[YAML_SSN_PP_DST_ADDR_KEY];
+        if (pp_src_addr_node.IsDefined() && pp_dst_addr_node.IsDefined()) {
+          swoc::IPEndpoint src_ep{pp_src_addr_node.Scalar()};
+          swoc::IPEndpoint dst_ep{pp_dst_addr_node.Scalar()};
+          errata.note(
+              S_DIAG,
+              R"(Setting PROXY protocol source address to "{}" and destination address to "{}" for this session.)",
+              src_ep,
+              dst_ep);
+          _ssn->_pp_hdr->set_endpoints(src_ep, dst_ep);
+        } else if (pp_src_addr_node.IsDefined() || pp_dst_addr_node.IsDefined()) {
+          // only one of the source and destination address is specified
+          errata.note(
+              S_ERROR,
+              R"(Invalid PROXY protocol address specified in session at "{}":{}. Need to specify none or both of the source and destination addresses)",
+              _path,
+              _ssn->_line_no);
+          return errata;
+        }
       } else {
         // unspecified or invalid versions
         errata.note(
@@ -671,7 +693,7 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
 
   // The PROXY protocol needs to be sent when the connection is established.
   // Thus, sending the header in do_connect()
-  errata.note(session->do_connect(specified_interface, real_target, ssn.pp_version));
+  errata.note(session->do_connect(specified_interface, real_target, ssn._pp_hdr.get()));
   if (!errata.is_ok()) {
     Engine::process_exit_code = 1;
     return;

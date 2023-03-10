@@ -45,6 +45,8 @@ static const std::string YAML_SSN_PROTOCOL_VERSION{"version"};
 static const std::string YAML_SSN_PROTOCOL_TLS_NAME{"tls"};
 static const std::string YAML_SSN_PROTOCOL_HTTP_NAME{"http"};
 static const std::string YAML_SSN_PROTOCOL_PP_NAME{"proxy-protocol"};
+static const std::string YAML_SSN_PP_SRC_ADDR_KEY{"src-addr"};
+static const std::string YAML_SSN_PP_DST_ADDR_KEY{"dst-addr"};
 static const std::string YAML_SSN_TLS_SNI_KEY{"sni"};
 static const std::string YAML_SSN_TLS_ALPN_PROTOCOLS_KEY{"alpn-protocols"};
 static const std::string YAML_SSN_TLS_VERIFY_MODE_KEY{"verify-mode"};

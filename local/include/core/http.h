@@ -626,10 +626,9 @@ struct Ssn
   bool is_tls = false;
   bool is_h2 = false;
   bool is_h3 = false;
-  /// The PROXY protocol version to use for this session. If NONE, no PROXY
-  /// header is sent.
-  ProxyProtocolVersion pp_version = ProxyProtocolVersion::NONE;
-
+  /// The PROXY protocol message to send in this session. nullptr if no PROXY
+  /// protocol message is to be sent.
+  std::unique_ptr<ProxyProtocolUtil> _pp_hdr;
   swoc::Errata post_process_transactions();
 };
 
@@ -703,14 +702,13 @@ public:
    */
   virtual swoc::Errata read_and_parse_proxy_hdr();
 
+  // TODO: update doc
   /** Send the PROXY header to the target as the connection is established.
    *
    * @param[in] real_target The target of the session
    * @param[in] pp_version The version of the PROXY protocol to use
    */
-  virtual swoc::Errata send_proxy_header(
-      swoc::IPEndpoint const *real_target,
-      ProxyProtocolVersion pp_version);
+  virtual swoc::Errata send_proxy_header(ProxyProtocolUtil const &pp_msg);
 
   /** Read body bytes out of the socket.
    *
@@ -731,10 +729,12 @@ public:
       swoc::TextView bytes_read,
       std::shared_ptr<RuleCheck> rule_check = nullptr);
 
+  // TODO: may change the name of pp_msg, and possibly the ProxyProtocolUtil
+  // type name
   virtual swoc::Errata do_connect(
       swoc::TextView interface,
       swoc::IPEndpoint const *real_target,
-      ProxyProtocolVersion pp_version = ProxyProtocolVersion::NONE);
+      ProxyProtocolUtil *pp_msg = nullptr);
 
   /** Write the content in data to the socket.
    *

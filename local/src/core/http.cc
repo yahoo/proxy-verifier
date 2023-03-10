@@ -435,7 +435,8 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
         }
       } else {
         if (!rule_check
-                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second))) {
+                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second)))
+        {
           issue_exists = true;
         }
       }
@@ -702,7 +703,8 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
   if (name.starts_with_nocase(FIELD_PREFIX)) {
     name.remove_prefix(FIELD_PREFIX.size());
     if (auto spot{_hdr._fields_rules->_fields.find(name)};
-        spot != _hdr._fields_rules->_fields.end()) {
+        spot != _hdr._fields_rules->_fields.end())
+    {
       bwformat(w, spec, spot->second);
     } else {
       bwformat(w, spec, TRANSACTION_KEY_NOT_SET);
@@ -911,21 +913,18 @@ Session::write(TextView view)
   return zret;
 }
 swoc::Errata
-Session::send_proxy_header(swoc::IPEndpoint const *real_target, ProxyProtocolVersion pp_version)
+Session::send_proxy_header(ProxyProtocolUtil const &pp_msg)
 {
   swoc::Errata errata;
-  // get source/local endpoint
-  struct sockaddr addr;
-  socklen_t len = sizeof(addr);
-  getsockname(_fd, &addr, &len);
-  swoc::IPEndpoint source_endpoint{&addr};
-  // construct the PROXY header
-  ProxyProtocolUtil ppUtil(source_endpoint, *real_target, pp_version);
   swoc::LocalBufferWriter<MAX_PP_HDR_SIZE> w;
-  auto pp_serialize_errata = ppUtil.serialize(w);
+  auto pp_serialize_errata = pp_msg.serialize(w);
   errata.note(std::move(pp_serialize_errata));
   // send the data
-  errata.note(S_DIAG, "Sending PROXY header from {} to {}", source_endpoint, *real_target);
+  errata.note(
+      S_DIAG,
+      "Sending PROXY header:\nsrc:{}\ndest:{}",
+      pp_msg.get_src_ep(),
+      pp_msg.get_dst_ep());
   // write to socket
   Session::write(w.view());
   return errata;
@@ -1668,7 +1667,7 @@ Errata
 Session::do_connect(
     TextView interface,
     swoc::IPEndpoint const *real_target,
-    ProxyProtocolVersion pp_version)
+    ProxyProtocolUtil *pp_msg)
 {
   Errata errata;
   int socket_fd = socket(real_target->family(), SOCK_STREAM, 0);
@@ -1703,8 +1702,18 @@ Session::do_connect(
           static const int ONE = 1;
           setsockopt(socket_fd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
           if (0 == ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
-            if (pp_version != ProxyProtocolVersion::NONE) {
-              send_proxy_header(real_target, pp_version);
+            if (pp_msg) {
+              if (!pp_msg->get_src_ep().is_valid()) {
+                // if no endpoint information specified, it will retain the
+                // behavior of using the socket address similar to what curl
+                // does
+                // get source/local endpoint
+                struct sockaddr src_addr;
+                socklen_t len = sizeof(src_addr);
+                getsockname(_fd, &src_addr, &len);
+                pp_msg->set_endpoints({&src_addr}, *real_target);
+              }
+              send_proxy_header(*pp_msg);
             }
             errata.note(this->connect());
           } else {
