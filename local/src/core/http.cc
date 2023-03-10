@@ -83,7 +83,7 @@ bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
 }
 // custom formatting for the proxy header
 BufferWriter &
-bwformat(BufferWriter &w, bwf::Spec const & /*spec*/, ProxyProtocolUtil const &h)
+bwformat(BufferWriter &w, bwf::Spec const & /*spec*/, ProxyProtocolMsg const &h)
 {
   auto src_addr = h.get_src_ep();
   auto dst_addr = h.get_dst_ep();
@@ -856,7 +856,7 @@ Session::read_and_parse_proxy_hdr()
   }
   w.commit(zret.result());
   // try to parse the PROXY header
-  ProxyProtocolUtil ppUtil;
+  ProxyProtocolMsg ppUtil;
   errata.note(S_DIAG, "Attempting to parse PROXY header", w.size());
   auto &&[ppNumBytes, ppParseErrata] = ppUtil.parse_header(w.view());
   errata.note(std::move(ppParseErrata));
@@ -913,7 +913,7 @@ Session::write(TextView view)
   return zret;
 }
 swoc::Errata
-Session::send_proxy_header(ProxyProtocolUtil const &pp_msg)
+Session::send_proxy_msg(ProxyProtocolMsg const &pp_msg)
 {
   swoc::Errata errata;
   swoc::LocalBufferWriter<MAX_PP_HDR_SIZE> w;
@@ -922,7 +922,7 @@ Session::send_proxy_header(ProxyProtocolUtil const &pp_msg)
   // send the data
   errata.note(
       S_DIAG,
-      "Sending PROXY header:\nsrc:{}\ndest:{}",
+      "Sending PROXY header:\nsource address: {}\ndestination address: {}",
       pp_msg.get_src_ep(),
       pp_msg.get_dst_ep());
   // write to socket
@@ -1667,7 +1667,7 @@ Errata
 Session::do_connect(
     TextView interface,
     swoc::IPEndpoint const *real_target,
-    ProxyProtocolUtil *pp_msg)
+    ProxyProtocolMsg *pp_msg)
 {
   Errata errata;
   int socket_fd = socket(real_target->family(), SOCK_STREAM, 0);
@@ -1713,7 +1713,7 @@ Session::do_connect(
                 getsockname(_fd, &src_addr, &len);
                 pp_msg->set_endpoints({&src_addr}, *real_target);
               }
-              send_proxy_header(*pp_msg);
+              send_proxy_msg(*pp_msg);
             }
             errata.note(this->connect());
           } else {

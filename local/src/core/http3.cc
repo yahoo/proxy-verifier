@@ -1541,7 +1541,7 @@ Errata
 H3Session::do_connect(
     swoc::TextView interface,
     swoc::IPEndpoint const *target,
-    ProxyProtocolUtil * /*pp_msg*/)
+    ProxyProtocolMsg * /*pp_msg*/)
 {
   Errata errata = configure_udp_socket(interface, target);
   if (!errata.is_ok()) {

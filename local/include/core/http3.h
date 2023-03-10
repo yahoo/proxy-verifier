@@ -305,7 +305,7 @@ public:
   swoc::Errata do_connect(
       swoc::TextView interface,
       swoc::IPEndpoint const *target,
-      ProxyProtocolUtil *pp_msg = nullptr) override;
+      ProxyProtocolMsg *pp_msg = nullptr) override;
 
   /** Perform HTTP/3 global initialization.
    *

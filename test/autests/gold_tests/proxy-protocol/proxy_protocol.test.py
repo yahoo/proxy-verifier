@@ -206,6 +206,8 @@ EXPECTED_SRC_ADDRESS = "111.111.111.111"
 EXPECTED_SRC_PORT = "11111"
 EXPECTED_DST_ADDRESS = "222.222.222.222"
 EXPECTED_DST_PORT = "22222"
+EXPECTED_PROXY_HEADER = f"PROXY TCP4 {EXPECTED_SRC_ADDRESS} {EXPECTED_DST_ADDRESS} {EXPECTED_SRC_PORT} {EXPECTED_DST_PORT}"
+
 # Add configure_https=False to verify ATS client and server work when the https
 # optional arguments are not provided.
 client = r.AddClientProcess(
@@ -225,7 +227,7 @@ client.Streams.stdout = "gold/http_single_transaction_client.gold"
 server.Streams.stdout = "gold/http_single_transaction_server.gold"
 
 # Verify the PROXY protocol related logs. Make sure the source and destination
-# address of the PROXY header matche the ones specified in the replay file
+# addresses of the PROXY header match the ones specified in the replay file
 client.Streams.stdout += Testers.ContainsExpression(
     rf"Sending PROXY header",
     "Verify that the PROXY header is sent from the client to the proxy.")
@@ -234,9 +236,9 @@ proxy.Streams.stdout += Testers.ContainsExpression(
     f"Received .* bytes of Proxy Protocol",
     "Verify that the PROXY header is received by the proxy.")
 proxy.Streams.stdout += Testers.ContainsExpression(
-    rf"PROXY TCP4 {EXPECTED_SRC_ADDRESS} {EXPECTED_DST_ADDRESS} {EXPECTED_SRC_PORT} {EXPECTED_DST_PORT}",
+    rf"{EXPECTED_PROXY_HEADER}",
     "Verify the client sends a PROXY header with the specified source and destination addresses.")
 
 server.Streams.stdout += Testers.ContainsExpression(
-    rf"Received PROXY header v1:.*\nPROXY TCP4 {EXPECTED_SRC_ADDRESS} {EXPECTED_DST_ADDRESS} {EXPECTED_SRC_PORT} {EXPECTED_DST_PORT}",
+    rf"Received PROXY header v1:.*\n{EXPECTED_PROXY_HEADER}",
     "Verify that the server receives the PROXY header and parsed sucessfully.", reflags=re.MULTILINE)

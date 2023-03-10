@@ -169,7 +169,7 @@ static constexpr swoc::TextView HTTP_EOH{"\r\n\r\n"};
 class HttpHeader;
 class RuleCheck;
 struct Txn;
-class ProxyProtocolUtil;
+class ProxyProtocolMsg;
 
 constexpr auto Transaction_Delay_Cutoff = std::chrono::seconds{10};
 constexpr auto Poll_Timeout = std::chrono::seconds{5};
@@ -180,14 +180,14 @@ inline namespace SWOC_VERSION_NS
 {
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const &h);
 
-/** Formatter for ProxyProtocolUtil which pretty-prints the proxy protocol in
+/** Formatter for ProxyProtocolMsg which pretty-prints the proxy protocol in
  * the human-readable v1 format
  * @param[out] w The BufferWriter to write to.
  * @param[in] spec Format specifier for output.
- * @param[in] h The ProxyProtocolUtil to print out.
+ * @param[in] h The ProxyProtocolMsg to print out.
  * @return w The BufferWriter passed in.
  */
-BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, ProxyProtocolUtil const &h);
+BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, ProxyProtocolMsg const &h);
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
 
@@ -628,7 +628,7 @@ struct Ssn
   bool is_h3 = false;
   /// The PROXY protocol message to send in this session. nullptr if no PROXY
   /// protocol message is to be sent.
-  std::unique_ptr<ProxyProtocolUtil> _pp_hdr;
+  std::unique_ptr<ProxyProtocolMsg> _pp_msg;
   swoc::Errata post_process_transactions();
 };
 
@@ -702,13 +702,11 @@ public:
    */
   virtual swoc::Errata read_and_parse_proxy_hdr();
 
-  // TODO: update doc
   /** Send the PROXY header to the target as the connection is established.
    *
-   * @param[in] real_target The target of the session
-   * @param[in] pp_version The version of the PROXY protocol to use
+   * @param[in] pp_msg The PROXY message to send.
    */
-  virtual swoc::Errata send_proxy_header(ProxyProtocolUtil const &pp_msg);
+  virtual swoc::Errata send_proxy_msg(ProxyProtocolMsg const &pp_msg);
 
   /** Read body bytes out of the socket.
    *
@@ -729,12 +727,13 @@ public:
       swoc::TextView bytes_read,
       std::shared_ptr<RuleCheck> rule_check = nullptr);
 
-  // TODO: may change the name of pp_msg, and possibly the ProxyProtocolUtil
-  // type name
+  /// the pp_msg is passed in as non-const because the source and destination
+  /// addresses can be set in the function using the socket addresses if they
+  /// are not already(aka addresses not specified in the replay file).
   virtual swoc::Errata do_connect(
       swoc::TextView interface,
       swoc::IPEndpoint const *real_target,
-      ProxyProtocolUtil *pp_msg = nullptr);
+      ProxyProtocolMsg *pp_msg = nullptr);
 
   /** Write the content in data to the socket.
    *
