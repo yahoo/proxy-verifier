@@ -31,11 +31,15 @@ class ProxyProtocolUtil:
     parsing code is largely adopted from Brian Neradt's proxy_protocol_server in
     the ATS repo.
     """
+    # The following needs to be thread-local as connections can be concurrent.
+    # They are set to match the PROXY protocol header received from client.
 
-    # The Proxy header version to be sent to the origin server. This is set when
-    # a PROXY header is received by the proxy. Needs to be thread-local as
-    # connections can be concurrent
+    # The version of the PROXY protocol header to be sent.
     pp_version = threading.local()
+    # The source and destination in the PROXY protocol header to be sent.
+    src_addr = threading.local()
+    dst_addr = threading.local()
+    addr_family = threading.local()
 
     @staticmethod
     def wrap_socket(sock, use_ssl=False, ssl_ctx=None):
@@ -53,7 +57,20 @@ class ProxyProtocolUtil:
         end = pp_bytes.find(b'\r\n')
         if end == -1:
             raise ValueError("Proxy Protocol v1 string ending not found")
-        print(pp_bytes[:end].decode("utf-8"))
+        pp_str = pp_bytes[:end].decode("utf-8")
+        # parse the PROXY protocol v1 string
+        pp_parts = pp_str.split()
+        if len(pp_parts) != 6 or pp_parts[0] != 'PROXY' or pp_parts[1] not in ['TCP4', 'TCP6']:
+            raise ValueError("Not a valid PROXY protocol v1 header.")
+        src_addr = (pp_parts[2], int(pp_parts[4]))
+        dst_addr = (pp_parts[3], int(pp_parts[5]))
+        addr_family = socket.AF_INET if pp_parts[1] == 'TCP4' else socket.AF_INET6
+        # set the thread local storage for the PROXY protocol header to be sent
+        # to server
+        ProxyProtocolUtil.set_tls(
+            ProxyProtocolVersion.V1, src_addr, dst_addr, addr_family)
+        # print the proxy protocol v1 string
+        print(pp_str)
         return end + 2
 
     @staticmethod
@@ -126,12 +143,34 @@ class ProxyProtocolUtil:
             dst_port = int.from_bytes(pp_bytes[:2], byteorder='big')
             pp_bytes = pp_bytes[2:]
 
+        # set the thread local storage for the PROXY protocol header to be sent
+        # to server
+        ProxyProtocolUtil.set_tls(
+            ProxyProtocolVersion.V2, (src_addr, src_port), (dst_addr, dst_port), socket.AF_INET)
+        # print the PROXY protocol header
         tuple_description = f'{src_addr} {dst_addr} {src_port} {dst_port}'
         print(
             f'{command_description} {transport_protocol_description} '
             f'{tuple_description}')
 
         return 16 + tuple_length
+
+    @staticmethod
+    def set_tls(pp_version, src_addr, dst_addr, addr_family):
+        """Set the thread local storage for the PROXY protocol header to be
+        sent.
+        @param pp_version: The version of the PROXY protocol header to be sent.
+        @param src_addr: The source address in the PROXY protocol header to be
+        sent.
+        @param dst_addr: The destination address in the PROXY protocol header to
+        be sent.
+        @param addr_family: The address family in the PROXY protocol header to
+        be sent.
+        """
+        ProxyProtocolUtil.pp_version = pp_version
+        ProxyProtocolUtil.src_addr = src_addr
+        ProxyProtocolUtil.dst_addr = dst_addr
+        ProxyProtocolUtil.addr_family = addr_family
 
     @staticmethod
     def construct_proxy_header_v1(src_addr, dst_addr, family):
@@ -169,16 +208,18 @@ class ProxyProtocolUtil:
         return header
 
     @staticmethod
-    def send_proxy_header(sock, proxy_protocol_version):
+    def send_proxy_header(sock, proxy_protocol_version, src_addr, dst_addr, addr_family, ):
         """ Send the PROXY header to the stream
         :param sock: the socket of the stream
-        :param proxy_protocol_version: the version of the proxy protocol to send
+        :param src_addr: the source socket address in the PROXY header
+        :param dst_addr: the destination address in the PROXY header
+        :param addr_family: the address family in the PROXY header
+        :param proxy_protocol_version: the version of the PROXY protocol to send
         """
-        # get source ip and port from socket
         print(f'Sending PROXY protocol version {proxy_protocol_version.value}')
         proxy_header_construcut_func = ProxyProtocolUtil.construct_proxy_header_v1 if proxy_protocol_version == ProxyProtocolVersion.V1 else ProxyProtocolUtil.construct_proxy_header_v2
         proxy_header_data = proxy_header_construcut_func(
-            sock.getsockname(), sock.getpeername(), sock.family)
+            src_addr, dst_addr, addr_family)
         sock.sendall(proxy_header_data)
         time.sleep(1)
 
@@ -231,7 +272,7 @@ class ProxyProtocolUtil:
         if ProxyProtocolUtil.pp_version != ProxyProtocolVersion.NONE:
             # send the PROXY protocol header
             ProxyProtocolUtil.send_proxy_header(
-                sock, ProxyProtocolUtil.pp_version)
+                sock, ProxyProtocolUtil.pp_version, ProxyProtocolUtil.src_addr, ProxyProtocolUtil.dst_addr, ProxyProtocolUtil.addr_family)
         return sock
 
 
