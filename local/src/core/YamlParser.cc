@@ -359,6 +359,28 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
             YAML_ERROR_CODE_KEY,
             error_code_node.Mark());
       }
+
+      auto await_node{rst_stream_frame[YAML_HTTP_AWAIT_KEY]};
+      if (await_node.IsScalar()) {
+        auto await_str = Localizer::localize_upper(error_code_node.Scalar());
+        auto await_value = H2AwaitOptionNames[await_str];
+        if (await_value != H2AwaitOptions::INVALID) {
+          message._client_rst_stream_await = await_value;
+        } else {
+          errata.note(
+              S_ERROR,
+              R"("{}" value at {} is not a valid await option.)",
+              Localizer::localize_upper(await_str),
+              await_node.Mark());
+        }
+      } else {
+        errata.note(
+            S_ERROR,
+            R"("{}" value at {} must be a string.)",
+            YAML_HTTP_AWAIT_KEY,
+            await_node.Mark());
+      }
+
     } else {
       errata.note(S_ERROR, "The RST_STREAM frame node must NOT be the first in the frame sequence");
     }

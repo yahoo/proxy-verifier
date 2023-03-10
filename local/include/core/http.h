@@ -159,6 +159,21 @@ static const swoc::Lexicon<H2ErrorCode> H2ErrorCodeNames{
     "INVALID_ERROR_CODE",
     H2ErrorCode::INVALID};
 
+/// Possible frame types that RST_STREAM can await upon.
+enum class H2AwaitOptions {
+  HEADERS,
+  DATA_COMPLETE,
+  INVALID = -1,
+};
+
+static const std::string H2_AWAIT_OPTION_HEADERS{"HEADERS"};
+static const std::string H2_AWAIT_OPTION_DATA_COMPLETE{"DATA_COMPLETE"};
+
+static const swoc::Lexicon<H2AwaitOptions> H2AwaitOptionNames{
+    {{H2AwaitOptions::HEADERS, H2_ERROR_CODE_NO_ERROR},
+     {H2AwaitOptions::DATA_COMPLETE, H2_AWAIT_OPTION_DATA_COMPLETE}},
+    "INVALID_AWAIT_OPTION", H2AwaitOptions::INVALID};
+
 static constexpr size_t MAX_HDR_SIZE = 131072; // The max ATS is configured for.
 static constexpr size_t MAX_DRAIN_BUFFER_SIZE = 1 << 20;
 /// HTTP end of line.
@@ -527,6 +542,9 @@ public:
   int _client_goaway_error = -1;
   int _server_goaway_after = -1;
   int _server_goaway_error = -1;
+
+  /// What response frame to await upon before sending the RST_STREAM, if any.
+  H2AwaitOptions _client_rst_stream_await = H2AwaitOptions::INVALID;
 
   /// Body is chunked.
   bool _chunked_p = false;
