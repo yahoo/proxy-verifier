@@ -435,8 +435,7 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
         }
       } else {
         if (!rule_check
-                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second)))
-        {
+                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second))) {
           issue_exists = true;
         }
       }
@@ -703,8 +702,7 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
   if (name.starts_with_nocase(FIELD_PREFIX)) {
     name.remove_prefix(FIELD_PREFIX.size());
     if (auto spot{_hdr._fields_rules->_fields.find(name)};
-        spot != _hdr._fields_rules->_fields.end())
-    {
+        spot != _hdr._fields_rules->_fields.end()) {
       bwformat(w, spec, spot->second);
     } else {
       bwformat(w, spec, TRANSACTION_KEY_NOT_SET);

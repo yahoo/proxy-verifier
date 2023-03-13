@@ -272,7 +272,11 @@ class ProxyProtocolUtil:
         if ProxyProtocolUtil.pp_version != ProxyProtocolVersion.NONE:
             # send the PROXY protocol header
             ProxyProtocolUtil.send_proxy_header(
-                sock, ProxyProtocolUtil.pp_version, ProxyProtocolUtil.src_addr, ProxyProtocolUtil.dst_addr, ProxyProtocolUtil.addr_family)
+                sock,
+                ProxyProtocolUtil.pp_version,
+                ProxyProtocolUtil.src_addr,
+                ProxyProtocolUtil.dst_addr,
+                ProxyProtocolUtil.addr_family)
         return sock
 
 

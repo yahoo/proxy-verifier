@@ -218,8 +218,10 @@ server = r.AddServerProcess(
     "specified-addr-pp-server1",
     "replay_files/http_pp_v1_with_address.replay.yaml",
     configure_https=False)
-proxy = r.AddProxyProcess("specified-addr-pp-proxy1",
-                          listen_port=client.Variables.http_port, server_port=server.Variables.http_port)
+proxy = r.AddProxyProcess(
+    "specified-addr-pp-proxy1",
+    listen_port=client.Variables.http_port,
+    server_port=server.Variables.http_port)
 
 # Verify the http transaction finishes successfully.
 proxy.Streams.stdout = "gold/http_single_transaction_proxy.gold"
@@ -241,4 +243,5 @@ proxy.Streams.stdout += Testers.ContainsExpression(
 
 server.Streams.stdout += Testers.ContainsExpression(
     rf"Received PROXY header v1:.*\n{EXPECTED_PROXY_HEADER}",
-    "Verify that the server receives the PROXY header and parsed sucessfully.", reflags=re.MULTILINE)
+    "Verify that the server receives the PROXY header and parsed sucessfully.",
+    reflags=re.MULTILINE)
