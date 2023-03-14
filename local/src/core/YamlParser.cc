@@ -211,7 +211,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   if (headers_frame.IsNull()) {
     headers_frame = node;
   }
-  if (!data_frame.IsNull()) {
+  if (data_frame.IsNull()) {
     data_frame = node;
   }
 
