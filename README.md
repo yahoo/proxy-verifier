@@ -695,7 +695,7 @@ The following protocol specification features are not currently implemented:
   recorded in issue [100](https://github.com/yahoo/proxy-verifier/issues/100).
 * Only TCP is supported. There have been recent discussions about adding
   HTTP/3 support, which is over UDP, but work for that has not yet started.
-* the PROXY protocol support is limited to the `PROXY` command via TCP over IPv4 or IPv6. Therefore,
+* The PROXY protocol support is limited to the `PROXY` command via TCP over IPv4 or IPv6. Therefore,
   * No support for `AF_UNIX` socket address as either source and destination address.
   * No support for UDP transport type.
   * No support for `LOCAL` command(in v2 header).
@@ -705,7 +705,7 @@ establishing an HTTP/1 connection over TCP (no TLS).
 
 #### PROXY protocol support
 Proxy Verifier supports sending and receiving the PROXY protocol, which can be
-helpful to verify the PROXY protocol functionalities of the proxy under test.
+helpful to verify the PROXY protocol behavior of the proxy under test.
 The feature can be enabled by specifying the `proxy-protocol` protocol node as
 outlined above. If enabled, the Verifier client would send out the PROXY
 protocol header at the beginning of the connection. Upon receiving a PROXY
@@ -714,6 +714,7 @@ format. Note that the specification of source and destination addresses are
 supported but not required; if not specified, the Proxy Verifier client would
 send out PROXY message with the source and destination addresses matching the
 underlying socket, similar to how `curl --haproxy-protocol` behaves.
+
 ### Session and Transaction Delay Specification
 
 A user can also stipulate per session and/or per transaction delays to be

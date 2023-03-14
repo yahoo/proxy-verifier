@@ -288,21 +288,21 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
           (pp_version_node.Scalar() == "1" || pp_version_node.Scalar() == "2"))
       {
         errata.note(S_DIAG, "Enabling PROXY protocol for this session.");
-        // set the PROXY protocol version as specified
+        // Set the PROXY protocol version as specified.
         _ssn->_pp_msg = std::make_unique<ProxyProtocolMsg>(
             (pp_version_node.Scalar() == "1") ? ProxyProtocolVersion::V1 :
                                                 ProxyProtocolVersion::V2);
-        // if the addresses are specified, set them in the PROXY protocol
-        // message
+        // If the addresses are specified, set them in the PROXY protocol
+        // message.
         auto const &pp_src_addr_node = pp_node.result()[YAML_SSN_PP_SRC_ADDR_KEY];
         auto const &pp_dst_addr_node = pp_node.result()[YAML_SSN_PP_DST_ADDR_KEY];
         if (pp_src_addr_node.IsDefined() && pp_dst_addr_node.IsDefined()) {
-          // both are specified
+          // Both are specified.
           swoc::IPEndpoint src_ep{pp_src_addr_node.Scalar()};
           swoc::IPEndpoint dst_ep{pp_dst_addr_node.Scalar()};
           _ssn->_pp_msg->set_endpoints(src_ep, dst_ep);
         } else if (pp_src_addr_node.IsDefined() || pp_dst_addr_node.IsDefined()) {
-          // only one of the source and destination address is specified
+          // Only one of the source and destination address is specified.
           errata.note(
               S_ERROR,
               R"(Invalid PROXY protocol address specification detected in
@@ -313,7 +313,8 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
           return errata;
         }
       } else {
-        // PROXY protocol node exists, but the version is unspecified or invalid
+        // PROXY protocol node exists, but the version is unspecified or
+        // invalid.
         errata.note(
             S_ERROR,
             R"(Invalid PROXY protocol version specified in session at "{}":{}.)",

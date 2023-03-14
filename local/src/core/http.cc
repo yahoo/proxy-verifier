@@ -920,7 +920,7 @@ Session::send_proxy_msg(ProxyProtocolMsg const &pp_msg)
   // send the data
   errata.note(
       S_DIAG,
-      "Sending PROXY header:\nsource address: {}\ndestination address: {}",
+      "Sending PROXY header: source address: {} - destination address: {}",
       pp_msg.get_src_ep(),
       pp_msg.get_dst_ep());
   // write to socket
