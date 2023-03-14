@@ -25,6 +25,7 @@ Table of Contents
             * [GOAWAY frame](#goaway-frame)
             * [Await](#await)
          * [Protocol Specification](#protocol-specification)
+            * [PROXY protocol support](#proxy-protocol-support)
          * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
       * [Traffic Verification Specification](#traffic-verification-specification)
          * [Field Verification](#field-verification)
