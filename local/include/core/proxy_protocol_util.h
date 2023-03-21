@@ -64,11 +64,12 @@ union ProxyHdr {
   } v2;
 };
 
-class ProxyProtocolUtil
+class ProxyProtocolMsg
 {
 public:
-  ProxyProtocolUtil() = default;
-  ProxyProtocolUtil(swoc::IPEndpoint src_ep, swoc::IPEndpoint dst_ep, ProxyProtocolVersion version)
+  ProxyProtocolMsg() = default;
+  ProxyProtocolMsg(ProxyProtocolVersion version) : _version(version){};
+  ProxyProtocolMsg(swoc::IPEndpoint src_ep, swoc::IPEndpoint dst_ep, ProxyProtocolVersion version)
     : _version(version)
     , _src_addr(src_ep)
     , _dst_addr(dst_ep){};
@@ -107,6 +108,14 @@ public:
    */
   swoc::IPEndpoint get_dst_ep() const;
 
+  /** Set the IP endpoints representing the source and destination address in
+   * the PROXY header.
+   *
+   * @param[in] src_ep the source IP endpoint.
+   * @param[in] dst_ep the destination IP endpoint.
+   */
+  void set_endpoints(const swoc::IPEndpoint &src_ep, const swoc::IPEndpoint &dst_ep);
+
 private:
   swoc::Rv<ssize_t> parse_pp_header_v1(swoc::TextView data);
   swoc::Rv<ssize_t> parse_pp_header_v2(swoc::TextView data);
@@ -119,19 +128,19 @@ private:
 };
 
 inline ProxyProtocolVersion
-ProxyProtocolUtil::get_version() const
+ProxyProtocolMsg::get_version() const
 {
   return _version;
 }
 
 inline swoc::IPEndpoint
-ProxyProtocolUtil::get_src_ep() const
+ProxyProtocolMsg::get_src_ep() const
 {
   return _src_addr;
 }
 
 inline swoc::IPEndpoint
-ProxyProtocolUtil::get_dst_ep() const
+ProxyProtocolMsg::get_dst_ep() const
 {
   return _dst_addr;
 }

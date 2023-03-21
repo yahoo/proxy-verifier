@@ -25,6 +25,7 @@ Table of Contents
             * [GOAWAY frame](#goaway-frame)
             * [Await](#await)
          * [Protocol Specification](#protocol-specification)
+            * [PROXY protocol support](#proxy-protocol-support)
          * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
       * [Traffic Verification Specification](#traffic-verification-specification)
          * [Field Verification](#field-verification)
@@ -660,18 +661,22 @@ TLS client hello handshake. Further, this should be transported over TCP on IP.
 
 The following nodes are supported for `protocol`:
 
-| Name   | Node                         | Supported Values    | Description
-| -----  |--------                      | ----------------    | -----------
-| http   |                              |                     |
-|        | version                      | {1, 2}              | Whether to use HTTP/1 or HTTP/2.
-| tls    |                              |                     |
-|        | sni                          | string              | The SNI to send in the TLS handshake.
-|        | request-certificate          | boolean             | Whether the client or server should request a certificate from the proxy.
-|        | proxy-provided-certificate   | boolean             | This directs the same behavior as the request-certificate directive. This alias is helpful when the node describes what happened in the past, such as in the context of a replay file specified by [Traffic Dump](https://docs.trafficserver.apache.org/en/latest/admin-guide/plugins/traffic_dump.en.html).
-|        | verify-mode                  | {0-15}              | The value to pass directly to OpenSSL's `SSL_set_verify` to control peer verification in the TLS handshake. This allows fine grained control over TLS verification behavior.  `0` corresponds with SSL_VERIFY_NONE, `1` corresponds with SSL_VERIFY_PEER, `2` corresponds with SSL_VERIFY_FAIL_IF_NO_PEER_CERT, `4` corresponds with SSL_VERIFY_CLIENT_ONCE, and `8` corresponds with SSL_VERIFY_POST_HANDSHAKE. Any bitwise OR'd value of these values can be provided. For details about their behavior, see OpenSSL's [SSL_verify_cb](https://www.openssl.org/docs/man1.1.1/man3/SSL_verify_cb.html) documentation.
-|        | alpn-protocols               | sequence of strings | This specifies the server's protocol list used in ALPN selection. See OpenSSL's [SSL_select_next_proto](https://www.openssl.org/docs/man1.0.2/man3/SSL_select_next_proto.html) documentation for details.
-| tcp    |                              |                     |
-| ip     |                              |                     |
+| Name            | Node                         | Supported Values    | Description
+| -----           |--------                      | ----------------    | -----------
+| http            |                              |                     |
+|                 | version                      | {1, 2}              | Whether to use HTTP/1 or HTTP/2.
+| tls             |                              |                     |
+|                 | sni                          | string              | The SNI to send in the TLS handshake.
+|                 | request-certificate          | boolean             | Whether the client or server should request a certificate from the proxy.
+|                 | proxy-provided-certificate   | boolean             | This directs the same behavior as the request-certificate directive. This alias is helpful when the node describes what happened in the past, such as in the context of a replay file specified by [Traffic Dump](https://docs.trafficserver.apache.org/en/latest/admin-guide/plugins/traffic_dump.en.html).
+|                 | verify-mode                  | {0-15}              | The value to pass directly to OpenSSL's `SSL_set_verify` to control peer verification in the TLS handshake. This allows fine grained control over TLS verification behavior.  `0` corresponds with SSL_VERIFY_NONE, `1` corresponds with SSL_VERIFY_PEER, `2` corresponds with SSL_VERIFY_FAIL_IF_NO_PEER_CERT, `4` corresponds with SSL_VERIFY_CLIENT_ONCE, and `8` corresponds with SSL_VERIFY_POST_HANDSHAKE. Any bitwise OR'd value of these values can be provided. For details about their behavior, see OpenSSL's [SSL_verify_cb](https://www.openssl.org/docs/man1.1.1/man3/SSL_verify_cb.html) documentation.
+|                 | alpn-protocols               | sequence of strings | This specifies the server's protocol list used in ALPN selection. See OpenSSL's [SSL_select_next_proto](https://www.openssl.org/docs/man1.0.2/man3/SSL_select_next_proto.html) documentation for details.
+| proxy-protocol  |                              |                     |
+|                 | version                      | {1, 2}              | Whether to use PROXY header v1 or v2
+|                 | src-addr                     | string              | The source address and port in the PROXY header. Specified in the format of `111.111.111.111:11111`.
+|                 | dst-addr                     | string              | The destination address and port in the PROXY header. Specified in the same format of `src-addr`.
+| tcp             |                              |                     |
+| ip              |                              |                     |
 
 
 The following protocol specification features are not currently implemented:
@@ -691,9 +696,34 @@ The following protocol specification features are not currently implemented:
   recorded in issue [100](https://github.com/yahoo/proxy-verifier/issues/100).
 * Only TCP is supported. There have been recent discussions about adding
   HTTP/3 support, which is over UDP, but work for that has not yet started.
+* The PROXY protocol support is limited to the `PROXY` command via TCP over IPv4 or IPv6. Therefore,
+  * No support for `AF_UNIX` socket address as either source and destination address.
+  * No support for UDP transport type.
+  * No support for `LOCAL` command(in v2 header).
 
 If there is no `protocol` node specified, then Proxy Verifier will default to
 establishing an HTTP/1 connection over TCP (no TLS).
+
+#### PROXY protocol support
+Generally speaking, a server sitting downstream from a proxy does not have
+visibility into the client's network socket information that lies behind the
+proxy. PROXY Protocol is a mechanism to provide visibility for this. PROXY
+protocol is a network protocol that communicates a client's source and
+destination IP and port information via a set of bytes at the start of a TCP
+connection from a proxy. Here is a link to the protocol description:
+
+https://github.com/haproxy/haproxy/blob/master/doc/proxy-protocol.txt
+
+Proxy Verifier supports sending and receiving the PROXY protocol, which can be
+helpful to verify the PROXY protocol behavior of the proxy under test.
+The feature can be enabled by specifying the `proxy-protocol` protocol node as
+outlined above. If enabled, the Verifier client would send out the PROXY
+protocol header at the beginning of the connection. Upon receiving a PROXY
+protocol header, the Verifier server would display it in the human-readable v1
+format. Note that the specification of source and destination addresses are
+supported but not required; if not specified, the Proxy Verifier client would
+send out PROXY message with the source and destination addresses matching the
+underlying socket, similar to how `curl --haproxy-protocol` behaves.
 
 ### Session and Transaction Delay Specification
 

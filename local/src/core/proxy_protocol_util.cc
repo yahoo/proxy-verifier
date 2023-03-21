@@ -17,8 +17,16 @@ using swoc::Errata;
 using swoc::TextView;
 using swoc::IPAddr;
 
+void
+ProxyProtocolMsg::set_endpoints(const swoc::IPEndpoint &src_ep, const swoc::IPEndpoint &dst_ep)
+{
+  // set the source and destination endpoints
+  _src_addr = src_ep;
+  _dst_addr = dst_ep;
+}
+
 swoc::Rv<ssize_t>
-ProxyProtocolUtil::parse_pp_header_v1(swoc::TextView data)
+ProxyProtocolMsg::parse_pp_header_v1(swoc::TextView data)
 {
   // parse the data as a PROXY header v1. The data is expected to contain the v1
   // signature to to enter this function
@@ -59,7 +67,6 @@ ProxyProtocolUtil::parse_pp_header_v1(swoc::TextView data)
   IPAddr dstIP(dstIPView);
 
   // parse the port
-  zret.note(S_DIAG, "before the source port content: {}", data);
   auto srcPortView = data.split_prefix_at(PP_V1_DELIMITER);
   if (srcPortView.empty()) {
     zret.note(S_ERROR, "Invalid PROXY header: expecting source port");
@@ -67,7 +74,6 @@ ProxyProtocolUtil::parse_pp_header_v1(swoc::TextView data)
   }
   auto srcPort = swoc::svto_radix<10>(srcPortView);
   // parse the dest port
-  zret.note(S_DIAG, "before the dest port content: {:x}", data);
   auto dstPortView = data.split_prefix_at('\r');
   if (dstPortView.empty()) {
     zret.note(S_ERROR, "Invalid PROXY header: expecting destination port");
@@ -88,7 +94,7 @@ ProxyProtocolUtil::parse_pp_header_v1(swoc::TextView data)
 }
 
 swoc::Rv<ssize_t>
-ProxyProtocolUtil::parse_pp_header_v2(swoc::TextView data)
+ProxyProtocolMsg::parse_pp_header_v2(swoc::TextView data)
 {
   // parse the data as a PROXY header v2. The data is expected to contain the v2
   // signature to to enter this function
@@ -146,7 +152,7 @@ ProxyProtocolUtil::parse_pp_header_v2(swoc::TextView data)
 }
 
 swoc::Rv<ssize_t>
-ProxyProtocolUtil::parse_header(swoc::TextView data)
+ProxyProtocolMsg::parse_header(swoc::TextView data)
 {
   swoc::Rv<ssize_t> zret{-1};
   auto receivedBytes = data.size();
@@ -160,7 +166,7 @@ ProxyProtocolUtil::parse_header(swoc::TextView data)
 }
 
 swoc::Errata
-ProxyProtocolUtil::serialize(swoc::BufferWriter &buf) const
+ProxyProtocolMsg::serialize(swoc::BufferWriter &buf) const
 {
   swoc::Errata errata;
   if (_version == ProxyProtocolVersion::V1) {
@@ -173,7 +179,7 @@ ProxyProtocolUtil::serialize(swoc::BufferWriter &buf) const
 };
 
 swoc::Errata
-ProxyProtocolUtil::construct_v1_header(swoc::BufferWriter &buf) const
+ProxyProtocolMsg::construct_v1_header(swoc::BufferWriter &buf) const
 {
   swoc::Errata errata;
   buf.print(
@@ -191,7 +197,7 @@ ProxyProtocolUtil::construct_v1_header(swoc::BufferWriter &buf) const
 }
 
 swoc::Errata
-ProxyProtocolUtil::construct_v2_header(swoc::BufferWriter &buf) const
+ProxyProtocolMsg::construct_v2_header(swoc::BufferWriter &buf) const
 {
   swoc::Errata errata;
   ProxyHdr proxy_hdr;
