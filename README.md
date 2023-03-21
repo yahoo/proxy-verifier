@@ -707,7 +707,7 @@ establishing an HTTP/1 connection over TCP (no TLS).
 #### PROXY protocol support
 Generally speaking, a server sitting downstream from a proxy does not have
 visibility into the client's network socket information that lies behind the
-proxy. PROXY Protocol provides a mechanism to provide visibility for this. PROXY
+proxy. PROXY Protocol is a mechanism to provide visibility for this. PROXY
 protocol is a network protocol that communicates a client's source and
 destination IP and port information via a set of bytes at the start of a TCP
 connection from a proxy. Here is a link to the protocol description:
