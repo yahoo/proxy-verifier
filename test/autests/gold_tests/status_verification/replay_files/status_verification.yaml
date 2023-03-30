@@ -1,0 +1,104 @@
+# @file
+#
+# Copyright 2023, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+  version: "1.0"
+
+# Basic HTTP transactions to verify the correct behavior of response status
+# verification(status code and reason string)
+sessions:
+  - protocol: [{ name: tcp }, { name: ip }]
+    transactions:
+      - client-request:
+          version: "1.1"
+          method: "GET"
+          url: "http://example.one:8080/config/settings.yaml?q=3"
+          headers:
+            fields:
+              - [Host, example.one]
+              - [uuid, 1]
+
+        server-response:
+          status: 200
+          reason: OK
+          content:
+            size: 16
+          headers:
+            fields:
+              - [Content-Length, 16]
+              - [uuid, 1]
+        proxy-response:
+          # expected status code matches the one listed in server-response
+          status: 200
+
+      - client-request:
+          version: "1.1"
+          method: "GET"
+          url: "http://example.one:8080/config/settings.yaml?q=3"
+          headers:
+            fields:
+              - [Host, example.one]
+              - [uuid, 2]
+
+        server-response:
+          status: 200
+          reason: OK
+          content:
+            size: 16
+          headers:
+            fields:
+              - [Content-Length, 16]
+              - [uuid, 2]
+        proxy-response:
+          # expected status code doesn't match the one listed in server-response
+          status: 404
+
+      - client-request:
+          version: "1.1"
+          method: "GET"
+          url: "http://example.one:8080/config/settings.yaml?q=3"
+          headers:
+            fields:
+              - [Host, example.one]
+              - [uuid, 3]
+
+        server-response:
+          status: 200
+          reason: OK
+          content:
+            size: 16
+          headers:
+            fields:
+              - [Content-Length, 16]
+              - [uuid, 3]
+        proxy-response:
+          status: 200
+          # expected reason string matches the one listed in server-response
+          reason: OK
+
+      - client-request:
+          version: "1.1"
+          method: "GET"
+          url: "http://example.one:8080/config/settings.yaml?q=3"
+          headers:
+            fields:
+              - [Host, example.one]
+              - [uuid, 4]
+
+        server-response:
+          status: 200
+          reason: OK
+          content:
+            size: 16
+          headers:
+            fields:
+              - [Content-Length, 16]
+              - [uuid, 4]
+        proxy-response:
+          status: 200
+          # expected reason string doesn't match the one listed in
+          # server-response
+          reason: Not Found

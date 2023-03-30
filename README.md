@@ -1083,8 +1083,7 @@ This verification directive applies to HTTP/1 transactions. For HTTP/2, status
 verification is specified via `:status` pseudo header field verification using
 the field verification mechanism described above.
 
-Verification of HTTP response reason strings, such as "Not Found", is not
-currently supported.
+Verification of HTTP response reason strings, such as "Not Found", is also supported.
 
 ### Body Verification
 
