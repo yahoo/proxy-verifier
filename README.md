@@ -1068,7 +1068,9 @@ verification.
 Proxy HTTP response status verification is specified in `proxy-response`
 nodes. In this case, the response status that the Verifier client should expect
 from the proxy is specified in the same way that directs the Verifier server
-in what response status should be sent for a given request.
+in what response status should be sent for a given request. Both response code,
+such as "403", and HTTP/1 response reason string, such as "Forbidden", are
+supported for verification.
 
 For example, the following complete `proxy-response` node directs the Proxy
 Verifier client to verify that the proxy replies to the associated HTTP request
@@ -1077,13 +1079,12 @@ with a `404` status:
 ```YAML
   proxy-response:
     status: 404
+    reason: Not Found
 ```
 
 This verification directive applies to HTTP/1 transactions. For HTTP/2, status
 verification is specified via `:status` pseudo header field verification using
 the field verification mechanism described above.
-
-Verification of HTTP response reason strings, such as "Not Found", is also supported.
 
 ### Body Verification
 
