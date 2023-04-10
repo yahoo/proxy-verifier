@@ -1452,6 +1452,8 @@ Session::run_transaction(Txn const &json_txn)
             rsp_hdr_from_wire._status,
             key,
             rsp_hdr_from_wire);
+        // Verify the status code and reason string.
+        bool found_violation = false;
         if (json_txn._rsp._status != 0 && rsp_hdr_from_wire._status != json_txn._rsp._status &&
             (rsp_hdr_from_wire._status != 200 || json_txn._rsp._status != 304) &&
             (rsp_hdr_from_wire._status != 304 || json_txn._rsp._status != 200))
@@ -1462,6 +1464,18 @@ Session::run_transaction(Txn const &json_txn)
               json_txn._rsp._status,
               rsp_hdr_from_wire._status,
               key);
+          found_violation = true;
+        } else if (
+            !json_txn._rsp._reason.empty() && rsp_hdr_from_wire._reason != json_txn._rsp._reason) {
+          errata.note(
+              S_ERROR,
+              R"(HTTP/1 Reason String Violation: expected "{}" got "{}", key: {})",
+              json_txn._rsp._reason,
+              rsp_hdr_from_wire._reason,
+              key);
+          found_violation = true;
+        }
+        if (found_violation) {
           // Drain the rest of the body so it's not in the buffer to confuse the
           // next transaction.
           auto &&[bytes_drained, drain_errata] =
