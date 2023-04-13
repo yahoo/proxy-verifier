@@ -22,7 +22,7 @@ constexpr unsigned MORE_THAN_ONE_ARG_N = ~0u - 1u;
 constexpr int INDENT_ONE = 32;
 constexpr int INDENT_TWO = 46;
 
-const std::string Proxy_Verifier_Version = "2.6.0";
+const std::string Proxy_Verifier_Version = "2.7.0";
 
 namespace ts
 {
