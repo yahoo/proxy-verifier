@@ -24,3 +24,19 @@ proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
 client.Streams.stdout = "gold/client.gold"
 server.Streams.stdout = "gold/server.gold"
 proxy.Streams.stdout = "gold/proxy.gold"
+
+#
+# Test 2: Verify that the timing data indicates that the delays took place.
+#
+r = Test.AddTestRun("Verify the client-side delay replay took an expected amount of time to run.")
+verifier_script = 'verify_duration.py'
+client_output = client.Streams.stdout.AbsTestPath
+expected_min_delay_ms = "1500"
+r.Processes.Default.Setup.Copy(verifier_script)
+
+r.Processes.Default.Command = \
+    f'python3 {verifier_script} {client_output} {expected_min_delay_ms}'
+r.ReturnCode = 0
+r.Streams.stdout += Testers.ContainsExpression(
+    'Good',
+    'The verifier script should report success.')

@@ -157,8 +157,6 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   YAML::Node data_frame;
   YAML::Node rst_stream_frame;
   YAML::Node goaway_frame;
-  int rst_stream_index = -1;
-  int goaway_index = -1;
   if (node[YAML_FRAMES_KEY]) {
     auto frames_node{node[YAML_FRAMES_KEY]};
     if (frames_node.IsSequence()) {
@@ -173,17 +171,21 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
             data_frame = value;
             break;
           case H2Frame::RST_STREAM:
-            rst_stream_frame = value;
-            rst_stream_index = message._h2_frame_sequence.size();
-            if (goaway_index != -1) {
+            if (!rst_stream_frame.IsNull()) {
+              errata.note(S_ERROR, "RST_STREAM frame has already been specified.");
+            } else if (!goaway_frame.IsNull()) {
               errata.note(S_ERROR, "GOAWAY frame has already been specified.");
+            } else {
+              rst_stream_frame = value;
             }
             break;
           case H2Frame::GOAWAY:
-            goaway_frame = value;
-            goaway_index = message._h2_frame_sequence.size();
-            if (rst_stream_index != -1) {
+            if (!rst_stream_frame.IsNull()) {
               errata.note(S_ERROR, "RST_STREAM frame has already been specified.");
+            } else if (!goaway_frame.IsNull()) {
+              errata.note(S_ERROR, "GOAWAY frame has already been specified.");
+            } else {
+              goaway_frame = value;
             }
             break;
           default:
@@ -334,64 +336,89 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   errata.note(process_pseudo_headers(headers_frame, message));
 
   if (!rst_stream_frame.IsNull()) {
-    if (rst_stream_index > 0) {
-      auto error_code_node{rst_stream_frame[YAML_ERROR_CODE_KEY]};
-      if (error_code_node.IsScalar()) {
-        auto error_code = Localizer::localize_upper(error_code_node.Scalar());
-        auto abort_error = H2ErrorCodeNames[error_code];
-        auto abort_frame = message._h2_frame_sequence[rst_stream_index - 1];
-        if (abort_error != H2ErrorCode::INVALID && message.is_request()) {
-          message._client_rst_stream_after = static_cast<int>(abort_frame);
-          message._client_rst_stream_error = static_cast<int>(abort_error);
-        } else if (abort_error != H2ErrorCode::INVALID && message.is_response()) {
-          message._server_rst_stream_after = static_cast<int>(abort_frame);
-          message._server_rst_stream_error = static_cast<int>(abort_error);
-        } else {
-          errata.note(
-              S_ERROR,
-              R"("{}" is not a valid error code.)",
-              Localizer::localize_upper(error_code_node.Scalar()));
-        }
+    auto error_code_node{rst_stream_frame[YAML_ERROR_CODE_KEY]};
+    if (error_code_node.IsScalar()) {
+      auto error_code = Localizer::localize_upper(error_code_node.Scalar());
+      auto abort_error = H2ErrorCodeNames[error_code];
+      if (abort_error != H2ErrorCode::INVALID && message.is_request()) {
+        message._client_rst_stream_error = static_cast<int>(abort_error);
+      } else if (abort_error != H2ErrorCode::INVALID && message.is_response()) {
+        message._server_rst_stream_error = static_cast<int>(abort_error);
       } else {
         errata.note(
             S_ERROR,
-            R"("{}" value at {} must be a string.)",
-            YAML_ERROR_CODE_KEY,
-            error_code_node.Mark());
+            R"("{}" is not a valid error code.)",
+            Localizer::localize_upper(error_code_node.Scalar()));
       }
     } else {
-      errata.note(S_ERROR, "The RST_STREAM frame node must NOT be the first in the frame sequence");
+      errata.note(
+          S_ERROR,
+          R"("{}" value at {} must be a string.)",
+          YAML_ERROR_CODE_KEY,
+          error_code_node.Mark());
     }
   }
 
   if (!goaway_frame.IsNull()) {
-    if (goaway_index > 0) {
-      auto error_code_node{goaway_frame[YAML_ERROR_CODE_KEY]};
-      if (error_code_node.IsScalar()) {
-        auto error_code = Localizer::localize_upper(error_code_node.Scalar());
-        auto abort_error = H2ErrorCodeNames[error_code];
-        auto abort_frame = message._h2_frame_sequence[goaway_index - 1];
-        if (abort_error != H2ErrorCode::INVALID && message.is_request()) {
-          message._client_goaway_after = static_cast<int>(abort_frame);
-          message._client_goaway_error = static_cast<int>(abort_error);
-        } else if (abort_error != H2ErrorCode::INVALID && message.is_response()) {
-          message._server_goaway_after = static_cast<int>(abort_frame);
-          message._server_goaway_error = static_cast<int>(abort_error);
-        } else {
-          errata.note(
-              S_ERROR,
-              R"("{}" is not a valid error code.)",
-              Localizer::localize_upper(error_code_node.Scalar()));
-        }
+    auto error_code_node{goaway_frame[YAML_ERROR_CODE_KEY]};
+    if (error_code_node.IsScalar()) {
+      auto error_code = Localizer::localize_upper(error_code_node.Scalar());
+      auto abort_error = H2ErrorCodeNames[error_code];
+      if (abort_error != H2ErrorCode::INVALID && message.is_request()) {
+        message._client_goaway_error = static_cast<int>(abort_error);
+      } else if (abort_error != H2ErrorCode::INVALID && message.is_response()) {
+        message._server_goaway_error = static_cast<int>(abort_error);
       } else {
         errata.note(
             S_ERROR,
-            R"("{}" value at {} must be a string.)",
-            YAML_ERROR_CODE_KEY,
-            error_code_node.Mark());
+            R"("{}" is not a valid error code.)",
+            Localizer::localize_upper(error_code_node.Scalar()));
       }
     } else {
-      errata.note(S_ERROR, "The GOAWAY frame node must NOT be the first in the frame sequence");
+      errata.note(
+          S_ERROR,
+          R"("{}" value at {} must be a string.)",
+          YAML_ERROR_CODE_KEY,
+          error_code_node.Mark());
+    }
+  }
+
+  if (!message._h2_frame_sequence.empty()) {
+    for (const auto &frame : message._h2_frame_sequence) {
+      YAML::Node temp_node;
+      switch (frame) {
+      case H2Frame::HEADERS:
+        temp_node = headers_frame;
+        break;
+      case H2Frame::DATA:
+        temp_node = data_frame;
+        break;
+      case H2Frame::RST_STREAM:
+        temp_node = rst_stream_frame;
+        break;
+      case H2Frame::GOAWAY:
+        temp_node = goaway_frame;
+        break;
+      default:
+        break;
+      }
+      if (!temp_node.IsNull() && temp_node[YAML_TIME_DELAY_KEY]) {
+        auto &&[delay_time, delay_errata] = get_delay_time(temp_node);
+        if (!delay_errata.is_ok()) {
+          errata.note(std::move(delay_errata));
+          errata.note(
+              S_ERROR,
+              R"({} has a bad "{}" key value.)",
+              temp_node.Mark(),
+              YAML_TIME_DELAY_KEY);
+        } else {
+          if (message.is_request()) {
+            message._client_frame_delay[frame] = delay_time;
+          } else if (message.is_response()) {
+            message._server_frame_delay[frame] = delay_time;
+          }
+        }
+      }
     }
   }
 

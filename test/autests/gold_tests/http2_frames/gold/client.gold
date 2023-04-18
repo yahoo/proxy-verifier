@@ -1,5 +1,7 @@
 ``
-``Sent the following HTTP/2 request headers for key 1 with stream id 1:
+``Delaying HEADERS frame per frame delay specification: 500ms
+``Submitting HEADERS frame for key 1.
+``Submitted the following HTTP/2 request headers for key 1 on stream 1:
 :method: POST
 :scheme: https
 :authority: example.data.com
@@ -7,7 +9,10 @@
 content-type: text/html
 content-length: 11
 uuid: 1
-
+``
+``Delaying DATA frame per frame delay specification: 1000ms
+``Submitting DATA frame for key 1 on stream 1.
+``Submitted DATA frame for key 1 on stream 1.
 ``Sent an HTTP/2 body of 11 bytes for key 1 of stream id 1:
 client_test
 ``

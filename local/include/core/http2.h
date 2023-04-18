@@ -81,17 +81,15 @@ public:
   /// The HTTP response headers for this stream.
   std::shared_ptr<HttpHeader> _response_from_server;
 
-  // Note that _client_rst_stream_after will only be set for Verifier clients, and
-  // _server_rst_stream_after will only be set for verifier servers.
-  int _client_rst_stream_after = -1;
+  // Note that _client_rst_stream_error will only be set for Verifier clients, and
+  // _server_rst_stream_error will only be set for verifier servers.
   int _client_rst_stream_error = -1;
-  int _server_rst_stream_after = -1;
   int _server_rst_stream_error = -1;
 
-  int _client_goaway_after = -1;
   int _client_goaway_error = -1;
-  int _server_goaway_after = -1;
   int _server_goaway_error = -1;
+
+  std::deque<H2Frame> _h2_frame_sequence;
 
 private:
   int32_t _stream_id = -1;
@@ -214,6 +212,16 @@ private:
    * @return Whether the transaction is still awaiting upon other configured streams.
    */
   bool request_has_outstanding_stream_dependencies(HttpHeader const &request) const;
+
+  swoc::Errata frame_delay(HttpHeader const &hdr, H2Frame curr_frame);
+  swoc::Errata submit_headers_frame(
+      HttpHeader const &hdr,
+      H2StreamState *stream_state,
+      std::shared_ptr<H2StreamState> new_stream_state,
+      uint8_t flags);
+  swoc::Errata submit_data_frame(HttpHeader const &hdr, H2StreamState *stream_state, uint8_t flags);
+  swoc::Errata submit_rst_stream_frame(H2StreamState *stream_state, H2Frame prev_frame);
+  swoc::Errata submit_goaway_frame(H2StreamState *stream_state, H2Frame prev_frame);
 
 private:
   /// Whether this session is for a listening server.
