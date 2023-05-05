@@ -1,7 +1,7 @@
 /** @file
  * Common implementation for Proxy Verifier
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2023, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
