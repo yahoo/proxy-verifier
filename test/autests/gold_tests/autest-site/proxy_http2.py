@@ -165,14 +165,20 @@ class Http2ConnectionManager(object):
                         err = H2ErrorCodes(event.error_code).name
                         print(
                             f'Received RST_STREAM frame with error code {err} on stream {event.stream_id}.')
+                        if stream_id not in resp_from_server.keys():
+                            ret_vals = self.request_received(
+                                request_info._headers, request_info._body_bytes, stream_id)
+                            if ret_vals is not None:
+                                resp_from_server[stream_id] = ret_vals
 
                     if isinstance(event, StreamEnded):
                         print('StreamEnded')
                         stream_id_list.add(stream_id)
-                        ret_vals = self.request_received(
-                            request_info._headers, request_info._body_bytes, stream_id)
-                        if ret_vals is not None:
-                            resp_from_server[stream_id] = ret_vals
+                        if stream_id not in resp_from_server.keys():
+                            ret_vals = self.request_received(
+                                request_info._headers, request_info._body_bytes, stream_id)
+                            if ret_vals is not None:
+                                resp_from_server[stream_id] = ret_vals
 
                 else:
                     if isinstance(event, ConnectionTerminated):

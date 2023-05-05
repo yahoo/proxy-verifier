@@ -26,8 +26,12 @@ client.Streams.stdout += Testers.ContainsExpression(
     'Detect client abort flag.')
 
 client.Streams.stdout += Testers.ContainsExpression(
-    'Sent RST_STREAM frame for key 1 on stream 1.',
-    'Sent RST_STREAM frame.')
+    'Submitted RST_STREAM frame for key 1 on stream 1.',
+    'Submitted RST_STREAM frame.')
+
+server.Streams.stdout += Testers.ContainsExpression(
+    'Received an HTTP/2 request for key 1 with stream id 1',
+    'Server is functional.')
 
 server.Streams.stdout += Testers.ExcludesExpression(
     'RST_STREAM',
@@ -56,8 +60,16 @@ client.Streams.stdout += Testers.ContainsExpression(
     'Detect client abort flag.')
 
 client.Streams.stdout += Testers.ContainsExpression(
-    'Sent RST_STREAM frame for key 1 on stream 1.',
-    'Sent RST_STREAM frame.')
+    'Submitted RST_STREAM frame for key 1 on stream 1.',
+    'Submitted RST_STREAM frame.')
+
+client.Streams.stdout += Testers.ExcludesExpression(
+    'Timed out waiting for frame: HEADERS',
+    'Await HEADERS')
+
+server.Streams.stdout += Testers.ContainsExpression(
+    'Received an HTTP/2 request for key 1 with stream id 1',
+    'Server is functional.')
 
 server.Streams.stdout += Testers.ExcludesExpression(
     'RST_STREAM',
@@ -90,8 +102,8 @@ server.Streams.stdout += Testers.ContainsExpression(
     'Detect client abort flag.')
 
 server.Streams.stdout += Testers.ContainsExpression(
-    'Sent RST_STREAM frame for key 1 on stream 1.',
-    'Sent RST_STREAM frame.')
+    'Submitted RST_STREAM frame for key 1 on stream 1.',
+    'Submitted RST_STREAM frame.')
 
 proxy.Streams.stdout += Testers.ContainsExpression(
     'httpcore.RemoteProtocolError:',
@@ -116,8 +128,8 @@ client.Streams.stdout += Testers.ContainsExpression(
     'Detect client abort flag.')
 
 client.Streams.stdout += Testers.ContainsExpression(
-    'Sent GOAWAY frame for key 1.',
-    'Sent GOAWAY frame.')
+    'Submitted GOAWAY frame for key 1.',
+    'Submitted GOAWAY frame.')
 
 client.Streams.stdout += Testers.ExcludesExpression(
     'should_not_send',
@@ -162,8 +174,8 @@ server.Streams.stdout += Testers.ContainsExpression(
     'Detect server abort flag.')
 
 server.Streams.stdout += Testers.ContainsExpression(
-    'Sent GOAWAY frame for key 1.',
-    'Sent GOAWAY frame.')
+    'Submitted GOAWAY frame for key 1.',
+    'Submitted GOAWAY frame.')
 
 server.Streams.stdout += Testers.ExcludesExpression(
     'should_not_send',

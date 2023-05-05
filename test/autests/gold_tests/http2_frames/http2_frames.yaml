@@ -13,6 +13,7 @@ sessions:
   - client-request:
       frames:
       - HEADERS:
+          delay: 500ms
           headers:
             fields:
             - [:method, POST]
@@ -23,6 +24,7 @@ sessions:
             - [Content-Length, '11']
             - [uuid, 1]
       - DATA:
+          delay: 1s
           content:
             encoding: plain
             data: client_test

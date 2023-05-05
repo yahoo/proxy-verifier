@@ -1,9 +1,12 @@
 ``
-``Sent the following HTTP/2 response headers for key 1 with stream id 1:
+``Submitting HEADERS frame for key 1 on stream 1.
+``Submitted the following HTTP/2 response headers for key 1 on stream 1:
 :status: 200
 content-type: text/html
 content-length: 11
-
+``
+``Submitting DATA frame for key 1 on stream 1.
+``Submitted DATA frame for key 1 on stream 1.
 ``Sent an HTTP/2 body of 11 bytes for key 1 of stream id 1:
 server_test
 ``

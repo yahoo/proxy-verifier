@@ -451,23 +451,33 @@ sessions:
             - [Content-Type, text/html]
             - [Content-Length, '11']
             - [uuid, 1]
+      - RST_STREAM:
+          error-code: INTERNAL_ERROR
       - DATA:
           content:
             encoding: plain
             data: client_test
             size: 11
-      - RST_STREAM:
-          error-code: INTERNAL_ERROR
 ```
 
 Note that this example specifies the following:
-* Specifies a sequence of frames to be sent under the `client-request` node. The order
+* A sequence of frames to be sent under the `client-request` node. The order
   of the frames listed is the order of the frames that Proxy Verifier will send during
   the traffic replay of the stream.
-* Thus, in this case, the client terminates the stream after sending the DATA frame since
-  the `RST_STREAM` is specified after the DATA frame in the sequence.
+* Thus, in this case, the client terminates the stream after sending the `HEADERS` frame since
+  the `RST_STREAM` is specified after the `HEADERS` frame in the sequence.
 * The client terminates with the error code `INTERNAL_ERROR`, specified by `error-code` under
   the `RST_STREAM` frame.
+
+Be aware that when Proxy Verifier generates HTTP/2 frames, it determines from the frames elements where to
+insert the `END_STREAM` flag. If a request or response just has a `HEADERS` frame, then the `END_STREAM`
+flag will be added to the end of the `HEADERS` frame. If there are both `HEADERS` and DATA frames, then the
+`END_STREAM` will be placed after the `DATA` frame. Proxy Verifier does not, however, use `RST_STREAM`
+frames to influence the `END_STREAM` flag. Thus in the above example, having the `RST_STREAM` between the
+`HEADERS` and `DATA` frames means that the `HEADERS` will not have an `END_STREAM` flag before the
+`RST_STREAM` is sent. For this reason, you must include a `DATA` frame after a `RST_STREAM` frame, even
+though the `DATA` frame will not be sent, in order to keep the stream open at the time the `RST_STREAM` is
+sent.
 
 The server side stream termination can be set in the same way, but under the `server-response` node.
 
@@ -487,11 +497,23 @@ The available options for `error-code` are:
 * INADEQUATE_SECURITY
 * HTTP_1_1_REQUIRED
 
+Finer grained frame ordering can also be specified via a `delay` node which specifies the time
+delay before sending the `RST_STREAM` frame. For example, to delay sending a `RST_STREAM` frame
+for 1 second, specify a `delay: 1s` directive like so:
+
+```YAML
+      - RST_STREAM:
+          error-code: INTERNAL_ERROR
+          delay: 1s
+```
+
+A detailed description of the `delay` node can be found [here](#session-and-transaction-delay-specification).
+
 #### GOAWAY frame
 
-The `GOAWAY` frame acts similar to the `RST_STREAM` frame shown above. But rather than terminating
-a stream, `GOAWAY` frame terminates the connection. It also uses the same set of `error-code` listed
-above.
+The `GOAWAY` frame acts similar to the `RST_STREAM` frame shown above. However, rather than terminating
+a stream, `GOAWAY` frame terminates the connection. It supports `error-code` and `delay` as described
+for `RST_STREAM` frame above.
 
 #### Await
 
