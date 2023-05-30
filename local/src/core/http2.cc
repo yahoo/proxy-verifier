@@ -1594,15 +1594,21 @@ H2Session::pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_cou
   // nghttp2 requires pseudo header fields to be at the start of the
   // nv array. Thus we add them here before calling add_fields_to_ngnva
   // which then skips the pseueo headers if they are in there.
-  if (hdr.is_response()) {
+  if (hdr.is_response() && !hdr._status_string.empty()) {
     nv_hdr[offset++] = tv_to_nv(":status", hdr._status_string);
   } else if (hdr.is_request()) {
-    // TODO: add error checking and refactor and tolerance for non-required
-    // pseudo-headers
-    nv_hdr[offset++] = tv_to_nv(":method", hdr._method);
-    nv_hdr[offset++] = tv_to_nv(":scheme", hdr._scheme);
-    nv_hdr[offset++] = tv_to_nv(":path", hdr._path);
-    nv_hdr[offset++] = tv_to_nv(":authority", hdr._authority);
+    if (!hdr._method.empty()) {
+      nv_hdr[offset++] = tv_to_nv(":method", hdr._method);
+    }
+    if (!hdr._scheme.empty()) {
+      nv_hdr[offset++] = tv_to_nv(":scheme", hdr._scheme);
+    }
+    if (!hdr._path.empty()) {
+      nv_hdr[offset++] = tv_to_nv(":path", hdr._path);
+    }
+    if (!hdr._authority.empty()) {
+      nv_hdr[offset++] = tv_to_nv(":authority", hdr._authority);
+    }
   }
 
   hdr._fields_rules->add_fields_to_ngnva(nv_hdr + offset);
