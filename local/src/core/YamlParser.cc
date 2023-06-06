@@ -95,14 +95,15 @@ validate_psuedo_headers(const HttpHeader &hdr, int number_of_pseudo_headers)
   if (hdr.is_response()) {
     if (number_of_pseudo_headers != 1 || hdr._status == 0) {
       // The response should contain and only contain the :status pseudo-header
-      // field.
+      // field per RFC9113 section 8.3.2.
       errata.note(S_ERROR, "The response must include only the :status pseudo-header field.");
     }
     return errata;
   }
   // This is a request header.
   if (hdr._method == "CONNECT") {
-    // CONNECT requests have some special rules for pseudo-headers.
+    // CONNECT requests have some special rules for pseudo-headers. Refer to
+    // RFC9113 section 8.5 for more details.
     if (!hdr._scheme.empty() || !hdr._path.empty()) {
       errata.note(
           S_ERROR,
@@ -114,7 +115,8 @@ validate_psuedo_headers(const HttpHeader &hdr, int number_of_pseudo_headers)
           "The :authority pseudo-header field must be included in a CONNECT request.");
     }
   } else if (hdr._method.empty() || hdr._scheme.empty() || hdr._path.empty()) {
-    // Missing required pseudo-header fields for non-CONNECT requests.
+    // Missing required pseudo-header fields for non-CONNECT requests. See
+    // RFC9113 section 8.3.1.
     errata.note(
         S_ERROR,
         "Did not find all the required pseudo-header fields "
