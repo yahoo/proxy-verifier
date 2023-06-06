@@ -89,6 +89,43 @@ get_delay_time(YAML::Node const &node)
 }
 
 Errata
+validate_psuedo_headers(const HttpHeader &hdr, int number_of_pseudo_headers)
+{
+  Errata errata;
+  if (hdr.is_response()) {
+    if (number_of_pseudo_headers != 1 || hdr._status == 0) {
+      // The response should contain and only contain the :status pseudo-header
+      // field per RFC9113 section 8.3.2.
+      errata.note(S_ERROR, "The response must include only the :status pseudo-header field.");
+    }
+    return errata;
+  }
+  // This is a request header.
+  if (hdr._method == "CONNECT") {
+    // CONNECT requests have some special rules for pseudo-headers. Refer to
+    // RFC9113 section 8.5 for more details.
+    if (!hdr._scheme.empty() || !hdr._path.empty()) {
+      errata.note(
+          S_ERROR,
+          "The :scheme and :path pseudo-header fields must be omitted in a CONNECT request.");
+    }
+    if (hdr._authority.empty()) {
+      errata.note(
+          S_ERROR,
+          "The :authority pseudo-header field must be included in a CONNECT request.");
+    }
+  } else if (hdr._method.empty() || hdr._scheme.empty() || hdr._path.empty()) {
+    // Missing required pseudo-header fields for non-CONNECT requests. See
+    // RFC9113 section 8.3.1.
+    errata.note(
+        S_ERROR,
+        "Did not find all the required pseudo-header fields "
+        "(:method, :scheme, :path)");
+  }
+  return errata;
+}
+
+Errata
 YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
 {
   Errata errata;
@@ -1064,18 +1101,11 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
   }
   if (number_of_pseudo_headers > 0) {
     // Do some sanity checking on the user's pseudo headers, if provided.
-    if (message.is_response() && number_of_pseudo_headers != 1) {
-      errata.note(
-          S_ERROR,
-          "Found a mixture of request and response pseudo header fields: {}",
-          node.Mark());
-    }
-    if (message.is_request() && number_of_pseudo_headers != 4) {
-      errata.note(
-          S_ERROR,
-          "Did not find all four required pseudo header fields "
-          "(:method, :scheme, :authority, :path): {}",
-          node.Mark());
+    auto psuedo_header_validation_errata =
+        validate_psuedo_headers(message, number_of_pseudo_headers);
+    if (!psuedo_header_validation_errata.is_ok()) {
+      errata.note(S_ERROR, "Invalid pseudo-headers detected at {}.", node.Mark());
+      errata.note(std::move(psuedo_header_validation_errata));
     }
     // Pseudo header fields currently implies HTTP/2.
     message._http_version = "2";
