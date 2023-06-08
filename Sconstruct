@@ -100,8 +100,8 @@ else:
     "#lib/openssl.part",
     vcs_type=VcsGit(server="github.com", repository="quictls/openssl",
                     protocol="https",
-                    # A pinned commit from branch OpenSSL_1_1_1n+quic.
-                    revision="c3d4eb57dc74ba18ce70acee68b9a086ccc806aa"
+                    # A pinned commit from branch OpenSSL_1_1_1u+quic.
+                    revision="636c615c139061b125a25461708f4afc79284f83"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -115,7 +115,7 @@ else:
         "#lib/nghttp2.part",
         vcs_type=VcsGit(server="github.com", repository="nghttp2/nghttp2",
                         protocol="https",
-                        tag="v1.51.0"
+                        tag="v1.54.0"
                         ),
         mode=['SKIP_DOCS'],
     )
@@ -130,7 +130,7 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/ngtcp2",
                     protocol="https",
                     # A pinned commit on branch main.
-                    revision="8907d1e539a463f6522854919bcbbd7f12f3b9b7"
+                    tag="v0.15.0"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -145,7 +145,7 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/nghttp3",
                     protocol="https",
                     # A pinned commit on branch main.
-                    revision="0ad0c613764e9e55dae0312bcd59e6a7e104fdbb"
+                    tag="v0.11.0"
                     ),
     mode=['SKIP_DOCS'],
   )
