@@ -98,3 +98,6 @@ autoreconf -if
 make -j ${num_threads}
 ${SUDO} make install
 sudo chmod -R ugo+rX ${install_dir}/nghttp2
+
+# Everything worked. Cleanup the build directory.
+rm -rf ${repo_dir}
