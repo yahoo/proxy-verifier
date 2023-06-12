@@ -14,7 +14,7 @@ autopep8 = "*"
 pyflakes = "*"
 
 [packages]
-autest = "==1.10.1"
+autest = "*"
 "httpx[http2]" = "*"
 pyOpenSSL = "*"
 eventlet = "*"
