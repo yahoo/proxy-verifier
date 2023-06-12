@@ -15,6 +15,9 @@ fail()
   exit 1
 }
 
+set -x
+set -e
+
 os=$(uname)
 [ "${os}" = "Linux" -o "${os}" = "Darwin" ] || fail "Unrecognized OS: ${os}"
 
@@ -89,7 +92,7 @@ sudo chmod -R ugo+rX ${install_dir}/ngtcp2
 cd ${repo_dir}
 git clone https://github.com/tatsuhiro-t/nghttp2.git
 cd nghttp2
-git checkout v.1.54.0
+git checkout v1.54.0
 autoreconf -if
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
