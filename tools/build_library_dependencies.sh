@@ -2,7 +2,7 @@
 #
 # Build QUIC/HTTP3 library dependencies.
 #
-# Copyright 2022, Verizon Media
+# Copyright 2023, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -51,9 +51,9 @@ mkdir -p ${repo_dir}
 
 # 1. OpenSSL version that supports quic.
 cd ${repo_dir}
-git clone -b OpenSSL_1_1_1n+quic --depth 1 https://github.com/quictls/openssl.git openssl
+git clone -b OpenSSL_1_1_1u+quic --depth 1 https://github.com/quictls/openssl.git openssl
 cd openssl
-git checkout c3d4eb57dc74ba18ce70acee68b9a086ccc806aa
+git checkout 636c615c139061b125a25461708f4afc79284f83
 ./config --prefix=${install_dir}/openssl
 make -j ${num_threads}
 ${SUDO} make install_sw
@@ -63,7 +63,7 @@ sudo chmod -R ugo+rX ${install_dir}/openssl
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/nghttp3
 cd nghttp3/
-git checkout 0ad0c613764e9e55dae0312bcd59e6a7e104fdbb
+git checkout v0.11.0
 autoreconf -i
 ./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
 make -j ${num_threads}
@@ -74,7 +74,7 @@ sudo chmod -R ugo+rX ${install_dir}/nghttp3
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/ngtcp2
 cd ngtcp2
-git checkout 8907d1e539a463f6522854919bcbbd7f12f3b9b7
+git checkout v0.15.0
 autoreconf -i
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
@@ -89,18 +89,7 @@ sudo chmod -R ugo+rX ${install_dir}/ngtcp2
 cd ${repo_dir}
 git clone https://github.com/tatsuhiro-t/nghttp2.git
 cd nghttp2
-
-# This commit will be removed whenever the nghttp2 author rebases origin/quic.
-# For reference, this commit is currently described as:
-#
-# commit f277dafe1ef946dac8d7bd57ac4d30e722b654d9 (HEAD -> master, origin/master, origin/HEAD)
-# Author: Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
-# Date:   Sun Apr 3 21:56:47 2022 +0900
-#
-#     Bump macos
-
-git checkout f277dafe1ef946dac8d7bd57ac4d30e722b654d9
-
+git checkout v.1.54.0
 autoreconf -if
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
