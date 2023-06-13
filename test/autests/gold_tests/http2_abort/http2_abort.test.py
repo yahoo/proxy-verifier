@@ -110,7 +110,7 @@ proxy.Streams.stdout += Testers.ContainsExpression(
     'Received RST_STREAM frame.')
 
 proxy.Streams.stdout += Testers.ContainsExpression(
-    'StreamReset stream_id:1, error_code:ErrorCodes.ENHANCE_YOUR_CALM, remote_reset:True',
+    'StreamReset stream_id:1, error_code:(11|ErrorCodes.ENHANCE_YOUR_CALM), remote_reset:True',
     'Received RST_STREAM frame.')
 
 #
@@ -182,5 +182,5 @@ server.Streams.stdout += Testers.ExcludesExpression(
     'Server connection should terminate.')
 
 proxy.Streams.stdout += Testers.ContainsExpression(
-    'ConnectionTerminated error_code:ErrorCodes.STREAM_CLOSED, last_stream_id:0, additional_data:None',
+    'ConnectionTerminated error_code:(5|ErrorCodes.STREAM_CLOSED), last_stream_id:0, additional_data:None',
     'Received GOAWAY frame.')
