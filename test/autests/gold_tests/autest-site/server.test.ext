@@ -3,7 +3,7 @@ Implement the Proxy Verifier test server extension.
 '''
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2023, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -137,10 +137,11 @@ def _configure_server(obj, process, name, replay_dir, find_ports=True, use_ipv6=
 
     # Do not try to run PortOpen on the HTTP/3 (QUIC) socket because UDP is a
     # connectionless protocol.
+    port_open = When.PortOpenv6 if use_ipv6 else When.PortOpenv4
     if http_ports:
-        process.Ready = When.PortOpen(http_ports[0])
+        process.Ready = port_open(http_ports[0])
     elif https_ports:
-        process.Ready = When.PortOpen(https_ports[0])
+        process.Ready = port_open(https_ports[0])
     # Tests that expect a failure due to verification issues will need
     # to set this to 1.
     process.ReturnCode = 0
