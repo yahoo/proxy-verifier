@@ -15,8 +15,10 @@ Abort HTTP/2 connection.
 # Test 1: Client sends RST_STREAM after DATA frame
 #
 r = Test.AddTestRun('Client sends RST_STREAM after DATA frame')
-client = r.AddClientProcess('client1', 'replay_files/client_rst_stream_after_data.yaml')
-server = r.AddServerProcess('server1', 'replay_files/client_rst_stream_after_data.yaml')
+client = r.AddClientProcess(
+    'client1', 'replay_files/client_rst_stream_after_data.yaml')
+server = r.AddServerProcess(
+    'server1', 'replay_files/client_rst_stream_after_data.yaml')
 proxy = r.AddProxyProcess('proxy1', listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
@@ -49,8 +51,10 @@ proxy.Streams.stdout += Testers.ContainsExpression(
 # Test 2: Client sends RST_STREAM after HEADERS frame
 #
 r = Test.AddTestRun('Client sends RST_STREAM after HEADERS frame')
-client = r.AddClientProcess('client2', 'replay_files/client_rst_stream_after_headers.yaml')
-server = r.AddServerProcess('server2', 'replay_files/client_rst_stream_after_headers.yaml')
+client = r.AddClientProcess(
+    'client2', 'replay_files/client_rst_stream_after_headers.yaml')
+server = r.AddServerProcess(
+    'server2', 'replay_files/client_rst_stream_after_headers.yaml')
 proxy = r.AddProxyProcess('proxy2', listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
@@ -83,12 +87,15 @@ proxy.Streams.stdout += Testers.ContainsExpression(
     'Frame sequence from client: HEADERS, RST_STREAM',
     'Frame sequence.')
 
+
 #
 # Test 3: Server sends RST_STREAM after HEADERS frame
 #
 r = Test.AddTestRun('Server sends RST_STREAM after HEADERS frame')
-client = r.AddClientProcess('client3', 'replay_files/server_rst_stream_after_headers.yaml')
-server = r.AddServerProcess('server3', 'replay_files/server_rst_stream_after_headers.yaml')
+client = r.AddClientProcess(
+    'client3', 'replay_files/server_rst_stream_after_headers.yaml')
+server = r.AddServerProcess(
+    'server3', 'replay_files/server_rst_stream_after_headers.yaml')
 proxy = r.AddProxyProcess('proxy3', listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
@@ -106,10 +113,6 @@ server.Streams.stdout += Testers.ContainsExpression(
     'Submitted RST_STREAM frame.')
 
 proxy.Streams.stdout += Testers.ContainsExpression(
-    'httpcore.RemoteProtocolError:',
-    'Received RST_STREAM frame.')
-
-proxy.Streams.stdout += Testers.ContainsExpression(
     'StreamReset stream_id:1, error_code:(11|ErrorCodes.ENHANCE_YOUR_CALM), remote_reset:True',
     'Received RST_STREAM frame.')
 
@@ -117,8 +120,10 @@ proxy.Streams.stdout += Testers.ContainsExpression(
 # Test 4: Client sends GOAWAY after HEADERS frame
 #
 r = Test.AddTestRun('Client sends GOAWAY after HEADERS frame')
-client = r.AddClientProcess('client4', 'replay_files/client_goaway_after_headers.yaml')
-server = r.AddServerProcess('server4', 'replay_files/client_goaway_after_headers.yaml')
+client = r.AddClientProcess(
+    'client4', 'replay_files/client_goaway_after_headers.yaml')
+server = r.AddServerProcess(
+    'server4', 'replay_files/client_goaway_after_headers.yaml')
 proxy = r.AddProxyProcess('proxy4', listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
@@ -155,8 +160,10 @@ proxy.Streams.stdout += Testers.ContainsExpression(
 # Test 5: Server sends GOAWAY after HEADERS frame
 #
 r = Test.AddTestRun('Server sends GOAWAY after HEADERS frame')
-client = r.AddClientProcess('client5', 'replay_files/server_goaway_after_headers.yaml')
-server = r.AddServerProcess('server5', 'replay_files/server_goaway_after_headers.yaml')
+client = r.AddClientProcess(
+    'client5', 'replay_files/server_goaway_after_headers.yaml')
+server = r.AddServerProcess(
+    'server5', 'replay_files/server_goaway_after_headers.yaml')
 proxy = r.AddProxyProcess('proxy5', listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)

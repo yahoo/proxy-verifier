@@ -36,7 +36,8 @@ server.Streams.stdout += Testers.ExcludesExpression(
 #
 # Test 2: Verify field verification: all success.
 #
-r = Test.AddTestRun("Verify HTTP/2 behavior on both the client and server sides")
+r = Test.AddTestRun(
+    "Verify HTTP/2 behavior on both the client and server sides")
 client = r.AddClientProcess("client2", "replay_files/http2_to_http2.yaml")
 server = r.AddServerProcess("server2", "replay_files/http2_to_http2.yaml")
 proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.https_port,
@@ -59,8 +60,10 @@ server.Streams.stdout += Testers.ExcludesExpression(
 # Test 3: Verify field verification: failures.
 #
 r = Test.AddTestRun("Verify HTTP/2 field verification")
-client = r.AddClientProcess("client3", "replay_files/http2_to_http2_verification_failures.yaml")
-server = r.AddServerProcess("server3", "replay_files/http2_to_http2_verification_failures.yaml")
+client = r.AddClientProcess(
+    "client3", "replay_files/http2_to_http2_verification_failures.yaml")
+server = r.AddServerProcess(
+    "server3", "replay_files/http2_to_http2_verification_failures.yaml")
 proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.https_port,
                           server_port=server.Variables.https_port,
                           use_ssl=True, use_http2_to_2=True)
@@ -86,7 +89,8 @@ server.Streams.stdout += Testers.ContainsExpression(
 #
 # Test 4: Verify the ability to control server protocol negotiation via ALPN.
 #
-r = Test.AddTestRun("Verify HTTP/2 behavior on both the client and server sides")
+r = Test.AddTestRun(
+    "Verify HTTP/2 behavior on both the client and server sides")
 client = r.AddClientProcess("client4", "replay_files/set_alpn.yaml")
 server = r.AddServerProcess("server4", "replay_files/set_alpn.yaml")
 proxy = r.AddProxyProcess("proxy4", listen_port=client.Variables.https_port,

@@ -258,8 +258,8 @@ class ProxyProtocolUtil:
         return pp_length
 
     @staticmethod
-    def create_connection_and_send_pp(address, timeout,
-                                      source_address):
+    def create_connection_and_send_pp(address, timeout=5,
+                                      source_address=None):
         """ This is a wraper of the socket.create_connection method, which in
         addition sends a PROXY protocol header as the connection is established.
         :param address: the address to connect to
