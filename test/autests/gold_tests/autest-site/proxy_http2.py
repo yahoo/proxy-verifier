@@ -245,7 +245,6 @@ class Http2ConnectionManager(object):
                         replay_server, timeout=self.timeout)
             connection_to_server = self.tls.http_conns[origin]
             http1_headers = self.convert_headers_to_http1(request_headers)
-            print(f'converted http1 header: {http1_headers}')
             connection_to_server.request(method, path, req_body, http1_headers)
             res = connection_to_server.getresponse()
 
@@ -303,7 +302,7 @@ class Http2ConnectionManager(object):
         try:
             origin = (scheme, replay_server, self.client_sni)
             if origin not in self.tls.http_conns:
-                # open a socket to the server and initiate TLS/SSL
+                # Open a socket to the server and initiate TLS/SSL.
                 ssl_context = _create_ssl_context(
                     cert=self.cert_file)
                 if self.client_sni:
@@ -311,23 +310,25 @@ class Http2ConnectionManager(object):
                             ssl_context.wrap_socket)
 
                     def new_wrap_socket(sock, *args, **kwargs):
-                        # send proxy protocol header first before TLS handshake
+                        # Send proxy protocol header first before TLS handshake.
                         kwargs['server_hostname'] = self.client_sni
                         return ssl_context.old_wrap_socket(sock, *args, **kwargs)
                     setattr(ssl_context, "wrap_socket", new_wrap_socket)
-
-                s = ProxyProtocolUtil.create_connection_and_send_pp(
+                # Opens a connection to the server.
+                sock = ProxyProtocolUtil.create_connection_and_send_pp(
                     ('127.0.0.1', self.server_port))
-                s = ssl_context.wrap_socket(s)
-                # print(f'negotiated protoocl is: {s.selected_alpn_protocol()}')
-                if s.selected_alpn_protocol() != 'h2':
+                sock = ssl_context.wrap_socket(sock)
+                if sock.selected_alpn_protocol() != 'h2':
+                    # Server downgrades to HTTP/1. Send an http/1 request
+                    # instead.
                     return self._send_http1_request_to_server(
                         request_headers, req_body, client_stream_id)
+                # Initiate a HTTP/2 connection.
                 http2_connection = H2Connection()
                 http2_connection.initiate_connection()
-                s.sendall(http2_connection.data_to_send())
+                sock.sendall(http2_connection.data_to_send())
                 self.tls.http_conns[origin] = Http2Connection(
-                    s, http2_connection)
+                    sock, http2_connection)
 
             client = self.tls.http_conns[origin]
             response_from_server = client.send_request(
@@ -353,7 +354,7 @@ class Http2ConnectionManager(object):
                   f"'{scheme}://{authority}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)
             return
-        # Go through the directEngine.
+        # Process the headers with directEngine.
         filtered_response_headers = ProxyRequestHandler.filter_headers(
             response_from_server.headers).raw
         # Http/2 response does not have reason phrase.
