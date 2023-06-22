@@ -369,7 +369,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
       }
     }
   }
-
+  // Parse the trailer.
   if (node[YAML_TRAILER_KEY]) {
     auto hdr_node{node[YAML_TRAILER_KEY]};
     if (hdr_node[YAML_FIELDS_KEY]) {
@@ -1239,7 +1239,10 @@ public:
   {
     errata.note(_handler.file_open(path));
   }
-  ~HandlerOpener() { errata.note(_handler.file_close()); }
+  ~HandlerOpener()
+  {
+    errata.note(_handler.file_close());
+  }
 
 private:
   ReplayFileHandler &_handler;

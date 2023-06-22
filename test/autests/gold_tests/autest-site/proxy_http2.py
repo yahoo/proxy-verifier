@@ -25,7 +25,7 @@ import eventlet
 from eventlet.green.OpenSSL import SSL, crypto
 from h2.config import H2Configuration
 from h2.connection import H2Connection
-from h2.events import StreamEnded, RequestReceived, ResponseReceived, DataReceived, StreamReset, ConnectionTerminated
+from h2.events import StreamEnded, RequestReceived, ResponseReceived, DataReceived, TrailersReceived, StreamReset, ConnectionTerminated
 from h2.errors import ErrorCodes as H2ErrorCodes
 from h2.exceptions import StreamClosedError, StreamIDTooLowError
 
@@ -367,33 +367,15 @@ class Http2ConnectionManager(object):
         # Http/2 response does not have reason phrase.
         empty_reason_phrase = ''
 
-        response_trailers = tuple()
-        previous_k = b''
-        previous_v = b''
-        if res.trailers:
-            for k, v in res.trailers:
-                if k == b'date' and k == previous_k:
-                    # This happens with date, which HTTPHeaderMap annoyingly splits
-                    # on the comma:
-                    # "Sat, 16 Mar 2019 01:13:21 GMT"
-                    #
-                    # This yields the following two tuples:
-                    # (b'date', b'Sat')
-                    # (b'date', b'16 Mar 2019 01:13:21 GMT')
-                    v = previous_v + b', ' + v
-                    response_trailers = response_trailers[0:-1]
-                response_trailers += ((k, v),)
-                previous_k, previous_v = k, v
-
         self.print_info(
             request_headers,
             req_body,
             filtered_response_headers,
             response_from_server.body,
-            response_trailers,
+            response_from_server.trailers,
             response_from_server.status_code,
             empty_reason_phrase)
-        return filtered_response_headers, response_from_server.body, response_trailers
+        return filtered_response_headers, response_from_server.body, response_from_server.trailers
 
     def request_received(self, request_headers, req_body, stream_id):
         if self.is_h2_to_server:
@@ -403,7 +385,15 @@ class Http2ConnectionManager(object):
             return self._send_http1_request_to_server(
                 request_headers, req_body, stream_id)
 
-    def print_info(self, request_headers, req_body, response_headers, res_body, response_trailers, response_status, response_reason):
+    def print_info(
+            self,
+            request_headers,
+            req_body,
+            response_headers,
+            res_body,
+            response_trailers,
+            response_status,
+            response_reason):
         def parse_qsl(s):
             return '\n'.join(
                 "%-20s %s" %
@@ -577,6 +567,7 @@ class Http2Connection:
         response_headers_raw = None
         response_body = b''
         response_stream_ended = False
+        trailers = None
         errors = []
         while not response_stream_ended:
             # Read raw data from the socket.
@@ -595,6 +586,9 @@ class Http2Connection:
                         event.flow_controlled_length, event.stream_id)
                     # Received more response body data.
                     response_body += event.data
+                if isinstance(event, TrailersReceived):
+                    # Received trailer headers.
+                    trailers = event.headers
                 if isinstance(event, StreamReset):
                     # Stream reset by the server.
                     print(
@@ -622,9 +616,6 @@ class Http2Connection:
                             for key, value in response_headers_raw]
         status_code = next(
             (t[1] for t in response_headers if t[0] == ':status'), None)
-        # Trailer header support will be added in the coming PR. Hardcode it to
-        # None for now.
-        trailers = None
         return Response(status_code, Headers(response_headers), response_body, trailers, errors)
 
     def close(self):

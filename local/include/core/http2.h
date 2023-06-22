@@ -197,17 +197,17 @@ protected:
   static void terminate(SSL_CTX *&client_context);
 
 private:
-  // TODO: update doxygen param for the following.
   /** Populate an nghttp2 vector from the information in an HttpHeader instance.
    *
    * @param[in] hdr The instance from which to pack headers.
+   * @param[in] is_trailer Whether the headers are trailers.
    * @param[out] nv_hdr The packed headers.
    * @param[out] hdr_count The size of the nv_hdr vector.
    *
    * @return Any errata information from the packing operation.
    */
   swoc::Errata
-  pack_headers(HttpHeader const &hdr, bool trailer, nghttp2_nv *&nv_hdr, int &hdr_count);
+  pack_headers(HttpHeader const &hdr, bool is_trailer, nghttp2_nv *&nv_hdr, int &hdr_count);
   nghttp2_nv tv_to_nv(char const *name, swoc::TextView v);
   void set_expected_response_for_last_request(HttpHeader const &response);
 

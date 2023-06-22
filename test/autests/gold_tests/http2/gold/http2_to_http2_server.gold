@@ -1,5 +1,5 @@
 ``
-``Ready with 4 transactions.
+``Ready with 5 transactions.
 ``
 :method: GET
 :scheme: https
@@ -84,4 +84,6 @@ x-response-header: response
 content-length: 0
 uuid: 4
 
+``
+``Received an HTTP/2 request for key 5 with stream id 9:
 ``

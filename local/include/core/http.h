@@ -396,6 +396,7 @@ public:
 
   /** Verify that the (header) fields in 'this' correspond to the provided rules.
    *
+   * @param key The key for this transaction.
    * @param rules_ HeaderRules to iterate over, contains RuleCheck objects
    * @return Whether any rules were violated
    */
@@ -403,6 +404,7 @@ public:
 
   /** Verify that the (trailer) fields in 'this' correspond to the provided rules.
    *
+   * @param key The key for this transaction.
    * @param rules_ HeaderRules to iterate over, contains RuleCheck objects
    * @return Whether any rules were violated
    */
@@ -618,10 +620,9 @@ struct Txn
 
   /// How long the user said to delay for this transaction.
   std::chrono::microseconds _user_specified_delay_duration{0};
-  HttpHeader _req; ///< Request to send.
-  HttpHeader _rsp; ///< Rules for response to expect.
-  // TODO: zli11: understand the following naming and comment. May need modify.
-  HttpHeader _rsp_trailer; ///< Rules for response to expect.
+  HttpHeader _req;         ///< Request to send.
+  HttpHeader _rsp;         ///< Rules for response to expect.
+  HttpHeader _rsp_trailer; ///< Rules for response trailer to expect.
 };
 
 struct Ssn

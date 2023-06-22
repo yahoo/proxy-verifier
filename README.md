@@ -29,6 +29,7 @@ Table of Contents
          * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
       * [Traffic Verification Specification](#traffic-verification-specification)
          * [Field Verification](#field-verification)
+            * [meta headers](#meta-headers)
          * [URL Verification](#url-verification)
          * [Status Verification](#status-verification)
          * [Body Verification](#body-verification)
@@ -368,6 +369,30 @@ therefore, would look like the following:
       - [ Content-Type, image/jpeg ]
     content:
       size: 3432
+```
+
+Trailer response headers are useful for transmitting additional fields after the message body, providing dynamically generated metadata such as integrity checks or post-processing status. Proxy Verifier supports sending and verifying trailer headers, as demonstrated below:
+```YAML
+
+  server-response:
+    status: 200
+    headers:
+      fields:
+      # Some fields...
+    content:
+      # Some data...
+    trailers:
+      encoding: esc_json
+      fields:
+      - [ x-test-trailer-1, one ]
+      - [ x-test-trailer-2, two ]
+  proxy-response:
+    # Other verifications...
+    trailers:
+      fields:
+      # Verify the client receives the response trailers.
+      - [ x-test-trailer-1, { value: one, as: equal } ]
+      - [ x-test-trailer-2, { value: two, as: equal } ]
 ```
 
 It is also possible to specify everything as a sequence of frames. The available
@@ -1003,6 +1028,23 @@ The `not` and `case: ignore` directives can both be applied on the same rule. Th
 
 ```YAML
   - [ X-Forwarded-For, { value: a, not: prefix, case: ignore } ]
+```
+
+#### meta headers
+In addition to the directives that check the actual content of individual
+fields, Proxy Verifier supports meta-fields denoted by an `@` prefix that serve
+as directives for the tool to perform custom operations. The following
+demonstrates the usage of the `@hasfields` meta-field to verify that the
+`header` node has at least one field:
+
+```YAML
+proxy-response:
+  headers:
+    fields:
+    - [ :status, { value: 200, as: equal } ]
+    - [ Cache-Control, private ]
+    - [ Content-Length, { value: '16', as: equal } ]
+    - [ "@hasfields", { value: true, as: equal } ]
 ```
 
 ### URL Verification

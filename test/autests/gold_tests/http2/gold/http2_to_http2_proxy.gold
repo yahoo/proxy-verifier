@@ -100,4 +100,32 @@ uuid: 4
 
 ==== RESPONSE BODY ====
 b''
+
+StreamEnded
+==== REQUEST HEADERS ====
+:method: GET
+:scheme: https
+:path: /a/path?q=3
+:authority: example.data.com
+accept: */*
+accept-language: en-us
+accept-encoding: gzip
+host: example.data.com
+content-length: 0
+uuid: 5
+
+==== RESPONSE ====
+200
+
+==== RESPONSE HEADERS ====
+:status: 200
+cache-control: private
+content-type: application/json;charset=utf-8
+content-length: 16
+date: Sat, 16 Mar 2019 01:13:21 GMT
+age: 0
+uuid: 5
+
+==== RESPONSE BODY ====
+b'0123456789abcdef'
 ``

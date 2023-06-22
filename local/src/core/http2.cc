@@ -446,9 +446,13 @@ on_begin_headers_callback(
     response_headers->_contains_pseudo_headers_in_fields_array = true;
     break;
   }
-  case NGHTTP2_HCAT_PUSH_RESPONSE:
   case NGHTTP2_HCAT_HEADERS:
+    // Headers that are not request or response headers. Trailer headers, for
+    // example, falls into this category.
+    break;
+  default:
     errata.note(S_ERROR, "Got HTTP/2 headers for an unimplemented category: {}", headers_category);
+    break;
   }
   return 0;
 }
@@ -514,16 +518,17 @@ on_header_callback(
     }
     break;
   }
+  case NGHTTP2_HCAT_HEADERS: {
+    auto &response_headers = stream_state->_response_from_server;
+    response_headers->_trailer_fields_rules->add_field(name_view, value_view);
+    break;
+  }
   case NGHTTP2_HCAT_PUSH_RESPONSE:
     errata.note(
         S_ERROR,
         "Got HTTP/2 an header for an unimplemented category: {}",
         headers_category);
     return 0;
-  case NGHTTP2_HCAT_HEADERS:
-    auto &response_headers = stream_state->_response_from_server;
-    response_headers->_trailer_fields_rules->add_field(name_view, value_view);
-    break;
   }
   return 0;
 }
@@ -949,6 +954,7 @@ on_stream_close_cb(
 
   auto const specified_response = stream_state._specified_response;
   if (specified_response && specified_response->_trailer_fields_rules->_rules.size()) {
+    // Verify trailer fields at the end of the stream.
     auto response_from_wire = stream_state._response_from_server;
     auto const &key = stream_state._key;
 
@@ -1143,7 +1149,9 @@ data_read_callback(
     if (stream_state->_send_body_offset >= stream_state->_send_body_length) {
       *data_flags |= NGHTTP2_DATA_FLAG_EOF;
       if (stream_state->_trailer_to_send) {
+        // Don't set the END_STREAM flag if we have trailers to send.
         *data_flags |= NGHTTP2_DATA_FLAG_NO_END_STREAM;
+        // Send the trailers.
         nghttp2_submit_trailer(
             session,
             stream_id,
@@ -1531,6 +1539,7 @@ H2Session::write(HttpHeader const &hdr)
       stream_state->_send_body_length = content.size();
       stream_state->_wait_for_continue = hdr.is_request_with_expect_100_continue();
       if (hdr.is_response()) {
+        // Pack the trailer headers.
         pack_headers(hdr, true, stream_state->_trailer_to_send, stream_state->_trailer_length);
         submit_result = nghttp2_submit_response(
             this->_session,
@@ -1600,7 +1609,7 @@ H2Session::write(HttpHeader const &hdr)
 }
 
 Errata
-H2Session::pack_headers(HttpHeader const &hdr, bool trailer, nghttp2_nv *&nv_hdr, int &hdr_count)
+H2Session::pack_headers(HttpHeader const &hdr, bool is_trailer, nghttp2_nv *&nv_hdr, int &hdr_count)
 {
   Errata errata;
   if (!_h2_is_negotiated) {
@@ -1609,12 +1618,12 @@ H2Session::pack_headers(HttpHeader const &hdr, bool trailer, nghttp2_nv *&nv_hdr
   }
 
   auto fields_rules = hdr._fields_rules;
-  if (trailer) {
+  if (is_trailer) {
     fields_rules = hdr._trailer_fields_rules;
   }
   hdr_count = fields_rules->_fields.size();
 
-  if (!trailer && !hdr._contains_pseudo_headers_in_fields_array) {
+  if (!is_trailer && !hdr._contains_pseudo_headers_in_fields_array) {
     if (hdr.is_response()) {
       hdr_count += 1;
     } else if (hdr.is_request()) {
@@ -1634,7 +1643,7 @@ H2Session::pack_headers(HttpHeader const &hdr, bool trailer, nghttp2_nv *&nv_hdr
   // nghttp2 requires pseudo header fields to be at the start of the
   // nv array. Thus we add them here before calling add_fields_to_ngnva
   // which then skips the pseueo headers if they are in there.
-  if (!trailer) {
+  if (!is_trailer) {
     if (hdr.is_response() && !hdr._status_string.empty()) {
       nv_hdr[offset++] = tv_to_nv(":status", hdr._status_string);
     } else if (hdr.is_request()) {
