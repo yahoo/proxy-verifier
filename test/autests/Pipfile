@@ -15,7 +15,7 @@ pyflakes = "*"
 
 [packages]
 autest = "*"
-"httpx[http2]" = "*"
+"h2" = "*"
 pyOpenSSL = "*"
 eventlet = "*"
 ruamel_yaml = "*"

@@ -18,14 +18,10 @@ connection: keep-alive
 ``
 :method: POST
 :scheme: https
-:authority: 127.0.0.1:``
+:authority: www.example.com
 :path: /pictures/flower.jpeg
-accept: ``
-accept-encoding: ``
-user-agent: ``
 content-type: image/jpeg
 uuid: second-request
-content-length: ``
 
 ``
 :status: 200

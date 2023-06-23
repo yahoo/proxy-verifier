@@ -58,7 +58,7 @@ sessions:
       - [ scheme, { value: https, as: equal } ]
       - [ host, { value: example.data.com, as: equal } ]
       - [ path, { value: /a/path, as: equal } ]
-      - [ authority, { value: 127.0.0.1, as: contains } ]
+      - [ authority, { value: example.data.com, as: equal } ]
       - [ net-loc, { value: example.data.com, as: equal } ]
       - [ query, { value: q=3, as: present } ]
       - [ query, { value: 3, as: contains } ]
@@ -73,8 +73,7 @@ sessions:
         - [ :scheme, { value: https, as: equal } ]
         - [ :authority, { value: example.data.com, as: equal } ]
         - [ :path, { value: '/a/path?q=3', as: equal } ]
-        # The Python httpx test proxy doesn't send the Host header.
-        - [ Host, { as: absent } ]
+        - [ Host, { value: example.data.com, as: equal } ]
         - [ Content-Length, { value: "0", as: equal } ]
         - [ x-test-duplicate-combined, { value: [ first, second ], as: equal } ]
         - [ x-test-duplicate-separate, { value: [ first, second ], as: equal } ]
@@ -146,16 +145,12 @@ sessions:
         fields:
         - [ :method, { value: POST, as: equal } ]
         - [ :scheme, { value: https, as: equal } ]
-        # Our Python httpx proxy changes the `:authority` header to:
-        # 127.0.0.1:<some_port>
-        - [ :authority, { value: 127.0.0.1, as: contains } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
         - [ :path, /a/path ]
         - [ X-Request-Header, { as: present } ]
         - [ X-Added-Header, { as: present } ]
         - [ X-Deleted-Header, { as: absent } ]
-        # Annoyingly, the Python httpx HTTP/2 client we use as a test proxy
-        # inserts a Content-Length header.
-        #- [ Content-Length, { as: absent } ]
+        - [ Content-Length, { as: absent } ]
 
     server-response:
       headers:
@@ -216,7 +211,7 @@ sessions:
         fields:
         - [ :method, { value: GET, as: equal } ]
         - [ :scheme, { value: https, as: equal } ]
-        - [ :authority, { value: 127.0.0.1, as: contains } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
         - [ :path, { value: /b/path, as: equal } ]
         - [ X-Request-Header, { value: test_request, as: equal } ]
 
@@ -268,7 +263,7 @@ sessions:
         fields:
         - [ :method, { value: GET, as: equal } ]
         - [ :scheme, { value: https, as: equal } ]
-        - [ :authority, { value: 127.0.0.1, as: contains } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
         - [ :path, { value: /b/path, as: equal } ]
         - [ X-Request-Header, { value: test_request, as: equal } ]
 
