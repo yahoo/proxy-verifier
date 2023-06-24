@@ -78,7 +78,11 @@ ProxyProtocolMsg::parse_pp_header_v1(swoc::TextView data)
 
   auto n = swoc::svto_radix<10>(srcPortView);
   if (n <= 0 || n > MAX_PORT) {
-    zret.note(S_ERROR, R"(PROXY header source port value {} out of range [ 1 .. {} ].)", n, MAX_PORT);
+    zret.note(
+        S_ERROR,
+        R"(PROXY header source port value {} out of range [ 1 .. {} ].)",
+        n,
+        MAX_PORT);
     return zret;
   }
   in_port_t srcPort = static_cast<in_port_t>(n);
@@ -91,7 +95,11 @@ ProxyProtocolMsg::parse_pp_header_v1(swoc::TextView data)
   }
   n = swoc::svto_radix<10>(dstPortView);
   if (n <= 0 || n > MAX_PORT) {
-    zret.note(S_ERROR, R"(PROXY header destination port value {} out of range [ 1 .. {} ].)", n, MAX_PORT);
+    zret.note(
+        S_ERROR,
+        R"(PROXY header destination port value {} out of range [ 1 .. {} ].)",
+        n,
+        MAX_PORT);
     return zret;
   }
   in_port_t dstPort = static_cast<in_port_t>(n);
@@ -194,7 +202,7 @@ ProxyProtocolMsg::serialize(swoc::BufferWriter &buf) const
 };
 
 swoc::Errata
-ProxyProtocolMsg::construct_v1_header(swoc::BufferWriter & buf) const
+ProxyProtocolMsg::construct_v1_header(swoc::BufferWriter &buf) const
 {
   swoc::Errata errata;
   buf.print(
