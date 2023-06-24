@@ -385,13 +385,13 @@ static int
 cb_stream_stop_sending(
     ngtcp2_conn * /* tconn */,
     int64_t stream_id,
-    uint64_t /* app_error_code */,
+    uint64_t app_error_code,
     void *conn_data,
     void * /* stream_user_data */)
 {
   H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int rv = nghttp3_conn_shutdown_stream_read(h3_session->quic_socket.h3conn, stream_id);
-  if (rv) {
+  int rv = ngtcp2_conn_shutdown_stream_read(h3_session->quic_socket.qconn, 0, stream_id, app_error_code);
+  if (rv && rv != NGTCP2_ERR_STREAM_NOT_FOUND) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -405,11 +405,11 @@ constexpr int FAILED = 1;
 static int initialize_nghttp3_connection(H3Session *session);
 
 static int
-cb_recv_rx_key(ngtcp2_conn * /* tconn */, ngtcp2_crypto_level level, void *conn_data)
+cb_recv_rx_key(ngtcp2_conn * /* tconn */, ngtcp2_encryption_level level, void *conn_data)
 {
   H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
 
-  if (level != NGTCP2_CRYPTO_LEVEL_APPLICATION) {
+  if (level != NGTCP2_ENCRYPTION_LEVEL_1RTT) {
     return 0;
   }
 
@@ -1184,7 +1184,7 @@ cb_h3_reset_stream(
   auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
   Errata errata;
 
-  int rv = ngtcp2_conn_shutdown_stream_write(qs.qconn, stream_id, app_error_code);
+  int rv = ngtcp2_conn_shutdown_stream_write(qs.qconn, 0, stream_id, app_error_code);
   errata.note(
       S_DIAG,
       "Received an HTTP/3 reset stream for key {} with stream id {}, app error code {} rv {}",
@@ -1214,6 +1214,7 @@ static nghttp3_callbacks nghttp3_client_callbacks = {
     cb_h3_end_stream,
     cb_h3_reset_stream,
     nullptr, /* shutdown */
+    nullptr, /* rcv_settings */
 };
 // -----------------------------------------------------
 // End nghttp3 callbacks.
@@ -1304,7 +1305,7 @@ configure_quic_socket_settings(QuicSocket &qs, uint64_t stream_buffer_size)
   t->initial_max_streams_uni = 3;
   t->max_idle_timeout = duration_cast<milliseconds>(QUIC_IDLE_TIMEOUT).count();
   if (qs.qlogfd != -1) {
-    s->qlog.write = QuicSocket::qlog_callback;
+    s->qlog_write = QuicSocket::qlog_callback;
   }
 }
 
