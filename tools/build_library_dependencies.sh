@@ -66,7 +66,7 @@ sudo chmod -R ugo+rX ${install_dir}/openssl
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/nghttp3
 cd nghttp3/
-git checkout v0.11.0
+git checkout v0.12.0
 autoreconf -i
 ./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
 make -j ${num_threads}
@@ -77,7 +77,7 @@ sudo chmod -R ugo+rX ${install_dir}/nghttp3
 cd ${repo_dir}
 git clone https://github.com/ngtcp2/ngtcp2
 cd ngtcp2
-git checkout v0.15.0
+git checkout v0.16.0
 autoreconf -i
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
