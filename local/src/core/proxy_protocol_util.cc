@@ -9,13 +9,14 @@
 #include "core/ProxyVerifier.h"
 #include <codecvt>
 #include <locale>
+#include "swoc/IPSrv.h"
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/swoc_ip.h"
 
-using swoc::Errata;
 using swoc::TextView;
 using swoc::IPAddr;
+using swoc::IPSrv;
 
 void
 ProxyProtocolMsg::set_endpoints(const swoc::IPEndpoint &src_ep, const swoc::IPEndpoint &dst_ep)
@@ -72,17 +73,31 @@ ProxyProtocolMsg::parse_pp_header_v1(swoc::TextView data)
     zret.note(S_ERROR, "Invalid PROXY header: expecting source port");
     return zret;
   }
-  auto srcPort = swoc::svto_radix<10>(srcPortView);
+
+  static constexpr in_port_t MAX_PORT{std::numeric_limits<in_port_t>::max()};
+
+  auto n = swoc::svto_radix<10>(srcPortView);
+  if (n <= 0 || n > MAX_PORT) {
+    zret.note(S_ERROR, R"(PROXY header source port value {} out of range [ 1 .. {} ].)", n, MAX_PORT);
+    return zret;
+  }
+  in_port_t srcPort = static_cast<in_port_t>(n);
+
   // parse the dest port
   auto dstPortView = data.split_prefix_at('\r');
   if (dstPortView.empty()) {
     zret.note(S_ERROR, "Invalid PROXY header: expecting destination port");
     return zret;
   }
-  auto dstPort = swoc::svto_radix<10>(dstPortView);
+  n = swoc::svto_radix<10>(dstPortView);
+  if (n <= 0 || n > MAX_PORT) {
+    zret.note(S_ERROR, R"(PROXY header destination port value {} out of range [ 1 .. {} ].)", n, MAX_PORT);
+    return zret;
+  }
+  in_port_t dstPort = static_cast<in_port_t>(n);
   // assign the source and destination addresses
-  _src_addr.assign(srcIP, htons(srcPort));
-  _dst_addr.assign(dstIP, htons(dstPort));
+  _src_addr.assign(IPSrv{srcIP, srcPort});
+  _dst_addr.assign(IPSrv{dstIP, dstPort});
   if (!_src_addr.is_valid() || !_dst_addr.is_valid()) {
     zret.note(S_ERROR, "Invalid PROXY header: IP address not valid");
     return zret;
@@ -115,20 +130,20 @@ ProxyProtocolMsg::parse_pp_header_v2(swoc::TextView data)
       // the ntohl() is needed because the address is stored in network byte
       // order and IPAddr expects a host byte order, which would in turn get
       // converted to network byte order in IPEndpoint.assign()
-      _src_addr.assign(
-          IPAddr(reinterpret_cast<in_addr_t>(ntohl(hdr->v2.addr.ip4.src_addr))),
-          hdr->v2.addr.ip4.src_port);
-      _dst_addr.assign(
-          IPAddr(reinterpret_cast<in_addr_t>(ntohl(hdr->v2.addr.ip4.dst_addr))),
-          hdr->v2.addr.ip4.dst_port);
+      _src_addr.assign(IPSrv{
+          IPAddr{reinterpret_cast<in_addr_t>(ntohl(hdr->v2.addr.ip4.src_addr))},
+          ntohs(hdr->v2.addr.ip4.src_port)});
+      _dst_addr.assign(IPSrv{
+          IPAddr{reinterpret_cast<in_addr_t>(ntohl(hdr->v2.addr.ip4.dst_addr))},
+          ntohs(hdr->v2.addr.ip4.dst_port)});
       break;
     case 0x21: /* TCPv6 */
     {
       // IPv6 address doesn't have to handle endianess
       IPAddr srcAddr(reinterpret_cast<const in6_addr &>(hdr->v2.addr.ip6.src_addr));
       IPAddr dstAddr(reinterpret_cast<const in6_addr &>(hdr->v2.addr.ip6.dst_addr));
-      _src_addr.assign(srcAddr, hdr->v2.addr.ip6.src_port);
-      _dst_addr.assign(dstAddr, hdr->v2.addr.ip6.dst_port);
+      _src_addr.assign(IPSrv{srcAddr, ntohs(hdr->v2.addr.ip6.src_port)});
+      _dst_addr.assign(IPSrv{dstAddr, ntohs(hdr->v2.addr.ip6.dst_port)});
       break;
     }
     default:
@@ -179,7 +194,7 @@ ProxyProtocolMsg::serialize(swoc::BufferWriter &buf) const
 };
 
 swoc::Errata
-ProxyProtocolMsg::construct_v1_header(swoc::BufferWriter &buf) const
+ProxyProtocolMsg::construct_v1_header(swoc::BufferWriter & buf) const
 {
   swoc::Errata errata;
   buf.print(
@@ -192,7 +207,7 @@ ProxyProtocolMsg::construct_v1_header(swoc::BufferWriter &buf) const
       S_DIAG,
       "construcuting {} bytes of proxy protocol v1 header content:\n{}",
       buf.size(),
-      buf);
+      TextView{buf});
   return errata;
 }
 

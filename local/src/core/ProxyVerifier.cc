@@ -14,6 +14,7 @@
 #include <csignal>
 #include <dirent.h>
 #include <fcntl.h>
+#include <iostream>
 #include <netdb.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -25,6 +26,7 @@
 #include <thread>
 #include <unistd.h>
 
+#include "swoc/IPSrv.h"
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
@@ -181,9 +183,9 @@ Resolve_FQDN(swoc::TextView fqdn)
       swoc::TextView text(port_str);
       auto n = swoc::svto_radix<10>(text);
       if (text.empty() && 0 < n && n <= MAX_PORT) {
-        port = htons(n);
+        port = n;
         if (addr.load(host_str)) {
-          zret.result().assign(addr, port);
+          zret.result().assign(swoc::IPSrv{addr, port});
         } else {
           addrinfo *addrs = nullptr;
           addrinfo hints;
@@ -196,8 +198,8 @@ Resolve_FQDN(swoc::TextView fqdn)
           hints.ai_flags = 0;
           auto result = getaddrinfo(buff, nullptr, &hints, &addrs);
           if (0 == result) {
-            zret.result().assign(addrs->ai_addr);
-            zret.result().network_order_port() = port;
+            zret.result().assign(swoc::IPSrv{addrs->ai_addr});
+            zret.result().network_order_port() = htons(port);
             freeaddrinfo(addrs);
           } else {
             zret.note(
