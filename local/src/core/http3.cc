@@ -390,7 +390,8 @@ cb_stream_stop_sending(
     void * /* stream_user_data */)
 {
   H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int rv = ngtcp2_conn_shutdown_stream_read(h3_session->quic_socket.qconn, 0, stream_id, app_error_code);
+  int rv =
+      ngtcp2_conn_shutdown_stream_read(h3_session->quic_socket.qconn, 0, stream_id, app_error_code);
   if (rv && rv != NGTCP2_ERR_STREAM_NOT_FOUND) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
