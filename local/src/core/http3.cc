@@ -1936,7 +1936,7 @@ H3Session::write(HttpHeader const &hdr)
     nghttp3_data_reader data_reader;
     data_reader.read_data = cb_h3_readfunction;
     stream_state->body_to_send = TextView{content.data(), content.size()};
-    stream_state->wait_for_continue = hdr._send_continue;
+    stream_state->wait_for_continue = hdr.is_request_with_expect_100_continue();
     if (hdr.is_response()) {
       submit_result = nghttp3_conn_submit_response(
           quic_socket.h3conn,

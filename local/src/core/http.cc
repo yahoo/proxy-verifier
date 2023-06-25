@@ -568,6 +568,18 @@ HttpHeader::is_response() const
   return !_is_request;
 }
 
+void
+HttpHeader::set_is_request_with_expect_100_continue()
+{
+  this->_contains_expect_100_continue = true;
+}
+
+bool
+HttpHeader::is_request_with_expect_100_continue() const
+{
+  return this->_contains_expect_100_continue;
+}
+
 bool
 icompare_pred(unsigned char a, unsigned char b)
 {
@@ -957,9 +969,11 @@ Session::write(HttpHeader const &hdr)
 
   if (header_bytes_written == static_cast<ssize_t>(w.size())) {
     zret.result() = header_bytes_written;
-    auto &&[body_bytes_written, body_write_errata] = write_body(hdr);
-    zret.note(std::move(body_write_errata));
-    zret.result() += body_bytes_written;
+    if (!hdr.is_request_with_expect_100_continue()) {
+      auto &&[body_bytes_written, body_write_errata] = write_body(hdr);
+      zret.note(std::move(body_write_errata));
+      zret.result() += body_bytes_written;
+    }
   } else {
     zret.note(
         S_ERROR,
@@ -1395,11 +1409,12 @@ Errata
 Session::run_transaction(Txn const &json_txn)
 {
   Errata errata;
-  auto &&[bytes_written, write_errata] = this->write(json_txn._req);
+  auto &request = json_txn._req;
+  auto &&[bytes_written, write_errata] = this->write(request);
   errata.note(std::move(write_errata));
 
   if (errata.is_ok()) {
-    auto const key{json_txn._req.get_key()};
+    auto const key{request.get_key()};
     HttpHeader rsp_hdr_from_wire;
     rsp_hdr_from_wire.set_is_response();
     // The response headers are not required to have the key. For logging
@@ -1428,22 +1443,36 @@ Session::run_transaction(Txn const &json_txn)
           return errata;
         }
         if (rsp_hdr_from_wire._status == 100) {
-          errata.note(S_DIAG, "100-Continue response. Read another header.");
-          rsp_hdr_from_wire = HttpHeader{};
-          w.clear();
-          auto read_result{this->read_headers(w)};
+          if (request.is_request_with_expect_100_continue()) {
+            errata.note(S_DIAG, "100-Continue response: Send the request body for key{}.", key);
+            auto &&[body_bytes_written, body_write_errata] = write_body(request);
+            if (body_write_errata.is_ok()) {
+              bytes_written += body_bytes_written;
+            } else {
+              errata.note(S_ERROR, "Failed to write body after 100 Continue for key {}.", key);
+            }
+            errata.note(S_DIAG, "100-Continue response: Read another header. for key {}", key);
+            rsp_hdr_from_wire = HttpHeader{};
+            w.clear();
+            auto read_result{this->read_headers(w)};
 
-          if (read_result.is_ok()) {
-            _body_offset = read_result;
-            auto result{rsp_hdr_from_wire.parse_response(TextView(w.data(), _body_offset))};
+            if (read_result.is_ok()) {
+              _body_offset = read_result;
+              auto result{rsp_hdr_from_wire.parse_response(TextView(w.data(), _body_offset))};
 
-            if (!result.is_ok()) {
-              errata.note(S_ERROR, R"(Failed to parse post 100 header.)");
+              if (!result.is_ok()) {
+                errata.note(S_ERROR, "Failed to parse post 100 header for key {}.", key);
+                return errata;
+              }
+            } else {
+              errata.note(S_ERROR, "Failed to read post 100 header for key {}.", key);
               return errata;
             }
           } else {
-            errata.note(S_ERROR, R"(Failed to read post 100 header.)");
-            return errata;
+            errata.note(
+                S_ERROR,
+                "Unexpected 100-Continue response non Expect: 100-Continue request for key {}.",
+                key);
           }
         }
         errata.note(

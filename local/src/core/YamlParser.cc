@@ -458,6 +458,13 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
       }
     }
   }
+  auto const it = message._fields_rules->_fields.find(FIELD_EXPECT);
+  if (it != message._fields_rules->_fields.end()) {
+    TextView value{it->second};
+    if (0 == strcasecmp("100-continue"_tv, value)) {
+      message.set_is_request_with_expect_100_continue();
+    }
+  }
 
   if (!message._method.empty() && message._authority.empty()) {
     // The URL didn't have the authority. Get it from the Host header if it
