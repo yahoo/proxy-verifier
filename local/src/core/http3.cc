@@ -52,8 +52,10 @@ using chrono::milliseconds;
 using chrono::nanoseconds;
 
 constexpr auto QUIC_MAX_STREAMS = 256 * 1024;
-constexpr auto QUIC_MAX_DATA = 1 * 1024 * 1024;
 constexpr auto QUIC_IDLE_TIMEOUT = 60s;
+constexpr auto QUIC_HANDSHAKE_TIMEOUT = 10s;
+
+constexpr auto H3_STREAM_WINDOW_SIZE = 128 * 1024;
 
 // TextView H3_ALPN_H3_29_H3 = "\x5h3-29\x2h3";
 TextView H3_ALPN_H3_29_H3 = "\x5h3-29";
@@ -218,36 +220,43 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::Nghttp3Error const &error)
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
 
+/** Return a representation of the current time compatible with ngtcp
+ * expectations.
+ *
+ * @return The current time.
+ */
+static ngtcp2_tstamp
+timestamp()
+{
+  auto const current_time = ClockType::now();
+  auto const duration_since_epoch = current_time.time_since_epoch();
+  return duration_cast<nanoseconds>(duration_since_epoch).count();
+}
+
+PacketIoContext::PacketIoContext()
+{
+  ts = timestamp();
+  ngtcp2_path_storage_zero(&ps);
+}
+
 /** Receive data off of the socket.
  *
  * @return -1 on failure, otherwise the number of bytes received.
  */
-static swoc::Rv<int> ngtcp2_process_ingress(H3Session &session, milliseconds timeout);
+static swoc::Rv<int>
+ngtcp2_progress_ingress(H3Session &session, milliseconds timeout, PacketIoContext *packet_context);
 
 /** Send data on the socket.
  *
  * @return -1 on failure, otherwise the number of bytes sent.
  */
-static swoc::Rv<int> ngtcp2_flush_egress(H3Session &session);
+static swoc::Rv<int> ngtcp2_progress_egress(H3Session &session, PacketIoContext *packet_context);
 
 static ngtcp2_conn *
 get_conn(ngtcp2_crypto_conn_ref *conn_ref)
 {
   H3Session *h3_session = reinterpret_cast<H3Session *>(conn_ref->user_data);
   return h3_session->quic_socket.qconn;
-}
-
-/** Return a representation of the current time compatible with ngtcp
- * expectations.
- *
- * @return The current time.
- */
-static long
-timestamp()
-{
-  auto const current_time = ClockType::now();
-  auto const duration_since_epoch = current_time.time_since_epoch();
-  return duration_cast<nanoseconds>(duration_since_epoch).count();
 }
 
 // --------------------------------------------
@@ -533,117 +542,267 @@ static ngtcp2_callbacks server_ngtcp2_callbacks = {
 // End ngtcp2 callbacks.
 // --------------------------------------------
 
-static swoc::Rv<int>
-ngtcp2_process_ingress(H3Session &session, milliseconds timeout)
+/** Check the ngtcp2 interface whether it wants us to check back in an "expiry" nanoseconds.
+ *
+ * @param session The H3Session to check.
+ * @param timeout The timeout to check.
+ * @param packet_context The packet context to use for the check.
+ *
+ * @return The nanoseconds to wait before checking back in, or 0 if we should not check back in.
+ */
+#if 0
+static swoc::Rv<nanoseconds>
+check_and_set_expiry(H3Session &session, milliseconds timeout, PacketIoContext *packet_context)
 {
-  uint8_t buf[65536];
-  size_t bufsize = sizeof(buf);
-  struct sockaddr_storage remote_addr;
-  socklen_t remote_addrlen = sizeof(remote_addr);
-  ssize_t num_bytes_received = 0;
-  swoc::Rv<int> zret{-1};
+  struct PacketIoContext local_packet_context;
+  swoc::Rv<nanoseconds> zret{0ns};
 
-  for (;;) {
-    num_bytes_received = recvfrom(
-        session.get_fd(),
-        (char *)buf,
-        bufsize,
-        0,
-        (struct sockaddr *)&remote_addr,
-        &remote_addrlen);
-    if (num_bytes_received > 0) {
-      // Success. We read data off the socket.
-      break;
-    }
-    if (num_bytes_received == -1) {
-      if (errno == EINTR) {
-        continue;
-      } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        auto &&[poll_return, poll_errata] = session.poll_for_data_on_socket(timeout);
-        zret.note(std::move(poll_errata));
-        if (!zret.is_ok()) {
-          zret.note(std::move(poll_errata));
-          zret.note(S_ERROR, "Failed to poll for HTTP/3 data.");
-          session.close();
-          zret = -1;
-          return zret;
-        } else if (poll_return > 0) {
-          // Simply repeat the read now that poll says something is ready.
-        } else if (poll_return == 0) {
-          zret.note(S_ERROR, "Poll timed out waiting to read HTTP/3 content.");
-          session.close();
-          zret = -1;
-          return zret;
-        } else if (poll_return < 0) {
-          // Connection was closed. Nothing to do.
-          zret.note(S_DIAG, "The peer closed the HTTP/3 connection while reading during poll.");
-          zret = 0;
-          return zret;
-        }
-        continue;
-      } else {
-        zret.note(S_ERROR, "ngtcp2_process_ingress: unexpected recvfrom() errno: {}", Errno{});
-        session.close();
-        zret = -1;
+  if(!packet_context) {
+    packet_context = &local_packet_context;
+  }
+  else {
+    packet_context->ts = timestamp();
+  }
+
+  ngtcp2_conn *qconn = session.quic_socket.qconn;
+  ngtcp2_tstamp expiry = ngtcp2_conn_get_expiry(qconn);
+  if(expiry != UINT64_MAX) {
+    if(expiry <= packet_context->ts) {
+      int rv = ngtcp2_conn_handle_expiry(qconn, packet_context->ts);
+      if(rv) {
+        zret.note(S_ERROR, "ngtcp2_conn_handle_expiry returned error: {}", Ngtcp2Error{rv});
+        ngtcp2_ccerr_set_liberr(&session.quic_socket.last_error, rv, NULL, 0);
         return zret;
       }
+      auto &&[ingress_bytes, ingress_errata] = ngtcp2_progress_ingress(session, timeout, packet_context);
+      zret.note(ingress_errata);
+      if(!zret.is_ok()) {
+        return zret;
+      }
+      auto &&[egress_bytes, egress_errata] = ngtcp2_progress_egress(session, packet_context);
+      zret.note(egress_errata);
+      if (!zret.is_ok()) {
+        return zret;
+      }
+      /* ask again, things might have changed */
+      expiry = ngtcp2_conn_get_expiry(qconn);
+    }
+
+    if(expiry > packet_context->ts) {
+      zret = nanoseconds{expiry - packet_context->ts};
     }
   }
+  return zret;
+}
+#endif
 
+/** Receive a single QUIC packet.
+ *
+ * @return 0 on success, -1 on error.
+ */
+static swoc::Rv<int>
+receive_packet(
+    QuicSocket &qs,
+    const unsigned char *pkt,
+    size_t pktlen,
+    struct sockaddr_storage *remote_addr,
+    socklen_t remote_addrlen,
+    int ecn,
+    PacketIoContext *packet_context)
+{
+  ngtcp2_pkt_info pi;
   ngtcp2_path path;
-  ngtcp2_tstamp ts = timestamp();
-  ngtcp2_pkt_info pi = {0};
+  swoc::Rv<int> zret{0};
 
-  auto &qs = session.quic_socket;
-  assert(local_addr.is_valid());
+  ++packet_context->pkt_count;
   ngtcp2_addr_init(&path.local, qs.local_addr, qs.local_addr.size());
-  ngtcp2_addr_init(&path.remote, (struct sockaddr *)&remote_addr, remote_addrlen);
+  ngtcp2_addr_init(&path.remote, (struct sockaddr *)remote_addr, remote_addrlen);
+  pi.ecn = (uint32_t)ecn;
 
-  // Process the packet.
-  int rv = ngtcp2_conn_read_pkt(qs.qconn, &path, &pi, buf, num_bytes_received, ts);
+  int const rv = ngtcp2_conn_read_pkt(qs.qconn, &path, &pi, pkt, pktlen, packet_context->ts);
   if (rv != 0) {
-    if (rv == NGTCP2_ERR_CRYPTO) {
-      ngtcp2_ccerr_set_tls_alert(&qs.last_error, ngtcp2_conn_get_tls_alert(qs.qconn), NULL, 0);
+    zret = -1;
+    if (!qs.last_error.error_code) {
+      if (rv == NGTCP2_ERR_CRYPTO) {
+        ngtcp2_ccerr_set_tls_alert(&qs.last_error, ngtcp2_conn_get_tls_alert(qs.qconn), NULL, 0);
+      } else {
+        ngtcp2_ccerr_set_liberr(&qs.last_error, rv, NULL, 0);
+      }
+    }
 
+    if (rv == NGTCP2_ERR_CRYPTO) {
       zret.note(
           S_ERROR,
-          "ngtcp2_process_ingress: ngtcp2_conn_read_pkt() had an error return "
+          "receive_packet: ngtcp2_conn_read_pkt() had an error return "
           "(likely a certificate verification problem): {}",
           Ngtcp2Error{rv});
-    } else {
-      ngtcp2_ccerr_set_liberr(&qs.last_error, rv, NULL, 0);
-      zret.note(
-          S_ERROR,
-          "ngtcp2_process_ingress: ngtcp2_conn_read_pkt() had an error return: {}",
-          Ngtcp2Error{rv});
+      return zret;
     }
-    zret = -1;
+    zret.note(
+        S_ERROR,
+        "receive_packet: ngtcp2_conn_read_pkt() had a non-Crypto error return: {}",
+        Ngtcp2Error{rv});
     return zret;
   }
-  zret.result() += num_bytes_received;
+
   return zret;
 }
 
 static swoc::Rv<int>
-ngtcp2_flush_egress(H3Session &session)
+receive_packets(
+    H3Session &session,
+    milliseconds timeout,
+    size_t max_pkts,
+    PacketIoContext *packet_context)
+{
+  uint8_t buf[64 * 1024];
+  int bufsize = (int)sizeof(buf);
+  struct sockaddr_storage remote_addr;
+  socklen_t remote_addrlen = sizeof(remote_addr);
+  size_t pkts;
+  ssize_t nread;
+  swoc::Rv<int> zret{-1};
+
+  assert(max_pkts > 0);
+  bool have_polled = false;
+  for (pkts = 0; pkts < max_pkts;) {
+    while (true) {
+      if (session.is_closed()) {
+        return zret;
+      }
+      nread = recvfrom(
+          session.get_fd(),
+          (char *)buf,
+          bufsize,
+          0,
+          (struct sockaddr *)&remote_addr,
+          &remote_addrlen);
+      if (nread > 0) {
+        // Success. We read data off the socekt.
+        break;
+      }
+      if (nread == -1) {
+        if (errno == EINTR) {
+          // Interrupted by a signal. Retry.
+          continue;
+        } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          if (have_polled) {
+            // We only poll once in this loop.
+            return zret;
+          }
+          auto &&[poll_return, poll_errata] = session.poll_for_data_on_socket(timeout);
+          have_polled = true;
+          zret.note(std::move(poll_errata));
+          if (!zret.is_ok()) {
+            zret.note(std::move(poll_errata));
+            zret.note(S_ERROR, "Failed to poll for HTTP/3 data.");
+            session.close();
+            zret = -1;
+            return zret;
+          } else if (poll_return > 0) {
+            // Simply repeat the read now that poll says something is ready.
+          } else if (poll_return == 0) {
+            zret.note(S_ERROR, "Poll timed out waiting to read HTTP/3 content.");
+            session.close();
+            zret = -1;
+            return zret;
+          } else if (poll_return < 0) {
+            // Connection was closed. Nothing to do.
+            zret.note(S_DIAG, "The peer closed the HTTP/3 connection while reading during poll.");
+            zret = 0;
+            return zret;
+          }
+          continue;
+          return zret;
+        } else if (errno == ECONNREFUSED) {
+          zret.note(S_ERROR, "Connection to peer refused.");
+          zret = -1;
+          return zret;
+        } else {
+          zret.note(S_ERROR, "receive_from_packets: unexpected recvfrom() errno: {}", Errno{});
+          session.close();
+          zret = -1;
+          return zret;
+        }
+      }
+    }
+
+    ++pkts;
+    zret.result() += (size_t)nread;
+    auto receive_result = receive_packet(
+        session.quic_socket,
+        buf,
+        (size_t)nread,
+        &remote_addr,
+        remote_addrlen,
+        0,
+        packet_context);
+    if (!receive_result.is_ok()) {
+      zret.note(std::move(receive_result));
+      return zret;
+    }
+  }
+
+  zret.note(S_DIAG, "recvfrom of {} packets with {} bytes", pkts, zret.result());
+  return zret;
+}
+
+static swoc::Rv<int>
+ngtcp2_progress_ingress(H3Session &session, milliseconds timeout, PacketIoContext *packet_context)
+{
+  swoc::Rv<int> zret{-1};
+  constexpr size_t pkts_chunk = 128;
+  constexpr size_t pkts_max = 10 * pkts_chunk;
+
+  PacketIoContext local_packet_context;
+  if (packet_context == nullptr) {
+    packet_context = &local_packet_context;
+  } else {
+    packet_context->ts = timestamp();
+  }
+
+  for (size_t i = 0; i < pkts_max; i += pkts_chunk) {
+    packet_context->pkt_count = 0;
+    auto &&[received_bytes, receive_errata] =
+        receive_packets(session, timeout, pkts_chunk, packet_context);
+    zret.note(std::move(receive_errata));
+    if (!zret.is_ok()) {
+      break;
+    }
+    zret.result() += received_bytes;
+    if (packet_context->pkt_count < pkts_chunk) /* got less than we could */
+      break;
+    /* give egress a chance before we receive more */
+    auto &&[flushed_bytes, flushed_errata] = ngtcp2_progress_egress(session, packet_context);
+    zret.note(std::move(flushed_errata));
+    if (!zret.is_ok()) {
+      break;
+    }
+    zret.result() += flushed_bytes;
+  }
+  return zret;
+}
+
+static swoc::Rv<int>
+ngtcp2_progress_egress(H3Session &session, PacketIoContext *packet_context)
 {
   swoc::Rv<int> zret{0};
   auto &qs = session.quic_socket;
 
   assert(qs.local_addr.is_valid());
 
-  ngtcp2_tstamp ts = timestamp();
-  int rv = ngtcp2_conn_handle_expiry(qs.qconn, ts);
-  if (rv != 0) {
-    ngtcp2_ccerr_set_liberr(&qs.last_error, rv, NULL, 0);
-    zret.note(S_ERROR, "ngtcp2_conn_handle_expiry returned error: {}", Ngtcp2Error{rv});
-    zret = -1;
-    return zret;
+  PacketIoContext local_packet_context;
+  if (packet_context == nullptr) {
+    packet_context = &local_packet_context;
+  } else {
+    packet_context->ts = timestamp();
+    ngtcp2_path_storage_zero(&packet_context->ps);
   }
-
+  ngtcp2_tstamp ts = packet_context->ts;
   ngtcp2_path_storage ps;
   ngtcp2_path_storage_zero(&ps);
 
+  // TODO: ouch. Looks like this loop has to change too. See Curl_bufq_sipn.
   for (;;) {
     ssize_t veccnt = 0;
     int64_t stream_id = -1;
@@ -706,7 +865,7 @@ ngtcp2_flush_egress(H3Session &session)
       }
       case NGTCP2_ERR_WRITE_MORE: {
         assert(ndatalen >= 0);
-        rv = nghttp3_conn_add_write_offset(qs.h3conn, stream_id, ndatalen);
+        int const rv = nghttp3_conn_add_write_offset(qs.h3conn, stream_id, ndatalen);
         if (rv != 0) {
           zret.note(S_ERROR, "nghttp3_conn_add_write_offset returned error: {}", Nghttp3Error{rv});
           zret = -1;
@@ -726,7 +885,7 @@ ngtcp2_flush_egress(H3Session &session)
       }
       }
     } else if (ndatalen >= 0) {
-      rv = nghttp3_conn_add_write_offset(qs.h3conn, stream_id, ndatalen);
+      int const rv = nghttp3_conn_add_write_offset(qs.h3conn, stream_id, ndatalen);
       if (rv != 0) {
         zret.note(S_ERROR, "nghttp3_conn_add_write_offset returned error: {}", Nghttp3Error{rv});
         zret = -1;
@@ -779,15 +938,17 @@ static Errata
 nghttp3_receive_and_send_data(H3Session &session, milliseconds timeout)
 {
   Errata errata;
+  PacketIoContext packet_context;
   // This may poll until packets come in to read.
-  auto &&[num_bytes_received, ingress_errata] = ngtcp2_process_ingress(session, timeout);
+  auto &&[num_bytes_received, ingress_errata] =
+      ngtcp2_progress_ingress(session, timeout, &packet_context);
   errata.note(std::move(ingress_errata));
   if (!errata.is_ok() || num_bytes_received < 0) {
     return errata;
   }
 
   // Write packets that came in from ngtcp2_process_ingress, if there are any.
-  auto &&[num_bytes_written, egress_errata] = ngtcp2_flush_egress(session);
+  auto &&[num_bytes_written, egress_errata] = ngtcp2_progress_egress(session, &packet_context);
   errata.note(std::move(egress_errata));
   if (!errata.is_ok() || num_bytes_written < 0) {
     return errata;
@@ -1286,7 +1447,7 @@ initialize_nghttp3_connection(H3Session *session)
 }
 
 static void
-configure_quic_socket_settings(QuicSocket &qs, uint64_t stream_buffer_size)
+configure_quic_socket_settings(QuicSocket &qs, PacketIoContext *packet_context)
 {
   ngtcp2_settings *s = &qs.settings;
   ngtcp2_transport_params *t = &qs.transport_params;
@@ -1297,13 +1458,17 @@ configure_quic_socket_settings(QuicSocket &qs, uint64_t stream_buffer_size)
 #else
   s->log_printf = nullptr;
 #endif
-  s->initial_ts = timestamp();
-  t->initial_max_stream_data_bidi_local = stream_buffer_size;
-  t->initial_max_stream_data_bidi_remote = QUIC_MAX_STREAMS;
-  t->initial_max_stream_data_uni = QUIC_MAX_STREAMS;
-  t->initial_max_data = QUIC_MAX_DATA;
-  t->initial_max_streams_bidi = 1;
-  t->initial_max_streams_uni = 3;
+  s->initial_ts = packet_context->ts;
+  s->handshake_timeout = duration_cast<milliseconds>(QUIC_HANDSHAKE_TIMEOUT).count();
+  s->max_window = 100 * H3_STREAM_WINDOW_SIZE;
+  s->max_stream_window = H3_STREAM_WINDOW_SIZE;
+
+  t->initial_max_data = 10 * H3_STREAM_WINDOW_SIZE;
+  t->initial_max_stream_data_bidi_local = H3_STREAM_WINDOW_SIZE;
+  t->initial_max_stream_data_bidi_remote = H3_STREAM_WINDOW_SIZE;
+  t->initial_max_stream_data_uni = H3_STREAM_WINDOW_SIZE;
+  t->initial_max_streams_bidi = QUIC_MAX_STREAMS;
+  t->initial_max_streams_uni = QUIC_MAX_STREAMS;
   t->max_idle_timeout = duration_cast<milliseconds>(QUIC_IDLE_TIMEOUT).count();
   if (qs.qlogfd != -1) {
     s->qlog_write = QuicSocket::qlog_callback;
@@ -1653,7 +1818,8 @@ H3Session::connect()
 {
   swoc::Errata errata;
 
-  errata.note(this->client_session_init());
+  PacketIoContext packet_context;
+  errata.note(this->client_session_init(&packet_context));
   if (!errata.is_ok()) {
     errata.note(S_ERROR, "TLS initialization failed.");
     return errata;
@@ -1991,7 +2157,8 @@ H3Session::write(HttpHeader const &hdr)
     zret.errata().sink();
   }
 
-  if (ngtcp2_flush_egress(*this) < 0) {
+  PacketIoContext packet_context;
+  if (ngtcp2_progress_egress(*this, &packet_context) < 0) {
     zret.note(S_ERROR, "Failure calling ngtcp2_flush_egress while writing headers.");
   }
   free(nva);
@@ -2140,7 +2307,7 @@ H3Session::receive_responses()
 }
 
 Errata
-H3Session::client_session_init()
+H3Session::client_session_init(PacketIoContext *packet_context)
 {
   Errata errata;
   quic_socket.version = NGTCP2_PROTO_VER_MAX;
@@ -2159,7 +2326,7 @@ H3Session::client_session_init()
 
   errata.note(quic_socket.open_qlog_file());
 
-  configure_quic_socket_settings(quic_socket, MAX_DRAIN_BUFFER_SIZE);
+  configure_quic_socket_settings(quic_socket, packet_context);
 
   if (!quic_socket.local_addr.is_valid()) {
     struct sockaddr_storage socket_address;
@@ -2200,10 +2367,12 @@ H3Session::client_session_init()
   quic_socket.conn_ref.user_data = this;
 
   // Commence handshake.
-  if (ngtcp2_flush_egress(*this) < 0) {
+  if (ngtcp2_progress_egress(*this, packet_context) < 0) {
     errata.note(S_ERROR, "Error writing bytes during QUIC TLS handshake.");
     return errata;
   }
+
+  // TODO: have to read multiple packets????
 
   // Now that we sent our first packet, exchange packets until the handshake is
   // complete.
