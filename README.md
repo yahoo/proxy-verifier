@@ -375,6 +375,7 @@ Trailer response headers are useful for transmitting additional fields after the
 message body, providing dynamically generated metadata such as integrity checks
 or post-processing status. Proxy Verifier supports sending and receiving trailer
 headers, as demonstrated below:
+
 ```YAML
   server-response:
     status: 200
@@ -1026,6 +1027,7 @@ The `not` and `case: ignore` directives can both be applied on the same rule. Th
 ```
 
 In addition to HTTP/2 trailer header replay discussed above, Proxy Verifier also supports trailer header verification, as demonstrated below:
+
 ```YAML
 proxy-response:
   # Other verifications...
@@ -1039,9 +1041,10 @@ proxy-response:
 #### meta headers
 In addition to the directives that check the actual content of individual
 fields, Proxy Verifier supports meta-fields denoted by an `@` prefix that serve
-as directives for the tool to perform custom operations. The following
-demonstrates the usage of the `@hasfields` meta-field to verify that the
-`header` node has at least one field:
+as directives for the tool to perform custom operations. Currently, the only
+meta header that is supported is `@hasfields`, which can verify that there are
+or are not header fields with a proxy-request or proxy-response. The following
+demonstrates the usage of this meta header:
 
 ```YAML
 proxy-response:
