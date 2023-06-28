@@ -28,6 +28,7 @@ namespace chrono = std::chrono;
 using ClockType = std::chrono::system_clock;
 using chrono::duration_cast;
 using chrono::milliseconds;
+constexpr bool IS_TRAILER = true;
 
 namespace swoc
 {
@@ -1237,7 +1238,7 @@ H2Session::submit_headers_frame(
   // pack_headers will convert all the fields in hdr into nghttp2_nv structs
   int hdr_count = 0;
   nghttp2_nv *hdrs = nullptr;
-  pack_headers(hdr, false, hdrs, hdr_count);
+  pack_headers(hdr, !IS_TRAILER, hdrs, hdr_count);
   if (hdr.is_response()) {
     stream_state->store_nv_response_headers_to_free(hdrs);
   } else {
@@ -1512,7 +1513,7 @@ H2Session::write(HttpHeader const &hdr)
     // pack_headers will convert all the fields in hdr into nghttp2_nv structs
     int hdr_count = 0;
     nghttp2_nv *hdrs = nullptr;
-    pack_headers(hdr, false, hdrs, hdr_count);
+    pack_headers(hdr, !IS_TRAILER, hdrs, hdr_count);
     if (hdr.is_response()) {
       stream_state->store_nv_response_headers_to_free(hdrs);
     } else {
@@ -1540,7 +1541,11 @@ H2Session::write(HttpHeader const &hdr)
       stream_state->_wait_for_continue = hdr.is_request_with_expect_100_continue();
       if (hdr.is_response()) {
         // Pack the trailer headers.
-        pack_headers(hdr, true, stream_state->_trailer_to_send, stream_state->_trailer_length);
+        pack_headers(
+            hdr,
+            IS_TRAILER,
+            stream_state->_trailer_to_send,
+            stream_state->_trailer_length);
         submit_result = nghttp2_submit_response(
             this->_session,
             stream_state->get_stream_id(),
