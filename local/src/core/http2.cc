@@ -1281,7 +1281,7 @@ H2Session::submit_data_frame(HttpHeader const &hdr, H2StreamState *stream_state,
   data_prd.read_callback = data_read_callback;
   stream_state->_body_to_send = content.data();
   stream_state->_send_body_length = content.size();
-  stream_state->_wait_for_continue = hdr._send_continue;
+  stream_state->_wait_for_continue = hdr.is_request_with_expect_100_continue();
 
   errata.note(
       S_DIAG,
@@ -1495,7 +1495,7 @@ H2Session::write(HttpHeader const &hdr)
       data_prd.read_callback = data_read_callback;
       stream_state->_body_to_send = content.data();
       stream_state->_send_body_length = content.size();
-      stream_state->_wait_for_continue = hdr._send_continue;
+      stream_state->_wait_for_continue = hdr.is_request_with_expect_100_continue();
       if (hdr.is_response()) {
         submit_result = nghttp2_submit_response(
             this->_session,

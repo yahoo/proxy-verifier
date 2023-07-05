@@ -452,6 +452,12 @@ public:
   /// Return whether this is an HTTP response.
   bool is_response() const;
 
+  /// Set this to be an HTTP request with an Expect: 100-continue header.
+  void set_is_request_with_expect_100_continue();
+
+  /// Return whether this is a request with an Expect: 100-continue header.
+  bool is_request_with_expect_100_continue() const;
+
   /// Whether the _fields array contains pseudo header fields.
   bool _contains_pseudo_headers_in_fields_array = false;
   int32_t _stream_id = -1; ///< For protocols with streams, this is the stream identifier.
@@ -589,6 +595,9 @@ private:
 
   /// Whether this is an HTTP request.
   bool _is_request = false;
+
+  /// Whether this contains an Expect: 100-continue header.
+  bool _contains_expect_100_continue = false;
 };
 
 struct Txn
