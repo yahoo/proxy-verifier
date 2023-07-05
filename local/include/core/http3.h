@@ -61,6 +61,25 @@ BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::Nghttp3Error
 } // namespace SWOC_VERSION_NS
 } // namespace swoc
 
+/** Contains information for a particular cycle of reading QUIC packets.
+ *
+ * ngtcp2 requires some state to be maintained within a cycle of reading a set
+ * of packets. By "cycle" I mean a single set of processing ingress and egress
+ * packets. This information is shared across the relevant function calls via
+ * an instance of PacketIoContext. In curl, this is the c-struct pkt_io_ctx.
+ */
+struct PacketIoContext
+{
+public:
+  /** Initialize PacketIoContext. */
+  PacketIoContext();
+
+public:
+  ngtcp2_tstamp ts = 0;
+  size_t pkt_count = 0;
+  ngtcp2_path_storage ps;
+};
+
 /** Encapsulate the buffer for the QUIC hanshake. */
 class QuicHandshake
 {
@@ -332,7 +351,7 @@ public:
 
   /** Perform the HTTP/3 (ngtcp2 and nghttp3) configuration and QUIC handshake
    * for a client connection. */
-  swoc::Errata client_session_init();
+  swoc::Errata client_session_init(PacketIoContext *packet_context);
 
   /** Perform the HTTP/3 (ngtcp2 and nghttp3) configuration for a server
    * connection. */
