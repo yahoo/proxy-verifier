@@ -84,10 +84,12 @@ ServerThreadPool Server_Thread_Pool;
 
 HttpHeader
 get_continue_response(
-    int64_t stream_id = -1,
-    HTTP_PROTOCOL_TYPE protocol = HTTP_PROTOCOL_TYPE::HTTP_1)
+    int64_t stream_id,
+    HTTP_PROTOCOL_TYPE protocol,
+    std::string_view key)
 {
   HttpHeader response;
+  response.set_key(key);
   response.set_is_response(protocol);
   response._status = 100;
   response._status_string = "100";
@@ -103,10 +105,12 @@ get_continue_response(
 
 HttpHeader
 get_not_found_response(
-    int64_t stream_id = -1,
-    HTTP_PROTOCOL_TYPE protocol = HTTP_PROTOCOL_TYPE::HTTP_1)
+    int64_t stream_id,
+    HTTP_PROTOCOL_TYPE protocol,
+    std::string_view key)
 {
   HttpHeader response;
+  response.set_key(key);
   response.set_is_response(protocol);
   response._status = 404;
   response._status_string = "404";
@@ -645,9 +649,10 @@ TF_Serve_Connection(std::thread *t)
             key);
         Engine::process_exit_code = 1;
         HttpHeader not_found_response =
-            get_not_found_response(stream_id, req_hdr->get_http_protocol());
+            get_not_found_response(stream_id, req_hdr->get_http_protocol(), key);
         not_found_response.update_content_length(req_hdr->_method);
-        thread_info._session->write(not_found_response);
+        auto &&[written_bytes, write_errata] = thread_info._session->write(not_found_response);
+        thread_errata.note(std::move(write_errata));
         // This will end the loop and eventually drop the connection.
         break;
       }
@@ -660,9 +665,11 @@ TF_Serve_Connection(std::thread *t)
       // If there is an Expect header with the value of 100-continue, send the
       // 100-continue response before Reading request body.
       if (req_hdr->_send_continue) {
+        thread_errata.note(S_DIAG, "Writing an 100 Continue response for key {}.", key);
         HttpHeader continue_response =
-            get_continue_response(stream_id, req_hdr->get_http_protocol());
-        thread_info._session->write(continue_response);
+            get_continue_response(stream_id, req_hdr->get_http_protocol(), key);
+        auto &&[bytes_written, write_errata] = thread_info._session->write(continue_response);
+        thread_errata.note(std::move(write_errata));
       }
 
       // HTTP/3 and HTTP/2 transactions are processed on a stream basis, and
