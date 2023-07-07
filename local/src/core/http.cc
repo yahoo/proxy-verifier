@@ -259,6 +259,75 @@ HttpFields::add_fields_to_ngnva(nghttp3_nv *l) const
   }
 }
 
+bool
+HttpFields::verify(swoc::TextView transaction_key, HttpFields const &rules_) const
+{
+  // Remains false if no issue is observed
+  // Setting true does not break loop because test() calls errata.diag()
+  bool issue_exists = false;
+  auto const &rules = rules_._rules;
+  auto const *url_rules = rules_._url_rules;
+  auto const &fields = this->_fields;
+  auto const *url_parts = this->_url_parts;
+  for (auto const &[name, rule_check] : rules) {
+    auto name_range = fields.equal_range(name);
+    auto field_iter = name_range.first;
+    if (rule_check->expects_duplicate_fields()) {
+      if (field_iter == name_range.second) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), std::vector<TextView>{})) {
+          // We supply the empty name and value for the absence check which
+          // expects this to indicate an absent field.
+          issue_exists = true;
+        }
+      } else {
+        std::vector<TextView> values;
+        while (field_iter != name_range.second) {
+          values.emplace_back(field_iter->second);
+          ++field_iter;
+        }
+        if (!rule_check->test(transaction_key, name, values)) {
+          issue_exists = true;
+        }
+      }
+    } else {
+      if (field_iter == name_range.second) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), swoc::TextView())) {
+          // We supply the empty name and value for the absence check which
+          // expects this to indicate an absent field.
+          issue_exists = true;
+        }
+      } else {
+        if (!rule_check
+                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second))) {
+          issue_exists = true;
+        }
+      }
+    }
+  }
+  for (std::size_t i = 0; i < URL_PART_NAMES.count(); ++i) {
+    const std::vector<std::shared_ptr<RuleCheck>> &v = url_rules[i];
+    for (size_t j = 0; j < v.size(); ++j) {
+      const std::shared_ptr<RuleCheck> rule_check = v[j];
+      swoc::TextView value = url_parts[i];
+      if (rule_check == nullptr) {
+        continue;
+      }
+      if (value.empty()) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), swoc::TextView())) {
+          // We supply the empty name and value for the absence check which
+          // expects this to indicate an absent field.
+          issue_exists = true;
+        }
+      } else {
+        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<UrlPart>(i)], value)) {
+          issue_exists = true;
+        }
+      }
+    }
+  }
+  return issue_exists;
+}
+
 swoc::Errata
 HttpHeader::parse_url(TextView url)
 {
@@ -395,74 +464,18 @@ HttpHeader::derive_key()
   swoc::FixedBufferWriter{_key.data(), _key.size()}.print_n(binding, _key_format);
 }
 
-// Verify that the fields in 'this' correspond to the provided rules.
+// Verify that the headers in 'this' correspond to the provided rules.
 bool
 HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rules_) const
 {
-  // Remains false if no issue is observed
-  // Setting true does not break loop because test() calls errata.note(S_DIAG, )
-  bool issue_exists = false;
-  auto const &rules = rules_._rules;
-  auto const *url_rules = rules_._url_rules;
-  auto const &fields = _fields_rules->_fields;
-  auto const *url_parts = _fields_rules->_url_parts;
-  for (auto const &[name, rule_check] : rules) {
-    auto name_range = fields.equal_range(name);
-    auto field_iter = name_range.first;
-    if (rule_check->expects_duplicate_fields()) {
-      if (field_iter == name_range.second) {
-        if (!rule_check->test(transaction_key, swoc::TextView(), std::vector<TextView>{})) {
-          // We supply the empty name and value for the absence check which
-          // expects this to indicate an absent field.
-          issue_exists = true;
-        }
-      } else {
-        std::vector<TextView> values;
-        while (field_iter != name_range.second) {
-          values.emplace_back(field_iter->second);
-          ++field_iter;
-        }
-        if (!rule_check->test(transaction_key, name, values)) {
-          issue_exists = true;
-        }
-      }
-    } else {
-      if (field_iter == name_range.second) {
-        if (!rule_check->test(transaction_key, swoc::TextView(), swoc::TextView())) {
-          // We supply the empty name and value for the absence check which
-          // expects this to indicate an absent field.
-          issue_exists = true;
-        }
-      } else {
-        if (!rule_check
-                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second))) {
-          issue_exists = true;
-        }
-      }
-    }
-  }
-  for (std::size_t i = 0; i < URL_PART_NAMES.count(); ++i) {
-    const std::vector<std::shared_ptr<RuleCheck>> &v = url_rules[i];
-    for (size_t j = 0; j < v.size(); ++j) {
-      const std::shared_ptr<RuleCheck> rule_check = v[j];
-      swoc::TextView value = url_parts[i];
-      if (rule_check == nullptr) {
-        continue;
-      }
-      if (value.empty()) {
-        if (!rule_check->test(transaction_key, swoc::TextView(), swoc::TextView())) {
-          // We supply the empty name and value for the absence check which
-          // expects this to indicate an absent field.
-          issue_exists = true;
-        }
-      } else {
-        if (!rule_check->test(transaction_key, URL_PART_NAMES[static_cast<UrlPart>(i)], value)) {
-          issue_exists = true;
-        }
-      }
-    }
-  }
-  return issue_exists;
+  return _fields_rules->verify(transaction_key, rules_);
+}
+
+// Verify that the trailers in 'this' correspond to the provided rules.
+bool
+HttpHeader::verify_trailers(swoc::TextView transaction_key, HttpFields const &rules_) const
+{
+  return _trailer_fields_rules->verify(transaction_key, rules_);
 }
 
 void
@@ -474,6 +487,7 @@ HttpHeader::merge(HttpFields const &other)
 
 HttpHeader::HttpHeader(bool verify_strictly)
   : _fields_rules{std::make_shared<HttpFields>()}
+  , _trailer_fields_rules{std::make_shared<HttpFields>()}
   , _verify_strictly{verify_strictly}
   , _key{TRANSACTION_KEY_NOT_SET}
 {

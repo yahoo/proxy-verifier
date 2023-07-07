@@ -65,6 +65,9 @@ public:
   size_t _send_body_offset = 0;
   bool _wait_for_continue = false;
   std::string _key;
+
+  nghttp2_nv *_trailer_to_send = nullptr;
+  int _trailer_length{0};
   /** The composed URL parts from :method, :authority, and :path pseudo headers
    * from the request.
    *
@@ -197,12 +200,14 @@ private:
   /** Populate an nghttp2 vector from the information in an HttpHeader instance.
    *
    * @param[in] hdr The instance from which to pack headers.
+   * @param[in] is_trailer Whether the headers are trailers.
    * @param[out] nv_hdr The packed headers.
    * @param[out] hdr_count The size of the nv_hdr vector.
    *
    * @return Any errata information from the packing operation.
    */
-  swoc::Errata pack_headers(HttpHeader const &hdr, nghttp2_nv *&nv_hdr, int &hdr_count);
+  swoc::Errata
+  pack_headers(HttpHeader const &hdr, bool is_trailer, nghttp2_nv *&nv_hdr, int &hdr_count);
   nghttp2_nv tv_to_nv(char const *name, swoc::TextView v);
   void set_expected_response_for_last_request(HttpHeader const &response);
 

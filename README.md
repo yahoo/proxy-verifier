@@ -370,6 +370,26 @@ therefore, would look like the following:
       size: 3432
 ```
 
+Trailer response headers are useful for transmitting additional fields after the
+message body, providing dynamically generated metadata such as integrity checks
+or post-processing status. Proxy Verifier supports sending and receiving trailer
+headers, as demonstrated below:
+
+```YAML
+  server-response:
+    status: 200
+    headers:
+      fields:
+      # Some fields...
+    content:
+      # Some data...
+    trailers:
+      encoding: esc_json
+      fields:
+      - [ x-test-trailer-1, one ]
+      - [ x-test-trailer-2, two ]
+```
+
 It is also possible to specify everything as a sequence of frames. The available
 options for the frame sequence are:
 * `DATA`
@@ -1003,6 +1023,18 @@ The `not` and `case: ignore` directives can both be applied on the same rule. Th
 
 ```YAML
   - [ X-Forwarded-For, { value: a, not: prefix, case: ignore } ]
+```
+
+In addition to HTTP/2 trailer header replay discussed above, Proxy Verifier also supports trailer header verification, as demonstrated below:
+
+```YAML
+proxy-response:
+  # Other verifications...
+  trailers:
+    fields:
+    # Verify the client receives the response trailers.
+    - [ x-test-trailer-1, { value: one, as: equal } ]
+    - [ x-test-trailer-2, { value: two, as: equal } ]
 ```
 
 ### URL Verification
