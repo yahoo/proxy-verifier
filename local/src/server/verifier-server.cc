@@ -83,10 +83,7 @@ public:
 ServerThreadPool Server_Thread_Pool;
 
 HttpHeader
-get_continue_response(
-    int64_t stream_id,
-    HTTP_PROTOCOL_TYPE protocol,
-    std::string_view key)
+get_continue_response(int64_t stream_id, HTTP_PROTOCOL_TYPE protocol, std::string_view key)
 {
   HttpHeader response;
   response.set_key(key);
@@ -104,10 +101,7 @@ get_continue_response(
 }
 
 HttpHeader
-get_not_found_response(
-    int64_t stream_id,
-    HTTP_PROTOCOL_TYPE protocol,
-    std::string_view key)
+get_not_found_response(int64_t stream_id, HTTP_PROTOCOL_TYPE protocol, std::string_view key)
 {
   HttpHeader response;
   response.set_key(key);

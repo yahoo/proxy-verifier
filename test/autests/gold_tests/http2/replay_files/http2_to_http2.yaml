@@ -368,6 +368,3 @@ sessions:
         # Verify the client receives the response trailers.
         - [ x-test-trailer-1, { value: one, as: equal } ]
         - [ x-test-trailer-2, { value: two, as: equal } ]
-        # The @hasfields meta header verifies there is at least one field under
-        # the current node.
-        - [ "@hasfields", { value: true, as: equal } ]

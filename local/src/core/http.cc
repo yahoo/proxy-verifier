@@ -270,51 +270,36 @@ HttpFields::verify(swoc::TextView transaction_key, HttpFields const &rules_) con
   auto const &fields = this->_fields;
   auto const *url_parts = this->_url_parts;
   for (auto const &[name, rule_check] : rules) {
-    // meta headers
-    if (*name == '@') {
-      if (name == "@hasfields") {
-        const char *true_string = "true";
-        const char *false_string = "false";
-        if (!rule_check->test(
-                transaction_key,
-                name,
-                swoc::TextView(_fields.size() > 0 ? true_string : false_string)))
-        {
+    auto name_range = fields.equal_range(name);
+    auto field_iter = name_range.first;
+    if (rule_check->expects_duplicate_fields()) {
+      if (field_iter == name_range.second) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), std::vector<TextView>{})) {
+          // We supply the empty name and value for the absence check which
+          // expects this to indicate an absent field.
+          issue_exists = true;
+        }
+      } else {
+        std::vector<TextView> values;
+        while (field_iter != name_range.second) {
+          values.emplace_back(field_iter->second);
+          ++field_iter;
+        }
+        if (!rule_check->test(transaction_key, name, values)) {
           issue_exists = true;
         }
       }
     } else {
-      auto name_range = fields.equal_range(name);
-      auto field_iter = name_range.first;
-      if (rule_check->expects_duplicate_fields()) {
-        if (field_iter == name_range.second) {
-          if (!rule_check->test(transaction_key, swoc::TextView(), std::vector<TextView>{})) {
-            // We supply the empty name and value for the absence check which
-            // expects this to indicate an absent field.
-            issue_exists = true;
-          }
-        } else {
-          std::vector<TextView> values;
-          while (field_iter != name_range.second) {
-            values.emplace_back(field_iter->second);
-            ++field_iter;
-          }
-          if (!rule_check->test(transaction_key, name, values)) {
-            issue_exists = true;
-          }
+      if (field_iter == name_range.second) {
+        if (!rule_check->test(transaction_key, swoc::TextView(), swoc::TextView())) {
+          // We supply the empty name and value for the absence check which
+          // expects this to indicate an absent field.
+          issue_exists = true;
         }
       } else {
-        if (field_iter == name_range.second) {
-          if (!rule_check->test(transaction_key, swoc::TextView(), swoc::TextView())) {
-            // We supply the empty name and value for the absence check which
-            // expects this to indicate an absent field.
-            issue_exists = true;
-          }
-        } else {
-          if (!rule_check
-                   ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second))) {
-            issue_exists = true;
-          }
+        if (!rule_check
+                 ->test(transaction_key, field_iter->first, swoc::TextView(field_iter->second))) {
+          issue_exists = true;
         }
       }
     }

@@ -29,7 +29,6 @@ Table of Contents
          * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
       * [Traffic Verification Specification](#traffic-verification-specification)
          * [Field Verification](#field-verification)
-            * [meta headers](#meta-headers)
          * [URL Verification](#url-verification)
          * [Status Verification](#status-verification)
          * [Body Verification](#body-verification)
@@ -1036,24 +1035,6 @@ proxy-response:
     # Verify the client receives the response trailers.
     - [ x-test-trailer-1, { value: one, as: equal } ]
     - [ x-test-trailer-2, { value: two, as: equal } ]
-```
-
-#### meta headers
-In addition to the directives that check the actual content of individual
-fields, Proxy Verifier supports meta-fields denoted by an `@` prefix that serve
-as directives for the tool to perform custom operations. Currently, the only
-meta header that is supported is `@hasfields`, which can verify that there are
-or are not header fields with a proxy-request or proxy-response. The following
-demonstrates the usage of this meta header:
-
-```YAML
-proxy-response:
-  headers:
-    fields:
-    - [ :status, { value: 200, as: equal } ]
-    - [ Cache-Control, private ]
-    - [ Content-Length, { value: '16', as: equal } ]
-    - [ "@hasfields", { value: true, as: equal } ]
 ```
 
 ### URL Verification
