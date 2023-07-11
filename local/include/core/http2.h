@@ -65,6 +65,7 @@ public:
   size_t _send_body_offset = 0;
   bool _wait_for_continue = false;
   bool _last_data_frame = false;
+  bool _wait_for_response_after_100_continue = false;
   std::string _key;
 
   nghttp2_nv *_trailer_to_send = nullptr;

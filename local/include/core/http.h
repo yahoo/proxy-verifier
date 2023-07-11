@@ -167,6 +167,7 @@ static constexpr swoc::TextView HTTP_EOL{"\r\n"};
 static constexpr swoc::TextView HTTP_EOH{"\r\n\r\n"};
 
 class HttpHeader;
+class HttpFields;
 class RuleCheck;
 struct Txn;
 class ProxyProtocolMsg;
@@ -178,7 +179,21 @@ namespace swoc
 {
 inline namespace SWOC_VERSION_NS
 {
+/** Print the HTTP request or response headers.
+ *
+ * @param[out] w The BufferWriter to write to.
+ * @param[in] spec Format specifier for output.
+ * @param[in] h The HttpHeader to print out.
+ */
 BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpHeader const &h);
+
+/** Print the fields sequence.
+ *
+ * @param[out] w The BufferWriter to write to.
+ * @param[in] spec Format specifier for output.
+ * @param[in] f The HttpFields to print out.
+ */
+BufferWriter &bwformat(BufferWriter &w, bwf::Spec const &spec, HttpFields const &f);
 
 /** Formatter for ProxyProtocolMsg which pretty-prints the proxy protocol in
  * the human-readable v1 format

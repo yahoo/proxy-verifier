@@ -438,6 +438,8 @@ on_begin_headers_callback(
     request_headers->_stream_id = stream_id;
     break;
   }
+  case NGHTTP2_HCAT_HEADERS:
+    // Final response headers after a 1xx response or trailer headers.
   case NGHTTP2_HCAT_RESPONSE: {
     auto stream_map_iter = session_data->_stream_map.find(stream_id);
     if (stream_map_iter == session_data->_stream_map.end()) {
@@ -454,11 +456,7 @@ on_begin_headers_callback(
     response_headers->_contains_pseudo_headers_in_fields_array = true;
     break;
   }
-  case NGHTTP2_HCAT_HEADERS:
-    // Headers that are not request or response headers. Trailer headers, for
-    // example, falls into this category.
-    break;
-  default:
+  case NGHTTP2_HCAT_PUSH_RESPONSE:
     errata.note(S_ERROR, "Got HTTP/2 headers for an unimplemented category: {}", headers_category);
     break;
   }
@@ -510,6 +508,19 @@ on_header_callback(
     break;
   }
 
+  case NGHTTP2_HCAT_HEADERS: {
+    // This is either the response headers after a 1xx response or
+    // trailer headers.
+    if (!stream_state->_wait_for_response_after_100_continue) {
+      // Must be trailer headers.
+      auto &response_headers = stream_state->_response_from_server;
+      response_headers->_trailer_fields_rules->add_field(name_view, value_view);
+      break;
+    }
+    // If we reach here, we received the response headers after a 1xx response.
+    // This is handled along with the NGHTTP2_HCAT_RESPONSE case.
+    [[fallthrough]];
+  }
   case NGHTTP2_HCAT_RESPONSE: {
     auto &response_headers = stream_state->_response_from_server;
     if (name_view == ":status") {
@@ -517,24 +528,11 @@ on_header_callback(
       response_headers->_status_string = std::string(value_view);
     }
     response_headers->_fields_rules->add_field(name_view, value_view);
-    // See if we are expecting a 100 response.
-    if (stream_state->_wait_for_continue) {
-      if (name_view == ":status" && value_view == "100") {
-        // We got our 100 Continue. No need to wait for it anymore.
-        stream_state->_wait_for_continue = false;
-      }
-    }
-    break;
-  }
-  case NGHTTP2_HCAT_HEADERS: {
-    auto &response_headers = stream_state->_response_from_server;
-    response_headers->_trailer_fields_rules->add_field(name_view, value_view);
-    break;
-  }
+  } break;
   case NGHTTP2_HCAT_PUSH_RESPONSE:
     errata.note(
         S_ERROR,
-        "Got HTTP/2 an header for an unimplemented category: {}",
+        "Got an HTTP/2 header for an unimplemented category: {}",
         headers_category);
     return 0;
   }
@@ -850,7 +848,8 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
             stream_state._key,
             stream_id,
             request_from_client);
-      } else if (headers_category == NGHTTP2_HCAT_RESPONSE) {
+      } else if (
+          headers_category == NGHTTP2_HCAT_RESPONSE || headers_category == NGHTTP2_HCAT_HEADERS) {
         auto &response_from_wire = *stream_state._response_from_server;
         response_from_wire.derive_key();
         if (stream_state._key.empty()) {
@@ -873,6 +872,7 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
           // the fields of both the request and response.
           response_from_wire.set_key(stream_state._key);
         }
+        auto const &key = stream_state._key;
         if (auto spot{
                 response_from_wire._fields_rules->_fields.find(HttpHeader::FIELD_CONTENT_LENGTH)};
             spot != response_from_wire._fields_rules->_fields.end())
@@ -880,36 +880,52 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
           size_t expected_size = swoc::svtou(spot->second);
           stream_state._body_received.reserve(expected_size);
         }
-        errata.note(
-            S_DIAG,
-            "Received an HTTP/2 response for key {} with stream id {}:\n{}",
-            stream_state._key,
-            stream_id,
-            response_from_wire);
-        auto const &key = stream_state._key;
-        auto const &specified_response = stream_state._specified_response;
-        if (specified_response &&
-            response_from_wire.verify_headers(key, *specified_response->_fields_rules))
-        {
+        if (headers_category == NGHTTP2_HCAT_RESPONSE) {
           errata.note(
-              S_ERROR,
-              R"(HTTP/2 response headers did not match expected response headers.)");
-          session_data->set_non_zero_exit_status();
-        }
-        if (specified_response && specified_response->_status != 0 &&
-            response_from_wire._status != specified_response->_status &&
-            (response_from_wire._status != 200 || specified_response->_status != 304) &&
-            (response_from_wire._status != 304 || specified_response->_status != 200))
-        {
+              S_DIAG,
+              "Received an HTTP/2 response for key {} with stream id {}:\n{}",
+              key,
+              stream_id,
+              response_from_wire);
+        } else {
           errata.note(
-              S_ERROR,
-              R"(HTTP/2 Status Violation: expected {} got {}, key: {})",
-              specified_response->_status,
-              response_from_wire._status,
-              key);
+              S_DIAG,
+              "Received HTTP/2 response trailers for key {} with stream id {}:\n{}",
+              key,
+              stream_id,
+              *response_from_wire._trailer_fields_rules);
         }
-      } else if (headers_category == NGHTTP2_HCAT_HEADERS) {
-        errata.note(S_DIAG, "Received an HTTP/2 trailer for stream id {}:\n", stream_id);
+        if (response_from_wire._status == 100) {
+          // Prepare for the final response after the 100 Continue.
+          stream_state._response_from_server = std::make_shared<HttpHeader>();
+          stream_state._response_from_server->_stream_id = stream_id;
+          stream_state._wait_for_continue = false;
+          stream_state._wait_for_response_after_100_continue = true;
+          errata.note("Received 100 Continue for key {}, now awaiting response headers", key);
+        } else {
+          stream_state._wait_for_response_after_100_continue = false;
+          auto const &specified_response = stream_state._specified_response;
+          if (specified_response &&
+              response_from_wire.verify_headers(key, *specified_response->_fields_rules))
+          {
+            errata.note(
+                S_ERROR,
+                R"(HTTP/2 response headers did not match expected response headers.)");
+            session_data->set_non_zero_exit_status();
+          }
+          if (specified_response && specified_response->_status != 0 &&
+              response_from_wire._status != specified_response->_status &&
+              (response_from_wire._status != 200 || specified_response->_status != 304) &&
+              (response_from_wire._status != 304 || specified_response->_status != 200))
+          {
+            errata.note(
+                S_ERROR,
+                R"(HTTP/2 Status Violation: expected {} got {}, key: {})",
+                specified_response->_status,
+                response_from_wire._status,
+                key);
+          }
+        }
       }
     }
     if (flags & NGHTTP2_FLAG_END_STREAM) {
@@ -1543,6 +1559,9 @@ H2Session::write(HttpHeader const &hdr)
     }
 
     stream_state->_key = hdr.get_key();
+    // A user shouldn't set Expect: 100-continue with a request with no body,
+    // but we support it anyway.
+    stream_state->_wait_for_continue = hdr.is_request_with_expect_100_continue();
     if (hdr._content_length > 0 &&
         (hdr.is_request() || !HttpHeader::STATUS_NO_CONTENT[hdr._status])) {
       TextView content;
@@ -1561,7 +1580,6 @@ H2Session::write(HttpHeader const &hdr)
       stream_state->_body_to_send = content.data();
       stream_state->_send_body_length = content.size();
       stream_state->_send_body_offset = 0;
-      stream_state->_wait_for_continue = hdr.is_request_with_expect_100_continue();
       stream_state->_last_data_frame = true;
       if (hdr.is_response()) {
         // Pack the trailer headers.
