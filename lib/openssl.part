@@ -25,7 +25,7 @@ else:
     # No path provided.
     PartVersion(
         GitVersionFromTag(
-            "OpenSSL_1_1_1u-quic1",
+            "openssl-3.1.0+quic",
             regex=r'\d+\_\d+\_\d+[a-z]',
             converter=lambda ver, env: ver.replace("_", ".")
         )
@@ -72,7 +72,7 @@ else:
             source=lambda node,
             env: [
                 env.Pattern(
-                    src_dir=node.Dir("lib"),
+                    src_dir=node.Dir("lib64"),
                     includes=env["INSTALL_LIB_PATTERN"] +
                     env["INSTALL_API_LIB_PATTERN"],
                     recursive=False),

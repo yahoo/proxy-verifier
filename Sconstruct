@@ -100,8 +100,8 @@ else:
     "#lib/openssl.part",
     vcs_type=VcsGit(server="github.com", repository="quictls/openssl",
                     protocol="https",
-                    # A pinned commit from branch OpenSSL_1_1_1u+quic.
-                    revision="636c615c139061b125a25461708f4afc79284f83"
+                    # A pinned commit from branch openssl-3.1.0+quic.
+                    revision="be9e773e8926fc76166a45cfe5a19362372db90c"
                     ),
     mode=['SKIP_DOCS'],
   )
