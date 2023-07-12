@@ -40,7 +40,7 @@ class PortQueueSelectionError(Exception):
     pass
 
 
-def PortOpen(port: int, address : str =None, listening_ports: set[int] = None) -> bool:
+def PortOpen(port: int, address: str = None, listening_ports: set[int] = None) -> bool:
     """
     Detect whether the port is open, that is a socket is currently using that port.
 
@@ -66,7 +66,6 @@ def PortOpen(port: int, address : str =None, listening_ports: set[int] = None) -
             'PortOpen',
             f"{port} is open because it is in the listening sockets set.")
         return True
-
 
     address = (address, port)
 
@@ -155,8 +154,6 @@ def _get_listening_ports() -> set[int]:
             for conn in connections:
                 if conn.status == psutil.CONN_LISTEN:
                     ports.add(conn.laddr.port)
-    for port in ports:
-        print(f"Listening port: {port}")
     return ports
 
 
