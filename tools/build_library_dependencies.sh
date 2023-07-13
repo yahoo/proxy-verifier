@@ -57,7 +57,7 @@ cd ${repo_dir}
 git clone -b openssl-3.1.0+quic --depth 1 https://github.com/quictls/openssl.git openssl
 cd openssl
 git checkout be9e773e8926fc76166a45cfe5a19362372db90c
-./config enable-tls1_3 --prefix=${install_dir}/openssl
+./config enable-tls1_3 --prefix=${install_dir}/openssl --libdir=lib
 make -j ${num_threads}
 ${SUDO} make install_sw
 sudo chmod -R ugo+rX ${install_dir}/openssl
@@ -80,8 +80,8 @@ cd ngtcp2
 git checkout v0.16.0
 autoreconf -i
 ./configure \
-  PKG_CONFIG_PATH=${install_dir}/openssl/lib64/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
-  LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib64" \
+  PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
+  LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib" \
   --prefix=${install_dir}/ngtcp2 \
   --enable-lib-only
 make -j ${num_threads}
@@ -95,7 +95,7 @@ cd nghttp2
 git checkout v1.54.0
 autoreconf -if
 ./configure \
-  PKG_CONFIG_PATH=${install_dir}/openssl/lib64/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
+  PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
   --prefix=${install_dir}/nghttp2 \
   --enable-lib-only
 make -j ${num_threads}
