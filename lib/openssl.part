@@ -25,7 +25,7 @@ else:
     # No path provided.
     PartVersion(
         GitVersionFromTag(
-            "OpenSSL_1_1_1u-quic1",
+            "openssl-3.1.0+quic",
             regex=r'\d+\_\d+\_\d+[a-z]',
             converter=lambda ver, env: ver.replace("_", ".")
         )
@@ -104,6 +104,7 @@ else:
         configure_args=[
             'enable-tls1_3',
             '--prefix=$CONFIGURE_PREFIX',
+            '--libdir=lib'
         ],
         # this allows us to call make depends to "finialize" what finial makefile. Prevents a rebuild.
         # however this sort of build twice
