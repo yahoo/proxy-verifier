@@ -2297,6 +2297,10 @@ H3Session::receive_responses()
 {
   Errata errata;
   while (!stream_map.empty()) {
+    if (is_closed()) {
+      errata.note(S_ERROR, "The connection was closed while awaiting HTTP/3 responses.");
+      break;
+    }
     errata.note(nghttp3_receive_and_send_data(*this, Poll_Timeout));
     if (!errata.is_ok()) {
       errata.note(S_ERROR, "Encountered a problem while receiving responses.");
