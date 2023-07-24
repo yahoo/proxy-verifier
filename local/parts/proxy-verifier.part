@@ -1,5 +1,5 @@
 Import("*")
-PartVersion("2.8.1")
+PartVersion("2.9.0")
 PartName("proxy-verifier")
 
 DependsOn([
