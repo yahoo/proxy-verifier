@@ -1627,6 +1627,11 @@ H2Session::pack_headers(HttpHeader const &hdr, bool is_trailer, nghttp2_nv *&nv_
     fields_rules = hdr._trailer_fields_rules;
   }
   hdr_count = fields_rules->_fields.size();
+  if (is_trailer && hdr_count == 0) {
+    nv_hdr = nullptr;
+    // There's nothing left to do for the trailers.
+    return errata;
+  }
 
   if (!is_trailer && !hdr._contains_pseudo_headers_in_fields_array) {
     if (hdr.is_response()) {
