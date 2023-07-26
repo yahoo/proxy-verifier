@@ -57,7 +57,7 @@ def PortOpen(port: int, address: str = None, listening_ports: set[int] = None) -
         True if there is a connection currently listening on the port, False if
         there is no server listening on the port currently.
     """
-    ret = True
+    ret = False
     if address is None:
         address = "localhost"
 
@@ -71,28 +71,24 @@ def PortOpen(port: int, address: str = None, listening_ports: set[int] = None) -
 
     try:
         # Try to connect on that port. If we can connect on it, then someone is
-        # listening on that port and therefore the port is open and not usable
-        # by another application.
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind(address)
-            # Bind succeeded.
-            host.WriteDebug(
-                'PortOpen',
-                f"Bind on port {port} succeeded, the port is closed "
-                "(no application is listening on it) "
-                "and thus a future connection can use it")
-            ret = False
-
+        # listening on that port and therefore the port is open.
+        s = socket.create_connection(address, timeout=.5)
+        s.close()
+        ret = True
+        host.WriteDebug(
+            'PortOpen',
+            f"Connection to port {port} succeeded, the port is open, "
+            "and a future connection cannot use it")
     except socket.error:
         host.WriteDebug(
             'PortOpen',
-            f"socket error binding on port {port}. "
-            "Assume a future connection cannot use it")
+            f"socket error for port {port}, port is closed, "
+            "and therefore a future connection can use it")
     except socket.timeout:
         host.WriteDebug(
             'PortOpen',
-            f"Timeout error binding on port {port}. "
-            "Assume a future connection cannot use it")
+            f"Timeout error for port {port}, port is closed, "
+            "and therefore a future connection can use it")
 
     return ret
 
@@ -124,7 +120,7 @@ def _get_available_port(queue):
     while PortOpen(port, listening_ports=listening_ports):
         host.WriteDebug(
             '_get_available_port',
-            f"Port was open but now is used: {port}")
+            f"Port was closed but now is used: {port}")
         if queue.qsize() == 0:
             host.WriteWarning("Port queue is empty.")
             raise PortQueueSelectionError(
