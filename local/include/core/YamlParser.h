@@ -52,6 +52,7 @@ static const std::string YAML_SSN_TLS_ALPN_PROTOCOLS_KEY{"alpn-protocols"};
 static const std::string YAML_SSN_TLS_VERIFY_MODE_KEY{"verify-mode"};
 static const std::string YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY{"request-certificate"};
 static const std::string YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY{"proxy-provided-certificate"};
+static const std::string YAML_SSN_KEEP_CONNECTION_OPEN_KEY{"keep-connection-open"};
 static const std::string YAML_TXN_KEY{"transactions"};
 static const std::string YAML_CLIENT_REQ_KEY{"client-request"};
 static const std::string YAML_PROXY_REQ_KEY{"proxy-request"};

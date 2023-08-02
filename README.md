@@ -27,6 +27,7 @@ Table of Contents
          * [Protocol Specification](#protocol-specification)
             * [PROXY protocol support](#proxy-protocol-support)
          * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
+         * [Keep Connection Open](#keep-connection-open)
       * [Traffic Verification Specification](#traffic-verification-specification)
          * [Field Verification](#field-verification)
          * [URL Verification](#url-verification)
@@ -843,6 +844,56 @@ networks anything more precise than a millisecond will not generally be useful.
 
 See also [--rate &lt;requests/second&gt;](#--rate-requestssecond) below for
 rate specification of transactions.
+
+### Keep Connection Open
+
+In certain special situations, a user might need to keep the connection open
+after the final transaction in a session is done. To specify how long the connection
+needs to be kept open, the user can specify the duration as follows (value format is
+the same as [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)):
+
+```YAML
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+
+  keep-connection-open: 2s
+
+  transactions:
+
+    client-request:
+      delay: 15ms
+
+      method: POST
+      url: /a/path.jpeg
+      version: '1.1'
+      headers:
+        fields:
+        - [ Content-Length, '399' ]
+        - [ Content-Type, image/jpeg ]
+        - [ Host, example.com ]
+        - [ uuid, 1 ]
+
+  server-response:
+    delay: 17000 us
+
+    status: 200
+    reason: OK
+    headers:
+      fields:
+      - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+      - [ Content-Type, image/jpeg ]
+      - [ Transfer-Encoding, chunked ]
+      - [ Connection, keep-alive ]
+    content:
+      size: 3432
+```
 
 ## Traffic Verification Specification
 
