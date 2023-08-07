@@ -638,6 +638,9 @@ struct Ssn
   /// How long the user said to delay for this session.
   std::chrono::microseconds _user_specified_delay_duration{0};
 
+  /// How long the connection is kept open after the final transaction.
+  std::chrono::microseconds _keep_connection_open{0};
+
   /// The desired length of time in ms to replay this session.
   double _rate_multiplier = 0.0;
   /// The SNI to send from the client to the proxy.

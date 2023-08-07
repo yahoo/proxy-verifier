@@ -236,6 +236,18 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
   _ssn->_path = _path;
   _ssn->_line_no = node.Mark().line;
 
+  if (auto keep_connection_open_node{node[YAML_SSN_KEEP_CONNECTION_OPEN_KEY]};
+      keep_connection_open_node)
+  {
+    if (keep_connection_open_node.IsScalar()) {
+      auto &&[delay, delay_errata] = interpret_delay_string(keep_connection_open_node.Scalar());
+      errata.note(std::move(delay_errata));
+      _ssn->_keep_connection_open = delay;
+    } else {
+      errata.note(S_ERROR, R"("{}" key that is not a scalar.)", YAML_SSN_KEEP_CONNECTION_OPEN_KEY);
+    }
+  }
+
   if (auto protocol_sequence_node{node[YAML_SSN_PROTOCOL_KEY]}; protocol_sequence_node) {
     auto const tls_node =
         parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
@@ -704,6 +716,11 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
       specified_interface,
       real_target,
       ssn._rate_multiplier));
+
+  if (ssn._keep_connection_open > 0us) {
+    sleep_for(ssn._keep_connection_open);
+  }
+
   if (!errata.is_ok()) {
     Engine::process_exit_code = 1;
   }
