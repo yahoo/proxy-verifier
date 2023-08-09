@@ -191,9 +191,10 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   }
 
   YAML::Node headers_frame;
-  YAML::Node data_frame;
   YAML::Node rst_stream_frame;
   YAML::Node goaway_frame;
+  std::deque<YAML::Node> data_frames;
+
   if (node[YAML_FRAMES_KEY]) {
     auto frames_node{node[YAML_FRAMES_KEY]};
     if (frames_node.IsSequence()) {
@@ -205,7 +206,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
             headers_frame = value;
             break;
           case H2Frame::DATA:
-            data_frame = value;
+            data_frames.push_back(value);
             break;
           case H2Frame::RST_STREAM:
             if (!rst_stream_frame.IsNull()) {
@@ -250,8 +251,12 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   if (headers_frame.IsNull()) {
     headers_frame = node;
   }
-  if (data_frame.IsNull()) {
-    data_frame = node;
+  if (data_frames.empty()) {
+    data_frames.push_back(node);
+  }
+  if (data_frames.size() > 1) {
+    message._content_data_list.resize(data_frames.size());
+    message._content_size_list.resize(data_frames.size());
   }
 
   if (headers_frame[YAML_HTTP_STATUS_KEY]) {
@@ -435,6 +440,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   }
 
   if (!message._h2_frame_sequence.empty()) {
+    size_t data_frame_idx = 0;
     for (const auto &frame : message._h2_frame_sequence) {
       YAML::Node temp_node;
       switch (frame) {
@@ -442,7 +448,7 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         temp_node = headers_frame;
         break;
       case H2Frame::DATA:
-        temp_node = data_frame;
+        temp_node = data_frames.at(data_frame_idx++);
         break;
       case H2Frame::RST_STREAM:
         temp_node = rst_stream_frame;
@@ -464,9 +470,23 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
               YAML_TIME_DELAY_KEY);
         } else {
           if (message.is_request()) {
-            message._client_frame_delay[frame] = delay_time;
+            if (auto search = message._client_frame_delay.find(frame);
+                search == message._client_frame_delay.end())
+            {
+              message._client_frame_delay[frame] =
+                  std::deque<std::chrono::microseconds>{delay_time};
+            } else {
+              message._client_frame_delay[frame].push_back(delay_time);
+            }
           } else if (message.is_response()) {
-            message._server_frame_delay[frame] = delay_time;
+            if (auto search = message._server_frame_delay.find(frame);
+                search == message._server_frame_delay.end())
+            {
+              message._server_frame_delay[frame] =
+                  std::deque<std::chrono::microseconds>{delay_time};
+            } else {
+              message._server_frame_delay[frame].push_back(delay_time);
+            }
           }
         }
       }
@@ -489,88 +509,102 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  // Do this after parsing fields so it can override transfer encoding.
-  if (auto content_node{data_frame[YAML_CONTENT_KEY]}; content_node) {
-    if (content_node.IsMap()) {
-      if (auto xf_node{content_node[YAML_CONTENT_TRANSFER_KEY]}; xf_node) {
-        TextView xf{xf_node.Scalar()};
-        if (0 == strcasecmp("chunked"_tv, xf)) {
-          message._chunked_p = true;
-        } else if (0 == strcasecmp("plain"_tv, xf)) {
-          // The user may be specifying raw chunk body content (i.e.,
-          // specifying the chunk header with CRLF's, etc.). We set this to
-          // false so that later, when the body is written, we don't
-          // automagically try to frame the body as chunked for the user.
-          message._chunked_p = false;
-        } else {
-          errata.note(
-              S_ERROR,
-              R"(Invalid value "{}" for "{}" key at {} in "{}" node at {})",
-              xf,
-              YAML_CONTENT_TRANSFER_KEY,
-              xf_node.Mark(),
-              YAML_CONTENT_KEY,
-              content_node.Mark());
-        }
-      }
-      if (auto data_node{content_node[YAML_CONTENT_DATA_KEY]}; data_node) {
-        Localizer::Encoding enc{Localizer::Encoding::TEXT};
-        if (auto enc_node{content_node[YAML_CONTENT_ENCODING_KEY]}; enc_node) {
-          TextView text{enc_node.Scalar()};
-          if (0 == strcasecmp("uri"_tv, text)) {
-            enc = Localizer::Encoding::URI;
-          } else if (0 == strcasecmp("plain"_tv, text)) {
-            enc = Localizer::Encoding::TEXT;
+  for (size_t i = 0; i < data_frames.size(); ++i) {
+    // Do this after parsing fields so it can override transfer encoding.
+    if (auto content_node{data_frames.at(i)[YAML_CONTENT_KEY]}; content_node) {
+      if (content_node.IsMap()) {
+        if (auto xf_node{content_node[YAML_CONTENT_TRANSFER_KEY]}; xf_node) {
+          TextView xf{xf_node.Scalar()};
+          if (0 == strcasecmp("chunked"_tv, xf)) {
+            message._chunked_p = true;
+          } else if (0 == strcasecmp("plain"_tv, xf)) {
+            // The user may be specifying raw chunk body content (i.e.,
+            // specifying the chunk header with CRLF's, etc.). We set this to
+            // false so that later, when the body is written, we don't
+            // automagically try to frame the body as chunked for the user.
+            message._chunked_p = false;
           } else {
-            errata.note(S_ERROR, R"(Unknown encoding "{}" at {}.)", text, enc_node.Mark());
-          }
-        }
-        TextView content{Localizer::localize(data_node.Scalar(), enc)};
-        message._content_data = content.data();
-        const size_t content_size = content.size();
-        message._recorded_content_size = content_size;
-        // Cross check against previously read content-length header, if any.
-        if (message._content_length_p) {
-          if (message._content_size != content_size) {
             errata.note(
-                S_DIAG,
-                R"(Conflicting sizes for "Content-Length", sending header value {} instead of data value {}.)",
-                message._content_size,
-                content_size);
-            // _content_size will be the value of the Content-Length header.
+                S_ERROR,
+                R"(Invalid value "{}" for "{}" key at {} in "{}" node at {})",
+                xf,
+                YAML_CONTENT_TRANSFER_KEY,
+                xf_node.Mark(),
+                YAML_CONTENT_KEY,
+                content_node.Mark());
           }
-        } else {
-          message._content_size = content_size;
         }
+        if (auto data_node{content_node[YAML_CONTENT_DATA_KEY]}; data_node) {
+          Localizer::Encoding enc{Localizer::Encoding::TEXT};
+          if (auto enc_node{content_node[YAML_CONTENT_ENCODING_KEY]}; enc_node) {
+            TextView text{enc_node.Scalar()};
+            if (0 == strcasecmp("uri"_tv, text)) {
+              enc = Localizer::Encoding::URI;
+            } else if (0 == strcasecmp("plain"_tv, text)) {
+              enc = Localizer::Encoding::TEXT;
+            } else {
+              errata.note(S_ERROR, R"(Unknown encoding "{}" at {}.)", text, enc_node.Mark());
+            }
+          }
+          TextView content{Localizer::localize(data_node.Scalar(), enc)};
+          message._content_data_list.at(i) = content.data();
+          const size_t content_size = content.size();
+          message._content_size_list.at(i) = content_size;
+          message._recorded_content_size = content_size;
+          // Cross check against previously read content-length header, if any.
+          if (message._content_length_p) {
+            if (message._content_length != content_size) {
+              errata.note(
+                  S_DIAG,
+                  R"(Conflicting sizes for "Content-Length", sending header value {} instead of data value {}.)",
+                  message._content_length,
+                  content_size);
+              // _content_length will be the value of the Content-Length header.
+            }
+          } else {
+            message._content_length += content_size;
+          }
 
-        if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
-          if (verify_node.IsMap()) {
-            // Verification is specified as a map, such as:
-            // verify: {value: test, as: equal, case: ignore }
-            errata.note(parse_body_verification(
-                verify_node,
-                message._content_rule,
-                message._verify_strictly,
-                content));
+          if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
+            if (verify_node.IsMap()) {
+              // Verification is specified as a map, such as:
+              // verify: {value: test, as: equal, case: ignore }
+              errata.note(parse_body_verification(
+                  verify_node,
+                  message._content_rule,
+                  message._verify_strictly,
+                  content));
+            }
           }
-        }
-      } else if (auto size_node{content_node[YAML_CONTENT_SIZE_KEY]}; size_node) {
-        const size_t content_size = swoc::svtou(size_node.Scalar());
-        message._recorded_content_size = content_size;
-        // Cross check against previously read content-length header, if any.
-        if (message._content_length_p) {
-          if (message._content_size != content_size) {
-            errata.note(
-                S_DIAG,
-                R"(Conflicting sizes for "Content-Length", sending header value {} instead of rule value {}.)",
-                message._content_size,
-                content_size);
-            // _content_size will be the value of the Content-Length header.
+        } else if (auto size_node{content_node[YAML_CONTENT_SIZE_KEY]}; size_node) {
+          const size_t content_size = swoc::svtou(size_node.Scalar());
+          message._content_size_list.at(i) = content_size;
+          message._recorded_content_size = content_size;
+          // Cross check against previously read content-length header, if any.
+          if (message._content_length_p) {
+            if (message._content_length != content_size) {
+              errata.note(
+                  S_DIAG,
+                  R"(Conflicting sizes for "Content-Length", sending header value {} instead of rule value {}.)",
+                  message._content_length,
+                  content_size);
+              // _content_length will be the value of the Content-Length header.
+            }
+          } else {
+            message._content_length += content_size;
           }
-        } else {
-          message._content_size = content_size;
-        }
-        if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
+
+          if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
+            if (verify_node.IsMap()) {
+              // Verification is specified as a map, such as:
+              // verify: {value: test, as: equal, case: ignore }
+              errata.note(parse_body_verification(
+                  verify_node,
+                  message._content_rule,
+                  message._verify_strictly));
+            }
+          }
+        } else if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
           if (verify_node.IsMap()) {
             // Verification is specified as a map, such as:
             // verify: {value: test, as: equal, case: ignore }
@@ -579,29 +613,23 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
                 message._content_rule,
                 message._verify_strictly));
           }
-        }
-      } else if (auto verify_node(content_node[YAML_CONTENT_VERIFY_KEY]); verify_node) {
-        if (verify_node.IsMap()) {
-          // Verification is specified as a map, such as:
-          // verify: {value: test, as: equal, case: ignore }
-          errata.note(parse_body_verification(
-              verify_node,
-              message._content_rule,
-              message._verify_strictly));
+        } else {
+          errata.note(
+              S_ERROR,
+              R"("{}" node at {} does not have a "{}", "{}" or "{}" key as required.)",
+              YAML_CONTENT_KEY,
+              node.Mark(),
+              YAML_CONTENT_SIZE_KEY,
+              YAML_CONTENT_DATA_KEY,
+              YAML_CONTENT_VERIFY_KEY);
         }
       } else {
         errata.note(
             S_ERROR,
-            R"("{}" node at {} does not have a "{}", "{}" or "{}" key as required.)",
+            R"("{}" node at {} is not a map.)",
             YAML_CONTENT_KEY,
-            node.Mark(),
-            YAML_CONTENT_SIZE_KEY,
-            YAML_CONTENT_DATA_KEY,
-            YAML_CONTENT_VERIFY_KEY);
+            content_node.Mark());
       }
-    } else {
-      errata
-          .note(S_ERROR, R"("{}" node at {} is not a map.)", YAML_CONTENT_KEY, content_node.Mark());
     }
   }
 

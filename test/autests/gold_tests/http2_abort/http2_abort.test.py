@@ -191,3 +191,39 @@ server.Streams.stdout += Testers.ExcludesExpression(
 proxy.Streams.stdout += Testers.ContainsExpression(
     'ConnectionTerminated error_code:(5|ErrorCodes.STREAM_CLOSED), last_stream_id:0, additional_data:None',
     'Received GOAWAY frame.')
+
+#
+# Test 6: Client sends RST_STREAM mixed within multiple DATA frames
+#
+r = Test.AddTestRun('Client sends RST_STREAM mixed within multiple DATA frames')
+client = r.AddClientProcess(
+    'client6', 'replay_files/client_rst_stream_mixed_data.yaml')
+server = r.AddServerProcess(
+    'server6', 'replay_files/client_rst_stream_mixed_data.yaml')
+proxy = r.AddProxyProcess('proxy6', listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port,
+                          use_ssl=True, use_http2_to_2=True)
+
+client.Streams.stdout += Testers.ContainsExpression(
+    'Submitting RST_STREAM frame for key 1 after DATA frame with error code INTERNAL_ERROR.',
+    'Detect client abort flag.')
+
+client.Streams.stdout += Testers.ContainsExpression(
+    'Submitted RST_STREAM frame for key 1 on stream 1.',
+    'Submitted RST_STREAM frame.')
+
+server.Streams.stdout += Testers.ContainsExpression(
+    'Received an HTTP/2 request for key 1 with stream id 1',
+    'Server is functional.')
+
+server.Streams.stdout += Testers.ExcludesExpression(
+    'RST_STREAM',
+    'Server is not affected.')
+
+proxy.Streams.stdout += Testers.ContainsExpression(
+    'Received RST_STREAM frame with error code INTERNAL_ERROR',
+    'Received RST_STREAM frame.')
+
+proxy.Streams.stdout += Testers.ContainsExpression(
+    'Frame sequence from client: HEADERS, DATA, RST_STREAM',
+    'Frame sequence.')

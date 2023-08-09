@@ -1147,9 +1147,10 @@ data_read_callback(
     } else {
       num_to_copy = 0;
     }
+    errata.note(S_DIAG, "Could not find a stream with stream id: {}", stream_id);
     if (stream_state->_send_body_offset >= stream_state->_send_body_length) {
       *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-      if (stream_state->_trailer_to_send) {
+      if (stream_state->_last_data_frame && stream_state->_trailer_to_send) {
         // Don't set the END_STREAM flag if we have trailers to send.
         *data_flags |= NGHTTP2_DATA_FLAG_NO_END_STREAM;
         // Send the trailers.
@@ -1178,14 +1179,16 @@ H2Session::frame_delay(HttpHeader const &hdr, H2Frame curr_frame)
 
   std::chrono::microseconds frame_delay{0};
   if (hdr.is_request()) {
-    auto delay_iter = hdr._client_frame_delay.find(curr_frame);
+    auto delay_iter = const_cast<HttpHeader &>(hdr)._client_frame_delay.find(curr_frame);
     if (delay_iter != hdr._client_frame_delay.end()) {
-      frame_delay = delay_iter->second;
+      frame_delay = delay_iter->second.front();
+      delay_iter->second.pop_front();
     }
   } else if (hdr.is_response()) {
-    auto delay_iter = hdr._server_frame_delay.find(curr_frame);
+    auto delay_iter = const_cast<HttpHeader &>(hdr)._server_frame_delay.find(curr_frame);
     if (delay_iter != hdr._server_frame_delay.end()) {
-      frame_delay = delay_iter->second;
+      frame_delay = delay_iter->second.front();
+      delay_iter->second.pop_front();
     }
   }
 
@@ -1304,18 +1307,24 @@ H2Session::submit_headers_frame(
 }
 
 Errata
-H2Session::submit_data_frame(HttpHeader const &hdr, H2StreamState *stream_state, uint8_t flags)
+H2Session::submit_data_frame(
+    HttpHeader const &hdr,
+    H2StreamState *stream_state,
+    uint8_t flags,
+    size_t data_frame_idx)
 {
   Errata errata;
   TextView content;
 
-  if (hdr._content_data) {
-    content = TextView{hdr._content_data, hdr._content_size};
+  if (hdr._content_data_list.at(data_frame_idx)) {
+    content = TextView{
+        hdr._content_data_list.at(data_frame_idx),
+        hdr._content_size_list.at(data_frame_idx)};
   } else {
     // If hdr._content_data is null, then there was no explicit description
     // of the body data via the data node. Instead we'll use our generated
     // HttpHeader::_content.
-    content = TextView{HttpHeader::_content.data(), hdr._content_size};
+    content = TextView{HttpHeader::_content.data(), hdr._content_size_list.at(data_frame_idx)};
   }
 
   nghttp2_data_provider data_prd;
@@ -1324,7 +1333,9 @@ H2Session::submit_data_frame(HttpHeader const &hdr, H2StreamState *stream_state,
   data_prd.read_callback = data_read_callback;
   stream_state->_body_to_send = content.data();
   stream_state->_send_body_length = content.size();
+  stream_state->_send_body_offset = 0;
   stream_state->_wait_for_continue = hdr.is_request_with_expect_100_continue();
+  stream_state->_last_data_frame = (hdr._content_data_list.size() - 1 == data_frame_idx);
 
   errata.note(
       S_DIAG,
@@ -1462,6 +1473,7 @@ H2Session::write(HttpHeader const &hdr)
       zret.note(S_WARN, "The first frame of a request cannot be RST_STREAM.");
     }
 
+    size_t data_frame_idx = 0;
     while (!stream_state->_h2_frame_sequence.empty()) {
       auto curr_frame = stream_state->_h2_frame_sequence.front();
       stream_state->_h2_frame_sequence.pop_front();
@@ -1488,7 +1500,7 @@ H2Session::write(HttpHeader const &hdr)
         zret.note(submit_headers_frame(hdr, stream_state, new_stream_state, flags));
       } break;
       case H2Frame::DATA: {
-        zret.note(submit_data_frame(hdr, stream_state, flags));
+        zret.note(submit_data_frame(hdr, stream_state, flags, data_frame_idx++));
       } break;
       case H2Frame::RST_STREAM: {
         zret.note(submit_rst_stream_frame(stream_state, prev_frame));
@@ -1521,16 +1533,17 @@ H2Session::write(HttpHeader const &hdr)
     }
 
     stream_state->_key = hdr.get_key();
-    if (hdr._content_size > 0 && (hdr.is_request() || !HttpHeader::STATUS_NO_CONTENT[hdr._status]))
+    if (hdr._content_size_list.front() > 0 &&
+        (hdr.is_request() || !HttpHeader::STATUS_NO_CONTENT[hdr._status]))
     {
       TextView content;
-      if (hdr._content_data) {
-        content = TextView{hdr._content_data, hdr._content_size};
+      if (hdr._content_data_list.front()) {
+        content = TextView{hdr._content_data_list.front(), hdr._content_size_list.front()};
       } else {
         // If hdr._content_data is null, then there was no explicit description
         // of the body data via the data node. Instead we'll use our generated
         // HttpHeader::_content.
-        content = TextView{HttpHeader::_content.data(), hdr._content_size};
+        content = TextView{HttpHeader::_content.data(), hdr._content_size_list.front()};
       }
       nghttp2_data_provider data_prd;
       data_prd.source.fd = 0;
@@ -1538,7 +1551,9 @@ H2Session::write(HttpHeader const &hdr)
       data_prd.read_callback = data_read_callback;
       stream_state->_body_to_send = content.data();
       stream_state->_send_body_length = content.size();
+      stream_state->_send_body_offset = 0;
       stream_state->_wait_for_continue = hdr.is_request_with_expect_100_continue();
+      stream_state->_last_data_frame = true;
       if (hdr.is_response()) {
         // Pack the trailer headers.
         pack_headers(

@@ -491,12 +491,12 @@ public:
   /// content. This is split instead of @c TextView because these get set
   /// independently during load.
 
-  char const *_content_data = nullptr; ///< Literal data for the content.
+  std::deque<char const *> _content_data_list{nullptr}; ///< Literal data for the content.
 
   std::shared_ptr<RuleCheck> _content_rule;
 
   /// The size of content we should prepare to send.
-  size_t _content_size = 0;
+  std::deque<size_t> _content_size_list{0};
 
   /// The size of content recorded that was sent in the replay file.
   ///
@@ -542,8 +542,8 @@ public:
   int _client_goaway_error = -1;
   int _server_goaway_error = -1;
 
-  std::map<H2Frame, std::chrono::microseconds> _client_frame_delay;
-  std::map<H2Frame, std::chrono::microseconds> _server_frame_delay;
+  std::map<H2Frame, std::deque<std::chrono::microseconds>> _client_frame_delay;
+  std::map<H2Frame, std::deque<std::chrono::microseconds>> _server_frame_delay;
 
   /// Body is chunked.
   bool _chunked_p = false;
@@ -552,6 +552,7 @@ public:
   bool _has_transfer_encoding_chunked = false;
   /// No Content-Length - close after sending body.
   bool _content_length_p = false;
+  size_t _content_length = 0;
 
   /// The parsed headers contain "Connection: close" header.
   bool _contains_connection_close = false;
