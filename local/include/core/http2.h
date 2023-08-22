@@ -64,6 +64,7 @@ public:
   size_t _send_body_length = 0;
   size_t _send_body_offset = 0;
   bool _wait_for_continue = false;
+  bool _last_data_frame = false;
   std::string _key;
 
   nghttp2_nv *_trailer_to_send = nullptr;
@@ -224,7 +225,11 @@ private:
       H2StreamState *stream_state,
       std::shared_ptr<H2StreamState> new_stream_state,
       uint8_t flags);
-  swoc::Errata submit_data_frame(HttpHeader const &hdr, H2StreamState *stream_state, uint8_t flags);
+  swoc::Errata submit_data_frame(
+      HttpHeader const &hdr,
+      H2StreamState *stream_state,
+      uint8_t flags,
+      size_t data_frame_idx);
   swoc::Errata submit_rst_stream_frame(H2StreamState *stream_state, H2Frame prev_frame);
   swoc::Errata submit_goaway_frame(H2StreamState *stream_state, H2Frame prev_frame);
 

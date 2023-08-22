@@ -1,0 +1,75 @@
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  transactions:
+  - client-request:
+      frames:
+      - HEADERS:
+          delay: 2000ms
+          headers:
+            fields:
+            - [:method, POST]
+            - [:scheme, https]
+            - [:authority, example.data.com]
+            - [:path, /a/path]
+            - [Content-Type, text/html]
+            - [uuid, 1]
+      - DATA:
+          delay: 1000ms
+          content:
+            encoding: plain
+            data: client_data_1
+      - DATA:
+          delay: 1500ms
+          content:
+            encoding: plain
+            data: client_data_2
+      - DATA:
+          delay: 500ms
+          content:
+            encoding: plain
+            data: client_data_3
+
+    proxy-request:
+      content:
+        encoding: plain
+        data: client_data_1client_data_2client_data_3
+        verify: {as: equal}
+
+    server-response:
+      frames:
+      - HEADERS:
+          delay: 500ms
+          headers:
+            fields:
+            - [:status, 200]
+            - [Content-Type, text/html]
+      - DATA:
+          delay: 1100ms
+          content:
+            encoding: plain
+            data: server_data_1
+      - DATA:
+          delay: 700ms
+          content:
+            encoding: plain
+            data: server_data_2
+      - DATA:
+          delay: 1300ms
+          content:
+            encoding: plain
+            data: server_data_3
+
+    proxy-response:
+      content:
+        encoding: plain
+        data: server_data_1server_data_2server_data_3
+        verify: {as: equal}

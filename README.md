@@ -438,6 +438,31 @@ with their HTTP/1 counterparts. From a parsing perspective, this means they simp
 `headers` and `content` nodes that are used for HTTP/1 specification as described above. For
 an example, see the `RST_STREAM` frame section below.
 
+Note that multiple `DATA` frames can be specified for requests and responses. The replay follows
+the same order the `DATA` frames are listed. See the example below:
+
+```YAML
+  client-request:
+    frames:
+    - HEADERS:
+        headers:
+          fields:
+          - [:method, POST]
+          - [:scheme, https]
+          - [:authority, example.data.com]
+          - [:path, /a/path]
+          - [Content-Type, text/html]
+          - [uuid, 1]
+    - DATA:
+          content:
+          encoding: plain
+          data: client_data_1
+    - DATA:
+        content:
+          encoding: plain
+          data: client_data_2
+```
+
 #### RST_STREAM frame
 
 In some cases, there might be a need to test the behavior of the proxy when the
@@ -1200,12 +1225,12 @@ node. The rules follow the same map syntax as described for field verification.
 
 ```YAML
   proxy-request:
-  content:
-    verify: {value: test1, as: equal}
+    content:
+      verify: {value: test1, as: equal}
 
   proxy-response:
-  content:
-    verify: {value: test2, as: contains}
+    content:
+      verify: {value: test2, as: contains}
 ```
 
 The `value` node in the `verify` node can be ommited if the `data` node is used
@@ -1215,16 +1240,49 @@ However, `value` node has priority over the `data` node, meaning if there is a
 
 ```YAML
   proxy-request:
-  content:
-    encoding: plain
-    data: test1
-    verify: {as: equal}
+    content:
+      encoding: plain
+      data: test1
+      verify: {as: equal}
 
   proxy-response:
-  content:
-    encoding: plain
-    data: test2
-    verify: {as: contains}
+    content:
+      encoding: plain
+      data: test2
+      verify: {as: contains}
+```
+
+Note that only one body verification node is needed, even if multiple `DATA` frames
+are specified as described in [HEADERS and DATA frame](#headers-and-data-frame). The
+verification node need to combine all the values specified for the `DATA` frames.
+See the example below:
+
+```YAML
+  client-request:
+    frames:
+    - HEADERS:
+        headers:
+          fields:
+          - [:method, POST]
+          - [:scheme, https]
+          - [:authority, example.data.com]
+          - [:path, /a/path]
+          - [Content-Type, text/html]
+          - [uuid, 1]
+    - DATA:
+          content:
+          encoding: plain
+          data: client_data_1
+    - DATA:
+        content:
+          encoding: plain
+          data: client_data_2
+
+  proxy-request:
+    content:
+      encoding: plain
+      data: client_data_1client_data_2
+      verify: {as: equal}
 ```
 
 ### Example Replay File

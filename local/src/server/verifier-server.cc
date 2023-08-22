@@ -669,14 +669,14 @@ TF_Serve_Connection(std::thread *t)
       // HTTP/3 and HTTP/2 transactions are processed on a stream basis, and
       // the body is never needed to be independantly drained.
       if (!is_http3 && !is_http2 &&
-          (req_hdr->_content_size || req_hdr->_content_length_p || req_hdr->_chunked_p))
+          (req_hdr->_content_length || req_hdr->_content_length_p || req_hdr->_chunked_p))
       {
         if (req_hdr->_chunked_p) {
-          req_hdr->_content_size = specified_transaction._req._content_size;
+          req_hdr->_content_length = specified_transaction._req._content_length;
         }
         auto &&[bytes_drained, drain_errata] = thread_info._session->drain_body(
             *req_hdr,
-            req_hdr->_content_size,
+            req_hdr->_content_length,
             w.view(),
             specified_transaction._req._content_rule);
         thread_errata.note(std::move(drain_errata));
@@ -984,14 +984,15 @@ Engine::command_run()
 
     size_t max_content_length = 0;
     for (auto const &[key, txn] : Transactions) {
-      if (txn._rsp._content_data == nullptr) { // don't check responses with literal content.
-        max_content_length = std::max<size_t>(max_content_length, txn._rsp._content_size);
+      if (txn._rsp._content_data_list.front() == nullptr)
+      { // don't check responses with literal content.
+        max_content_length = std::max<size_t>(max_content_length, txn._rsp._content_length);
       }
     }
     HttpHeader::set_max_content_length(max_content_length);
     for (auto &[key, txn] : Transactions) {
-      if (txn._rsp._content_data == nullptr) { // fill in from static content.
-        txn._rsp._content_data = txn._rsp._content.data();
+      if (txn._rsp._content_data_list.front() == nullptr) { // fill in from static content.
+        txn._rsp._content_data_list.front() = txn._rsp._content.data();
       }
     }
 

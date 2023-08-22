@@ -873,7 +873,7 @@ Engine::parse_replay_files()
   for (auto ssn : Session_List) {
     _transaction_count += ssn->_transactions.size();
     for (auto const &txn : ssn->_transactions) {
-      _max_content_length = std::max<size_t>(_max_content_length, txn._req._content_size);
+      _max_content_length = std::max<size_t>(_max_content_length, txn._req._content_length);
     }
   }
   errata.note(

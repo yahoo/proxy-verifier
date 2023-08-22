@@ -143,13 +143,13 @@ HttpHeader::update_content_length(swoc::TextView method)
   // Some methods ignore the Content-Length for the current transaction
   if (strcasecmp(method, "HEAD") == 0) {
     // Don't try chunked encoding later
-    _content_size = 0;
+    _content_length = 0;
     _content_length_p = true;
   } else if (auto spot{_fields_rules->_fields.find(FIELD_CONTENT_LENGTH)};
              spot != _fields_rules->_fields.end())
   {
     cl = swoc::svtou(spot->second);
-    _content_size = cl;
+    _content_length = cl;
     _content_length_p = true;
   }
   return errata;
@@ -1060,10 +1060,10 @@ Session::drain_body_internal(HttpHeader &rsp_hdr_from_wire, Txn const &json_txn,
   rsp_hdr_from_wire.update_content_length(json_txn._req._method);
   rsp_hdr_from_wire.update_transfer_encoding();
   // The following helps set an expectation for chunked-encoded responses.
-  size_t expected_content_size = json_txn._rsp._content_size;
+  size_t expected_content_size = json_txn._rsp._content_length;
   if (rsp_hdr_from_wire._content_length_p) {
     // The response specifies the content length. Use that specified length.
-    expected_content_size = rsp_hdr_from_wire._content_size;
+    expected_content_size = rsp_hdr_from_wire._content_length;
   }
   auto &&[bytes_drained, drain_errata] = this->drain_body(
       rsp_hdr_from_wire,
@@ -1338,20 +1338,20 @@ Session::write_body(HttpHeader const &hdr)
   auto const message_type_permits_body =
       (hdr.is_request() || (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status]));
   // Note that zero-length chunked bodies must send a zero-length encoded chunk.
-  if (message_type_permits_body && (hdr._content_size > 0 || hdr._chunked_p)) {
+  if (message_type_permits_body && (hdr._content_length > 0 || hdr._chunked_p)) {
     TextView content;
-    if (hdr._content_data) {
-      content = TextView{hdr._content_data, hdr._content_size};
+    if (hdr._content_data_list.front()) {
+      content = TextView{hdr._content_data_list.front(), hdr._content_length};
     } else {
       // If hdr._content_data is null, then there was no explicit description
       // of the body data via the data node. Instead we'll use our generated
       // HttpHeader::_content.
-      content = TextView{HttpHeader::_content.data(), hdr._content_size};
+      content = TextView{HttpHeader::_content.data(), hdr._content_length};
     }
     bytes_written.note(
         S_DIAG,
         "Sent {} byte body {}{} for key {}:\n{}",
-        hdr._content_size,
+        hdr._content_length,
         swoc::bwf::If(hdr._content_length_p, "[CL]"),
         swoc::bwf::If(hdr._chunked_p, "[chunked]"),
         key,
@@ -1378,7 +1378,7 @@ Session::write_body(HttpHeader const &hdr)
       }
     }
 
-    if (bytes_written != static_cast<ssize_t>(hdr._content_size) &&
+    if (bytes_written != static_cast<ssize_t>(hdr._content_length) &&
         bytes_written != static_cast<ssize_t>(hdr._recorded_content_size))
     {
       bytes_written.note(
@@ -1387,7 +1387,7 @@ Session::write_body(HttpHeader const &hdr)
           swoc::bwf::If(hdr._chunked_p, " [chunked]"),
           key,
           bytes_written.result(),
-          hdr._content_size,
+          hdr._content_length,
           ec);
     }
   } else if (
