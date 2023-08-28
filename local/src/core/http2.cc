@@ -1533,17 +1533,16 @@ H2Session::write(HttpHeader const &hdr)
     }
 
     stream_state->_key = hdr.get_key();
-    if (hdr._content_size_list.front() > 0 &&
-        (hdr.is_request() || !HttpHeader::STATUS_NO_CONTENT[hdr._status]))
-    {
+    if (hdr._content_length > 0 &&
+        (hdr.is_request() || !HttpHeader::STATUS_NO_CONTENT[hdr._status])) {
       TextView content;
       if (hdr._content_data_list.front()) {
-        content = TextView{hdr._content_data_list.front(), hdr._content_size_list.front()};
+        content = TextView{hdr._content_data_list.front(), hdr._content_length};
       } else {
         // If hdr._content_data is null, then there was no explicit description
         // of the body data via the data node. Instead we'll use our generated
         // HttpHeader::_content.
-        content = TextView{HttpHeader::_content.data(), hdr._content_size_list.front()};
+        content = TextView{HttpHeader::_content.data(), hdr._content_length};
       }
       nghttp2_data_provider data_prd;
       data_prd.source.fd = 0;
