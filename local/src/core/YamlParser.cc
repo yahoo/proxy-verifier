@@ -550,15 +550,15 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
           message._content_data_list.at(i) = content.data();
           const size_t content_size = content.size();
           message._content_size_list.at(i) = content_size;
-          message._recorded_content_size = content_size;
+          message._recorded_content_size += content_size;
           // Cross check against previously read content-length header, if any.
           if (message._content_length_p) {
-            if (message._content_length != content_size) {
+            if (message._content_length != message._recorded_content_size) {
               errata.note(
                   S_DIAG,
                   R"(Conflicting sizes for "Content-Length", sending header value {} instead of data value {}.)",
                   message._content_length,
-                  content_size);
+                  message._recorded_content_size);
               // _content_length will be the value of the Content-Length header.
             }
           } else {
@@ -579,15 +579,15 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
         } else if (auto size_node{content_node[YAML_CONTENT_SIZE_KEY]}; size_node) {
           const size_t content_size = swoc::svtou(size_node.Scalar());
           message._content_size_list.at(i) = content_size;
-          message._recorded_content_size = content_size;
+          message._recorded_content_size += content_size;
           // Cross check against previously read content-length header, if any.
           if (message._content_length_p) {
-            if (message._content_length != content_size) {
+            if (message._content_length != message._recorded_content_size) {
               errata.note(
                   S_DIAG,
                   R"(Conflicting sizes for "Content-Length", sending header value {} instead of rule value {}.)",
                   message._content_length,
-                  content_size);
+                  message._recorded_content_size);
               // _content_length will be the value of the Content-Length header.
             }
           } else {
