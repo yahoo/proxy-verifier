@@ -1365,6 +1365,7 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
           txn_list_node.Mark(),
           ssn_node.Mark(),
           path);
+      continue;
     }
     if (txn_list_node.size() == 0) {
       session_errata.note(
