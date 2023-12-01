@@ -57,6 +57,9 @@ void TF_Serve_Connection(std::thread *t);
  */
 bool Use_Strict_Checking = false;
 
+/** The TCP send buffer size. 0 means fallback to the system default. */
+int Send_Buffer_size = 0;
+
 /// This must be a list so that iterators / pointers to elements do not go stale.
 std::list<std::unique_ptr<std::thread>> Accept_Threads;
 
@@ -817,6 +820,17 @@ do_listen(swoc::IPEndpoint &server_addr, bool do_https, bool do_http3)
           R"(Could not set reuseaddr on socket {}: {}.)",
           socket_fd,
           swoc::bwf::Errno{});
+    } else if (
+        Send_Buffer_size > 0 &&
+        setsockopt(socket_fd, SOL_SOCKET, SO_SNDBUF, &Send_Buffer_size, sizeof(Send_Buffer_size)) <
+            0)
+    {
+      errata.note(
+          S_ERROR,
+          R"(Could not set SO_SNDBUF to {} on socket {}: {}.)",
+          Send_Buffer_size,
+          socket_fd,
+          swoc::bwf::Errno{});
     } else {
       if (0 == ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
         int bind_result = bind(socket_fd, &server_addr.sa, server_addr.size());
@@ -880,6 +894,12 @@ Engine::command_run()
     if (thread_limit_arg.size() == 1) {
       auto const thread_limit_int = atoi(thread_limit_arg[0].c_str());
       Server_Thread_Pool.set_max_threads(thread_limit_int);
+    }
+
+    auto send_buffer_size_arg{arguments.get("send-buffer-size")};
+    if (send_buffer_size_arg.size() == 1) {
+      auto const send_buffer_size_int = atoi(send_buffer_size_arg[0].c_str());
+      Send_Buffer_size = send_buffer_size_int;
     }
 
     if (arguments.get("strict")) {
@@ -1091,6 +1111,13 @@ main(int /* argc */, char const *argv[])
           1,
           [&]() -> void { engine.command_run(); })
       .add_option("--thread-limit", "", thread_limit_description.c_str(), "", 1, "")
+      .add_option(
+          "--send-buffer-size",
+          "",
+          "Sets the TCP send buffer size. Defaults to 0, which uses the system default.",
+          "",
+          1,
+          "")
       .add_option(
           "--listen-http",
           "",
