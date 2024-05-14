@@ -897,7 +897,7 @@ Session::read_and_parse_proxy_hdr()
   w.commit(zret.result());
   // try to parse the PROXY header
   ProxyProtocolMsg ppUtil;
-  errata.note(S_DIAG, "Attempting to parse PROXY header", w.size());
+  errata.note(S_DIAG, "Attempting to parse PROXY header");
   auto &&[ppNumBytes, ppParseErrata] = ppUtil.parse_header(w.view());
   errata.note(std::move(ppParseErrata));
   if (ppNumBytes > 0) {
@@ -1779,10 +1779,19 @@ Session::do_connect(
                 // behavior of using the socket address similar to what curl
                 // does
                 // get source/local endpoint
-                struct sockaddr src_addr;
-                socklen_t len = sizeof(src_addr);
-                getsockname(_fd, &src_addr, &len);
-                pp_msg->set_endpoints({&src_addr}, *real_target);
+                struct sockaddr_storage src_addr;
+                socklen_t len = sizeof(struct sockaddr_storage);
+                if (0 ==
+                    getsockname(socket_fd, reinterpret_cast<struct sockaddr *>(&src_addr), &len)) {
+                  swoc::IPEndpoint src_ep{reinterpret_cast<struct sockaddr *>(&src_addr)};
+                  pp_msg->set_endpoints(src_ep, *real_target);
+                  errata.note(S_DIAG, "setting source endpoint: {}", src_ep);
+                } else {
+                  errata.note(
+                      S_ERROR,
+                      R"(Failed to get source endpoint for proxy protocol message: {})",
+                      swoc::bwf::Errno{});
+                }
               }
               send_proxy_msg(*pp_msg);
             }
