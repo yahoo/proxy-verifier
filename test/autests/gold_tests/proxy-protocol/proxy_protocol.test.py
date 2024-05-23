@@ -163,7 +163,7 @@ client.Streams.stdout += Testers.ContainsExpression(
     "Verify that the PROXY header is sent from the client to the server.")
 
 server.Streams.stdout += Testers.ContainsExpression(
-    f"Received PROXY header v1:.*\nPROXY TCP6 ::.*:.*:.*:0 ::1 [0-9]+ {server.Variables.http_port}",
+    f"Received PROXY header v1:.*\nPROXY TCP6 ::1 ::1 [0-9]+ {server.Variables.http_port}",
     "Verify that the server receives the PROXY header and parsed sucessfully.", reflags=re.MULTILINE)
 
 #
@@ -194,7 +194,7 @@ client.Streams.stdout += Testers.ContainsExpression(
     "Verify that the PROXY header is sent from the client to the server.")
 
 server.Streams.stdout += Testers.ContainsExpression(
-    f"Received PROXY header v2:.*\nPROXY TCP6 ::.*:.*:.*:0 ::1 [0-9]+ {server.Variables.http_port}",
+    f"Received PROXY header v2:.*\nPROXY TCP6 ::1 ::1 [0-9]+ {server.Variables.http_port}",
     "Verify that the server receives the PROXY header and parsed sucessfully.", reflags=re.MULTILINE)
 
 # Test 8: Verify the PROXY protocol is sent with source and

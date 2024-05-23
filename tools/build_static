@@ -95,7 +95,7 @@ else
   then
     nghttp3_dir=_destdir/default/nghttp3
   fi
-  sed "s:-lngtcp2_crypto_openssl[^[:space:]]*:${ngtcp2_dir}/lib/libngtcp2_crypto_openssl.a:g" ${linkout} | \
+  sed "s:-lngtcp2_crypto_quictls[^[:space:]]*:${ngtcp2_dir}/lib/libngtcp2_crypto_quictls.a:g" ${linkout} | \
     sed "s:-lssl[^[:space:]]*:${openssl_dir}/lib/libssl.a:g" | \
     sed "s:-lcrypto[^[:space:]]*:${openssl_dir}/lib/libcrypto.a:g" | \
     sed "s:-lngtcp2[^[:space:]]*:${ngtcp2_dir}/lib/libngtcp2.a:g" | \

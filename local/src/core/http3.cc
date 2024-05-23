@@ -14,7 +14,7 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <ngtcp2/ngtcp2.h>
-#include <ngtcp2/ngtcp2_crypto_openssl.h>
+#include <ngtcp2/ngtcp2_crypto_quictls.h>
 #include <netdb.h>
 
 #include "swoc/bwf_ex.h"
@@ -2205,10 +2205,10 @@ H3Session::client_ssl_ctx_init(SSL_CTX *&client_context)
   Errata errata;
   client_context = SSL_CTX_new(TLS_method());
 
-  if (ngtcp2_crypto_openssl_configure_client_context(client_context) != 0) {
+  if (ngtcp2_crypto_quictls_configure_client_context(client_context) != 0) {
     errata.note(
         S_ERROR,
-        "ngtcp2_crypto_openssl_configure_client_context failed: {}",
+        "ngtcp2_crypto_quictls_configure_client_context failed: {}",
         swoc::bwf::SSLError{});
     return errata;
   }
