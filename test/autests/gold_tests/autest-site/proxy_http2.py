@@ -68,7 +68,7 @@ class Http2ConnectionManager(object):
     An object that manages a single HTTP/2 connection.
     """
 
-    def __init__(self, sock, h2_to_server=False):
+    def __init__(self, sock, strict_goaway, h2_to_server=False):
         listening_config = H2Configuration(
             client_side=False, validate_inbound_headers=False)
         self.tls = threading.local()
@@ -79,6 +79,7 @@ class Http2ConnectionManager(object):
         self.is_h2_to_server = h2_to_server
         self.request_infos = {}
         self.client_sni = None
+        self.strict_goaway = strict_goaway
 
     def run_forever(self):
         self.listening_conn.initiate_connection()
@@ -116,6 +117,8 @@ class Http2ConnectionManager(object):
                         if response_trailers:
                             self.listening_conn.send_headers(
                                 stream_id, response_trailers, end_stream=True)
+                        if self.strict_goaway:
+                            self.listening_conn.close_connection()
 
                     except StreamClosedError as e:
                         print(e)
@@ -441,7 +444,7 @@ def servername_callback(conn):
     print(f"Got SNI from client: {sni}")
 
 
-def configure_http2_server(listen_port, server_port, https_pem, ca_pem, h2_to_server=False):
+def configure_http2_server(listen_port, server_port, https_pem, ca_pem, strict_goaway, h2_to_server=False):
     # Let's set up SSL. This is a lot of work in PyOpenSSL.
     options = (
         SSL.OP_NO_COMPRESSION |
@@ -480,7 +483,7 @@ def configure_http2_server(listen_port, server_port, https_pem, ca_pem, h2_to_se
     while True:
         try:
             new_sock, _ = server.accept()
-            manager = Http2ConnectionManager(new_sock, h2_to_server)
+            manager = Http2ConnectionManager(new_sock, strict_goaway, h2_to_server)
             manager.server_port = server_port
             manager.cert_file = https_pem
             manager.ca_file = ca_pem

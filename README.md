@@ -394,6 +394,27 @@ headers, as demonstrated below:
       - [ x-test-trailer-2, two ]
 ```
 
+For HTTP/2, there is an extra option `strict-goaway` which can be specified for each session.
+This option is used to config the Proxy Verifier client whether to strictly follow RFC7540
+(https://datatracker.ietf.org/doc/html/rfc7540#section-6.8). When set to `true`, the client
+terminates the connection after processing the streams that are being processed. When set to
+`false`, the client does not terminate the connection, and continues with subsequent streams.
+The default value of this option is `true`, and can be specified as demonstrated below:
+
+```YAML
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  strict-goaway: true
+  transactions:
+```
+
 It is also possible to specify everything as a sequence of frames. The available
 options for the frame sequence are:
 * `DATA`
@@ -636,7 +657,7 @@ streams:
 
       # This await will cause the Verifier client to hold off on sending this
       # request until the response to first-stream is received.
-      await: first-request
+      await: first-stream
 
       headers:
         fields:

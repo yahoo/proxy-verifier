@@ -651,6 +651,9 @@ struct Ssn
   bool is_tls = false;
   bool is_h2 = false;
   bool is_h3 = false;
+
+  bool strict_goaway = true;
+
   /// The PROXY protocol message to send in this session. nullptr if no PROXY
   /// protocol message is to be sent.
   std::unique_ptr<ProxyProtocolMsg> _pp_msg;
