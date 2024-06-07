@@ -14,7 +14,6 @@ Then copy and paste the output here.
 Table of Contents
 =================
 
-* [Table of Contents](#table-of-contents)
 * [Proxy Verifier](#proxy-verifier)
    * [Traffic Replay Specification](#traffic-replay-specification)
       * [HTTP Specification](#http-specification)
@@ -61,6 +60,7 @@ Table of Contents
          * [--qlog-dir &lt;directory&gt;](#--qlog-dir-directory)
          * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
          * [--send-buffer-size &lt;size&gt;](#--send-buffer-size-size)
+         * [--poll-timeout &lt;timeout_ms&gt;](#--poll-timeout-timeout_ms)
    * [Tools](#tools)
       * [Replay Gen <a href="tools/replay_gen.py">replay_gen.py</a>](tools/replay_gen.py)
          * [-n,--number &lt;NUMBER&gt;](#-n--number-number)
@@ -80,8 +80,6 @@ Table of Contents
    * [License](#license)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
-
-Created by [gh-md-toc](https://github.com/ekalinin/github-markdown-toc)
 
 # Proxy Verifier
 
@@ -2057,6 +2055,13 @@ set on the socket and, thus, the system default socket buffer size will be
 used.
 
 This is a server-side only option.
+
+#### --poll-timeout \<timeout_ms\>
+
+When Proxy Verifier performs read and write operations, it does so using
+non-blocking sockets with a timeout. By default, this timeout is set to 5
+seconds (5,000 milliseconds). This optional argument provides a way to specify a
+different timeout in milliseconds for these operations.
 
 ## Tools
 This section describes how to use some of the scripts under the [tools](tools) directory.

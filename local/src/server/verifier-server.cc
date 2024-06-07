@@ -47,6 +47,7 @@
 using swoc::Errata;
 
 using std::this_thread::sleep_for;
+using std::chrono::milliseconds;
 using namespace std::literals;
 constexpr auto const Thread_Sleep_Interval = 100ms;
 
@@ -65,6 +66,8 @@ std::list<std::unique_ptr<std::thread>> Accept_Threads;
 
 /** Set this to true when it's time for the threads to stop. */
 bool Shutdown_Flag = false;
+
+milliseconds Poll_Timeout{5s};
 
 class ServerThreadInfo : public ThreadInfo
 {
@@ -871,6 +874,16 @@ Engine::command_run()
     auto args{arguments.get("run")};
     std::deque<swoc::IPEndpoint> server_addrs, server_addrs_https, server_addrs_http3;
 
+    auto poll_timeout_arg{arguments.get("poll-timeout")};
+    int poll_timeout_arg_int = 0;
+    if (poll_timeout_arg.size() == 1) {
+      poll_timeout_arg_int = atoi(poll_timeout_arg[0].c_str());
+    } else {
+      poll_timeout_arg_int = 5000;
+    }
+    Poll_Timeout = milliseconds(poll_timeout_arg_int);
+    errata.note(S_DIAG, "Poll timeout set to {}ms.", poll_timeout_arg_int);
+
     auto server_addr_http_arg{arguments.get("listen-http")};
     auto server_addr_https_arg{arguments.get("listen-https")};
     auto server_addr_http3_arg{arguments.get("listen-http3")};
@@ -1168,6 +1181,14 @@ main(int /* argc */, char const *argv[])
           "",
           "A filename to which TLS secrets will be logged. These can be used to "
           "decrypt packet captures. By default no TLS secrets will be logged.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--poll-timeout",
+          "",
+          "Set the poll timeout in milliseconds for socket operations. "
+          "Default is 5000ms.",
           "",
           1,
           "")
