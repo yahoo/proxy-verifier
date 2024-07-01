@@ -366,6 +366,32 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
     }
     _ssn->_user_specified_delay_duration = delay_time;
   }
+
+  if (node[YAML_STRICT_GOAWAY_KEY]) {
+    auto strict_goaway_node{node[YAML_STRICT_GOAWAY_KEY]};
+    if (strict_goaway_node.IsScalar()) {
+      auto strict_goaway = strict_goaway_node.as<bool>();
+      _ssn->strict_goaway = strict_goaway;
+      errata.note(
+          S_DIAG,
+          R"(Setting strict goaway behavior to "{}" for session at "{}":{}.)",
+          strict_goaway,
+          _path,
+          _ssn->_line_no);
+    } else {
+      errata.note(
+          S_ERROR,
+          R"(Value for "{}" key at "{}":{} is not a scalar.)",
+          YAML_STRICT_GOAWAY_KEY,
+          _path,
+          _ssn->_line_no);
+    }
+  } else {
+    // If the strict goaway key is not specified, then the default is to
+    // behave strictly.
+    _ssn->strict_goaway = true;
+  }
+
   return errata;
 }
 
@@ -674,7 +700,8 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
           S_ERROR,
           "Could not replay an HTTP/2 session because no HTTPS ports are provided.");
     } else {
-      session = std::make_unique<H2Session>(ssn._client_sni, ssn._client_verify_mode);
+      session =
+          std::make_unique<H2Session>(ssn._client_sni, ssn._client_verify_mode, ssn.strict_goaway);
       errata.note(S_DIAG, "Connecting via HTTP/2 over TLS.");
     }
   } else if (ssn.is_tls) {

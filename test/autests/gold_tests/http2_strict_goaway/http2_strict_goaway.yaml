@@ -1,0 +1,216 @@
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  strict-goaway: true
+  transactions:
+  - client-request:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:method, POST]
+            - [:scheme, https]
+            - [:authority, example.data.com]
+            - [:path, /a/path]
+            - [Content-Type, text/html]
+            - [Content-Length, '13']
+            - [uuid, 1]
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test_1
+            size: 13
+
+    proxy-request:
+      frames:
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test_1
+            verify: {as: equal}
+
+    server-response:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:status, 200]
+            - [Content-Type, text/html]
+            - [Content-Length, '13']
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test_1
+            size: 13
+
+    proxy-response:
+      frames:
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test_1
+            verify: {as: equal}
+
+  - client-request:
+      await: 1
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:method, POST]
+            - [:scheme, https]
+            - [:authority, example.data.com]
+            - [:path, /b/path]
+            - [Content-Type, text/html]
+            - [Content-Length, '13']
+            - [uuid, 2]
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test_2
+            size: 13
+
+    proxy-request:
+      frames:
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test_2
+            verify: {as: equal}
+
+    server-response:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:status, 200]
+            - [Content-Type, text/html]
+            - [Content-Length, '13']
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test_2
+            size: 13
+
+    proxy-response:
+      frames:
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test_2
+            verify: {as: equal}
+
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  strict-goaway: false
+  transactions:
+  - client-request:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:method, POST]
+            - [:scheme, https]
+            - [:authority, example.data.com]
+            - [:path, /c/path]
+            - [Content-Type, text/html]
+            - [Content-Length, '13']
+            - [uuid, 3]
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test_3
+            size: 13
+
+    proxy-request:
+      frames:
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test_3
+            verify: {as: equal}
+
+    server-response:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:status, 200]
+            - [Content-Type, text/html]
+            - [Content-Length, '13']
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test_3
+            size: 13
+
+    proxy-response:
+      frames:
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test_3
+            verify: {as: equal}
+
+  - client-request:
+      await: 3
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:method, POST]
+            - [:scheme, https]
+            - [:authority, example.data.com]
+            - [:path, /d/path]
+            - [Content-Type, text/html]
+            - [Content-Length, '13']
+            - [uuid, 4]
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test_4
+            size: 13
+
+    proxy-request:
+      frames:
+      - DATA:
+          content:
+            encoding: plain
+            data: client_test_4
+            verify: {as: equal}
+
+    server-response:
+      frames:
+      - HEADERS:
+          headers:
+            fields:
+            - [:status, 200]
+            - [Content-Type, text/html]
+            - [Content-Length, '13']
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test_4
+            size: 13
+
+    proxy-response:
+      frames:
+      - DATA:
+          content:
+            encoding: plain
+            data: server_test_4
+            verify: {as: equal}

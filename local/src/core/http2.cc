@@ -387,16 +387,23 @@ H2Session::run_transactions(
         delay_time = next_time - current_time;
       }
     }
+    if (this->strict_goaway && this->received_goaway_frame) {
+      errata.note(S_DIAG, "Closing HTTP/2 session due to receiving a GOAWAY frame.");
+      errata.sink();
+      break;
+    }
     txn_errata.note(this->run_transaction(txn));
     if (!txn_errata.is_ok()) {
       errata.note(S_ERROR, R"(Failed HTTP/2 transaction with key: {})", key);
     }
     if (this->sent_goaway_frame) {
-      this->close();
-      this->terminate();
+      errata.note(S_DIAG, "Closing HTTP/2 session due to sending a GOAWAY frame.");
+      errata.sink();
+      break;
     }
   }
   receive_nghttp2_responses(this->get_session(), nullptr, 0, 0, this);
+
   return errata;
 }
 
@@ -801,6 +808,8 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
         "Received GOAWAY frame with last stream id {}, error code {}",
         frame->goaway.last_stream_id,
         frame->goaway.error_code);
+    auto *session_data = reinterpret_cast<H2Session *>(user_data);
+    session_data->received_goaway_frame = true;
   } break;
   }
   auto const stream_id = frame->hd.stream_id;
@@ -1080,8 +1089,9 @@ H2StreamState::register_rcbuf(nghttp2_rcbuf *rcbuf)
 
 H2Session::H2Session() : _session{nullptr}, _callbacks{nullptr}, _options{nullptr} { }
 
-H2Session::H2Session(TextView const &client_sni, int client_verify_mode)
+H2Session::H2Session(TextView const &client_sni, int client_verify_mode, bool strict_goaway)
   : TLSSession(client_sni, client_verify_mode)
+  , strict_goaway{strict_goaway}
   , _session{nullptr}
   , _callbacks{nullptr}
   , _options{nullptr}
