@@ -7,6 +7,7 @@
 
 #include "core/Localizer.h"
 
+#include <algorithm>
 #include <cassert>
 #include <dirent.h>
 #include <thread>
