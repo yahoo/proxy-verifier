@@ -21,7 +21,12 @@ eventlet = "*"
 ruamel_yaml = "*"
 
 asyncio = "*"
-aioquic = "*"
+
+# The latest aioquic, 1.2.0, causes http3 tests to fail. For now, I'm pinning
+# to last week's 1.1.0 release because tests work with this. When we have time,
+# we should investigate why this is failing with 1.2.0 and either fix the test
+# or file an issue with aioquic.
+aioquic = "==1.1.0"
 wsproto = "*"
 
 [requires]
