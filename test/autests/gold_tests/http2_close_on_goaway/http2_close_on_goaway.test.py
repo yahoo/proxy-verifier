@@ -23,7 +23,9 @@ proxy = tr.AddProxyProcess("proxy",
 tr.Streams.stdout += Testers.ContainsExpression("uuid: 1", "uuid: 1")
 tr.Streams.stdout += Testers.ContainsExpression("uuid: 3", "uuid: 3")
 tr.Streams.stdout += Testers.ContainsExpression("uuid: 4", "uuid: 4")
-tr.Streams.stdout += Testers.ContainsExpression("Failed to submit DATA frame for key 4 on stream 3: -510", "uuid: 4 should fail")
+tr.Streams.stdout += Testers.ContainsExpression(
+    "Failed to submit DATA frame for key 4 on stream 3: -510",
+    "uuid: 4 should fail")
 
 tr.Streams.stdout += Testers.ExcludesExpression("uuid: 2", "uuid: 2")
 

@@ -702,8 +702,10 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
           S_ERROR,
           "Could not replay an HTTP/2 session because no HTTPS ports are provided.");
     } else {
-      session =
-          std::make_unique<H2Session>(ssn._client_sni, ssn._client_verify_mode, ssn.close_on_goaway);
+      session = std::make_unique<H2Session>(
+          ssn._client_sni,
+          ssn._client_verify_mode,
+          ssn.close_on_goaway);
       errata.note(S_DIAG, "Connecting via HTTP/2 over TLS.");
     }
   } else if (ssn.is_tls) {
