@@ -172,7 +172,7 @@ struct Txn;
 class ProxyProtocolMsg;
 
 constexpr auto Transaction_Delay_Cutoff = std::chrono::seconds{10};
-constexpr auto Poll_Timeout = std::chrono::seconds{5};
+extern std::chrono::milliseconds Poll_Timeout;
 
 namespace swoc
 {

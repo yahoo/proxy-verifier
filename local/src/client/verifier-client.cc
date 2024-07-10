@@ -66,6 +66,8 @@ std::mutex LoadMutex;
 
 std::list<std::shared_ptr<Ssn>> Session_List;
 
+std::chrono::milliseconds Poll_Timeout{5s};
+
 struct TargetSelector
 {
   /** Round robin retrieval of HTTP addresses. */
@@ -931,6 +933,16 @@ Engine::initialize_client()
     return false;
   }
 
+  auto poll_timeout_arg{arguments.get("poll-timeout")};
+  int poll_timeout_arg_int = 0;
+  if (poll_timeout_arg.size() == 1) {
+    poll_timeout_arg_int = atoi(poll_timeout_arg[0].c_str());
+  } else {
+    poll_timeout_arg_int = 5000;
+  }
+  Poll_Timeout = milliseconds(poll_timeout_arg_int);
+  errata.note(S_DIAG, "Poll timeout set to {}ms.", poll_timeout_arg_int);
+
   errata.note(S_DIAG, R"(Initialize TLS)");
   auto tls_secrets_log_file_arg{arguments.get("tls-secrets-log-file")};
   std::string tls_secrets_log_file;
@@ -1287,6 +1299,14 @@ main(int /* argc */, char const *argv[])
           "",
           "A filename to which TLS secrets will be logged. These can be used to "
           "decrypt packet captures. By default no TLS secrets will be logged.",
+          "",
+          1,
+          "")
+      .add_option(
+          "--poll-timeout",
+          "",
+          "Set the poll timeout in milliseconds for socket operations. "
+          "Default is 5000ms.",
           "",
           1,
           "")
