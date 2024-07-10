@@ -87,3 +87,20 @@ uuid: 4
 ``
 ``Received an HTTP/2 request for key 5 with stream id 9:
 ``
+``headers``key 5``
+:status: 200
+cache-control: private
+content-type: application/json;charset=utf-8
+content-length: 16
+date: Sat, 16 Mar 2019 01:13:21 GMT
+age: 0
+uuid: 5
+----------------
+Trailer Headers:
+----------------
+x-test-trailer-1: one
+x-test-trailer-2: two
+``
+``body``key 5``
+0123456789abcdef
+``

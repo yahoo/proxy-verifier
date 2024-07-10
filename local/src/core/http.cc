@@ -79,6 +79,22 @@ bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpHeader const &h)
     }
     w.print(R"({}: {}{})", key, value, '\n');
   }
+  if (!h._trailer_fields_rules->_fields_sequence.empty()) {
+    w.print("----------------\n");
+    w.print("Trailer Headers:\n");
+    w.print("----------------\n");
+    for (auto const &[key, value] : h._trailer_fields_rules->_fields_sequence) {
+      w.print(R"({}: {}{})", key, value, '\n');
+    }
+  }
+  return w;
+}
+BufferWriter &
+bwformat(BufferWriter &w, bwf::Spec const & /* spec */, HttpFields const &f)
+{
+  for (auto const &[key, value] : f._fields_sequence) {
+    w.print(R"({}: {}{})", key, value, '\n');
+  }
   return w;
 }
 // custom formatting for the proxy header
