@@ -15,7 +15,7 @@ sentinel_counter = 0
 
 
 def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
-                     use_ssl=False, https_pem=None, ca_pem=None, strict_goaway=False,
+                     use_ssl=False, https_pem=None, ca_pem=None, close_on_goaway=False,
                      use_http2_to_1=False, use_http2_to_2=False, use_http3_to_1=False):
     """
     Configure the provided process to run the proxy command.
@@ -71,8 +71,8 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
 
         command += f" --ca-pem {run_ca_file}"
 
-    if strict_goaway:
-        command += " --strict-goaway"
+    if close_on_goaway:
+        command += " --close-on-goaway"
     if use_http2_to_1:
         command += " --http2_to_1"
 
@@ -143,7 +143,7 @@ def MakeProxyProcess(test, name, listen_port=8080, server_port=8081,
 
 
 def AddProxyProcess(run, name, listen_port=8080, server_port=8081,
-                    use_ssl=False, https_pem=None, ca_pem=None, strict_goaway=False,
+                    use_ssl=False, https_pem=None, ca_pem=None, close_on_goaway=False,
                     use_http2_to_1=False, use_http2_to_2=False, use_http3_to_1=False):
     """
     Create a proxy Process and add it to the provided TestRun.
@@ -158,7 +158,7 @@ def AddProxyProcess(run, name, listen_port=8080, server_port=8081,
     """
     proxy = run.Processes.Process(name)
     _configure_proxy(run, proxy, name, listen_port, server_port,
-                     use_ssl, https_pem, ca_pem, strict_goaway,
+                     use_ssl, https_pem, ca_pem, close_on_goaway,
                      use_http2_to_1, use_http2_to_2, use_http3_to_1)
 
     client = run.Processes.Default

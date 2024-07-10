@@ -11,13 +11,13 @@ GOAWAY frame tests.
 '''
 
 tr = Test.AddTestRun("GOAWAY frame tests.")
-client = tr.AddClientProcess("client", "http2_strict_goaway.yaml")
-server = tr.AddServerProcess("server", "http2_strict_goaway.yaml")
+client = tr.AddClientProcess("client", "http2_close_on_goaway.yaml")
+server = tr.AddServerProcess("server", "http2_close_on_goaway.yaml")
 proxy = tr.AddProxyProcess("proxy",
                            listen_port=client.Variables.https_port,
                            server_port=server.Variables.https_port,
                            use_ssl=True,
-                           strict_goaway=True,
+                           close_on_goaway=True,
                            use_http2_to_2=True)
 
 tr.Streams.stdout += Testers.ContainsExpression("uuid: 1", "uuid: 1")
