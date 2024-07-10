@@ -652,7 +652,7 @@ struct Ssn
   bool is_h2 = false;
   bool is_h3 = false;
 
-  bool strict_goaway = true;
+  bool close_on_goaway = true;
 
   /// The PROXY protocol message to send in this session. nullptr if no PROXY
   /// protocol message is to be sent.

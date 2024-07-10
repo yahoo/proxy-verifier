@@ -110,7 +110,7 @@ public:
   H2Session(
       swoc::TextView const &client_sni,
       int client_verify_mode = SSL_VERIFY_NONE,
-      bool strict_goaway = true);
+      bool close_on_goaway = true);
   ~H2Session();
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
@@ -163,7 +163,7 @@ public:
     return _session;
   }
 
-  bool strict_goaway = true;
+  bool close_on_goaway = true;
   bool sent_goaway_frame = false;
   bool received_goaway_frame = false;
 

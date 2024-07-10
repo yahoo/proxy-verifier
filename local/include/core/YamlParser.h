@@ -84,7 +84,7 @@ static const std::string YAML_CONTENT_DATA_KEY{"data"};
 static const std::string YAML_CONTENT_VERIFY_KEY{"verify"};
 static const std::string YAML_CONTENT_ENCODING_KEY{"encoding"};
 static const std::string YAML_CONTENT_TRANSFER_KEY{"transfer"};
-static const std::string YAML_STRICT_GOAWAY_KEY{"strict-goaway"};
+static const std::string YAML_CLOSE_ON_GOAWAY_KEY{"close-on-goaway"};
 
 static constexpr size_t YAML_RULE_KEY_INDEX{0};
 static constexpr size_t YAML_RULE_VALUE_INDEX{1};

@@ -392,27 +392,6 @@ headers, as demonstrated below:
       - [ x-test-trailer-2, two ]
 ```
 
-For HTTP/2, there is an extra option `strict-goaway` which can be specified for each session.
-This option is used to config the Proxy Verifier client whether to strictly follow RFC7540
-(https://datatracker.ietf.org/doc/html/rfc7540#section-6.8). When set to `true`, the client
-terminates the connection after processing the streams that are being processed. When set to
-`false`, the client does not terminate the connection, and continues with subsequent streams.
-The default value of this option is `true`, and can be specified as demonstrated below:
-
-```YAML
-sessions:
-- protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
-    version: 4
-  strict-goaway: true
-  transactions:
-```
-
 It is also possible to specify everything as a sequence of frames. The available
 options for the frame sequence are:
 * `DATA`
@@ -582,6 +561,33 @@ A detailed description of the `delay` node can be found [here](#session-and-tran
 The `GOAWAY` frame acts similar to the `RST_STREAM` frame shown above. However, rather than terminating
 a stream, `GOAWAY` frame terminates the connection. It supports `error-code` and `delay` as described
 for `RST_STREAM` frame above.
+
+HTTP/2 sessions also have a `close-on-goaway` directive. This boolean
+configuration informs how the Verifier client should behave when there are more
+streams configured in the replay YAML file after a `GOAWAY` frame is received
+(see [RFC 7540 section
+6.8](https://datatracker.ietf.org/doc/html/rfc7540#section-6.8) for details
+about the `GOAWAY` frame). When set to `true`, on receipt of a `GOAWAY` frame,
+the client terminates the connection after processing the streams that are
+currently being processed. When set to `false`, the client does not terminate
+the connection and continues with subsequent streams specified in the replay
+file.  The default value of this option is `true` since that is in keeping with
+the RFC. Here's an example session configured with `close-on-goaway` set to
+`false`:
+
+```YAML
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  close-on-goaway: false
+  transactions:
+```
 
 #### Await
 

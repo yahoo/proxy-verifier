@@ -387,7 +387,7 @@ H2Session::run_transactions(
         delay_time = next_time - current_time;
       }
     }
-    if (this->strict_goaway && this->received_goaway_frame) {
+    if (this->close_on_goaway && this->received_goaway_frame) {
       errata.note(S_DIAG, "Closing HTTP/2 session due to receiving a GOAWAY frame.");
       errata.sink();
       break;
@@ -1089,9 +1089,9 @@ H2StreamState::register_rcbuf(nghttp2_rcbuf *rcbuf)
 
 H2Session::H2Session() : _session{nullptr}, _callbacks{nullptr}, _options{nullptr} { }
 
-H2Session::H2Session(TextView const &client_sni, int client_verify_mode, bool strict_goaway)
+H2Session::H2Session(TextView const &client_sni, int client_verify_mode, bool close_on_goaway)
   : TLSSession(client_sni, client_verify_mode)
-  , strict_goaway{strict_goaway}
+  , close_on_goaway{close_on_goaway}
   , _session{nullptr}
   , _callbacks{nullptr}
   , _options{nullptr}

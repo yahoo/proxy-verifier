@@ -9,7 +9,7 @@ sessions:
   - name: tcp
   - name: ip
     version: 4
-  strict-goaway: true
+  close-on-goaway: true
   transactions:
   - client-request:
       frames:
@@ -116,7 +116,7 @@ sessions:
   - name: tcp
   - name: ip
     version: 4
-  strict-goaway: false
+  close-on-goaway: false
   transactions:
   - client-request:
       frames:
