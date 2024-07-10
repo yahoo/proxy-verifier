@@ -31,8 +31,10 @@ def parse_args():
                         help='The certificate authority file for verifying peers')
     parser.add_argument('--listening-http3-sentinel', type=str, default=None,
                         help='A sentinel file to touch when the HTTP/3 socket is listening.')
-    parser.add_argument('--strict-goaway', action="store_true",
-                        help='Used only for strict goaway testing, closes client connection after sending the first response.')
+    parser.add_argument(
+        '--strict-goaway',
+        action="store_true",
+        help='Used only for strict goaway testing, closes client connection after sending the first response.')
 
     proto_group = parser.add_mutually_exclusive_group()
     proto_group.add_argument('--http2_to_1', action="store_true",

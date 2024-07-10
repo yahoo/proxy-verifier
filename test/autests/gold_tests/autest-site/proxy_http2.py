@@ -444,7 +444,13 @@ def servername_callback(conn):
     print(f"Got SNI from client: {sni}")
 
 
-def configure_http2_server(listen_port, server_port, https_pem, ca_pem, strict_goaway, h2_to_server=False):
+def configure_http2_server(
+        listen_port,
+        server_port,
+        https_pem,
+        ca_pem,
+        strict_goaway,
+        h2_to_server=False):
     # Let's set up SSL. This is a lot of work in PyOpenSSL.
     options = (
         SSL.OP_NO_COMPRESSION |
