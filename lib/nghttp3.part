@@ -24,7 +24,7 @@ else:
     # No path provided.
     PartVersion(
         GitVersionFromTag(
-            "v0.12.0",
+            "v1.4.0",
             regex=r'\d+\_\d+\_\d+[a-z]',
             converter=lambda ver, env: ver.replace("_", ".")
         )

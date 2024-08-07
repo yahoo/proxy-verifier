@@ -64,10 +64,11 @@ sudo chmod -R ugo+rX ${install_dir}/openssl
 
 # 2. nghttp3
 cd ${repo_dir}
-git clone https://github.com/ngtcp2/nghttp3
+git clone https://github.com/ngtcp2/nghttp3.git
 cd nghttp3/
-git checkout v0.12.0
-autoreconf -i
+git checkout v1.4.0
+git submodule update --init
+autoreconf -if
 ./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
 make -j ${num_threads}
 ${SUDO} make install
@@ -75,10 +76,11 @@ sudo chmod -R ugo+rX ${install_dir}/nghttp3
 
 # 3. ngtcp2
 cd ${repo_dir}
-git clone https://github.com/ngtcp2/ngtcp2
+git clone https://github.com/ngtcp2/ngtcp2.git
 cd ngtcp2
-git checkout v0.16.0
-autoreconf -i
+git checkout v1.6.0
+git submodule update --init
+autoreconf -if
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
   LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib" \
@@ -90,9 +92,10 @@ sudo chmod -R ugo+rX ${install_dir}/ngtcp2
 
 #4. nghttp2
 cd ${repo_dir}
-git clone https://github.com/tatsuhiro-t/nghttp2.git
+git clone https://github.com/nghttp2/nghttp2.git
 cd nghttp2
-git checkout v1.54.0
+git checkout v1.62.1
+git submodule update --init
 autoreconf -if
 ./configure \
   PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
