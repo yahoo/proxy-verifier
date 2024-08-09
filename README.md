@@ -1141,6 +1141,32 @@ proxy-response:
     - [ x-test-trailer-2, { value: two, as: equal } ]
 ```
 
+To perform multi-value field verification, a specific format must be adhered to.
+This format involves specifying each value within a sequence, ensuring that each
+value is individually verified according to the defined rules.
+
+Be aware that field verification is order sensitive. That is, the field values
+will be verified in the order that they are specified in the verification rule.
+
+See example below, value `B1` and `B2` are specified in the same order in the
+header fields and verification rule:
+
+```YAML
+server-response:
+  headers:
+    fields:
+    - [:status, 200]
+    - [Content-Type, text/html]
+    - [Content-Length, '11']
+    - [Set-Cookie, "B1=abc"]
+    - [Set-Cookie, "B2=abc"]
+
+proxy-response:
+  headers:
+    fields:
+    - [Set-Cookie, { value: [B1=, B2=] , as: contains }]
+```
+
 ### URL Verification
 
 In a manner similar to field verification described above, a mechanism exists
