@@ -71,21 +71,21 @@ path_ngtcp2 = None
 
 libs_path = GetOption("with_libs")
 if libs_path is not None:
-    # We initially populate these from the broad --with-libs option. Each can
-    # be overriden by the more specific options with later processing.
-    path_ssl = os.path.join(libs_path, 'openssl')
-    path_nghttp2 = os.path.join(libs_path, 'nghttp2')
-    path_nghttp3 = os.path.join(libs_path, 'nghttp3')
-    path_ngtcp2 = os.path.join(libs_path, 'ngtcp2')
+  # We initially populate these from the broad --with-libs option. Each can
+  # be overriden by the more specific options with later processing.
+  path_ssl = os.path.join(libs_path, 'openssl')
+  path_nghttp2 = os.path.join(libs_path, 'nghttp2')
+  path_nghttp3 = os.path.join(libs_path, 'nghttp3')
+  path_ngtcp2 = os.path.join(libs_path, 'ngtcp2')
 
 
 def GetOptionWithDefault(option_name, default_value):
-    '''
-    Return GetOption's result if option_name was specified, otherwise return
-    default_value.
-    '''
-    specific_value = GetOption(option_name)
-    return specific_value if specific_value is not None else default_value
+  '''
+  Return GetOption's result if option_name was specified, otherwise return
+  default_value.
+  '''
+  specific_value = GetOption(option_name)
+  return specific_value if specific_value is not None else default_value
 
 
 # For the various QUIC/HTTP3 dependencies, we pin to a particular commit so that
@@ -108,21 +108,22 @@ else:
 
 path_nghttp2 = GetOptionWithDefault("with_nghttp2", path_nghttp2)
 if path_nghttp2 is not None:
-    Part("#lib/nghttp2.part", CUSTOM_PATH=path_nghttp2)
+  Part("#lib/nghttp2.part", CUSTOM_PATH=path_nghttp2)
 else:
-    Part(
-        "nghttp2",
-        "#lib/nghttp2.part",
-        vcs_type=VcsGit(server="github.com", repository="nghttp2/nghttp2",
-                        protocol="https",
-                        tag="v1.54.0"
-                        ),
-        mode=['SKIP_DOCS'],
-    )
+  Part(
+    "nghttp2",
+    "#lib/nghttp2.part",
+    vcs_type=VcsGit(server="github.com", repository="nghttp2/nghttp2",
+                    protocol="https",
+                    tag="v1.62.1"
+                    ),
+    GIT_CLONE_ARGS="--depth=1 --recurse-submodules --shallow-submodules",
+    mode=['SKIP_DOCS'],
+  )
 
 path_ngtcp2 = GetOptionWithDefault("with_ngtcp2", path_ngtcp2)
 if path_ngtcp2 is not None:
-    Part("#lib/ngtcp2.part", CUSTOM_PATH=path_ngtcp2)
+  Part("#lib/ngtcp2.part", CUSTOM_PATH=path_ngtcp2)
 else:
   Part(
     "ngtcp2",
@@ -130,8 +131,9 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/ngtcp2",
                     protocol="https",
                     # A pinned commit on branch main.
-                    tag="v0.16.0"
+                    tag="v1.6.0"
                     ),
+    GIT_CLONE_ARGS="--depth=1 --recurse-submodules --shallow-submodules",
     mode=['SKIP_DOCS'],
   )
 
@@ -145,12 +147,13 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/nghttp3",
                     protocol="https",
                     # A pinned commit on branch main.
-                    tag="v0.12.0"
+                    tag="v1.4.0"
                     ),
+    GIT_CLONE_ARGS="--depth=1 --recurse-submodules --shallow-submodules",
     mode=['SKIP_DOCS'],
   )
 
-Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="yaml-cpp-0.7.0"), package_group="proxy-verifier")
+Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="0.8.0"), package_group="proxy-verifier")
 
 custom_rpath=[]
 if path_ssl is not None:
@@ -163,7 +166,7 @@ if path_nghttp3 is not None:
   custom_rpath.append(path_nghttp3 + "/lib")
 SetOptionDefault("RPATH",  custom_rpath)
 
-Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc", tag="1.5.1"), package_group="proxy-verifier")
+Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc.git", tag="1.5.1"), package_group="proxy-verifier")
 
 pv_mode = []
 if GetOption("enable_asan"):

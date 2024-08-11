@@ -555,12 +555,12 @@ send_nghttp2_data(
   int total_amount_sent = 0;
   while (true) {
     uint8_t const *data = nullptr;
-    ssize_t datalen = nghttp2_session_mem_send(session, &data);
+    ssize_t datalen = nghttp2_session_mem_send2(session, &data);
     if (datalen == 0) {
       // No more data to send.
       break;
     } else if (datalen < 0) {
-      errata.note(S_ERROR, "Failure calling nghttp2_session_mem_send: {}", datalen);
+      errata.note(S_ERROR, "Failure calling nghttp2_session_mem_send2: {}", datalen);
       break;
     }
     int amount_sent = 0;
@@ -580,7 +580,7 @@ send_nghttp2_data(
 /**
  * Receive data on the session for timeout milliseconds.
  *
- * @return The number of bytes processes per nghttp2_session_mem_recv (may be
+ * @return The number of bytes processes per nghttp2_session_mem_recv2 (may be
  * 0), or -1 on error.
  */
 static ssize_t
@@ -639,11 +639,11 @@ receive_nghttp2_data(
   }
 
   // n > 0: Some bytes have been read. Pass that into the nghttp2 system.
-  int rv = nghttp2_session_mem_recv(session_data->get_session(), buffer, (size_t)n);
+  int rv = nghttp2_session_mem_recv2(session_data->get_session(), buffer, (size_t)n);
   if (rv < 0) {
     errata.note(
         S_ERROR,
-        "nghttp2_session_mem_recv failed for HTTP/2 responses: {}",
+        "nghttp2_session_mem_recv2 failed for HTTP/2 responses: {}",
         nghttp2_strerror((int)rv));
     return -1;
   } else if (rv == 0) {
@@ -731,11 +731,11 @@ receive_nghttp2_request(
       // Poll succeeded. Repeat the attempt to read.
       n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));
     }
-    int rv = nghttp2_session_mem_recv(session, buffer, (size_t)n);
+    int rv = nghttp2_session_mem_recv2(session, buffer, (size_t)n);
     if (rv < 0) {
       errata.note(
           S_ERROR,
-          "nghttp2_session_mem_recv failed for response headers: {}",
+          "nghttp2_session_mem_recv2 failed for response headers: {}",
           nghttp2_strerror((int)rv));
       return -1;
     } else if (rv == 0) {
@@ -1353,7 +1353,7 @@ H2Session::submit_data_frame(
     content = TextView{HttpHeader::_content.data(), hdr._content_size_list.at(data_frame_idx)};
   }
 
-  nghttp2_data_provider data_prd;
+  nghttp2_data_provider2 data_prd;
   data_prd.source.fd = 0;
   data_prd.source.ptr = nullptr;
   data_prd.read_callback = data_read_callback;
@@ -1370,7 +1370,7 @@ H2Session::submit_data_frame(
       stream_state->get_stream_id());
 
   int const submit_status =
-      nghttp2_submit_data(this->_session, flags, stream_state->get_stream_id(), &data_prd);
+      nghttp2_submit_data2(this->_session, flags, stream_state->get_stream_id(), &data_prd);
 
   if (submit_status < 0) {
     errata.note(
@@ -1573,7 +1573,7 @@ H2Session::write(HttpHeader const &hdr)
         // HttpHeader::_content.
         content = TextView{HttpHeader::_content.data(), hdr._content_length};
       }
-      nghttp2_data_provider data_prd;
+      nghttp2_data_provider2 data_prd;
       data_prd.source.fd = 0;
       data_prd.source.ptr = nullptr;
       data_prd.read_callback = data_read_callback;
@@ -1588,14 +1588,14 @@ H2Session::write(HttpHeader const &hdr)
             IS_TRAILER,
             stream_state->_trailer_to_send,
             stream_state->_trailer_length);
-        submit_result = nghttp2_submit_response(
+        submit_result = nghttp2_submit_response2(
             this->_session,
             stream_state->get_stream_id(),
             hdrs,
             hdr_count,
             &data_prd);
       } else {
-        submit_result = nghttp2_submit_request(
+        submit_result = nghttp2_submit_request2(
             this->_session,
             nullptr,
             hdrs,
@@ -1605,15 +1605,20 @@ H2Session::write(HttpHeader const &hdr)
       }
     } else { // Empty body.
       if (hdr.is_response()) {
-        submit_result = nghttp2_submit_response(
+        submit_result = nghttp2_submit_response2(
             this->_session,
             stream_state->get_stream_id(),
             hdrs,
             hdr_count,
             nullptr);
       } else {
-        submit_result =
-            nghttp2_submit_request(this->_session, nullptr, hdrs, hdr_count, nullptr, stream_state);
+        submit_result = nghttp2_submit_request2(
+            this->_session,
+            nullptr,
+            hdrs,
+            hdr_count,
+            nullptr,
+            stream_state);
       }
     }
 
@@ -1871,8 +1876,8 @@ H2Session::client_session_init()
 
   // Note that instead of using the nghttp2_session_callbacks_set_send_callback
   // and nghttp2_session_callbacks_set_recv_callback, we manually drive things
-  // along via our use of nghttp2_session_mem_recv and
-  // nghttp2_session_mem_send.
+  // along via our use of nghttp2_session_mem_recv2 and
+  // nghttp2_session_mem_send2.
 
   nghttp2_session_callbacks_set_on_frame_send_callback(this->_callbacks, on_frame_send_cb);
   nghttp2_session_callbacks_set_on_frame_recv_callback(this->_callbacks, on_frame_recv_cb);
@@ -1917,8 +1922,8 @@ H2Session::server_session_init()
 
   // Note that instead of using the nghttp2_session_callbacks_set_send_callback
   // and nghttp2_session_callbacks_set_recv_callback, we manually drive things
-  // along via our use of nghttp2_session_mem_recv and
-  // nghttp2_session_mem_send.
+  // along via our use of nghttp2_session_mem_recv2 and
+  // nghttp2_session_mem_send2.
 
   nghttp2_session_callbacks_set_on_frame_send_callback(this->_callbacks, on_frame_send_cb);
   nghttp2_session_callbacks_set_on_frame_recv_callback(this->_callbacks, on_frame_recv_cb);

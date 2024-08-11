@@ -18,7 +18,7 @@ if path:
             show_stack=False)
     cfg.Finish()
 
-    env.ExportLIBS(["libngtcp2", "libngtcp2_crypto_openssl"])
+    env.ExportLIBS(["libngtcp2", "libngtcp2_crypto_quictls"])
 else:
     # No path provided.
     DependsOn([
@@ -27,7 +27,7 @@ else:
     ])
     PartVersion(
         GitVersionFromTag(
-            "v0.16.0",
+            "v1.6.0",
             regex=r'\d+\_\d+\_\d+[a-z]',
             converter=lambda ver, env: ver.replace("_", ".")
         )

@@ -27,7 +27,7 @@ else:
     ])
     PartVersion(
         GitVersionFromTag(
-            "v1.54.0",
+            "v1.62.1",
             regex=r'\d+\_\d+\_\d+[a-z]',
             converter=lambda ver, env: ver.replace("_", ".")
         )
