@@ -159,3 +159,20 @@ server.Streams.stdout += Testers.ContainsExpression(
 
 client.ReturnCode = 1
 server.ReturnCode = 1
+
+# Test 4: Verify field verification works with multi-value fields
+r = Test.AddTestRun("Verify field verification works with multi-value fields")
+client = r.AddClientProcess("client4", "replay_files/multi_value.yaml")
+server = r.AddServerProcess("server4", "replay_files/multi_value.yaml")
+proxy = r.AddProxyProcess(
+    "proxy4",
+    listen_port=client.Variables.https_port,
+    server_port=server.Variables.https_port,
+    use_ssl=True, use_http2_to_2=True)
+
+client.Streams.stdout += Testers.ContainsExpression(
+    'Contains Success: Key: "1", Field Name: "set-cookie", Required Values: "B1=" "B2=", Received Values: "B1=abc" "B2=abc"',
+    "Verification should be happy with the set coookies.")
+
+client.ReturnCode = 0
+server.ReturnCode = 0
