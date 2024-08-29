@@ -1,0 +1,50 @@
+# @file
+#
+# Copyright 2024, Yahoo
+# SPDX-License-Identifier: Apache-2.0
+
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  transactions:
+  - client-request:
+      headers:
+        fields:
+        - [:method, POST]
+        - [:scheme, https]
+        - [:authority, example.data.com]
+        - [:path, /a/path]
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+        - [uuid, 1]
+      content:
+        encoding: plain
+        data: client_test
+        size: 11
+
+    server-response:
+      headers:
+        fields:
+        - [:status, 200]
+        - [Content-Type, text/html]
+        - [Content-Length, '11']
+        - [Set-Cookie, "A1=111"]
+        - [Set-Cookie, "A2=222"]
+        - [Set-Cookie, "B1=333"]
+      content:
+        encoding: plain
+        data: server_test
+        size: 11
+
+    proxy-response:
+      headers:
+        fields:
+        - [Set-Cookie, { value: [A1=111, A2=222, B1=333] , as: equal }]

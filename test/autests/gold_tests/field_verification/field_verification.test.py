@@ -161,9 +161,9 @@ client.ReturnCode = 1
 server.ReturnCode = 1
 
 # Test 4: Verify field verification works with multi-value fields
-r = Test.AddTestRun("Verify field verification works with multi-value fields")
-client = r.AddClientProcess("client4", "replay_files/multi_value.yaml")
-server = r.AddServerProcess("server4", "replay_files/multi_value.yaml")
+r = Test.AddTestRun("Verify field verification works with multi-value fields (includes check)")
+client = r.AddClientProcess("client4", "replay_files/multi_value_includes.yaml")
+server = r.AddServerProcess("server4", "replay_files/multi_value_includes.yaml")
 proxy = r.AddProxyProcess(
     "proxy4",
     listen_port=client.Variables.https_port,
@@ -171,7 +171,24 @@ proxy = r.AddProxyProcess(
     use_ssl=True, use_http2_to_2=True)
 
 client.Streams.stdout += Testers.ContainsExpression(
-    'Contains Success: Key: "1", Field Name: "set-cookie", Required Values: "B1=" "B2=", Received Values: "B1=abc" "B2=abc"',
+    'Includes Success: Key: "1", Field Name: "set-cookie", Required Values: "B2=" "A2=" "C2=" "D1=" "C1=", Received Values: "A1=111" "A2=222" "B1=333" "B2=444" "C1=555" "C2=666" "D1=777" "D2=888"',
+    "Verification should be happy with the set coookies.")
+
+client.ReturnCode = 0
+server.ReturnCode = 0
+
+# Test 4: Verify field verification works with multi-value fields
+r = Test.AddTestRun("Verify field verification works with multi-value fields (equal check)")
+client = r.AddClientProcess("client5", "replay_files/multi_value_equal.yaml")
+server = r.AddServerProcess("server5", "replay_files/multi_value_equal.yaml")
+proxy = r.AddProxyProcess(
+    "proxy5",
+    listen_port=client.Variables.https_port,
+    server_port=server.Variables.https_port,
+    use_ssl=True, use_http2_to_2=True)
+
+client.Streams.stdout += Testers.ContainsExpression(
+    'Equals Success: Key: "1", Field Name: "set-cookie", Values: "A1=111" "A2=222" "B1=333"',
     "Verification should be happy with the set coookies.")
 
 client.ReturnCode = 0

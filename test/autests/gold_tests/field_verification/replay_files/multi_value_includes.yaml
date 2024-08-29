@@ -1,3 +1,8 @@
+# @file
+#
+# Copyright 2024, Yahoo
+# SPDX-License-Identifier: Apache-2.0
+
 meta:
   version: '1.0'
 sessions:
@@ -31,8 +36,14 @@ sessions:
         - [:status, 200]
         - [Content-Type, text/html]
         - [Content-Length, '11']
-        - [Set-Cookie, "B1=abc"]
-        - [Set-Cookie, "B2=abc"]
+        - [Set-Cookie, "A1=111"]
+        - [Set-Cookie, "A2=222"]
+        - [Set-Cookie, "B1=333"]
+        - [Set-Cookie, "B2=444"]
+        - [Set-Cookie, "C1=555"]
+        - [Set-Cookie, "C2=666"]
+        - [Set-Cookie, "D1=777"]
+        - [Set-Cookie, "D2=888"]
       content:
         encoding: plain
         data: server_test
@@ -41,4 +52,4 @@ sessions:
     proxy-response:
       headers:
         fields:
-        - [Set-Cookie, { value: [B1=, B2=] , as: contains }]
+        - [Set-Cookie, { value: [B2=, A2=, C2=, D1=, C1=] , as: includes }]

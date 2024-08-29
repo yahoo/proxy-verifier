@@ -24,6 +24,7 @@ static const std::string VERIFICATION_DIRECTIVE_CONTAINS{"contains"};
 static const std::string VERIFICATION_DIRECTIVE_PREFIX{"prefix"};
 static const std::string VERIFICATION_DIRECTIVE_SUFFIX{"suffix"};
 static const std::string VERIFICATION_DIRECTIVE_IGNORE{"ignore"};
+static const std::string VERIFICATION_DIRECTIVE_INCLUDES{"includes"};
 
 static const std::string VERIFICATION_OUTPUT_DEFAULT{""};
 static const std::string VERIFICATION_OUTPUT_INVERT{"Not "};
@@ -426,6 +427,16 @@ public:
    * @param values (unused) The list of values specified in the YAML node.
    */
   static std::shared_ptr<RuleCheck> make_suffix(
+      swoc::TextView name,
+      std::vector<swoc::TextView> &&values,
+      bool is_inverted = false,
+      bool is_nocase = false,
+      bool is_body = false);
+
+  /**
+   * @param values The list of values to expect in the response.
+   */
+  static std::shared_ptr<RuleCheck> make_includes(
       swoc::TextView name,
       std::vector<swoc::TextView> &&values,
       bool is_inverted = false,
@@ -903,6 +914,44 @@ public:
   get_test_name() const override
   {
     return "Suffix";
+  }
+
+  bool test_tv(swoc::TextView value, swoc::TextView test) const override;
+};
+
+class IncludesCheck : public SubstrCheck
+{
+public:
+  ~IncludesCheck() = default;
+
+  /** Construct @a IncludesCheck with a given name and set of "contains" values.
+   *
+   * @param name The name of the target field
+   * @param value The associated "contains" values with the target field,
+   * that is used with strcasecmp comparisons
+   */
+  IncludesCheck(
+      swoc::TextView name,
+      std::vector<swoc::TextView> &&values,
+      bool is_inverted,
+      bool is_nocase,
+      bool is_body);
+
+  /** Whether this Rule is configured for duplicate fields.
+   *
+   * @return True of the Rule is configured for duplicate fields, false
+   * otherwise.
+   */
+  bool
+  expects_duplicate_fields() const override
+  {
+    return _expects_duplicate_fields;
+  }
+
+  swoc::TextView
+  get_test_name() const override
+  {
+    return "Includes";
   }
 
   bool test_tv(swoc::TextView value, swoc::TextView test) const override;
