@@ -76,6 +76,8 @@ RuleCheck::options_init()
       static_cast<duplicate_field_function_type>(make_prefix);
   duplicate_field_options[TextView(VERIFICATION_DIRECTIVE_SUFFIX)] =
       static_cast<duplicate_field_function_type>(make_suffix);
+  duplicate_field_options[TextView(VERIFICATION_DIRECTIVE_INCLUDES)] =
+      static_cast<duplicate_field_function_type>(make_includes);
 }
 
 std::shared_ptr<RuleCheck>
@@ -348,6 +350,18 @@ RuleCheck::make_suffix(
       new SuffixCheck(name, std::move(values), is_inverted, is_nocase, is_body));
 }
 
+std::shared_ptr<RuleCheck>
+RuleCheck::make_includes(
+    TextView name,
+    std::vector<TextView> &&values,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
+{
+  return std::shared_ptr<RuleCheck>(
+      new IncludesCheck(name, std::move(values), is_inverted, is_nocase, is_body));
+}
+
 swoc::TextView
 RuleCheck::target_type() const
 {
@@ -618,6 +632,22 @@ SuffixCheck::SuffixCheck(
 }
 
 SuffixCheck::SuffixCheck(
+    TextView name,
+    std::vector<TextView> &&values,
+    bool is_inverted,
+    bool is_nocase,
+    bool is_body)
+{
+  _name = name;
+  _values = std::move(values);
+  _expects_duplicate_fields = true;
+  _is_field = !is_body;
+  _is_body = is_body;
+  _is_inverted = is_inverted;
+  _is_nocase = is_nocase;
+}
+
+IncludesCheck::IncludesCheck(
     TextView name,
     std::vector<TextView> &&values,
     bool is_inverted,
@@ -934,7 +964,10 @@ bool
 SubstrCheck::test(TextView key, TextView name, std::vector<TextView> const &values) const
 {
   Errata errata;
-  if (name.empty() || values.size() != _values.size()) {
+  auto is_includes_test = strcasecmp(get_test_name(), TextView(VERIFICATION_DIRECTIVE_INCLUDES)) == 0;
+  if (name.empty() ||
+    (is_includes_test && values.size() < _values.size()) ||
+    (!is_includes_test && values.size() != _values.size())) {
     MSG_BUFF message;
     message.print(
         R"({}{} {}: Absent/Mismatched. Key: "{}", {}: "{}", )",
@@ -955,34 +988,73 @@ SubstrCheck::test(TextView key, TextView name, std::vector<TextView> const &valu
     errata.note(S_INFO, message.view());
     return invert_if_applicable(false);
   }
-  auto value_it = values.begin();
-  auto test_it = _values.begin();
-  while (value_it != values.end()) {
-    if (test_tv(*value_it, *test_it)) {
-      MSG_BUFF message;
-      message.print(
-          R"({}{} {}: Not Found. Key: "{}", {}: "{}", )",
-          get_subtype(),
-          get_test_name(),
-          invert_result(false),
-          key,
-          target_type(),
-          _name);
 
-      message.print(R"(Required Values:)");
-      for (auto const &value : _values) {
-        message.print(R"( "{}")", value);
+  if (is_includes_test) {
+    auto test_it = _values.begin();
+    while (test_it != _values.end()) {
+      auto value_it = values.begin();
+      while (true) {
+        if (test_tv(*value_it, *test_it)) {
+          ++value_it;
+        } else {
+          break;
+        }
+        if (value_it == values.end()) {
+          MSG_BUFF message;
+          message.print(
+              R"({}{} {}: Not Found. Key: "{}", {}: "{}", )",
+              get_subtype(),
+              get_test_name(),
+              invert_result(false),
+              key,
+              target_type(),
+              _name);
+
+          message.print(R"(Required Values:)");
+          for (auto const &value : _values) {
+            message.print(R"( "{}")", value);
+          }
+          message.print(R"(, Received Values:)");
+          for (auto const &value : values) {
+            message.print(R"( "{}")", value);
+          }
+          errata.note(S_INFO, message.view());
+          return invert_if_applicable(false);
+        }
       }
-      message.print(R"(, Received Values:)");
-      for (auto const &value : values) {
-        message.print(R"( "{}")", value);
-      }
-      errata.note(S_INFO, message.view());
-      return invert_if_applicable(false);
+      ++test_it;
     }
-    ++value_it;
-    ++test_it;
+  } else {
+    auto value_it = values.begin();
+    auto test_it = _values.begin();
+    while (value_it != values.end()) {
+      if (test_tv(*value_it, *test_it)) {
+        MSG_BUFF message;
+        message.print(
+            R"({}{} {}: Not Found. Key: "{}", {}: "{}", )",
+            get_subtype(),
+            get_test_name(),
+            invert_result(false),
+            key,
+            target_type(),
+            _name);
+
+        message.print(R"(Required Values:)");
+        for (auto const &value : _values) {
+          message.print(R"( "{}")", value);
+        }
+        message.print(R"(, Received Values:)");
+        for (auto const &value : values) {
+          message.print(R"( "{}")", value);
+        }
+        errata.note(S_INFO, message.view());
+        return invert_if_applicable(false);
+      }
+      ++value_it;
+      ++test_it;
+    }
   }
+
   MSG_BUFF message;
   message.print(
       R"({}{} {}: Key: "{}", {}: "{}", )",
@@ -1061,5 +1133,24 @@ SuffixCheck::test_tv(TextView value, TextView test) const
     return spot == value.end();
   } else {
     return !value.ends_with(test);
+  }
+}
+
+// Return true for failure, false for success
+bool
+IncludesCheck::test_tv(TextView value, TextView test) const
+{
+  auto const test_length = test.length();
+  if (test_length > value.length()) {
+    return invert_if_applicable(true);
+  }
+  if (_is_nocase) {
+    auto spot =
+        std::search(value.begin(), value.end(), test.begin(), test.end(), [](char lhs, char rhs) {
+          return tolower(lhs) == tolower(rhs);
+        });
+    return spot == value.end();
+  } else {
+    return value.find(test) == std::string::npos;
   }
 }

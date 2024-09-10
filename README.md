@@ -1041,6 +1041,7 @@ equal      |  The presence of a field with the specified field name and a value 
 contains   |  The presence of a field with the specified name with a value *containing* the specified value.
 prefix     |  The presence of a field with the specified name with a value *prefixed* with the specified value.
 suffix     |  The presence of a field with the specified name with a value *suffixed* with the specified value.
+includes   |  Helpful for multi-value fields. Specifies that the set of value strings exist in the header field values for a particular header name in any order. Note that each value is matched against the set like ``contains``, so each value is a substring match.
 
 For all of these field verification behaviors, field names are matched case
 insensitively while field values are matched case sensitively.
@@ -1111,6 +1112,12 @@ The following demonstrates the `suffix` directive which specifies that `X-Forwar
   - [ X-Forwarded-For, { value: 2, as: suffix } ]
 ```
 
+The following demonstrates the `includes` directive which specifies that `Set-Cookie` should have been received from the proxy including the values "A" and "B" at any position in the field value:
+
+```YAML
+  - [ Set-Cookie, { value: [A, B] , as: includes } ]
+```
+
 Proxy Verifier supports inverting the result of any rule by using `not` instead of `as`. The following demonstrates the `prefix` directive which specifies that `X-Forwarded-For` should have been received from the proxy with a field value not starting with "a":
 
 ```YAML
@@ -1158,13 +1165,47 @@ server-response:
     - [:status, 200]
     - [Content-Type, text/html]
     - [Content-Length, '11']
-    - [Set-Cookie, "B1=abc"]
-    - [Set-Cookie, "B2=abc"]
+    - [Set-Cookie, "A1=111"]
+    - [Set-Cookie, "A2=222"]
+    - [Set-Cookie, "B1=333"]
+  content:
+    encoding: plain
+    data: server_test
+    size: 11
 
 proxy-response:
   headers:
     fields:
-    - [Set-Cookie, { value: [B1=, B2=] , as: contains }]
+    - [Set-Cookie, { value: [A1=111, A2=222, B1=333] , as: equal }]
+```
+
+There is an exception for the `includes` check, where it is not order sensitive.
+See exammple below:
+
+```YAML
+server-response:
+  headers:
+    fields:
+    - [:status, 200]
+    - [Content-Type, text/html]
+    - [Content-Length, '11']
+    - [Set-Cookie, "A1=111"]
+    - [Set-Cookie, "A2=222"]
+    - [Set-Cookie, "B1=333"]
+    - [Set-Cookie, "B2=444"]
+    - [Set-Cookie, "C1=555"]
+    - [Set-Cookie, "C2=666"]
+    - [Set-Cookie, "D1=777"]
+    - [Set-Cookie, "D2=888"]
+  content:
+    encoding: plain
+    data: server_test
+    size: 11
+
+proxy-response:
+  headers:
+    fields:
+    - [Set-Cookie, { value: [B2=, A2=, C2=, D1=, C1=] , as: includes }]
 ```
 
 ### URL Verification
