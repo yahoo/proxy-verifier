@@ -964,10 +964,11 @@ bool
 SubstrCheck::test(TextView key, TextView name, std::vector<TextView> const &values) const
 {
   Errata errata;
-  auto is_includes_test = strcasecmp(get_test_name(), TextView(VERIFICATION_DIRECTIVE_INCLUDES)) == 0;
-  if (name.empty() ||
-    (is_includes_test && values.size() < _values.size()) ||
-    (!is_includes_test && values.size() != _values.size())) {
+  auto is_includes_test =
+      strcasecmp(get_test_name(), TextView(VERIFICATION_DIRECTIVE_INCLUDES)) == 0;
+  if (name.empty() || (is_includes_test && values.size() < _values.size()) ||
+      (!is_includes_test && values.size() != _values.size()))
+  {
     MSG_BUFF message;
     message.print(
         R"({}{} {}: Absent/Mismatched. Key: "{}", {}: "{}", )",
