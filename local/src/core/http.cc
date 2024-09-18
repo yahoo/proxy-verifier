@@ -1,18 +1,21 @@
 /** @file
  * Common implementation for Proxy Verifier
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2024, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "core/http.h"
 #include "core/verification.h"
 #include "core/ProxyVerifier.h"
+#include "core/SocketPoller.h"
 
 #include <arpa/inet.h>
 #include <cassert>
+#include <condition_variable>
 #include <fcntl.h>
 #include <ifaddrs.h>
+#include <mutex>
 #include <netinet/tcp.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -761,11 +764,18 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
   return w;
 }
 
-Session::Session() { }
-
 Session::~Session()
 {
+  if (_fd >= 0) {
+    SocketPoller::remove_poll_request(this->get_fd());
+  }
   this->close();
+}
+
+std::shared_ptr<Session>
+Session::get_shared_ptr()
+{
+  return shared_from_this();
 }
 
 swoc::Rv<ssize_t>
@@ -1023,8 +1033,37 @@ Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
   if (is_closed()) {
     return {-1, Errata(S_DIAG, "Poll called on a closed connection.")};
   }
-  struct pollfd pfd = {.fd = _fd, .events = events, .revents = 0};
-  return ::poll(&pfd, 1, timeout.count());
+  std::unique_lock<std::mutex> lock(_revent_mutex);
+  SocketPoller::request_poll(this->get_shared_ptr(), events);
+  auto cv_status = _poll_cv.wait_for(lock, timeout);
+  // Unlock protection on the _revents variable since it is set at this point
+  // and so that remove_poll_request called in a few lines doesn't deadlock with
+  // the poller's mutex.
+  lock.unlock();
+
+  if (cv_status == std::cv_status::timeout) {
+    // Clean up the SocketPoller so it doesn't try to call us back now.
+    SocketPoller::remove_poll_request(this->get_fd());
+    return 0;
+  } else {
+    if (_revents & (POLLERR | POLLHUP | POLLNVAL)) {
+      return -1;
+    } else {
+      return 1;
+    }
+  }
+  return cv_status == std::cv_status::timeout ? 0 : 1;
+}
+
+void
+Session::handle_poll_return(short revents)
+{
+  {
+    std::lock_guard<std::mutex> lock(_revent_mutex);
+    _revents = revents;
+  }
+  // This will wake up the poll_for_data_on_socket _poll_cv.wait_for().
+  _poll_cv.notify_all();
 }
 
 swoc::Rv<int>

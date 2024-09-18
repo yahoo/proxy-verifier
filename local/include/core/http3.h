@@ -284,8 +284,24 @@ class H3Session : public Session
 {
 public:
   using super_type = Session;
+
+protected:
+  // Only the Session factory methods can create these.
   H3Session();
   H3Session(swoc::TextView const &client_sni, int client_verify_mode = SSL_VERIFY_NONE);
+
+public:
+  // Publicly accessible for std::make_shared, but restricted via protected PrivateKey.
+  H3Session(Session::PrivateKey) : H3Session() { }
+  template <typename... Args>
+  H3Session(Session::PrivateKey, Args &&... args) : H3Session(std::forward<Args>(args)...)
+  {
+  }
+
+  // Delete copying - all instances must be made via the factory method.
+  H3Session(H3Session const &) = delete;
+  H3Session &operator=(H3Session const &) = delete;
+
   ~H3Session();
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   swoc::Rv<ssize_t> write(swoc::TextView data) override;
