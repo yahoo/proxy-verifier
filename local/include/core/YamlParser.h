@@ -8,8 +8,10 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <queue>
 #include <string>
 #include <unordered_set>
 
@@ -265,14 +267,19 @@ public:
    *
    * @param[in] path The path to the YAML file to parse.
    *
+   * @param[in] content The file's content to parse.
+   *
    * @param[in] handler Conceptually, this contains the set of callbacks to
    *   dispatch into as the YAML file is parsed.
    *
    * @return Any errata from parsing the file.
    */
-  static swoc::Errata load_replay_file(swoc::file::path const &path, ReplayFileHandler &handler);
+  static swoc::Errata load_replay_file(
+      swoc::file::path const &path,
+      std::string const &content,
+      ReplayFileHandler &handler);
 
-  using loader_t = std::function<swoc::Errata(swoc::file::path const &)>;
+  using loader_t = std::function<swoc::Errata(swoc::file::path const &, std::string const &)>;
 
   /** Parse the specified YAML file(s).
    *
@@ -281,13 +288,20 @@ public:
    *
    * @param[in] loader The function to use for each file in path.
    *
-   * @param[in] n_threads The number of threads to use to parse the files in
-   *   path.
+   * @param[in] shutdown_flag A flag to indicate that the parsing should stop.
+   *
+   * @param[in] n_reader_threads The number of threads to use for reading files.
+   *
+   * @param[in] n_parser_threads The number of threads to use for parsing YAML file content.
    *
    * @return Any errata from parsing the file.
    */
-  static swoc::Errata
-  load_replay_files(swoc::file::path const &path, loader_t loader, int n_threads = 10);
+  static swoc::Errata load_replay_files(
+      swoc::file::path const &path,
+      loader_t loader,
+      bool &shutdown_flag,
+      int n_reader_threads = 4,
+      int n_parser_threads = 10);
 
   /** Populate an HTTP message from a YAML node.
    *

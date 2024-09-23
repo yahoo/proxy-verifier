@@ -94,6 +94,7 @@ public:
   void join_threads();
   static constexpr size_t default_max_threads = 2'000;
   void set_max_threads(size_t new_max);
+  size_t get_max_threads() const;
 
 protected:
   std::list<std::thread> _allThreads;
