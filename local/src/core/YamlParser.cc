@@ -25,17 +25,6 @@
 #include "swoc/bwf_std.h"
 #include "swoc/bwf_std.h"
 
-
-
-
-#include <iostream>
-
-
-
-
-
-
-
 using swoc::Errata;
 using swoc::TextView;
 using namespace swoc::literals;
@@ -263,14 +252,11 @@ read_and_parse_files(
   // Tell the parsing threads they no longer should expect more read files.
   queue.set_is_done_reading_files();
 
-  std::cout << "Done reading files" << std::endl;
-
   // Now wait for the parser threads to finish.
   for (auto &parser : parsers) {
     parser.join();
   }
 
-  std::cout << "Done parsing files" << std::endl;
   return errata;
 }
 } // Anonymous namespace
@@ -1687,7 +1673,8 @@ YamlParser::load_replay_files(
       }
       free(elements);
 
-      errata.note(read_and_parse_files(files, loader, shutdown_flag, n_reader_threads, n_parser_threads));
+      errata.note(
+          read_and_parse_files(files, loader, shutdown_flag, n_reader_threads, n_parser_threads));
 
     } else {
       errata.note(S_ERROR, R"(No replay files found in "{}".)", path);
