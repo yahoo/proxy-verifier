@@ -1001,12 +1001,15 @@ Engine::command_run()
       }
     }
 
+    // Typically, between reading and parsing, parsing is the bottleneck.
     errata.note(YamlParser::load_replay_files(
         swoc::file::path{args[0]},
-        [](swoc::file::path const &file) -> swoc::Errata {
+        [](swoc::file::path const &file, std::string const &content) -> swoc::Errata {
           ServerReplayFileHandler handler;
-          return YamlParser::load_replay_file(file, handler);
+          return YamlParser::load_replay_file(file, content, handler);
         },
+        Shutdown_Flag,
+        3,
         10));
 
     if (!errata.is_ok()) {

@@ -891,10 +891,12 @@ Engine::parse_replay_files()
   errata.note(S_INFO, R"(Loading replay data from "{}".)", _replay_location);
   errata.note(YamlParser::load_replay_files(
       swoc::file::path{_replay_location},
-      [](swoc::file::path const &file) -> Errata {
+      [](swoc::file::path const &file, std::string const &content) -> Errata {
         ClientReplayFileHandler handler;
-        return YamlParser::load_replay_file(file, handler);
+        return YamlParser::load_replay_file(file, content, handler);
       },
+      Shutdown_Flag,
+      3,
       10));
   if (!errata.is_ok()) {
     process_exit_code = 1;

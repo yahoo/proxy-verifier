@@ -12,6 +12,7 @@
 #include <array>
 #include <cassert>
 #include <csignal>
+#include <cstddef>
 #include <dirent.h>
 #include <fcntl.h>
 #include <iostream>
@@ -280,4 +281,10 @@ void
 ThreadPool::set_max_threads(size_t new_max)
 {
   max_threads = new_max;
+}
+
+size_t
+ThreadPool::get_max_threads() const
+{
+  return max_threads;
 }

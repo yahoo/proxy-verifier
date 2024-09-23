@@ -14,13 +14,27 @@
 
 #include <cassert>
 #include <dirent.h>
+#include <mutex>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
+#include "swoc/Errata.h"
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
 #include "swoc/bwf_std.h"
+
+
+
+
+#include <iostream>
+
+
+
+
+
+
 
 using swoc::Errata;
 using swoc::TextView;
@@ -34,6 +48,232 @@ using std::chrono::microseconds;
 using std::chrono::nanoseconds;
 using ClockType = std::chrono::system_clock;
 using TimePoint = std::chrono::time_point<ClockType, nanoseconds>;
+
+namespace
+{
+/** RAII for managing the handler's file. */
+struct HandlerOpener
+{
+public:
+  Errata errata;
+
+public:
+  HandlerOpener(ReplayFileHandler &handler, swoc::file::path const &path) : _handler(handler)
+  {
+    errata.note(_handler.file_open(path));
+  }
+  ~HandlerOpener()
+  {
+    errata.note(_handler.file_close());
+  }
+
+private:
+  ReplayFileHandler &_handler;
+};
+
+/** Shared data between file readers and file content parsers. */
+class ReadFileQueue
+{
+public:
+  /** Push read file content into the queue.
+   *
+   * File reader threads use this to push their read content into the queue.
+   *
+   * @param[in] file_content The content of the file to push into the queue.
+   */
+  void
+  push(swoc::file::path const &path, std::string &&file_content)
+  {
+    {
+      std::lock_guard<std::mutex> lock(_queue_mutex);
+      _queue.emplace(FileInformation{path, std::move(file_content)});
+    }
+    _queue_cv.notify_one();
+  }
+
+  /** Pull out file content from the queue.
+   *
+   * File parser threads use this to pull file content from the queue for
+   * parsing.
+   *
+   * @param[out] file_content The content of the file to pull from the queue.
+   * @return True if there is content to pull, false otherwise.
+   */
+  bool
+  pop(swoc::file::path &path, std::string &file_content)
+  {
+    std::unique_lock<std::mutex> lock(_queue_mutex);
+    _queue_cv.wait(lock, [this]() { return !_queue.empty() || _done_reading_files; });
+    // Note that we check empty rather than _done_reading_files because reader
+    // threads generally finish before parsing threads.
+    if (_queue.empty()) {
+      return false;
+    }
+    auto const &file_info = _queue.front();
+    path = std::move(file_info.file_name);
+    file_content = std::move(file_info.content);
+    _queue.pop();
+    return true;
+  }
+
+  /** Indicate that all the readers should stop reading files.
+   *
+   * This can be done set either because all the files have been read
+   * successfully, or because there was an error reading the files and the
+   * readers should stop now that there was an error.
+   */
+  void
+  set_is_done_reading_files()
+  {
+    {
+      std::lock_guard<std::mutex> lock(_queue_mutex);
+      _done_reading_files = true;
+    }
+    // All parsing threads should be woken up to parse any remaining files.
+    _queue_cv.notify_all();
+  }
+
+  /** Stop reading the files.
+   *
+   * Either all the files have been read or there was an error reading one and
+   * the other the reader threads should abort.
+   */
+  bool
+  is_done_reading_files() const
+  {
+    std::lock_guard<std::mutex> lock(_queue_mutex);
+    return _done_reading_files;
+  }
+
+private:
+  struct FileInformation
+  {
+    swoc::file::path file_name;
+    std::string content;
+  };
+
+  /** The container for fully read files. */
+  std::queue<FileInformation> _queue;
+  mutable std::mutex _queue_mutex;
+  std::condition_variable _queue_cv;
+  bool _done_reading_files = false;
+};
+
+/** The thread's logic for parsing file content and placing it in the queue. */
+Errata
+reader_thread(
+    bool &shutdown_flag,
+    ReadFileQueue &queue,
+    const std::vector<swoc::file::path> &files,
+    std::atomic<size_t> &index)
+{
+  Errata errata;
+  while (!shutdown_flag && !queue.is_done_reading_files()) {
+    size_t i = index++;
+    if (i >= files.size()) {
+      // All files are read.
+      break;
+    }
+    std::error_code ec;
+    const auto &file_path = files[i];
+    std::string content{swoc::file::load(file_path, ec)};
+    if (ec.value()) {
+      errata.note(S_ERROR, R"(Error loading "{}": {})", file_path, ec);
+      return errata;
+    }
+    queue.push(file_path, std::move(content));
+  }
+  return errata;
+}
+
+Errata
+parser_thread(bool &shutdown_flag, ReadFileQueue &queue, YamlParser::loader_t &loader)
+{
+  Errata errata;
+  swoc::file::path path;
+  std::string content;
+  while (!shutdown_flag && queue.pop(path, content)) {
+    errata.note(loader(path, content));
+  }
+  return errata;
+}
+
+/** Spawn up and wait for the threads to read and parse the replay files.
+ * @param[in] files The list of files to read and parse.
+ * @param[in] handler The handler for each parsed content.
+ * @param[in] n_reader_threads The number of reader threads to spawn.
+ * @param[in] n_parser_threads The number of parser threads to spawn.
+ * @return The status of reading and parsing the files.
+ */
+Errata
+read_and_parse_files(
+    std::vector<swoc::file::path> const &files,
+    YamlParser::loader_t &loader,
+    bool &shutdown_flag,
+    int n_reader_threads,
+    int n_parser_threads)
+{
+  Errata errata;
+  std::mutex errata_mutex;
+  ReadFileQueue queue;
+  std::atomic<size_t> index(0);
+
+  errata.note(S_INFO, "Loading {} replay files.", files.size());
+
+  // -------------------------
+  // Start reader threads.
+  // -------------------------
+  std::vector<std::thread> readers;
+  // Create a wrapper, mostly to handle the returned Errata.
+  auto reader_wrapper = [&errata, &shutdown_flag, &queue, &files, &index, &errata_mutex]() -> void {
+    auto this_errata = reader_thread(shutdown_flag, queue, files, index);
+    if (!this_errata.is_ok()) {
+      queue.set_is_done_reading_files();
+    }
+    std::lock_guard<std::mutex> lock(errata_mutex);
+    errata.note(this_errata);
+  };
+  for (int i = 0; i < n_reader_threads; ++i) {
+    readers.emplace_back(reader_wrapper);
+  }
+
+  // -------------------------
+  // Start parser threads.
+  // -------------------------
+  std::vector<std::thread> parsers;
+  auto parser_wrapper = [&errata, &shutdown_flag, &queue, &loader, &errata_mutex]() -> void {
+    auto this_errata = parser_thread(shutdown_flag, queue, loader);
+    if (!this_errata.is_ok()) {
+      queue.set_is_done_reading_files();
+    }
+    std::lock_guard<std::mutex> lock(errata_mutex);
+    errata.note(this_errata);
+  };
+  for (int i = 0; i < n_parser_threads; ++i) {
+    parsers.emplace_back(parser_wrapper);
+  }
+
+  // ---------------------------
+  // Wait for threads to finish.
+  // ---------------------------
+  for (auto &reader : readers) {
+    reader.join();
+  }
+
+  // Tell the parsing threads they no longer should expect more read files.
+  queue.set_is_done_reading_files();
+
+  std::cout << "Done reading files" << std::endl;
+
+  // Now wait for the parser threads to finish.
+  for (auto &parser : parsers) {
+    parser.join();
+  }
+
+  std::cout << "Done parsing files" << std::endl;
+  return errata;
+}
+} // Anonymous namespace
 
 TimePoint YamlParser::_parsing_start_time{};
 
@@ -1256,38 +1496,15 @@ ReplayFileHandler::parse_alpn_protocols_node(YAML::Node const &tls_node)
   return alpn_protocol_string;
 }
 
-/** RAII for managing the handler's file. */
-struct HandlerOpener
-{
-public:
-  Errata errata;
-
-public:
-  HandlerOpener(ReplayFileHandler &handler, swoc::file::path const &path) : _handler(handler)
-  {
-    errata.note(_handler.file_open(path));
-  }
-  ~HandlerOpener()
-  {
-    errata.note(_handler.file_close());
-  }
-
-private:
-  ReplayFileHandler &_handler;
-};
-
 Errata
-YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &handler)
+YamlParser::load_replay_file(
+    swoc::file::path const &path,
+    std::string const &content,
+    ReplayFileHandler &handler)
 {
   HandlerOpener opener(handler, path);
   auto errata = std::move(opener.errata);
   if (!errata.is_ok()) {
-    return errata;
-  }
-  std::error_code ec;
-  std::string content{swoc::file::load(path, ec)};
-  if (ec.value()) {
-    errata.note(S_ERROR, R"(Error loading "{}": {})", path, ec);
     return errata;
   }
   YAML::Node root;
@@ -1418,14 +1635,16 @@ YamlParser::load_replay_file(swoc::file::path const &path, ReplayFileHandler &ha
 }
 
 Errata
-YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int n_threads)
+YamlParser::load_replay_files(
+    swoc::file::path const &path,
+    loader_t loader,
+    bool &shutdown_flag,
+    int n_reader_threads,
+    int n_parser_threads)
 {
   Errata errata;
   errata.note(parsing_is_started());
-  std::mutex local_mutex;
   std::error_code ec;
-
-  dirent **elements = nullptr;
 
   auto stat{swoc::file::status(path, ec)};
   if (ec) {
@@ -1433,7 +1652,12 @@ YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int
     errata.note(parsing_is_done());
     return errata;
   } else if (swoc::file::is_regular_file(stat)) {
-    errata.note(loader(path));
+    std::string content = swoc::file::load(path, ec);
+    if (ec.value()) {
+      errata.note(S_ERROR, R"(Error loading "{}": {})", path, ec);
+      return errata;
+    }
+    errata.note(loader(path, content));
     errata.note(parsing_is_done());
     return errata;
   } else if (!swoc::file::is_dir(stat)) {
@@ -1443,7 +1667,8 @@ YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int
   }
 
   if (0 == chdir(path.c_str())) {
-    int n_sessions = scandir(
+    dirent **elements = nullptr;
+    int n_sessions = ::scandir(
         ".",
         &elements,
         [](dirent const *entry) -> int {
@@ -1452,32 +1677,17 @@ YamlParser::load_replay_files(swoc::file::path const &path, loader_t loader, int
         },
         &alphasort);
     if (n_sessions > 0) {
-      std::atomic<int> idx{0};
-      swoc::MemSpan<dirent *> entries{elements, static_cast<size_t>(n_sessions)};
-
-      // Lambda suitable to spawn in a thread to load files.
-      auto load_wrapper = [&]() -> void {
-        size_t k = 0;
-        while ((k = idx++) < entries.count()) {
-          auto result = loader(swoc::file::path{entries[k]->d_name});
-          std::lock_guard<std::mutex> lock(local_mutex);
-          errata.note(result);
-        }
-      };
-
-      errata.note(S_INFO, "Loading {} replay files.", n_sessions);
-      std::vector<std::thread> threads;
-      threads.reserve(n_threads);
-      for (int tidx = 0; tidx < n_threads; ++tidx) {
-        threads.emplace_back(load_wrapper);
-      }
-      for (std::thread &thread : threads) {
-        thread.join();
+      // Working with swoc::file::path is more conventient than dirent.
+      std::vector<swoc::file::path> files;
+      for (int i = 0; i < n_sessions; i++) {
+        files.emplace_back(swoc::file::path{elements[i]->d_name});
       }
       for (int i = 0; i < n_sessions; i++) {
         free(elements[i]);
       }
       free(elements);
+
+      errata.note(read_and_parse_files(files, loader, shutdown_flag, n_reader_threads, n_parser_threads));
 
     } else {
       errata.note(S_ERROR, R"(No replay files found in "{}".)", path);
