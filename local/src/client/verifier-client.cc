@@ -1146,6 +1146,17 @@ Engine::replay_traffic()
       replay_duration.count(),
       swoc::bwf::If(replay_duration.count() != 1, "s"),
       n_txn / static_cast<double>(replay_duration.count()));
+
+  // Print throughput metrics.
+  auto const n_bytes = Session::get_total_bytes_transmitted();
+  auto const n_megabytes = n_bytes / 1'000'000.0;
+  errata.note(
+      S_INFO,
+      "{} MB in {} millisecond{}: {:.3f} MB/s.",
+      n_megabytes,
+      replay_duration.count(),
+      swoc::bwf::If(replay_duration.count() != 1, "s"),
+      n_megabytes / static_cast<double>(replay_duration.count()));
   return true;
 }
 
