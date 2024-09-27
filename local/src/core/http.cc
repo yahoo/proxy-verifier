@@ -13,6 +13,7 @@
 #include <arpa/inet.h>
 #include <cassert>
 #include <condition_variable>
+#include <cstdint>
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <mutex>
@@ -43,6 +44,9 @@ namespace chrono = std::chrono;
 using ClockType = std::chrono::system_clock;
 using chrono::duration_cast;
 using chrono::milliseconds;
+
+std::atomic<uint64_t> Session::_num_total_bytes_written{0};
+std::atomic<uint64_t> Session::_num_total_bytes_read{0};
 
 constexpr int MAX_NOFILE = 300000;
 
@@ -850,7 +854,8 @@ Session::read(swoc::MemSpan<char> span)
       zret.note(S_ERROR, "Error reading from socket: {}", swoc::bwf::Errno{});
       this->close();
     }
-  }
+  } // else: zret > 0
+  _num_total_bytes_read += zret.result();
   return zret;
 }
 
@@ -933,6 +938,7 @@ Session::write(TextView view)
     }
     auto const n = ::write(_fd, remaining.data(), remaining.size());
     if (n > 0) {
+      _num_total_bytes_written += n;
       remaining = remaining.suffix(remaining.size() - n);
       zret.result() += n;
     } else if (n == 0) {
@@ -1663,6 +1669,12 @@ Session::run_transactions(
     session_errata.note(std::move(txn_errata));
   }
   return session_errata;
+}
+
+uint64_t
+Session::get_total_bytes_transmitted()
+{
+  return _num_total_bytes_read + _num_total_bytes_written;
 }
 
 Errata

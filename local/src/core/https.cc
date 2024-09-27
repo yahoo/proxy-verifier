@@ -225,6 +225,11 @@ TLSSession::TLSSession(TextView const &client_sni, int client_verify_mode)
 TLSSession::~TLSSession()
 {
   if (_ssl != nullptr) {
+    auto *bio = SSL_get_rbio(_ssl);
+    // Get the number of bytes written to and read from the bio.
+    Session::_num_total_bytes_read += BIO_number_read(bio);
+    Session::_num_total_bytes_written += BIO_number_written(bio);
+
     SSL_free(_ssl);
     _ssl = nullptr;
   }

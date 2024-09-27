@@ -764,6 +764,21 @@ public:
   // Session Factory Methods End.
   // -------------------------------------------------------------------
 
+  /** Return the total number of bytes written or read since process start.
+   * @return The total number of bytes written or read since process start.
+   */
+  static uint64_t get_total_bytes_transmitted();
+
+  /** Increment the total number of bytes read from any socket.
+   * @param[in] num_bytes_read The number of bytes read.
+   */
+  static void increment_total_bytes_read(uint64_t num_bytes_read);
+
+  /** Increment the total number of bytes written to any socket.
+   * @param[in] num_bytes_written The number of bytes written.
+   */
+  static void increment_total_bytes_written(uint64_t num_bytes_written);
+
   /** Set the the socket to be associated with this stream.
    *
    * @param[in] fd The socket with which this stream is associated.
@@ -927,6 +942,13 @@ protected:
    */
   virtual swoc::Rv<ssize_t> read_headers(swoc::FixedBufferWriter &w);
 
+protected:
+  /** The number of bytes written across all sockets. */
+  static std::atomic<uint64_t> _num_total_bytes_written;
+
+  /** The number of bytes read across all sockets. */
+  static std::atomic<uint64_t> _num_total_bytes_read;
+
 private:
   virtual swoc::Rv<size_t>
   drain_body_internal(HttpHeader &hdr, Txn const &json_txn, swoc::TextView initial);
@@ -955,6 +977,18 @@ inline bool
 Session::is_closed() const
 {
   return _fd < 0;
+}
+
+inline void
+Session::increment_total_bytes_read(uint64_t num_bytes_read)
+{
+  _num_total_bytes_read += num_bytes_read;
+}
+
+inline void
+Session::increment_total_bytes_written(uint64_t num_bytes_written)
+{
+  _num_total_bytes_written += num_bytes_written;
 }
 
 class ChunkCodex

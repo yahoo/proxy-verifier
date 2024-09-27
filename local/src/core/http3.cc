@@ -670,7 +670,7 @@ receive_packets(
       if (session.is_closed()) {
         return zret;
       }
-      nread = recvfrom(
+      nread = ::recvfrom(
           session.get_fd(),
           (char *)buf,
           bufsize,
@@ -679,6 +679,7 @@ receive_packets(
           &remote_addrlen);
       if (nread > 0) {
         // Success. We read data off the socekt.
+        Session::increment_total_bytes_read(nread);
         break;
       }
       if (nread == -1) {
@@ -893,8 +894,8 @@ ngtcp2_progress_egress(H3Session &session, PacketIoContext *packet_context)
       }
     }
 
-    ssize_t sent = 0;
-    while ((sent = send(session.get_fd(), (const char *)out, outlen, 0)) == -1) {
+    ssize_t nsent = 0;
+    while ((nsent = ::send(session.get_fd(), (const char *)out, outlen, 0)) == -1) {
       if (errno == EINTR) {
         continue;
       } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -922,7 +923,8 @@ ngtcp2_progress_egress(H3Session &session, PacketIoContext *packet_context)
         return zret;
       }
     }
-    zret.result() += sent;
+    zret.result() += nsent;
+    Session::increment_total_bytes_written(nsent);
   }
 
   return zret;
@@ -1986,8 +1988,10 @@ H3Session::~H3Session()
       ts);
   if (rc > 0) {
     // Send the CONNECTION_CLOSE.
-    while ((send(get_fd(), buffer, rc, 0) == -1) && errno == EINTR)
+    ssize_t num_sent = 0;
+    while (((num_sent = ::send(get_fd(), buffer, rc, 0)) == -1) && errno == EINTR)
       ;
+    Session::_num_total_bytes_written += num_sent;
   }
 }
 
