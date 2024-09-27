@@ -960,11 +960,11 @@ private:
   /** Condition variable for awaiting socket state transitions. */
   std::condition_variable _poll_cv;
 
-  /// Guard _revent until Poller populates it.
-  std::mutex _revent_mutex;
+  /// Mutex for the poll condition variable.
+  std::mutex _poll_cv_mutex;
 
   /// The return of poll from Poller.
-  int _revents = 0;
+  std::atomic<short> _revents{-1};
 };
 
 inline int
