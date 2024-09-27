@@ -25,7 +25,7 @@ else:
     # No path provided.
     PartVersion(
         GitVersionFromTag(
-            "wladd/quic-on-3.3-dirty",
+            "openssl-3.3.0+quic",
             regex=r'\d+\_\d+\_\d+[a-z]',
             converter=lambda ver, env: ver.replace("_", ".")
         )
