@@ -79,8 +79,8 @@ class ThreadInfo
 {
 public:
   std::thread *_thread = nullptr;
-  std::condition_variable _cvar;
-  std::mutex _mutex;
+  std::condition_variable _data_ready_cvar;
+  std::mutex _data_ready_mutex;
   virtual bool data_ready() = 0;
 };
 
@@ -97,10 +97,12 @@ public:
   size_t get_max_threads() const;
 
 protected:
+  /// Any thread that has been created for the ThreadPool.
   std::list<std::thread> _allThreads;
-  // Pool of ready / idle threads.
-  std::deque<ThreadInfo *> _threadPool;
-  std::condition_variable _threadPoolCvar;
-  std::mutex _threadPoolMutex;
+
+  /// The subset of @a _allThreads that are currently available to do work.
+  std::deque<ThreadInfo *> _idleThreads;
+  std::condition_variable _idleThreadsCvar;
+  std::mutex _idleThreadsMutex;
   size_t max_threads = default_max_threads;
 };

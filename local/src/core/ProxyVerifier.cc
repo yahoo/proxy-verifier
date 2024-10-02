@@ -228,16 +228,20 @@ ThreadPool::wait_for_work(ThreadInfo *thread_info)
 {
   // ready to roll, add to the pool.
   {
-    std::unique_lock<std::mutex> lock(_threadPoolMutex);
-    _threadPool.push_back(thread_info);
-    _threadPoolCvar.notify_all();
+    std::unique_lock<std::mutex> lock(_idleThreadsMutex);
+    _idleThreads.push_back(thread_info);
+    lock.unlock();
+    _idleThreadsCvar.notify_one();
   }
 
   // wait for a notification there's a session to process.
   {
-    std::unique_lock<std::mutex> lock(thread_info->_mutex);
+    std::unique_lock<std::mutex> lock(thread_info->_data_ready_mutex);
+    // Shutdown_Flag has no notification, so loop in case that is set.
     while (!thread_info->data_ready()) {
-      thread_info->_cvar.wait_for(lock, 100ms);
+      thread_info->_data_ready_cvar.wait_for(lock, 100ms, [thread_info] {
+        return thread_info->data_ready();
+      });
     }
   }
 }
@@ -247,25 +251,21 @@ ThreadPool::get_worker()
 {
   ThreadInfo *thread_info = nullptr;
   {
-    std::unique_lock<std::mutex> lock(this->_threadPoolMutex);
-    while (_threadPool.size() == 0) {
-      if (_allThreads.size() >= max_threads) {
-        // Just sleep until a thread comes back
-        _threadPoolCvar.wait(lock);
-      } else { // Make a new thread
-        // This is circuitous, but we do this so that the thread can put a
-        // pointer to it's @c std::thread in it's info. Note the circular
-        // dependency: there's no object until after the constructor is called
-        // but the constructor needs to be called to get the object. Sigh.
-        std::thread *t = &_allThreads.emplace_back();
-        *t = this->make_thread(t);
-        _threadPoolCvar.wait(lock); // expect the new thread to enter
-                                    // itself in the pool and signal.
-      }
+    std::unique_lock<std::mutex> lock(this->_idleThreadsMutex);
+    if (_allThreads.size() < max_threads) {
+      // Make a new thread and add it to our pool.
+      // This is circuitous, but we do this so that the thread can put a
+      // pointer to it's @c std::thread in it's info. Note the circular
+      // dependency: there's no object until after the constructor is called
+      // but the constructor needs to be called to get the object. Sigh.
+      std::thread *t = &_allThreads.emplace_back();
+      *t = this->make_thread(t);
+      // expect the new thread to enter itself in the pool and signal.
     }
-    thread_info = _threadPool.front();
-    _threadPool.pop_front();
-  }
+    _idleThreadsCvar.wait(lock, [this] { return !_idleThreads.empty(); });
+    thread_info = _idleThreads.front();
+    _idleThreads.pop_front();
+  } // Release the _idleThreadsMutex lock.
   return thread_info;
 }
 
