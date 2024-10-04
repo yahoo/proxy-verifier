@@ -157,23 +157,8 @@ class TLSSession : public Session
 public:
   using super_type = Session;
 
-protected:
-  // Only the Session factory methods can create these.
   TLSSession() = default;
   TLSSession(swoc::TextView const &client_sni, int client_verify_mode = SSL_VERIFY_NONE);
-
-public:
-  // Publicly accessible for std::make_shared, but restricted via protected PrivateKey.
-  TLSSession(Session::PrivateKey) : TLSSession() { }
-  template <typename... Args>
-  TLSSession(Session::PrivateKey, Args &&... args) : TLSSession(std::forward<Args>(args)...)
-  {
-  }
-
-  // Delete copying - all instances must be made via the factory method.
-  TLSSession(TLSSession const &) = delete;
-  TLSSession &operator=(TLSSession const &) = delete;
-
   ~TLSSession() override;
 
   /** @see Session::read */

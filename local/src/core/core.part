@@ -35,17 +35,14 @@ def build(env):
     env.SdkLib(
         env.StaticLibrary("verifier-core", [
             "ArgParser.cc",
-            "Localizer.cc",
-            "ProxyVerifier.cc",
-            "SessionFactory.cc",
-            "SocketNotifier.cc",
-            "SocketPoller.cc",
-            "YamlParser.cc",
             "http.cc",
             "http2.cc",
             "http3.cc",
             "https.cc",
-            "proxy_protocol_util.cc",
+            "Localizer.cc",
+            "ProxyVerifier.cc",
             "verification.cc",
+            "YamlParser.cc",
+            "proxy_protocol_util.cc",
         ])
     )

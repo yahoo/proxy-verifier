@@ -10,7 +10,6 @@
 #include "core/http3.h"
 #include "core/https.h"
 #include "core/ProxyVerifier.h"
-#include "core/SocketPoller.h"
 #include "core/YamlParser.h"
 #include "core/proxy_protocol_util.h"
 
@@ -73,7 +72,7 @@ milliseconds Poll_Timeout{5s};
 class ServerThreadInfo : public ThreadInfo
 {
 public:
-  std::shared_ptr<Session> _session;
+  Session *_session = nullptr;
   bool
   data_ready() override
   {
@@ -179,9 +178,6 @@ sigint_handler(int /* signal */)
         "exiting with response code {} because errors have been seen.",
         Engine::process_exit_code);
   }
-  // Stop the polling thread very soon - we don't want any use after free of
-  // threads or sessions that will be stopped once the threads are stopped.
-  SocketPoller::stop_polling_thread();
   Shutdown_Flag = true;
 }
 
@@ -579,11 +575,12 @@ ServerReplayFileHandler::ssn_close()
 void
 delete_thread_info_session(ServerThreadInfo &thread_info)
 {
-  if (!thread_info._session) {
+  if (thread_info._session == nullptr) {
     return;
   }
   std::unique_lock<std::mutex> lock(thread_info._mutex);
-  thread_info._session.reset();
+  delete thread_info._session;
+  thread_info._session = nullptr;
 }
 
 void
@@ -695,7 +692,7 @@ TF_Serve_Connection(std::thread *t)
           break;
         }
       } else if (is_http2) {
-        H2Session *h2session = dynamic_cast<H2Session *>(thread_info._session.get());
+        H2Session *h2session = dynamic_cast<H2Session *>(thread_info._session);
         auto iter = h2session->_stream_map.find(stream_id);
         if (iter == h2session->_stream_map.end()) {
           thread_errata.note(S_ERROR, "Failed to find HTTP/2 stream with id {}.", stream_id);
@@ -704,7 +701,7 @@ TF_Serve_Connection(std::thread *t)
           stream_state._specified_request = &specified_transaction._req;
         }
       } else if (is_http3) {
-        H3Session *h3session = dynamic_cast<H3Session *>(thread_info._session.get());
+        H3Session *h3session = dynamic_cast<H3Session *>(thread_info._session);
         auto iter = h3session->stream_map.find(stream_id);
         if (iter == h3session->stream_map.end()) {
           thread_errata.note(S_ERROR, "Failed to find HTTP/3 stream with id {}.", stream_id);
@@ -749,7 +746,7 @@ TF_Serve_Connection(std::thread *t)
 void
 TF_Accept(int socket_fd, bool do_https, bool do_http3)
 {
-  std::shared_ptr<Session> session;
+  std::unique_ptr<Session> session;
   struct pollfd pfd = {.fd = socket_fd, .events = POLLIN, .revents = 0};
 
   while (!Shutdown_Flag) {
@@ -776,16 +773,15 @@ TF_Accept(int socket_fd, bool do_https, bool do_http3)
     if (0 != ::fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)) {
       errata.note(S_ERROR, "Failed to make the server socket non-blocking: {}", swoc::bwf::Errno{});
     }
-
-    Session::SessionType session_type = Session::SessionType::TCP;
     if (do_http3) {
-      session_type = Session::SessionType::QUIC;
+      session = std::make_unique<H3Session>();
     } else if (do_https) {
       // H2Session will figure out the HTTP protocol during the TLS handshake
       // and handle HTTP/1.x or HTTP/2 accordingly.
-      session_type = Session::SessionType::HTTP2;
+      session = std::make_unique<H2Session>();
+    } else {
+      session = std::make_unique<Session>();
     }
-    session = Session::create_session(session_type);
     errata = session->set_fd(fd);
     if (!errata.is_ok()) {
       continue;
@@ -796,7 +792,7 @@ TF_Accept(int socket_fd, bool do_https, bool do_http3)
       errata.note(S_ERROR, "Failed to get worker thread");
     } else {
       std::unique_lock<std::mutex> lock(thread_info->_mutex);
-      thread_info->_session = std::move(session);
+      thread_info->_session = session.release();
       thread_info->_cvar.notify_one();
     }
   }
@@ -1035,9 +1031,6 @@ Engine::command_run()
         txn._rsp._content_data_list.front() = txn._rsp._content.data();
       }
     }
-
-    // Parsing is done. Start the various server threads.
-    SocketPoller::start_polling_thread();
 
     errata.note(
         S_INFO,
