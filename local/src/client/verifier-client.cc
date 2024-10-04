@@ -1006,6 +1006,7 @@ Engine::replay_traffic()
   double rate_multiplier = 0.0;
   auto rate_arg{arguments.get("rate")};
   auto repeat_arg{arguments.get("repeat")};
+  bool const run_continuously = arguments.get("run-continuously") ? true : false;
   int repeat_count = 0;
 
   TimePoint recording_start_time;
@@ -1093,7 +1094,7 @@ Engine::replay_traffic()
   auto replay_start_time = ClockType::now();
   unsigned n_ssn = 0;
   unsigned n_txn = 0;
-  for (int i = 0; i < repeat_count; i++) {
+  for (int i = 0; ((i < repeat_count) || run_continuously); i++) {
     auto const this_iteration_start_time = ClockType::now();
     for (auto ssn : Session_List) {
       if (ssn->_user_specified_delay_duration > 0us) {
@@ -1267,6 +1268,7 @@ main(int /* argc */, char const *argv[])
           "",
           1,
           "")
+      .add_option("--run-continuously", "", "Replay sessions in the replay file continuously.")
       .add_option(
           "--sleep-limit",
           "",
