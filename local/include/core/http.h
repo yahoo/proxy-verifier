@@ -1,7 +1,7 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2024, Verizon Media
+ * Copyright 2022, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,12 +10,9 @@
 #include "case_insensitive_utils.h"
 
 #include <chrono>
-#include <condition_variable>
 #include <list>
 #include <deque>
 #include <map>
-#include <memory>
-#include <mutex>
 #include <unordered_map>
 #include <nghttp2/nghttp2.h>
 #include <nghttp3/nghttp3.h>
@@ -683,86 +680,11 @@ struct Ssn
  * the socket. The goal is to enable a read operation that waits for data but
  * returns as soon as any data is available.
  */
-class Session : public std::enable_shared_from_this<Session>
+class Session
 {
-protected:
-  struct PrivateKey
-  {
-    explicit PrivateKey() = default;
-  };
-
-  // Restrict constructors to prevent any creation of Sessions except via the
-  // factory method.
-  Session() = default;
-
 public:
-  /** Publically accessible constructor.
-   *
-   * This is publicly accessible, so make_shared can call it, but requires
-   * PrivateKey, which only the factories can access.
-   */
-  Session(PrivateKey) : Session() { }
-
-  // Delete copying - all instances must be made via the factory method.
-  Session(Session const &) = delete;
-  Session &operator=(Session const &) = delete;
-
+  Session();
   virtual ~Session();
-
-  std::shared_ptr<Session> get_shared_ptr();
-
-  // -------------------------------------------------------------------
-  // Session Factory Methods Begin.
-  // -------------------------------------------------------------------
-  enum class SessionType {
-    TCP,
-    TLS,
-    HTTP2,
-    QUIC,
-  };
-
-  /** Create an object of the specified session.
-   *
-   * @param[in] type The type of session to create.
-   * @return The created session object.
-   */
-  static std::shared_ptr<Session> create_session(SessionType type);
-
-  /** Creates a TCP session object.
-   *
-   * @return The created Session object.
-   */
-  static std::shared_ptr<Session> create_tcp_session();
-
-  /** Creates a TLS session object.
-   *
-   * @param[in] client_sni The Server Name Indication (SNI) of the client.
-   * @param[in] verify_mode The mode used to verify the TLS session.
-   * @return The created Session object.
-   */
-  static std::shared_ptr<Session> create_tls_session(std::string_view client_sni, int verify_mode);
-
-  /** Creates an HTTP/2 session object.
-   *
-   * @param[in] client_sni The Server Name Indication (SNI) of the client.
-   * @param[in] verify_mode The mode used to verify the TLS session.
-   * @param[in] close_on_goaway Whether to close the session on receiving a GOAWAY frame.
-   * @return The created Session object.
-   */
-  static std::shared_ptr<Session>
-  create_h2_session(std::string_view client_sni, int verify_mode, bool close_on_goaway);
-
-  /** Creates an HTTP/3 session object.
-   *
-   * @param[in] client_sni The Server Name Indication (SNI) of the client.
-   * @param[in] verify_mode The mode used to verify the TLS session.
-   * @return The created Session object.
-   */
-  static std::shared_ptr<Session> create_h3_session(std::string_view client_sni, int verify_mode);
-
-  // -------------------------------------------------------------------
-  // Session Factory Methods End.
-  // -------------------------------------------------------------------
 
   /** Return the total number of bytes written or read since process start.
    * @return The total number of bytes written or read since process start.
@@ -789,12 +711,6 @@ public:
 
   /** A getter for the socket for this stream. */
   virtual int get_fd() const;
-
-  /** Called by the SocketPoller when this session's poll event is triggered.
-   *
-   * @param[in] revents The poll output variable for this session.
-   */
-  virtual void handle_poll_return(short revents);
 
   /** Wait upon and complete the security layer handshakes.
    *
@@ -956,15 +872,6 @@ private:
 private:
   int _fd = -1; ///< Socket.
   ssize_t _body_offset = 0;
-
-  /** Condition variable for awaiting socket state transitions. */
-  std::condition_variable _poll_cv;
-
-  /// Mutex for the poll condition variable.
-  std::mutex _poll_cv_mutex;
-
-  /// The return of poll from Poller.
-  std::atomic<short> _revents{-1};
 };
 
 inline int

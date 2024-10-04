@@ -7,7 +7,6 @@
 
 #pragma once
 
-#include "core/http.h"
 #include "https.h"
 
 #include <chrono>
@@ -106,28 +105,13 @@ private:
 
 class H2Session : public TLSSession
 {
-protected:
-  /** Only SessionFactory can create Session objects to ensure that they are
-   * always managed via shared_ptrs. */
+public:
+  using super_type = TLSSession;
   H2Session();
   H2Session(
       swoc::TextView const &client_sni,
       int client_verify_mode = SSL_VERIFY_NONE,
       bool close_on_goaway = true);
-
-public:
-  using super_type = TLSSession;
-  // Publicly accessible for std::make_shared, but restricted via protected PrivateKey.
-  H2Session(Session::PrivateKey) : H2Session() { }
-  template <typename... Args>
-  H2Session(Session::PrivateKey, Args &&... args) : H2Session(std::forward<Args>(args)...)
-  {
-  }
-
-  // Delete copying - all instances must be made via the factory method.
-  H2Session(H2Session const &) = delete;
-  H2Session &operator=(H2Session const &) = delete;
-
   ~H2Session();
   swoc::Rv<ssize_t> read(swoc::MemSpan<char> span) override;
   swoc::Rv<ssize_t> write(swoc::TextView data) override;

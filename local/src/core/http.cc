@@ -1,22 +1,19 @@
 /** @file
  * Common implementation for Proxy Verifier
  *
- * Copyright 2024, Verizon Media
+ * Copyright 2022, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "core/http.h"
 #include "core/verification.h"
 #include "core/ProxyVerifier.h"
-#include "core/SocketPoller.h"
 
 #include <arpa/inet.h>
 #include <cassert>
-#include <condition_variable>
 #include <cstdint>
 #include <fcntl.h>
 #include <ifaddrs.h>
-#include <mutex>
 #include <netinet/tcp.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -768,18 +765,11 @@ HttpHeader::Binding::operator()(BufferWriter &w, const swoc::bwf::Spec &spec) co
   return w;
 }
 
+Session::Session() { }
+
 Session::~Session()
 {
-  if (_fd >= 0) {
-    SocketPoller::remove_poll_request(this->get_fd());
-  }
   this->close();
-}
-
-std::shared_ptr<Session>
-Session::get_shared_ptr()
-{
-  return shared_from_this();
 }
 
 swoc::Rv<ssize_t>
@@ -1039,33 +1029,8 @@ Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
   if (is_closed()) {
     return {-1, Errata(S_DIAG, "Poll called on a closed connection.")};
   }
-  _revents = -1;
-  SocketPoller::request_poll(this->get_shared_ptr(), events);
-  std::unique_lock<std::mutex> lock(_poll_cv_mutex);
-  bool timed_out = !_poll_cv.wait_for(lock, timeout, [this] { return _revents != -1; });
-  // No need to hold the mutex anymore.
-  lock.unlock();
-
-  if (timed_out) {
-    // Clean up the SocketPoller so it doesn't try to call us back now.
-    SocketPoller::remove_poll_request(this->get_fd());
-    return 0;
-  } else {
-    if (_revents & (POLLERR | POLLHUP | POLLNVAL)) {
-      return -1;
-    } else {
-      return 1;
-    }
-  }
-  return timed_out ? 0 : 1;
-}
-
-void
-Session::handle_poll_return(short revents)
-{
-  _revents = revents;
-  // This will wake up the poll_for_data_on_socket _poll_cv.wait_for().
-  _poll_cv.notify_all();
+  struct pollfd pfd = {.fd = _fd, .events = events, .revents = 0};
+  return ::poll(&pfd, 1, timeout.count());
 }
 
 swoc::Rv<int>

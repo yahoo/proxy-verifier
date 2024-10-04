@@ -11,7 +11,6 @@
 #include "core/http3.h"
 #include "core/https.h"
 #include "core/ProxyVerifier.h"
-#include "core/SocketPoller.h"
 #include "core/YamlParser.h"
 
 #include <assert.h>
@@ -676,7 +675,7 @@ int Engine::process_exit_code = 0;
 void
 Run_Session(Ssn const &ssn, TargetSelector &target_selector)
 {
-  std::shared_ptr<Session> session;
+  std::unique_ptr<Session> session;
   swoc::IPEndpoint const *real_target = nullptr;
   Errata errata;
   errata.note(
@@ -693,7 +692,7 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
           S_ERROR,
           "Could not replay an HTTP/3 session because no HTTP/3 ports are provided.");
     } else {
-      session = Session::create_h3_session(ssn._client_sni, ssn._client_verify_mode);
+      session = std::make_unique<H3Session>(ssn._client_sni, ssn._client_verify_mode);
       errata.note(S_DIAG, "Connecting via HTTP/3 over QUIC.");
     }
   } else if (ssn.is_h2) {
@@ -703,8 +702,10 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
           S_ERROR,
           "Could not replay an HTTP/2 session because no HTTPS ports are provided.");
     } else {
-      session =
-          Session::create_h2_session(ssn._client_sni, ssn._client_verify_mode, ssn.close_on_goaway);
+      session = std::make_unique<H2Session>(
+          ssn._client_sni,
+          ssn._client_verify_mode,
+          ssn.close_on_goaway);
       errata.note(S_DIAG, "Connecting via HTTP/2 over TLS.");
     }
   } else if (ssn.is_tls) {
@@ -714,7 +715,7 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
           S_ERROR,
           "Could not replay an HTTPS session because no HTTPS ports are provided.");
     } else {
-      session = Session::create_tls_session(ssn._client_sni, ssn._client_verify_mode);
+      session = std::make_unique<TLSSession>(ssn._client_sni, ssn._client_verify_mode);
       errata.note(S_DIAG, "Connecting via TLS.");
     }
   } else {
@@ -722,7 +723,7 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
     if (real_target == nullptr) {
       errata.note(S_ERROR, "Could not replay an HTTP session because no HTTP ports are provided.");
     } else {
-      session = Session::create_tcp_session();
+      session = std::make_unique<Session>();
       errata.note(S_DIAG, "Connecting via HTTP.");
     }
   }
@@ -1089,9 +1090,6 @@ Engine::replay_traffic()
     repeat_count = 1;
   }
 
-  // Parsing is done. Start the various client threads.
-  SocketPoller::start_polling_thread();
-
   auto replay_start_time = ClockType::now();
   unsigned n_ssn = 0;
   unsigned n_txn = 0;
@@ -1131,7 +1129,6 @@ Engine::replay_traffic()
   // Wait until all threads are done
   Shutdown_Flag = true;
   Client_Thread_Pool.join_threads();
-  SocketPoller::stop_polling_thread();
 
   auto replay_duration = duration_cast<milliseconds>(ClockType::now() - replay_start_time);
   errata.note(
