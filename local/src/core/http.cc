@@ -470,6 +470,15 @@ HttpHeader::get_key() const
   return _key;
 }
 
+bool
+HttpHeader::status_is_no_content() const
+{
+  if (_status >= 1 && _status < 600) {
+    return STATUS_NO_CONTENT.test(_status);
+  }
+  return false;
+}
+
 void
 HttpHeader::derive_key()
 {
@@ -1157,7 +1166,7 @@ Session::drain_body(
   // regardless of the presence of a non-zero Content-Length header. Consider
   // a 304 response, for example: the Content-Length indicates the size of
   // the cached response, but the body is intentionally omitted.
-  if (hdr._status && HttpHeader::STATUS_NO_CONTENT[hdr._status]) {
+  if (hdr.status_is_no_content()) {
     return num_drained_body_bytes;
   }
 
@@ -1358,7 +1367,7 @@ Session::write_body(HttpHeader const &hdr)
   /* Observe that by this point, hdr._content_size will have been adjusted to 0
    * for HEAD requests via update_content_length. */
   auto const message_type_permits_body =
-      (hdr.is_request() || (hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status]));
+      (hdr.is_request() || (hdr._status && !hdr.status_is_no_content()));
   // Note that zero-length chunked bodies must send a zero-length encoded chunk.
   if (message_type_permits_body && (hdr._content_length > 0 || hdr._chunked_p)) {
     TextView content;
@@ -1413,9 +1422,7 @@ Session::write_body(HttpHeader const &hdr)
           ec);
     }
   } else if (
-      hdr._status && !HttpHeader::STATUS_NO_CONTENT[hdr._status] && !hdr._chunked_p &&
-      !hdr._content_length_p)
-  {
+      hdr._status && !hdr.status_is_no_content() && !hdr._chunked_p && !hdr._content_length_p) {
     // Note the conditions:
     //
     //   1. This is a response since there is a hdr._status. Only responses
