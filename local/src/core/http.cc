@@ -1039,14 +1039,15 @@ Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
   if (is_closed()) {
     return {-1, Errata(S_DIAG, "Poll called on a closed connection.")};
   }
-  _revents = -1;
+  std::unique_lock<std::mutex> lock(_revent_mutex);
   SocketPoller::request_poll(this->get_shared_ptr(), events);
-  std::unique_lock<std::mutex> lock(_poll_cv_mutex);
-  bool timed_out = !_poll_cv.wait_for(lock, timeout, [this] { return _revents != -1; });
-  // No need to hold the mutex anymore.
+  auto cv_status = _poll_cv.wait_for(lock, timeout);
+  // Unlock protection on the _revents variable since it is set at this point
+  // and so that remove_poll_request called in a few lines doesn't deadlock with
+  // the poller's mutex.
   lock.unlock();
 
-  if (timed_out) {
+  if (cv_status == std::cv_status::timeout) {
     // Clean up the SocketPoller so it doesn't try to call us back now.
     SocketPoller::remove_poll_request(this->get_fd());
     return 0;
@@ -1057,13 +1058,16 @@ Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
       return 1;
     }
   }
-  return timed_out ? 0 : 1;
+  return cv_status == std::cv_status::timeout ? 0 : 1;
 }
 
 void
 Session::handle_poll_return(short revents)
 {
-  _revents = revents;
+  {
+    std::lock_guard<std::mutex> lock(_revent_mutex);
+    _revents = revents;
+  }
   // This will wake up the poll_for_data_on_socket _poll_cv.wait_for().
   _poll_cv.notify_all();
 }
