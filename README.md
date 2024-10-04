@@ -56,6 +56,7 @@ Table of Contents
          * [--strict](#--strict)
          * [--rate &lt;requests/second&gt;](#--rate-requestssecond)
          * [--repeat &lt;number&gt;](#--repeat-number)
+         * [--run-continuously](#--run-continuously)
          * [--thread-limit &lt;number&gt;](#--thread-limit-number)
          * [--qlog-dir &lt;directory&gt;](#--qlog-dir-directory)
          * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
@@ -2112,6 +2113,13 @@ By default, the client will replay all the transactions once in the set of
 input replay files. If the user would like the client to automatically repeat
 this set a number of times, they can provide the `--repeat` option. The
 argument takes the number of times the client should replay the entire dataset.
+
+This is a client-side only option.
+
+#### --run-continuously
+
+Run the set of sessions in the input replay files in an infinite loop. Passing
+this option can be thought of as `--repeat` with a value of infinity.
 
 This is a client-side only option.
 
