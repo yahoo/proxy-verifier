@@ -409,6 +409,12 @@ public:
    */
   std::string get_key() const;
 
+  /** Indicate whether the current status represents a no content response.
+   *
+   * @return Whether the status represents a no content response.
+   */
+  bool status_is_no_content() const;
+
   /** Verify that the (header) fields in 'this' correspond to the provided rules.
    *
    * @param key The key for this transaction.
