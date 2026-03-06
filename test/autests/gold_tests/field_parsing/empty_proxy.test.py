@@ -7,7 +7,6 @@ Verify correct handling of empty proxy nodes.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify correct handling of empty proxy nodes.
 '''

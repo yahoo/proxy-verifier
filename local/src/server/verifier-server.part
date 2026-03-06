@@ -45,6 +45,4 @@ def config(env):
 def source(env):
     env.InstallBin(
         env.SetRPath(  # allow fancy patchelf runpath setting if defined
-            env.Program("verifier-server", ["verifier-server.cc"])
-        )
-    )
+            env.Program("verifier-server", ["verifier-server.cc"])))

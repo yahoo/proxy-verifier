@@ -143,9 +143,13 @@ class ReplaySession:
         self.session['protocol'].append({'name': 'http', 'version': self.http_ver})
 
         if self.tls_ver > 0:
-            self.session['protocol'].append(
-                {'name': 'tls', 'version': self.tls_vers[self.tls_ver], 'sni': self.hostname,
-                 'proxy-verify-mode': 0, 'proxy-provided-cert': True})
+            self.session['protocol'].append({
+                'name': 'tls',
+                'version': self.tls_vers[self.tls_ver],
+                'sni': self.hostname,
+                'proxy-verify-mode': 0,
+                'proxy-provided-cert': True
+            })
 
         self.session['protocol'].append({'name': 'tcp'})
 
@@ -247,8 +251,9 @@ class ReplaySession:
             res_headers['fields'] = []
             if random.choices([1, 2]) == 1:
                 res_headers['fields'].append(['Transfer-Encoding', 'chunked'])
-            res_headers['fields'].append(['Connection', random.choices(
-                ['close', 'keep-alive'], weights=[1, 10], k=1)[0]])
+            res_headers['fields'].append(
+                ['Connection',
+                 random.choices(['close', 'keep-alive'], weights=[1, 10], k=1)[0]])
         else:
             res_headers = {}
             res_headers['fields'] = []
@@ -288,18 +293,8 @@ class RepalyFile:
         self.sess_count = 0
         self.trans_count = 0
 
-    def random_populate(
-            self,
-            curr_trans_num,
-            total_trans_num,
-            url_list,
-            sess_lower,
-            sess_upper,
-            trans_lower,
-            trans_upper,
-            http_trans,
-            tls_trans,
-            h2_trans):
+    def random_populate(self, curr_trans_num, total_trans_num, url_list, sess_lower, sess_upper,
+                        trans_lower, trans_upper, http_trans, tls_trans, h2_trans):
         sess_num = random.randint(sess_lower, sess_upper)
 
         for sess in range(sess_num):
@@ -330,7 +325,8 @@ class RepalyFile:
 
         if print_info:
             print(
-                f'Generated file {self.f_name}, with {self.sess_count} sessions and {self.trans_count} transactions.')
+                f'Generated file {self.f_name}, with {self.sess_count} sessions and {self.trans_count} transactions.'
+            )
 
         return
 
@@ -348,30 +344,18 @@ def parse_args():
     parser.add_argument('-su', '--sess-upper', dest='sess_upper', type=int, default=10,
                         help='The upper limit of sessions per file.')
     parser.add_argument(
-        '-tp',
-        '--trans-protocols',
-        dest='trans_protocols',
-        type=str,
-        default='all',
+        '-tp', '--trans-protocols', dest='trans_protocols', type=str, default='all',
         help='A comma separated list of protocols that are allowed to be generated. '
         'Available options are: http, tls, h2, all.')
-    parser.add_argument(
-        '-u',
-        '--url-file',
-        dest='url_file',
-        type=argparse.FileType('r'),
-        required=True,
-        help='Path to a file with the list of URLs that can be used.')
+    parser.add_argument('-u', '--url-file', dest='url_file', type=argparse.FileType('r'),
+                        required=True,
+                        help='Path to a file with the list of URLs that can be used.')
     parser.add_argument('-o', '--output', dest='output', type=str, default='replay',
                         help='Path to a directory where the replay files are generated.')
     parser.add_argument('-p', '--prefix', dest='prefix', type=str, default='',
                         help='Prefix for the replay file names.')
     parser.add_argument(
-        '-j',
-        '--out-json',
-        dest='out_json',
-        default=False,
-        action='store_true',
+        '-j', '--out-json', dest='out_json', default=False, action='store_true',
         help='Dump replay files in JSON format. By default replay files will be formatted as YAML.')
     return parser.parse_args()
 
@@ -438,17 +422,10 @@ def main():
 
         replay_file = RepalyFile(f_name)
         trans_count, finished = replay_file.random_populate(
-            curr_trans_num=curr_trans_num,
-            total_trans_num=args.number,
-            url_list=url_list,
-            sess_lower=args.sess_lower,
-            sess_upper=args.sess_upper,
-            trans_lower=args.trans_lower,
-            trans_upper=args.trans_upper,
-            http_trans=http_trans,
-            h2_trans=h2_trans,
-            tls_trans=tls_trans
-        )
+            curr_trans_num=curr_trans_num, total_trans_num=args.number, url_list=url_list,
+            sess_lower=args.sess_lower, sess_upper=args.sess_upper, trans_lower=args.trans_lower,
+            trans_upper=args.trans_upper, http_trans=http_trans, h2_trans=h2_trans,
+            tls_trans=tls_trans)
         curr_trans_num += trans_count
         replay_file.dump_to_disk(True, out_json)
         file_count += 1

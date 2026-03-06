@@ -7,7 +7,6 @@ Implement the PROXY protocol utility class and the socket wrapper class.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 import socket
 import struct
 import time
@@ -67,8 +66,7 @@ class ProxyProtocolUtil:
         addr_family = socket.AF_INET if pp_parts[1] == 'TCP4' else socket.AF_INET6
         # set the thread local storage for the PROXY protocol header to be sent
         # to server
-        ProxyProtocolUtil.set_tls(
-            ProxyProtocolVersion.V1, src_addr, dst_addr, addr_family)
+        ProxyProtocolUtil.set_tls(ProxyProtocolVersion.V1, src_addr, dst_addr, addr_family)
         # print the proxy protocol v1 string
         print(pp_str)
         return end + 2
@@ -96,16 +94,14 @@ class ProxyProtocolUtil:
         command = version_command & 0x0F
 
         if version != 2:
-            raise ValueError(
-                f'Invalid version: {version} (by spec, should always be 0x02)')
+            raise ValueError(f'Invalid version: {version} (by spec, should always be 0x02)')
 
         if command == 0x0:
             command_description = 'LOCAL'
         elif command == 0x1:
             command_description = 'PROXY'
         else:
-            raise ValueError(
-                f'Invalid command: {command} (by spec, should be 0x00 or 0x01)')
+            raise ValueError(f'Invalid command: {command} (by spec, should be 0x00 or 0x01)')
 
         # Of address_family, the higher 4 bits is the address family and the
         # lower 4 is the transport protocol.
@@ -124,16 +120,13 @@ class ProxyProtocolUtil:
         elif family_protocol == 0x32:
             transport_protocol_description = 'UNIX_DGRAM'
         else:
-            raise ValueError(
-                f'Invalid address family: {family_protocol} (by spec, should be '
-                '0x00, 0x11, 0x12, 0x21, 0x22, 0x31, or 0x32)')
+            raise ValueError(f'Invalid address family: {family_protocol} (by spec, should be '
+                             '0x00, 0x11, 0x12, 0x21, 0x22, 0x31, or 0x32)')
 
         if family_protocol in (0x11, 0x12):
             if tuple_length != 12:
-                raise ValueError(
-                    "Unexpected tuple length for TCP4/UDP4: "
-                    f"{tuple_length} (by) spec, should be 12)"
-                )
+                raise ValueError("Unexpected tuple length for TCP4/UDP4: "
+                                 f"{tuple_length} (by) spec, should be 12)")
             src_addr = socket.inet_ntop(socket.AF_INET, pp_bytes[:4])
             pp_bytes = pp_bytes[4:]
             dst_addr = socket.inet_ntop(socket.AF_INET, pp_bytes[:4])
@@ -145,13 +138,12 @@ class ProxyProtocolUtil:
 
         # set the thread local storage for the PROXY protocol header to be sent
         # to server
-        ProxyProtocolUtil.set_tls(
-            ProxyProtocolVersion.V2, (src_addr, src_port), (dst_addr, dst_port), socket.AF_INET)
+        ProxyProtocolUtil.set_tls(ProxyProtocolVersion.V2, (src_addr, src_port),
+                                  (dst_addr, dst_port), socket.AF_INET)
         # print the PROXY protocol header
         tuple_description = f'{src_addr} {dst_addr} {src_port} {dst_port}'
-        print(
-            f'{command_description} {transport_protocol_description} '
-            f'{tuple_description}')
+        print(f'{command_description} {transport_protocol_description} '
+              f'{tuple_description}')
 
         return 16 + tuple_length
 
@@ -208,7 +200,13 @@ class ProxyProtocolUtil:
         return header
 
     @staticmethod
-    def send_proxy_header(sock, proxy_protocol_version, src_addr, dst_addr, addr_family, ):
+    def send_proxy_header(
+        sock,
+        proxy_protocol_version,
+        src_addr,
+        dst_addr,
+        addr_family,
+    ):
         """ Send the PROXY header to the stream
         :param sock: the socket of the stream
         :param src_addr: the source socket address in the PROXY header
@@ -218,8 +216,7 @@ class ProxyProtocolUtil:
         """
         print(f'Sending PROXY protocol version {proxy_protocol_version.value}')
         proxy_header_construcut_func = ProxyProtocolUtil.construct_proxy_header_v1 if proxy_protocol_version == ProxyProtocolVersion.V1 else ProxyProtocolUtil.construct_proxy_header_v2
-        proxy_header_data = proxy_header_construcut_func(
-            src_addr, dst_addr, addr_family)
+        proxy_header_data = proxy_header_construcut_func(src_addr, dst_addr, addr_family)
         sock.sendall(proxy_header_data)
         time.sleep(1)
 
@@ -254,12 +251,12 @@ class ProxyProtocolUtil:
             ProxyProtocolUtil.pp_version = ProxyProtocolVersion.V2
         if pp_length > 0:
             print(
-                f"Received {pp_length} bytes of Proxy Protocol V{ProxyProtocolUtil.pp_version.value}")
+                f"Received {pp_length} bytes of Proxy Protocol V{ProxyProtocolUtil.pp_version.value}"
+            )
         return pp_length
 
     @staticmethod
-    def create_connection_and_send_pp(address, timeout=5,
-                                      source_address=None):
+    def create_connection_and_send_pp(address, timeout=5, source_address=None):
         """ This is a wraper of the socket.create_connection method, which in
         addition sends a PROXY protocol header as the connection is established.
         :param address: the address to connect to
@@ -267,16 +264,13 @@ class ProxyProtocolUtil:
         :param source_address: the source address to bind to
         :returns: the socket of the established connection
         """
-        sock = socket.create_connection(
-            address, timeout, source_address)
+        sock = socket.create_connection(address, timeout, source_address)
         if ProxyProtocolUtil.pp_version != ProxyProtocolVersion.NONE:
             # send the PROXY protocol header
-            ProxyProtocolUtil.send_proxy_header(
-                sock,
-                ProxyProtocolUtil.pp_version,
-                ProxyProtocolUtil.src_addr,
-                ProxyProtocolUtil.dst_addr,
-                ProxyProtocolUtil.addr_family)
+            ProxyProtocolUtil.send_proxy_header(sock, ProxyProtocolUtil.pp_version,
+                                                ProxyProtocolUtil.src_addr,
+                                                ProxyProtocolUtil.dst_addr,
+                                                ProxyProtocolUtil.addr_family)
         return sock
 
 
@@ -304,8 +298,7 @@ class PP_socket(socket.socket):
         ProxyProtocolUtil.read_pp_header_if_present(client_sock)
         if self._use_ssl:
             print("wrapping the socket with ssl")
-            client_sock = self._ssl_ctx.wrap_socket(
-                client_sock, server_side=True)
+            client_sock = self._ssl_ctx.wrap_socket(client_sock, server_side=True)
         # Returning the accepted client socket here, since we are done with
         # proxy protocol processing and can yield control back to the raw socket
         # beyond this point

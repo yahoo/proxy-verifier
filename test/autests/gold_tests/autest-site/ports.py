@@ -62,9 +62,7 @@ def PortOpen(port: int, address: str = None, listening_ports: set[int] = None) -
         address = "localhost"
 
     if port in listening_ports:
-        host.WriteDebug(
-            'PortOpen',
-            f"{port} is open because it is in the listening sockets set.")
+        host.WriteDebug('PortOpen', f"{port} is open because it is in the listening sockets set.")
         return True
 
     address = (address, port)
@@ -76,18 +74,15 @@ def PortOpen(port: int, address: str = None, listening_ports: set[int] = None) -
         s.close()
         ret = True
         host.WriteDebug(
-            'PortOpen',
-            f"Connection to port {port} succeeded, the port is open, "
+            'PortOpen', f"Connection to port {port} succeeded, the port is open, "
             "and a future connection cannot use it")
     except socket.error:
         host.WriteDebug(
-            'PortOpen',
-            f"socket error for port {port}, port is closed, "
+            'PortOpen', f"socket error for port {port}, port is closed, "
             "and therefore a future connection can use it")
     except socket.timeout:
         host.WriteDebug(
-            'PortOpen',
-            f"Timeout error for port {port}, port is closed, "
+            'PortOpen', f"Timeout error for port {port}, port is closed, "
             "and therefore a future connection can use it")
 
     return ret
@@ -112,19 +107,15 @@ def _get_available_port(queue):
 
     if queue.qsize() == 0:
         host.WriteWarning("Port queue is empty.")
-        raise PortQueueSelectionError(
-            "Could not get a valid port because the queue is empty")
+        raise PortQueueSelectionError("Could not get a valid port because the queue is empty")
 
     listening_ports = _get_listening_ports()
     port = queue.get()
     while PortOpen(port, listening_ports=listening_ports):
-        host.WriteDebug(
-            '_get_available_port',
-            f"Port was closed but now is used: {port}")
+        host.WriteDebug('_get_available_port', f"Port was closed but now is used: {port}")
         if queue.qsize() == 0:
             host.WriteWarning("Port queue is empty.")
-            raise PortQueueSelectionError(
-                "Could not get a valid port because the queue is empty")
+            raise PortQueueSelectionError("Could not get a valid port because the queue is empty")
         port = queue.get()
     return port
 
@@ -159,15 +150,12 @@ def _setup_port_queue(amount=1000):
     """
     global g_ports
     if g_ports is None:
-        host.WriteDebug(
-            '_setup_port_queue',
-            "Populating the port queue.")
+        host.WriteDebug('_setup_port_queue', "Populating the port queue.")
         g_ports = Queue.Queue()
     else:
         # The queue has already been populated.
-        host.WriteDebug(
-            '_setup_port_queue',
-            f"Queue was previously populated. Queue size: {g_ports.qsize()}")
+        host.WriteDebug('_setup_port_queue',
+                        f"Queue was previously populated. Queue size: {g_ports.qsize()}")
         return
     try:
         # Use sysctl to find the range of ports that the OS publishes it uses.
@@ -175,19 +163,13 @@ def _setup_port_queue(amount=1000):
         new_env = os.environ.copy()
         new_env['PATH'] = "/sbin:/usr/sbin:" + new_env['PATH']
         if 'Darwin' == platform.system():
-            dmin = subprocess.check_output(
-                ["sysctl", "net.inet.ip.portrange.first"],
-                env=new_env
-            ).decode().split(":")[1].split()[0]
-            dmax = subprocess.check_output(
-                ["sysctl", "net.inet.ip.portrange.last"],
-                env=new_env
-            ).decode().split(":")[1].split()[0]
+            dmin = subprocess.check_output(["sysctl", "net.inet.ip.portrange.first"],
+                                           env=new_env).decode().split(":")[1].split()[0]
+            dmax = subprocess.check_output(["sysctl", "net.inet.ip.portrange.last"],
+                                           env=new_env).decode().split(":")[1].split()[0]
         else:
-            dmin, dmax = subprocess.check_output(
-                ["sysctl", "net.ipv4.ip_local_port_range"],
-                env=new_env
-            ).decode().split("=")[1].split()
+            dmin, dmax = subprocess.check_output(["sysctl", "net.ipv4.ip_local_port_range"],
+                                                 env=new_env).decode().split("=")[1].split()
         dmin = int(dmin)
         dmax = int(dmax)
     except Exception:
@@ -203,13 +185,10 @@ def _setup_port_queue(amount=1000):
         port = dmax + 1
         while port < 65536 and g_ports.qsize() < amount:
             if PortOpen(port, listening_ports=listening_ports):
-                host.WriteDebug(
-                    '_setup_port_queue',
-                    f"Rejecting an already open port: {port}")
+                host.WriteDebug('_setup_port_queue', f"Rejecting an already open port: {port}")
             else:
-                host.WriteDebug(
-                    '_setup_port_queue',
-                    f"Adding a possible port to connect to: {port}")
+                host.WriteDebug('_setup_port_queue',
+                                f"Adding a possible port to connect to: {port}")
                 g_ports.put(port)
             port += 1
     if g_ports.qsize() < amount < rmin:
@@ -218,13 +197,10 @@ def _setup_port_queue(amount=1000):
         # and going up until the minimum port range used by the OS.
         while port < dmin and g_ports.qsize() < amount:
             if PortOpen(port, listening_ports=listening_ports):
-                host.WriteDebug(
-                    '_setup_port_queue',
-                    f"Rejecting an already open port: {port}")
+                host.WriteDebug('_setup_port_queue', f"Rejecting an already open port: {port}")
             else:
-                host.WriteDebug(
-                    '_setup_port_queue',
-                    f"Adding a possible port to connect to: {port}")
+                host.WriteDebug('_setup_port_queue',
+                                f"Adding a possible port to connect to: {port}")
                 g_ports.put(port)
             port += 1
 
@@ -264,23 +240,17 @@ def get_port(obj, name):
     if g_ports.qsize() > 0:
         try:
             port = _get_available_port(g_ports)
-            host.WriteVerbose(
-                "get_port",
-                f"Using port from port queue: {port}")
+            host.WriteVerbose("get_port", f"Using port from port queue: {port}")
             # setup clean up step to recycle the port
-            obj.Setup.Lambda(func_cleanup=lambda: g_ports.put(
-                port), description="recycling port")
+            obj.Setup.Lambda(func_cleanup=lambda: g_ports.put(port), description="recycling port")
         except PortQueueSelectionError:
             port = _get_port_by_bind()
-            host.WriteVerbose(
-                "get_port",
-                f"Queue was drained. Using port from a bound socket: {port}")
+            host.WriteVerbose("get_port",
+                              f"Queue was drained. Using port from a bound socket: {port}")
     else:
         # Since the queue could not be populated, use a port via bind.
         port = _get_port_by_bind()
-        host.WriteVerbose(
-            "get_port",
-            f"Queue is empty. Using port from a bound socket: {port}")
+        host.WriteVerbose("get_port", f"Queue is empty. Using port from a bound socket: {port}")
 
     # Assign to the named variable.
     obj.Variables[name] = port

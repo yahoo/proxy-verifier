@@ -1,4 +1,5 @@
 import os
+
 Import('*')
 PartName("nghttp3")
 path = env.get("CUSTOM_PATH")  # passed in from top level SConstruct.
@@ -23,24 +24,14 @@ if path:
 else:
     # No path provided.
     PartVersion(
-        GitVersionFromTag(
-            "v1.4.0",
-            regex=r'\d+\_\d+\_\d+[a-z]',
-            converter=lambda ver, env: ver.replace("_", ".")
-        )
-    )
+        GitVersionFromTag("v1.4.0", regex=r'\d+\_\d+\_\d+[a-z]',
+                          converter=lambda ver, env: ver.replace("_", ".")))
     auto_scanner = {}
     if "SKIP_DOCS" in env['mode']:
-        auto_scanner.update(
-            dict(
-                InstallManPage=dict(
-                    source=[],
-                ),
-                InstallDoc=dict(
-                    source=[],
-                ),
-            ),
-        )
+        auto_scanner.update(dict(
+            InstallManPage=dict(source=[], ),
+            InstallDoc=dict(source=[], ),
+        ), )
 
     env.AutoMake(
         copy_src=True,
@@ -53,7 +44,9 @@ else:
         ],
         # this allows us to call make depends to "finialize" what finial makefile. Prevents a rebuild.
         # however this sort of build twice
-        configure_post_actions='cd ${{TARGET.dir}} && make CC=$CC CXX=$CXX CPPFLAGS="$CCFLAGS $CPPFLAGS $_CPPDEFFLAGS $_ABSCPPINCFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LINKFLAGS $_RUNPATH $_ABSRPATHLINK $_ABSLIBDIRFLAGS" V=1 $(-j{jobs}$)'.format(jobs=env.GetOption('num_jobs')),
+        configure_post_actions=
+        'cd ${{TARGET.dir}} && make CC=$CC CXX=$CXX CPPFLAGS="$CCFLAGS $CPPFLAGS $_CPPDEFFLAGS $_ABSCPPINCFLAGS" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LINKFLAGS $_RUNPATH $_ABSRPATHLINK $_ABSLIBDIRFLAGS" V=1 $(-j{jobs}$)'
+        .format(jobs=env.GetOption('num_jobs')),
         # need to make sure we don't export the engine-1.1 so files
         auto_scanner=auto_scanner,
     )

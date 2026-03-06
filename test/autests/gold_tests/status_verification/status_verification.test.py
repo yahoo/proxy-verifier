@@ -14,12 +14,9 @@ Verify correct response status(status code and reason) verification behavior.
 #
 # Test 1: Verify status verification in a YAML replay file.
 #
-r = Test.AddTestRun(
-    "Verify status verification works for simple HTTP transactions")
-client = r.AddClientProcess(
-    "client1", "replay_files/status_verification.yaml")
-server = r.AddServerProcess(
-    "server1", "replay_files/status_verification.yaml")
+r = Test.AddTestRun("Verify status verification works for simple HTTP transactions")
+client = r.AddClientProcess("client1", "replay_files/status_verification.yaml")
+server = r.AddServerProcess("server1", "replay_files/status_verification.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 

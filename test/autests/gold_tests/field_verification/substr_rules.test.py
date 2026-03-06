@@ -7,7 +7,6 @@ Verify correct field verification behavior for contains, prefix, and suffix.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify correct field verification behavior for contains, prefix, and suffix.
 '''
@@ -18,10 +17,8 @@ Verify correct field verification behavior for contains, prefix, and suffix.
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
 client = r.AddClientProcess("client1", "replay_files/substr_rules.yaml")
 server = r.AddServerProcess("server1", "replay_files/substr_rules.yaml")
-proxy = r.AddProxyProcess(
-    "proxy1",
-    listen_port=client.Variables.http_port,
-    server_port=server.Variables.http_port)
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 server.Streams.stdout += Testers.ContainsExpression(
     'Contains Success: Key: "5", Field Name: "host", Required Value: "le.on", Value: "example.one"',
@@ -76,10 +73,8 @@ server.ReturnCode = 1
 r = Test.AddTestRun("Verify field verification works for HTTP transaction with duplicate fields")
 client = r.AddClientProcess("client2", "replay_files/substr_rules_duplicate.yaml")
 server = r.AddServerProcess("server2", "replay_files/substr_rules_duplicate.yaml")
-proxy = r.AddProxyProcess(
-    "proxy2",
-    listen_port=client.Variables.http_port,
-    server_port=server.Variables.http_port)
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
     'Contains Violation: Absent/Mismatched. Key: "1", Field Name: "set-cookie", Required Values: "AB", Received Values: "ABCD" "EFG"',
@@ -126,10 +121,8 @@ server.ReturnCode = 1
 r = Test.AddTestRun("Verify field verification works with the map specification syntax")
 client = r.AddClientProcess("client3", "replay_files/map_specification.yaml")
 server = r.AddServerProcess("server3", "replay_files/map_specification.yaml")
-proxy = r.AddProxyProcess(
-    "proxy3",
-    listen_port=client.Variables.http_port,
-    server_port=server.Variables.http_port)
+proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 server.Streams.stdout += Testers.ContainsExpression(
     'Contains Success: Key: "13", Field Name: "host", Required Value: "le.on", Value: "example.one"',

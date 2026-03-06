@@ -1633,15 +1633,15 @@ on your local machine for development and testing purposes.
 Proxy Verifier is built using [SCons](https://scons.org). Scons is a Python
 module, so installing it is as straightforward as installing any Python
 package. A top-level
-[Pipfile](https://github.com/yahoo/proxy-verifier/tree/master/Pipfile) is
-provided to install Scons and its use is described and assumed in these
-instructions, but it can also be installed using pip if preferred.
+[pyproject.toml](https://github.com/yahoo/proxy-verifier/tree/master/pyproject.toml)
+is provided to install SCons under [uv](https://docs.astral.sh/uv/), and its
+use is described and assumed in these instructions.
 
 Scons will clone and build the dependent libraries using Automake. Thus
 building will require the installation of the following system packages:
 
 * git
-* pipenv
+* uv
 * autoconf
 * libtool
 * pkg-config
@@ -1680,21 +1680,16 @@ part of building the project.
 
 Once the above-listed system packages (git, autoconf, etc.) are installed on
 your system, you can build Proxy Verifier using Scons. This involves first
-creating the Python virtual environment and then running the `scons` command
-to build Proxy Verifier. Here is an example invocation:
+running the `scons` command under `uv`. `uv run` will create the virtual
+environment automatically if it does not already exist. Here is an example
+invocation:
 
 ```
-# Install scons and any of its Python requirements. This only needs to be
-# done once before the first invocation of scons.
-#
 # Note: for older RHEL/CentOS systems, you will have to souce the appropriate
 # Python 3 enable script to initialize the correct Python 3 environment. For
 # example:
 # source /opt/rh/rh-python38/enable
-pipenv install
-
-# Now run scons to build proxy-verifier.
-pipenv run scons -j4
+uv run scons -j4
 ```
 
 This will build and install `verifier-client` and `verifier-server` in the
@@ -1728,8 +1723,7 @@ http3_libs_dir=${HOME}/src/http3_libs
 
 bash ./tools/build_http3_dependencies.sh ${http3_libs_dir}
 
-pipenv install
-pipenv run scons \
+uv run scons \
     -j4 \
     --with-ssl=${http3_libs_dir}/openssl \
     --with-nghttp2=${http3_libs_dir}/nghttp2 \
@@ -1744,8 +1738,7 @@ these Dockerfile documents, you can use the following `scons` command to build
 Proxy Verifier:
 
 ```
-pipenv install
-pipenv run scons \
+uv run scons \
     -j4 \
     --with-ssl=/opt/openssl \
     --with-nghttp2=/opt/nghttp2 \
@@ -1761,8 +1754,7 @@ documemnts, then you can specify the location of these libraries with a single
 `--with-libs` argument. Thus the previous command can be expressed like so:
 
 ```
-pipenv install
-pipenv run scons -j4 --with-libs=/opt
+uv run scons -j4 --with-libs=/opt
 ```
 
 #### ASan Instrumentation
@@ -1776,8 +1768,7 @@ system. Thus the above invocation would look like the following to compile it
 with AddressSanitizer instrumentation:
 
 ```
-pipenv install
-pipenv run scons \
+uv run scons \
     -j4 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
@@ -1793,7 +1784,7 @@ means that the binaries will compiled with optimization. If an unoptimized
 debug build is desired, then pass the `--cfg=debug` option to `scons`:
 
 ```
-pipenv run scons -j4 --cfg=debug
+uv run scons -j4 --cfg=debug
 ```
 
 #### Statically Link
@@ -1817,7 +1808,7 @@ run from the root directory of your repository like so:
 By default this builds Proxy Verifier with the following invocation:
 
 ```
-pipenv run scons -j$(nproc)
+uv run scons -j$(nproc)
 ```
 
 Any arguments passed to `build_static` will be passed through to the scons
@@ -1832,11 +1823,10 @@ run the script like so:
 
 #### Unit Tests
 
-To build and run the unit tests, use the `run_utest` Scons target (this assumes
-you previously ran `pipenv install`, see above):
+To build and run the unit tests, use the `run_utest` Scons target:
 
 ```
-pipenv run scons \
+uv run scons \
     -j4 \
     --with-ssl=/path/to/openssl \
     --with-nghttp2=/path/to/nghttp2 \
@@ -1872,13 +1862,13 @@ framework.
 **A note for macOS**: The Python virtual environment for these gold tests
 requires the [cryptograpy](https://github.com/pyca/cryptography) package as a
 dependency of the [pyOpenSSL](https://www.pyopenssl.org/en/stable/) package.
-Pipenv will install this automatically, but the installation of the
+uv will install this automatically, but the installation of the
 `cryptography` package will require compiling certain c files against OpenSSL.
 macOS has its own SSL libraries which brew's version of OpenSSL does not
 replace, for understandable reasons. The building of `cryptography` will
 fail against the system's SSL libraries. To point the build to brew's OpenSSL
 libraries, the `autest.sh` script exports the following variables before
-running `pipenv install`:
+running `uv`:
 
 ```
 export LDFLAGS="-L/usr/local/opt/openssl/lib"
@@ -1887,9 +1877,9 @@ export PKG_CONFIG_PATH="/usr/local/opt/openssl/lib/pkgconfig"
 ```
 
 Thus if you stick with using the `autest.sh` script you do not need to worry
-about this. But if you install pipenv by hand rather than through the
+about this. But if you install the test environment by hand rather than through the
 `autest.sh` script on macOS, then keep this in mind and export those variables
-before running `pipenv install`.
+before running `uv`.
 
 ## Usage
 

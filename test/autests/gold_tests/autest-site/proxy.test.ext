@@ -14,9 +14,9 @@ from os.path import dirname
 sentinel_counter = 0
 
 
-def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
-                     use_ssl=False, https_pem=None, ca_pem=None, close_on_goaway=False,
-                     use_http2_to_1=False, use_http2_to_2=False, use_http3_to_1=False):
+def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081, use_ssl=False,
+                     https_pem=None, ca_pem=None, close_on_goaway=False, use_http2_to_1=False,
+                     use_http2_to_2=False, use_http3_to_1=False):
     """
     Configure the provided process to run the proxy command.
 
@@ -32,9 +32,8 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
 
     use_protocol_list = [use_http2_to_1, use_http2_to_2, use_http3_to_1]
     if use_protocol_list.count(True) > 1:
-        raise ValueError(
-            "Cannot specify multiple of use_http2_to_1, "
-            "use_http2_to_2, and use_http3_to_1 parameters.")
+        raise ValueError("Cannot specify multiple of use_http2_to_1, "
+                         "use_http2_to_2, and use_http3_to_1 parameters.")
 
     proxy_rundir = os.path.join(obj.RunDirectory, name)
     process.Setup.MakeDir(proxy_rundir)
@@ -96,10 +95,8 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081,
     process.ReturnCode = 0
 
 
-def MakeProxyProcess(test, name, listen_port=8080, server_port=8081,
-                     use_ssl=False, https_pem=None, ca_pem=None,
-                     use_http2_to_1=False, use_http2_to_2=False,
-                     use_http3_to_1=False):
+def MakeProxyProcess(test, name, listen_port=8080, server_port=8081, use_ssl=False, https_pem=None,
+                     ca_pem=None, use_http2_to_1=False, use_http2_to_2=False, use_http3_to_1=False):
     """
     Create a Process to run the proxy command.
 
@@ -136,15 +133,14 @@ def MakeProxyProcess(test, name, listen_port=8080, server_port=8081,
         The newly created proxy Process.
     """
     proxy = test.Processes.Process(name)
-    _configure_proxy(test, proxy, name, listen_port, server_port,
-                     use_ssl, https_pem, ca_pem, use_http2_to_1, use_http2_to_2,
-                     use_http3_to_1)
+    _configure_proxy(test, proxy, name, listen_port, server_port, use_ssl, https_pem, ca_pem,
+                     use_http2_to_1, use_http2_to_2, use_http3_to_1)
     return proxy
 
 
-def AddProxyProcess(run, name, listen_port=8080, server_port=8081,
-                    use_ssl=False, https_pem=None, ca_pem=None, close_on_goaway=False,
-                    use_http2_to_1=False, use_http2_to_2=False, use_http3_to_1=False):
+def AddProxyProcess(run, name, listen_port=8080, server_port=8081, use_ssl=False, https_pem=None,
+                    ca_pem=None, close_on_goaway=False, use_http2_to_1=False, use_http2_to_2=False,
+                    use_http3_to_1=False):
     """
     Create a proxy Process and add it to the provided TestRun.
 
@@ -157,9 +153,8 @@ def AddProxyProcess(run, name, listen_port=8080, server_port=8081,
         The newly created proxy Process.
     """
     proxy = run.Processes.Process(name)
-    _configure_proxy(run, proxy, name, listen_port, server_port,
-                     use_ssl, https_pem, ca_pem, close_on_goaway,
-                     use_http2_to_1, use_http2_to_2, use_http3_to_1)
+    _configure_proxy(run, proxy, name, listen_port, server_port, use_ssl, https_pem, ca_pem,
+                     close_on_goaway, use_http2_to_1, use_http2_to_2, use_http3_to_1)
 
     client = run.Processes.Default
     client.StartBefore(proxy)

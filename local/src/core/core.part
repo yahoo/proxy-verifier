@@ -44,5 +44,4 @@ def build(env):
             "verification.cc",
             "YamlParser.cc",
             "proxy_protocol_util.cc",
-        ])
-    )
+        ]))

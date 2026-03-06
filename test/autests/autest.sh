@@ -14,7 +14,7 @@ export PYTHONPATH=$(pwd):$PYTHONPATH
 ./test-env-check.sh || fail "Setting up the test environment failed."
 # this is for rhel or centos systems
 echo "Environment config finished. Running AuTest..."
-pipenv run autest -D gold_tests "$@"
+uv run autest -D gold_tests "$@"
 ret=$?
 popd > /dev/null
 exit $ret

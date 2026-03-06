@@ -37,16 +37,16 @@ else
 fi
 [ -f Sconstruct ] || fail "Not in the root directory of proxy-verifier."
 
-if ! pipenv --venv > /dev/null 2>&1
+if [ ! -d .venv ]
 then
-  pipenv install
+  uv sync
 fi
 
 for i in `find . -name verifier-client -type f`; do rm $i; done
 for i in `find . -name verifier-server -type f`; do rm $i; done
 
 mkdir -p ${tmpdir}
-command="pipenv run scons -j${num_threads} $@"
+command="uv run scons -j${num_threads} $@"
 echo "Initial build: \"${command}\""
 $command > ${buildout} 2>&1 || \
   fail "Build command failed, see output in: ${buildout}"

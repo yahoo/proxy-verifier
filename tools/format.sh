@@ -15,8 +15,8 @@ fail()
 parent_dir="$(dirname -- "$0")"
 clang_format_sh="${parent_dir}/clang-format.sh"
 [ -r "${clang_format_sh}" ] || fail "Could not find clang-format.sh"
-autopep8_sh="${parent_dir}/autopep8.sh"
-[ -r "${autopep8_sh}" ] || fail "Could not find autopep8.sh"
+yapf_sh="${parent_dir}/yapf.sh"
+[ -r "${yapf_sh}" ] || fail "Could not find yapf.sh"
 
 bash ${clang_format_sh}
-bash ${autopep8_sh}
+bash ${yapf_sh}

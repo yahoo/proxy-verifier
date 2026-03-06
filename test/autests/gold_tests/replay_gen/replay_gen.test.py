@@ -7,7 +7,6 @@ Verify replay_gen.py can generate parsable replay files.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify replay_gen.py can generate parsable replay files.
 '''

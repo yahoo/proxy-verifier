@@ -7,7 +7,6 @@ Verify correct field verification behavior.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify correct field verification behavior.
 '''
@@ -18,10 +17,8 @@ Verify correct field verification behavior.
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
 client = r.AddClientProcess("client1", "replay_files/various_verification.json")
 server = r.AddServerProcess("server1", "replay_files/various_verification.json")
-proxy = r.AddProxyProcess(
-    "proxy1",
-    listen_port=client.Variables.http_port,
-    server_port=server.Variables.http_port)
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 # Verify a success and failure of each validation in the request.
 server.Streams.stdout = Testers.ContainsExpression(
@@ -82,10 +79,8 @@ server.ReturnCode = 1
 r = Test.AddTestRun("Verify field verification works for a simple HTTP transaction")
 client = r.AddClientProcess("client2", "replay_files/cookie_equal.yaml")
 server = r.AddServerProcess("server2", "replay_files/cookie_equal.yaml")
-proxy = r.AddProxyProcess(
-    "proxy2",
-    listen_port=client.Variables.http_port,
-    server_port=server.Variables.http_port)
+proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
     'Absence Success: Key: "5", Field Name: "x-not-a-header"',
@@ -124,10 +119,8 @@ server.ReturnCode = 1
 r = Test.AddTestRun("Verify field verification works for HTTP transaction with duplicate fields")
 client = r.AddClientProcess("client3", "replay_files/duplicate_fields.yaml")
 server = r.AddServerProcess("server3", "replay_files/duplicate_fields.yaml")
-proxy = r.AddProxyProcess(
-    "proxy3",
-    listen_port=client.Variables.http_port,
-    server_port=server.Variables.http_port)
+proxy = r.AddProxyProcess("proxy3", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 client.Streams.stdout += Testers.ContainsExpression(
     'Absence Success: Key: "1", Field Name: "x-not-a-header',
@@ -164,11 +157,9 @@ server.ReturnCode = 1
 r = Test.AddTestRun("Verify field verification works with multi-value fields (includes check)")
 client = r.AddClientProcess("client4", "replay_files/multi_value_includes.yaml")
 server = r.AddServerProcess("server4", "replay_files/multi_value_includes.yaml")
-proxy = r.AddProxyProcess(
-    "proxy4",
-    listen_port=client.Variables.https_port,
-    server_port=server.Variables.https_port,
-    use_ssl=True, use_http2_to_2=True)
+proxy = r.AddProxyProcess("proxy4", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port, use_ssl=True,
+                          use_http2_to_2=True)
 
 client.Streams.stdout += Testers.ContainsExpression(
     'Includes Success: Key: "1", Field Name: "set-cookie", Required Values: "B2=" "A2=" "C2=" "D1=" "C1=", Received Values: "A1=111" "A2=222" "B1=333" "B2=444" "C1=555" "C2=666" "D1=777" "D2=888"',
@@ -181,11 +172,9 @@ server.ReturnCode = 0
 r = Test.AddTestRun("Verify field verification works with multi-value fields (equal check)")
 client = r.AddClientProcess("client5", "replay_files/multi_value_equal.yaml")
 server = r.AddServerProcess("server5", "replay_files/multi_value_equal.yaml")
-proxy = r.AddProxyProcess(
-    "proxy5",
-    listen_port=client.Variables.https_port,
-    server_port=server.Variables.https_port,
-    use_ssl=True, use_http2_to_2=True)
+proxy = r.AddProxyProcess("proxy5", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port, use_ssl=True,
+                          use_http2_to_2=True)
 
 client.Streams.stdout += Testers.ContainsExpression(
     'Equals Success: Key: "1", Field Name: "set-cookie", Values: "A1=111" "A2=222" "B1=333"',
