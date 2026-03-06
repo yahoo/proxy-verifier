@@ -246,8 +246,28 @@
       "title": "response",
       "description": "HTTP response.",
       "type": "object",
-      "required": ["status"],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "on_connect": {
+                "enum": ["refuse", "reset"]
+              }
+            },
+            "required": ["on_connect"]
+          },
+          "then": {},
+          "else": {
+            "required": ["status"]
+          }
+        }
+      ],
       "properties": {
+        "on_connect": {
+          "description": "Connection action to take after reading the request.",
+          "type": "string",
+          "enum": ["accept", "refuse", "reset"]
+        },
         "version": {
           "description": "HTTP version",
           "type": "string",

@@ -1,11 +1,12 @@
 /** @file
  * Unit tests for HttpReplay.h.
  *
- * Copyright 2020, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "catch.hpp"
+#include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
 
 #include <chrono>
@@ -114,5 +115,115 @@ TEST_CASE("Verify interpretation of delay specification strings", "[delay_specif
   } else {
     CHECK(parsed_delay_value == 0us);
     CHECK_FALSE(delay_errata.is_ok());
+  }
+}
+
+struct ParseOnConnectActionTestCase
+{
+  std::string const description;
+  std::string const yaml;
+  bool is_valid;
+  Txn::ConnectAction const expected_action;
+};
+
+std::initializer_list<ParseOnConnectActionTestCase> parse_on_connect_action_test_cases = {
+    {
+        .description = "Verify the on_connect directive defaults to accept.",
+        .yaml = "{}",
+        .is_valid = IS_VALID,
+        .expected_action = Txn::ConnectAction::ACCEPT,
+    },
+    {
+        .description = "Verify accept is parsed.",
+        .yaml = "{ on_connect: accept }",
+        .is_valid = IS_VALID,
+        .expected_action = Txn::ConnectAction::ACCEPT,
+    },
+    {
+        .description = "Verify refuse is parsed.",
+        .yaml = "{ on_connect: refuse }",
+        .is_valid = IS_VALID,
+        .expected_action = Txn::ConnectAction::REFUSE,
+    },
+    {
+        .description = "Verify reset is parsed.",
+        .yaml = "{ on_connect: reset }",
+        .is_valid = IS_VALID,
+        .expected_action = Txn::ConnectAction::RESET,
+    },
+    {
+        .description = "Verify invalid values fail parsing.",
+        .yaml = "{ on_connect: later }",
+        .is_valid = !IS_VALID,
+        .expected_action = Txn::ConnectAction::ACCEPT,
+    },
+    {
+        .description = "Verify non-scalar values fail parsing.",
+        .yaml = "{ on_connect: [reset] }",
+        .is_valid = !IS_VALID,
+        .expected_action = Txn::ConnectAction::ACCEPT,
+    },
+};
+
+TEST_CASE("Verify interpretation of on_connect actions", "[on_connect]")
+{
+  auto const &test_case = GENERATE(values(parse_on_connect_action_test_cases));
+  auto const node = YAML::Load(test_case.yaml);
+  auto &&[action, action_errata] = get_on_connect_action(node);
+  if (test_case.is_valid) {
+    CHECK(action_errata.is_ok());
+    CHECK(action == test_case.expected_action);
+  } else {
+    CHECK_FALSE(action_errata.is_ok());
+  }
+}
+
+struct ServerResponseValidationTestCase
+{
+  std::string const description;
+  std::string const yaml;
+  bool is_valid;
+};
+
+std::initializer_list<ServerResponseValidationTestCase> server_response_validation_test_cases = {
+    {
+        .description = "Verify status is required without on_connect.",
+        .yaml = "{ reason: OK }",
+        .is_valid = !IS_VALID,
+    },
+    {
+        .description = "Verify status is required with on_connect accept.",
+        .yaml = "{ on_connect: accept }",
+        .is_valid = !IS_VALID,
+    },
+    {
+        .description = "Verify status is optional with on_connect refuse.",
+        .yaml = "{ on_connect: refuse }",
+        .is_valid = IS_VALID,
+    },
+    {
+        .description = "Verify status is optional with on_connect reset.",
+        .yaml = "{ on_connect: reset }",
+        .is_valid = IS_VALID,
+    },
+};
+
+TEST_CASE("Verify server-response validation for on_connect", "[on_connect]")
+{
+  auto const &test_case = GENERATE(values(server_response_validation_test_cases));
+  auto const node = YAML::Load(test_case.yaml);
+  HttpHeader response{true};
+  response.set_is_response();
+  auto errata = YamlParser::populate_http_message(node, response);
+  auto &&[action, action_errata] = get_on_connect_action(node);
+  errata.note(std::move(action_errata));
+  if (response._status == 0 && action == Txn::ConnectAction::ACCEPT) {
+    errata.note(S_ERROR, "server-response node is missing a required status.");
+  }
+
+  if (test_case.is_valid) {
+    CHECK(errata.is_ok());
+  } else {
+    CHECK_FALSE(errata.is_ok());
   }
 }

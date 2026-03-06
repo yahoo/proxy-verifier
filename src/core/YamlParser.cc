@@ -314,6 +314,36 @@ get_delay_time(YAML::Node const &node)
   return zret;
 }
 
+swoc::Rv<Txn::ConnectAction>
+get_on_connect_action(YAML::Node const &node)
+{
+  swoc::Rv<Txn::ConnectAction> zret{Txn::ConnectAction::ACCEPT};
+  auto on_connect_node{node[YAML_HTTP_ON_CONNECT_KEY]};
+  if (!on_connect_node) {
+    return zret;
+  }
+  if (!on_connect_node.IsScalar()) {
+    zret.note(S_ERROR, R"("{}" key that is not a scalar.)", YAML_HTTP_ON_CONNECT_KEY);
+    return zret;
+  }
+
+  auto const action = on_connect_node.Scalar();
+  if (action == "accept") {
+    zret = Txn::ConnectAction::ACCEPT;
+  } else if (action == "refuse") {
+    zret = Txn::ConnectAction::REFUSE;
+  } else if (action == "reset") {
+    zret = Txn::ConnectAction::RESET;
+  } else {
+    zret.note(
+        S_ERROR,
+        R"(Unrecognized "{}" value "{}". Expected one of: accept, refuse, reset.)",
+        YAML_HTTP_ON_CONNECT_KEY,
+        action);
+  }
+  return zret;
+}
+
 Errata
 validate_psuedo_headers(const HttpHeader &hdr, int number_of_pseudo_headers)
 {

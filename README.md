@@ -231,6 +231,8 @@ take the following nodes:
    such as `200` or `404`.
 1. `reason`: This takes a string that describes the status, such as `"OK"` or
    `"Not Found"`.
+1. `on_connect`: This controls the transport behavior after the request is
+   read. Supported values are `accept` (default), `refuse`, and `reset`.
 
 Here's an example of an HTTP/1 `server-response` with a status of 200, four
 fields, and a body of size 3,432 bytes:
@@ -277,6 +279,39 @@ in this case) as opposed to the generated content specified by the
 
           * Bullet
           * Points
+```
+
+The `on_connect` directive can be used to simulate origin-side connection
+failures without sending an HTTP response. This is useful when testing proxy
+behavior for upstream errors. Supported values are:
+
+* `accept`: Normal behavior. The Verifier server sends the configured HTTP
+  response. This is the default. At the transport level, the connection stays
+  open and no special close behavior is injected.
+* `refuse`: The Verifier server closes the upstream connection after it reads
+  and validates the request, without sending a response. For TCP-based
+  protocols such as HTTP/1 and HTTP/2 over TLS, this is a normal close, so the
+  peer observes the connection being shut down with a FIN rather than an HTTP
+  response.
+* `reset`: The Verifier server aborts the upstream connection after it reads
+  and validates the request, without sending a response. For TCP-based
+  protocols such as HTTP/1 and HTTP/2 over TLS, this is an abortive close: the
+  server enables linger-for-reset before closing so the peer observes a TCP
+  RST instead of a FIN or an HTTP response.
+
+These `refuse` and `reset` descriptions are specifically about TCP transport
+behavior. QUIC does not use TCP, so it does not have TCP FIN or RST packets.
+The analogous QUIC behaviors would involve stream resets or connection-close
+frames rather than TCP teardown. Proxy Verifier does not currently implement
+server-side HTTP/3/QUIC, so `on_connect` does not presently map to QUIC-
+specific close semantics.
+
+When `on_connect` is set to `refuse` or `reset`, the `status` field becomes
+optional because no response is sent. For example:
+
+```YAML
+  server-response:
+    on_connect: refuse
 ```
 
 #### Server Response Lookup
@@ -881,7 +916,8 @@ Note that this example specifies the following delays:
 * The client also delays 15 milliseconds before sending the client
   request.
 * The server delays 17 milliseconds (17,000 microseconds) before sending the
-  corresponding response after receiving the request.
+  corresponding response after receiving the request. This same delay is
+  applied before `server-response.on_connect: refuse` or `reset` actions.
 
 Be aware of the following characteristics of the `delay` node:
 

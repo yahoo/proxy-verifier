@@ -1,0 +1,107 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+  version: '1.0'
+
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+  - client-request:
+      method: GET
+      url: https://example.com/accept
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, 1 ]
+
+    proxy-request:
+      protocol:
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+
+    proxy-response:
+      status: 200
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '0' ]
+        - [ uuid, 1 ]
+
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+  - client-request:
+      method: GET
+      url: https://example.com/refuse
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, 2 ]
+
+    proxy-request:
+      protocol:
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+
+    proxy-response:
+      status: 502
+
+    server-response:
+      on_connect: refuse
+
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+
+  transactions:
+  - client-request:
+      method: GET
+      url: https://example.com/reset
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, 3 ]
+
+    proxy-request:
+      protocol:
+      - name: tls
+        sni: test_sni
+      - name: tcp
+      - name: ip
+
+    proxy-response:
+      status: 502
+
+    server-response:
+      on_connect: reset

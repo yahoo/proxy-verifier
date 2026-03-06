@@ -1,7 +1,7 @@
 /** @file
  * Declaration of YamlParser, the YAML file parsing class.
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -16,6 +16,8 @@
 #include <unordered_set>
 
 #include "yaml-cpp/yaml.h"
+
+#include "core/http.h"
 
 #include "swoc/BufferWriter.h"
 #include "swoc/Errata.h"
@@ -71,6 +73,7 @@ static const std::string YAML_HTTP_REASON_KEY{"reason"};
 static const std::string YAML_HTTP_METHOD_KEY{"method"};
 static const std::string YAML_HTTP_SCHEME_KEY{"scheme"};
 static const std::string YAML_HTTP_VERSION_KEY{"version"};
+static const std::string YAML_HTTP_ON_CONNECT_KEY{"on_connect"};
 static const std::string YAML_HTTP_AWAIT_KEY{"await"};
 static const std::string YAML_HTTP2_KEY{"http2"};
 static const std::string YAML_HTTP2_PSEUDO_METHOD_KEY{":method"};
@@ -131,6 +134,14 @@ swoc::Rv<std::chrono::microseconds> interpret_delay_string(swoc::TextView delay)
  * microseconds.
  */
 swoc::Rv<std::chrono::microseconds> get_delay_time(YAML::Node const &node);
+
+/** Parse the value of a server-response "on_connect" directive.
+ *
+ * @param[in] node The server-response node containing the directive.
+ * @return The parsed connect action. If the directive is absent, ACCEPT is
+ * returned. Errors are returned for non-scalar or unrecognized values.
+ */
+swoc::Rv<Txn::ConnectAction> get_on_connect_action(YAML::Node const &node);
 
 struct VerificationConfig
 {

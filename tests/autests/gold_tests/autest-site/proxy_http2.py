@@ -287,6 +287,11 @@ class Http2ConnectionManager(object):
             except StreamClosedError as err:
                 print(err)
             authority = pseudo_headers.get(':authority', '')
+            request_id = request_headers.get('uuid', '<unknown>')
+            disconnect_type = ProxyRequestHandler.classify_upstream_disconnect(e)
+            if disconnect_type is not None:
+                print(f"Upstream connection for key {request_id} closed with TCP "
+                      f"{disconnect_type} before any response bytes were received.")
             print(f"Connection to '{replay_server}' initiated with request to "
                   f"'{scheme}://{authority}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)

@@ -1,7 +1,7 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -638,10 +638,25 @@ struct Txn
 {
   Txn(bool verify_strictly) : _req{verify_strictly}, _rsp{verify_strictly} { }
 
+  /** How the server side should terminate or preserve the transport.
+   *
+   * These actions are applied after the request has been read. ACCEPT keeps
+   * the connection open so normal HTTP response bytes can be written. REFUSE
+   * closes the socket normally, which lets the TCP stack send a FIN. RESET
+   * sets linger-for-reset before closing so the TCP stack aborts the
+   * connection with an RST.
+   */
+  enum class ConnectAction {
+    ACCEPT, ///< Keep the connection open and continue with normal HTTP I/O.
+    REFUSE, ///< Close normally and let TCP terminate the connection with FIN.
+    RESET,  ///< Abort the connection on close so TCP sends an RST.
+  };
+
   std::chrono::nanoseconds _start; ///< The delay since the beginning of the session.
 
   /// How long the user said to delay for this transaction.
   std::chrono::microseconds _user_specified_delay_duration{0};
+  ConnectAction _connect_action{ConnectAction::ACCEPT};
   HttpHeader _req;         ///< Request to send.
   HttpHeader _rsp;         ///< Rules for response to expect.
   HttpHeader _rsp_trailer; ///< Rules for response trailer to expect.

@@ -15,6 +15,7 @@ import urllib.parse
 import threading
 import traceback
 import re
+import errno
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from directive_engine import DirectiveEngine
@@ -176,6 +177,11 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         except Exception as e:
             if origin in self.tls.conns:
                 del self.tls.conns[origin]
+            disconnect_type = self.classify_upstream_disconnect(e)
+            if disconnect_type is not None:
+                request_id = req.headers.get('uuid', '<unknown>')
+                print(f"Upstream connection for key {request_id} closed with TCP "
+                      f"{disconnect_type} before any response bytes were received.")
             self.send_error(502)
             print(f"Connection to '{replay_server}' initiated with request to "
                   f"{scheme}://{netloc}{path}' failed: {e}")
@@ -232,6 +238,17 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         except socket.error:
             # connection closed by client
             pass
+
+    @staticmethod
+    def classify_upstream_disconnect(exc):
+        if isinstance(exc, http.client.RemoteDisconnected):
+            return "FIN"
+        if isinstance(exc, ConnectionResetError):
+            return "RST"
+        err_no = getattr(exc, 'errno', None)
+        if err_no == errno.ECONNRESET:
+            return "RST"
+        return None
 
     @staticmethod
     def filter_headers(headers):

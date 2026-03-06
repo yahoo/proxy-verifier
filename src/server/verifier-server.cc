@@ -1,7 +1,7 @@
 /** @file
  * Implement the Proxy Verifier server.
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "core/ArgParser.h"
@@ -127,6 +127,35 @@ get_not_found_response(int64_t stream_id, HTTP_PROTOCOL_TYPE protocol, std::stri
   response._fields_rules->add_field(field_name, field_value);
   return response;
 }
+
+namespace
+{
+void
+perform_connect_action(Session &session, Txn::ConnectAction action)
+{
+  switch (action) {
+  case Txn::ConnectAction::ACCEPT:
+    // Nothing to do, just keep the connection open and let the caller handle it.
+    break;
+  case Txn::ConnectAction::RESET:
+    if (session.get_fd() >= 0) {
+      // Instigate a RST: To reset a TCP connection, set linger to 0 and close
+      // the socket. This will cause the OS to send a RST packet to the client,
+      // which is the desired behavior for a reset action.
+      struct linger l;
+      l.l_onoff = 1;
+      l.l_linger = 0;
+      setsockopt(session.get_fd(), SOL_SOCKET, SO_LINGER, (char *)&l, sizeof(l));
+    }
+  // [[fallthrough]]; fallthrough to close the socket after setting linger.
+  case Txn::ConnectAction::REFUSE:
+    // For a refuse action, simply closing the socket is sufficient to
+    // instigate a FIN from the OS.
+    session.close();
+  }
+  return;
+}
+} // namespace
 
 std::thread
 ServerThreadPool::make_thread(std::thread *t)
@@ -504,7 +533,10 @@ ServerReplayFileHandler::server_response(YAML::Node const &node)
 {
   swoc::Errata errata;
   errata.note(YamlParser::populate_http_message(node, _txn._rsp));
-  if (_txn._rsp._status == 0) {
+  auto &&[connect_action, on_connect_errata] = get_on_connect_action(node);
+  errata.note(std::move(on_connect_errata));
+  _txn._connect_action = connect_action;
+  if (_txn._rsp._status == 0 && _txn._connect_action == Txn::ConnectAction::ACCEPT) {
     errata.note(
         S_ERROR,
         R"(server-response node without a status at "{}":{}.)",
@@ -733,9 +765,20 @@ TF_Serve_Connection(std::thread *t)
       if (specified_transaction._user_specified_delay_duration > 0us) {
         sleep_for(specified_transaction._user_specified_delay_duration);
       }
-      auto &&[bytes_written, write_errata] =
-          thread_info._session->write(specified_transaction._rsp);
-      thread_errata.note(std::move(write_errata));
+      if (specified_transaction._connect_action == Txn::ConnectAction::ACCEPT) {
+        auto &&[bytes_written, write_errata] =
+            thread_info._session->write(specified_transaction._rsp);
+        thread_errata.note(std::move(write_errata));
+      } else {
+        thread_errata.note(
+            S_DIAG,
+            R"(Applying "{}" on_connect action for key {}.)",
+            specified_transaction._connect_action == Txn::ConnectAction::REFUSE ? "refuse" :
+                                                                                  "reset",
+            key);
+        perform_connect_action(*thread_info._session, specified_transaction._connect_action);
+        break;
+      }
     }
 
     // cleanup and get ready for another session.
