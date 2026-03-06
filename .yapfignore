@@ -1,0 +1,6 @@
+.git
+.venv
+_build
+_destdir
+_scm
+lib/yamlcpp
