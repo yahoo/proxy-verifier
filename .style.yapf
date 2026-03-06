@@ -1,0 +1,8 @@
+[style]
+based_on_style = pep8
+column_limit = 100
+continuation_indent_width = 4
+dedent_closing_brackets = false
+split_before_named_assigns = false
+coalesce_brackets = false
+spaces_before_comment = 2
