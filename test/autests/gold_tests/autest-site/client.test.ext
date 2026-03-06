@@ -29,9 +29,9 @@ def make_id(input_str):
 
 def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=False,
                       configure_http=True, configure_https=True, configure_http3=True,
-                      http_ports=None, https_ports=None, http3_ports=None,
-                      ssl_cert='', ca_certs='', verbose=True, single_threaded=True,
-                      enable_qlogging=True, enable_tls_secrets_logging=True, other_args=''):
+                      http_ports=None, https_ports=None, http3_ports=None, ssl_cert='', ca_certs='',
+                      verbose=True, single_threaded=True, enable_qlogging=True,
+                      enable_tls_secrets_logging=True, other_args=''):
     """
     Configure the process for running the verifier-client.
 
@@ -146,11 +146,11 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
     process.ReturnCode = 0
 
 
-def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
-                      configure_http=True, configure_https=True, configure_http3=True,
-                      http_ports=None, https_ports=None, http3_ports=None,
-                      ssl_cert='', ca_certs='', verbose=True, single_threaded=True,
-                      enable_qlogging=True, enable_tls_secrets_logging=True, other_args=''):
+def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False, configure_http=True,
+                      configure_https=True, configure_http3=True, http_ports=None, https_ports=None,
+                      http3_ports=None, ssl_cert='', ca_certs='', verbose=True,
+                      single_threaded=True, enable_qlogging=True, enable_tls_secrets_logging=True,
+                      other_args=''):
     """
     Create a verifier-client process.
 
@@ -215,33 +215,16 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False,
         A verifier-client process.
     """
     client = test.Processes.Process(name)
-    _configure_client(
-        test,
-        client,
-        name,
-        replay_dir,
-        find_ports,
-        use_ipv6,
-        configure_http,
-        configure_https,
-        configure_http3,
-        http_ports,
-        https_ports,
-        http3_ports,
-        ssl_cert,
-        ca_certs,
-        verbose,
-        single_threaded,
-        enable_qlogging,
-        enable_tls_secrets_logging,
-        other_args)
+    _configure_client(test, client, name, replay_dir, find_ports, use_ipv6, configure_http,
+                      configure_https, configure_http3, http_ports, https_ports, http3_ports,
+                      ssl_cert, ca_certs, verbose, single_threaded, enable_qlogging,
+                      enable_tls_secrets_logging, other_args)
     return client
 
 
-def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
-                     configure_http=True, configure_https=True, configure_http3=True,
-                     http_ports=None, https_ports=None, http3_ports=None,
-                     ssl_cert='', ca_certs='', verbose=True, single_threaded=True,
+def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False, configure_http=True,
+                     configure_https=True, configure_http3=True, http_ports=None, https_ports=None,
+                     http3_ports=None, ssl_cert='', ca_certs='', verbose=True, single_threaded=True,
                      enable_qlogging=True, enable_tls_secrets_logging=True, other_args=''):
     """
     Set the Default process of the test run to a verifier-client Process.
@@ -257,26 +240,10 @@ def AddClientProcess(run, name, replay_dir, find_ports=True, use_ipv6=False,
     """
 
     p = run.Processes.Default
-    _configure_client(
-        run,
-        p,
-        name,
-        replay_dir,
-        find_ports,
-        use_ipv6,
-        configure_http,
-        configure_https,
-        configure_http3,
-        http_ports,
-        https_ports,
-        http3_ports,
-        ssl_cert,
-        ca_certs,
-        verbose,
-        single_threaded,
-        enable_qlogging,
-        enable_tls_secrets_logging,
-        other_args)
+    _configure_client(run, p, name, replay_dir, find_ports, use_ipv6, configure_http,
+                      configure_https, configure_http3, http_ports, https_ports, http3_ports,
+                      ssl_cert, ca_certs, verbose, single_threaded, enable_qlogging,
+                      enable_tls_secrets_logging, other_args)
     return p
 
 

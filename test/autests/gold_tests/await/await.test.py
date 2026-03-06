@@ -17,16 +17,12 @@ Test.Summary = __doc__
 r = Test.AddTestRun("Verify correct handling of the await directive")
 client = r.AddClientProcess("client_await", "await.replay.yaml")
 server = r.AddServerProcess("server_await", "await.replay.yaml")
-proxy = r.AddProxyProcess(
-    "proxy_await",
-    listen_port=client.Variables.https_port,
-    server_port=server.Variables.https_port,
-    use_ssl=True,
-    use_http2_to_2=True)
+proxy = r.AddProxyProcess("proxy_await", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port, use_ssl=True,
+                          use_http2_to_2=True)
 
 server.Streams.stdout += Testers.ContainsExpression(
-    "Ready with 3 transactions.",
-    "The server should have parsed 3 transactions.")
+    "Ready with 3 transactions.", "The server should have parsed 3 transactions.")
 
 # Make sure that the entire first-request finishes before second-request
 # starts. And, further, that the entire second-request finishes before

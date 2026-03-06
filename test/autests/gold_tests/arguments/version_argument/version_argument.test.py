@@ -10,7 +10,6 @@ Verify the version argument of Proxy Verifier.
 import os
 from os.path import dirname
 
-
 Test.Summary = '''
 Verify the version argument of Proxy Verifier.
 '''

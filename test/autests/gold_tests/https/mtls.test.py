@@ -7,7 +7,6 @@ Verify correct TLS client and server verification behavior.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify correct TLS client and server verification behavior.
 '''
@@ -20,8 +19,7 @@ r = Test.AddTestRun("Verify parsing of a YAML-specified replay file")
 client = r.AddClientProcess("client1", "replay_files/mtls.yaml")
 server = r.AddServerProcess("server1", "replay_files/mtls.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.https_port,
-                          server_port=server.Variables.https_port,
-                          use_ssl=True)
+                          server_port=server.Variables.https_port, use_ssl=True)
 
 client.Streams.stdout += Testers.ContainsExpression(
     r"Proxy TLS verification result: 0 \(X509_V_OK\)",

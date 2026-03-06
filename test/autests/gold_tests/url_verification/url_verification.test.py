@@ -7,7 +7,6 @@ Verify correct URL verification behavior.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify correct URL verification behavior.
 '''

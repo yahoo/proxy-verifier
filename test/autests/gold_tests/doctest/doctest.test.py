@@ -29,8 +29,7 @@ r.Processes.Default.Setup.Copy(example_yaml)
 r.Processes.Default.Command = f'python3 {verifier_script} {example_yaml} {readme_path}'
 r.ReturnCode = 0
 r.Streams.stdout += Testers.ContainsExpression(
-    'Good',
-    f'The contents of {example_yaml} should be in {readme_path}')
+    'Good', f'The contents of {example_yaml} should be in {readme_path}')
 
 #
 # Test 2: Verify correct behavior of a single client-side HTTP/2 transaction.
@@ -45,16 +44,14 @@ server = r.AddServerProcess("server", example_yaml)
 proxy = r.AddProxyProcess("proxy_http", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
 proxy = r.AddProxyProcess("proxy_https", listen_port=client.Variables.https_port,
-                          server_port=server.Variables.https_port,
-                          use_ssl=True, use_http2_to_2=True)
+                          server_port=server.Variables.https_port, use_ssl=True,
+                          use_http2_to_2=True)
 
 client.Streams.stdout = "gold/doctest_client.gold"
 server.Streams.stdout = "gold/doctest_server.gold"
 
 client.Streams.stdout += Testers.ExcludesExpression(
-    "Violation:",
-    "There should be no verification errors because there are none added.")
+    "Violation:", "There should be no verification errors because there are none added.")
 
 server.Streams.stdout += Testers.ExcludesExpression(
-    "Violation:",
-    "There should be no verification errors because there are none added.")
+    "Violation:", "There should be no verification errors because there are none added.")

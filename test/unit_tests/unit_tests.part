@@ -1,16 +1,12 @@
-
 Import("*")
 PartName("tests")
 
 DependsOn([
     Component("libswoc.static"),
-    Component("nghttp2", requires=REQ.DEFAULT(internal=False)),
-    "proxy-verifier.core"
+    Component("nghttp2", requires=REQ.DEFAULT(internal=False)), "proxy-verifier.core"
 ])
 
-env.AppendUnique(
-    CCFLAGS=['-std=c++17', '-g'],
-)
+env.AppendUnique(CCFLAGS=['-std=c++17', '-g'], )
 
 files = [
     "test_YamlParser.cc",
@@ -24,5 +20,4 @@ env.UnitTest(
     "tests",
     files,
     # data file we need for the test to pass
-    data_src=[Pattern(src_dir="#", includes=['doc/conf.py'])]
-)
+    data_src=[Pattern(src_dir="#", includes=['doc/conf.py'])])

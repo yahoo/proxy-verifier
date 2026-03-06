@@ -103,10 +103,7 @@ def parse_args():
     parser.add_argument('-o', '--output', type=argparse.FileType('w'), default=sys.stdout,
                         help='A filename to which to write the list of URLs. Defaults to stdout.')
     parser.add_argument(
-        '--no-ip',
-        dest='no_ip',
-        action='store_true',
-        required=False,
+        '--no-ip', dest='no_ip', action='store_true', required=False,
         help='Ignore ip address (in the "replacement" section) in the remap.config file.')
     return parser.parse_args()
 

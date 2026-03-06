@@ -7,7 +7,6 @@ Implement HTTP/1 proxy behavior in Python.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 import sys
 import socket
 import ssl
@@ -101,8 +100,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             req.headers['Content-length'] = str(len(req_body))
 
         u = urllib.parse.urlsplit(req.path)
-        scheme, netloc, path = u.scheme, u.netloc, (
-            u.path + '?' + u.query if u.query else u.path)
+        scheme, netloc, path = u.scheme, u.netloc, (u.path + '?' + u.query if u.query else u.path)
         assert scheme in ('http', 'https')
         final_url = self.get_url(req.headers, path)
         setattr(req, 'headers', self.filter_headers(req.headers))
@@ -125,6 +123,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                             by HTTPSConnection) to specify the
                             server_hostname that we want.
                             '''
+
                             def __new__(cls, server_hostname, *args, **kwargs):
                                 return super().__new__(cls, *args, *kwargs)
 
@@ -140,8 +139,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                     else:
                         proxy_to_server_context = ssl.SSLContext()
                     self.tls.conns[origin] = http.client.HTTPSConnection(
-                        replay_server, timeout=self.timeout,
-                        context=proxy_to_server_context, cert_file=self.cert_file)
+                        replay_server, timeout=self.timeout, context=proxy_to_server_context,
+                        cert_file=self.cert_file)
                 else:
                     self.tls.conns[origin] = http.client.HTTPConnection(
                         replay_server, timeout=self.timeout)
@@ -149,7 +148,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             # wrap_create_connection.  here, we monkey patch the
             # create_connection method so that the proxy protocol is sent as the
             # connection is established
-            self.tls.conns[origin]._create_connection = ProxyProtocolUtil.create_connection_and_send_pp
+            self.tls.conns[
+                origin]._create_connection = ProxyProtocolUtil.create_connection_and_send_pp
             conn = self.tls.conns[origin]
 
             if 'transfer-encoding' in req.headers and req.headers['transfer-encoding'] == 'chunked':
@@ -217,8 +217,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     do_options = do_GET
 
     def relay_streaming(self, res):
-        self.wfile.write(
-            f"{self.protocol_version} {res.status} {res.reason}\r\n")
+        self.wfile.write(f"{self.protocol_version} {res.status} {res.reason}\r\n")
         for line in res.headers.headers:
             self.wfile.write(line)
         self.end_headers()
@@ -236,9 +235,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def filter_headers(headers):
         # http://tools.ietf.org/html/rfc2616#section-13.5.1
-        hop_by_hop = ['proxy-authenticate',
-                      'proxy-authorization', 'te', 'trailers',
-                      'upgrade']
+        hop_by_hop = ['proxy-authenticate', 'proxy-authorization', 'te', 'trailers', 'upgrade']
         for k in hop_by_hop:
             try:
                 del headers[k]
@@ -269,11 +266,10 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         return header + res_body + trailer
 
     def print_info(self, req, req_body, res, res_body):
+
         def parse_qsl(s):
-            return '\n'.join(
-                "%-20s %s" %
-                (k, v) for k, v in urllib.parse.parse_qsl(
-                    s, keep_blank_values=True))
+            return '\n'.join("%-20s %s" % (k, v)
+                             for k, v in urllib.parse.parse_qsl(s, keep_blank_values=True))
 
         req_header_text = f"{req.command} {req.path} {req.request_version}\n{req.headers}"
         res_header_text = f"{res.response_version} {res.status} {res.reason}\n{res.headers}"
@@ -321,8 +317,8 @@ def servername_callback(sock, req_hostname, cb_context, as_callback=True):
     socket.client_sni = req_hostname
 
 
-def configure_http1_server(HandlerClass, ServerClass, protocol,
-                           listen_port, server_port, https_pem):
+def configure_http1_server(HandlerClass, ServerClass, protocol, listen_port, server_port,
+                           https_pem):
 
     listen_address = ('127.0.0.1', listen_port)
 
@@ -338,10 +334,9 @@ def configure_http1_server(HandlerClass, ServerClass, protocol,
         client_to_proxy_context.set_servername_callback(servername_callback)
         use_ssl = True
     # wrap the socket with proxy protocol socket
-    httpd.socket = ProxyProtocolUtil.wrap_socket(
-        httpd.socket, use_ssl=use_ssl, ssl_ctx=client_to_proxy_context)
+    httpd.socket = ProxyProtocolUtil.wrap_socket(httpd.socket, use_ssl=use_ssl,
+                                                 ssl_ctx=client_to_proxy_context)
     sa = httpd.socket.getsockname()
-    print(
-        f"Serving HTTP Proxy on {sa[0]}:{sa[1]}, forwarding to "
-        f"127.0.0.1:{server_port}")
+    print(f"Serving HTTP Proxy on {sa[0]}:{sa[1]}, forwarding to "
+          f"127.0.0.1:{server_port}")
     httpd.serve_forever()

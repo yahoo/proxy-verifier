@@ -7,7 +7,6 @@ Verify correct parsing of YAML replay files.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify correct parsing of a YAML replay files.
 '''
@@ -20,7 +19,6 @@ client = r.AddClientProcess("client1", "replay_files/yaml_specified.yaml")
 server = r.AddServerProcess("server1", "replay_files/yaml_specified.yaml")
 proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
                           server_port=server.Variables.http_port)
-
 
 proxy.Streams.stdout = "gold/yaml_specified_proxy.gold"
 client.Streams.stdout = "gold/yaml_specified_client.gold"

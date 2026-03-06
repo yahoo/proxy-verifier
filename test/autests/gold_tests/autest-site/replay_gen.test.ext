@@ -13,13 +13,8 @@ import os
 from os.path import dirname
 
 
-def ConfigureReplayGenDefaultProcess(
-        test,
-        name,
-        replay_dir=None,
-        num_transactions=1,
-        url_file=None,
-        other_args=''):
+def ConfigureReplayGenDefaultProcess(test, name, replay_dir=None, num_transactions=1, url_file=None,
+                                     other_args=''):
     """
     Create a replay_gen.py Process.
 
@@ -68,9 +63,7 @@ def ConfigureReplayGenDefaultProcess(
 
     process.ReturnCode = 0
 
-    host.WriteVerbose(
-        "replay_gen",
-        f"Running '{command}' with replay_dir: '{replay_dir}'")
+    host.WriteVerbose("replay_gen", f"Running '{command}' with replay_dir: '{replay_dir}'")
 
     return process
 

@@ -9,7 +9,7 @@ RUN yum install -y \
         rh-python38-python-pip openssl11-devel
 
 RUN source /opt/rh/rh-python38/enable; \
-    pip3 install pipenv
+    pip3 install uv
 
 # Install the library dependencies in /opt.
 WORKDIR /var/tmp

@@ -66,10 +66,20 @@ EOF
       echo "or alternatively, undefine the FORMAT environment variable"
       exit 1
   else
-      for file in $(find $DIR -iname \*.[ch] -o -iname \*.cc); do
-    echo $file
-    ${FORMAT} -i $file
-      done
+      echo "Running clang-format. This may take a minute."
+      tmp_dir=$(mktemp -d -t tracked-clang-files.XXXXXXXXXX)
+      files=${tmp_dir}/clang_files.txt
+      start_time_file=${tmp_dir}/format_start.$$
+      find $DIR \
+        \( -path '*/.venv' -o -path '*/_build' -o -path '*/_destdir' -o -path '*/_scm' \) -prune \
+        -o \( -iname \*.[ch] -o -iname \*.cc \) -print > ${files}
+      touch ${start_time_file}
+      while read -r file; do
+        ${FORMAT} -i "$file"
+      done < ${files}
+      find $(cat ${files}) -newer ${start_time_file}
+      rm -rf ${tmp_dir}
+      echo "clang-format completed."
   fi
 }
 

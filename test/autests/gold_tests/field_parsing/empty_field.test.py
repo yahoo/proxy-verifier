@@ -7,7 +7,6 @@ Verify correct handling of malformed replay files.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify correct handling of malformed replay files.
 '''

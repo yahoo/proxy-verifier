@@ -7,11 +7,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Packages for building Proxy Verifier and its dependencies.
 RUN apt-get update; \
     apt-get install -y \
-        pipenv libssl-dev autoconf libtool pkg-config git curl sudo
-
-# The apt version of pipenv is outdated and does not run. Upgrade to a recent
-# version so it works.
-RUN python3 -m pip install --upgrade pipenv
+        python3-pip libssl-dev autoconf libtool pkg-config git curl sudo
+RUN python3 -m pip install uv
 
 # Install the library dependencies in /opt.
 WORKDIR /var/tmp

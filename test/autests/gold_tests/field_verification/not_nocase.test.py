@@ -8,7 +8,6 @@ for not and nocase modifiers.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 Test.Summary = '''
 Verify correct field and URL verification behavior for
 equals, absent, present, contains, prefix, and suffix
@@ -23,10 +22,8 @@ with not, nocase, and both not and nocase modifiers
 r = Test.AddTestRun("Verify 'not' and 'nocase' directives work for a single HTTP transaction")
 client = r.AddClientProcess("client1", "replay_files/not_nocase.yaml")
 server = r.AddServerProcess("server1", "replay_files/not_nocase.yaml")
-proxy = r.AddProxyProcess(
-    "proxy1",
-    listen_port=client.Variables.http_port,
-    server_port=server.Variables.http_port)
+proxy = r.AddProxyProcess("proxy1", listen_port=client.Variables.http_port,
+                          server_port=server.Variables.http_port)
 
 server.Streams.stdout += Testers.ContainsExpression(
     'Not Equals Success: Different. Key: "5", Field Name: "host", Correct Value: "le.on", Actual Value: "example.one"',
@@ -52,7 +49,6 @@ server.Streams.stdout += Testers.ContainsExpression(
     'Not Suffix Success: Not Found. Key: "5", Field Name: "x-test-present", Required Value: "It\'s", Actual Value: "It\'s there"',
     'Validation should be happy that "It\'s" does not suffix "It\'s there".')
 
-
 server.Streams.stdout += Testers.ContainsExpression(
     'No Case Equals Success: Key: "5", Field Name: "host", Required Value: "EXAMpLE.ONE", Value: "example.one"',
     'Validation should be happy that "EXAMpLE.ONE" nocase equals "example.one".')
@@ -69,7 +65,6 @@ server.Streams.stdout += Testers.ContainsExpression(
     'No Case Suffix Success: Key: "5", Field Name: "x-test-present", Required Value: "heRe", Value: "It\'s there"',
     'Validation should be happy that "heRe" nocase suffixes "It\'s there".')
 
-
 server.Streams.stdout += Testers.ContainsExpression(
     'Not No Case Equals Success: Different. Key: "5", Field Name: "host", Correct Value: "example.ON", Actual Value: "example.one"',
     'Validation should be happy that "le.on" does not nocase equal "example.one".')
@@ -85,7 +80,6 @@ server.Streams.stdout += Testers.ContainsExpression(
 server.Streams.stdout += Testers.ContainsExpression(
     'Not No Case Suffix Success: Not Found. Key: "5", Field Name: "x-test-present", Required Value: "hre", Actual Value: "It\'s there"',
     'Validation should be happy that "hre" does not nocase suffix "It\'s there".')
-
 
 server.Streams.stdout += Testers.ContainsExpression(
     'Not Equals Violation: Key: "5", Field Name: "host", Value: "example.one"',
@@ -111,7 +105,6 @@ server.Streams.stdout += Testers.ContainsExpression(
     'Not Suffix Violation: Key: "5", Field Name: "x-test-present", Required Value: "there", Value: "It\'s there"',
     'Validation should complain that "there" suffixes "It\'s there".')
 
-
 server.Streams.stdout += Testers.ContainsExpression(
     'No Case Equals Violation: Different. Key: "5", Field Name: "host", Correct Value: "EXAMPLE.ON", Actual Value: "example.one"',
     'Validation should complain that "EXAMPL.ON" does not nocase equal "example.one".')
@@ -127,7 +120,6 @@ server.Streams.stdout += Testers.ContainsExpression(
 server.Streams.stdout += Testers.ContainsExpression(
     'No Case Suffix Violation: Not Found. Key: "5", Field Name: "x-test-present", Required Value: "THER", Actual Value: "It\'s there"',
     'Validation should complain that "THER" does not nocase suffix "It\'s there".')
-
 
 server.Streams.stdout += Testers.ContainsExpression(
     'Not No Case Equals Violation: Key: "5", Field Name: "host", Required Value: "Example.one", Value: "example.one"',
@@ -145,11 +137,9 @@ server.Streams.stdout += Testers.ContainsExpression(
     'Not No Case Suffix Violation: Key: "5", Field Name: "x-test-present", Required Value: "eRE", Value: "It\'s there"',
     'Validation should complain that "eRE" nocase suffixes "It\'s there".')
 
-
 server.Streams.stdout = Testers.ContainsExpression(
     'Not No Case Contains Violation: Key: "5", URI Part: "path", Required Value: "iG/S", Value: "/config/settings.yaml"',
     'Validation should complain that "iG/S" is nocase contained in the path.')
-
 
 client.Streams.stdout += Testers.ContainsExpression(
     'Not Equals Success: Different. Key: "5", Field Name: "content-type", Correct Value: "text", Actual Value: "text/html"',
@@ -175,14 +165,15 @@ client.Streams.stdout += Testers.ContainsExpression(
     'No Case Suffix Success: Key: "5", Field Name: "content-type", Required Value: "L", Value: "text/html"',
     'Validation should be happy that "L" nocase suffixes "text/html".')
 
-
 client.Streams.stdout += Testers.ContainsExpression(
     'Not Prefix Success: Not Found. Key: "5", Field Name: "multiple", Required Values: "Abc" "DEF", Received Values: "abc" "DEF"',
-    'Validation should be happy that "Abc" does not prefix "abc", even though "DEF" prefixes "DEF".')
+    'Validation should be happy that "Abc" does not prefix "abc", even though "DEF" prefixes "DEF".'
+)
 
 client.Streams.stdout += Testers.ContainsExpression(
     'Not No Case Equals Violation: Key: "5", Field Name: "multiple", Required Values: "Abc" "DEF", Values: "abc" "DEF"',
-    'Validation should complain that each required value nocase equals the corresponding received value.')
+    'Validation should complain that each required value nocase equals the corresponding received value.'
+)
 
 client.ReturnCode = 1
 server.ReturnCode = 1

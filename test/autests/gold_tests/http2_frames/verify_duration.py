@@ -8,7 +8,6 @@ Verify client output recorded an expected replay duration.
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 import argparse
 import sys
 import re
@@ -58,8 +57,7 @@ def parse_args():
     parser.add_argument('client_output', type=argparse.FileType('r'),
                         help='The Verifier client output file.')
 
-    parser.add_argument('min_milliseconds', type=int,
-                        help='The minimum number of milliseconds the '
+    parser.add_argument('min_milliseconds', type=int, help='The minimum number of milliseconds the '
                         'replay should have taken.')
 
     return parser.parse_args()

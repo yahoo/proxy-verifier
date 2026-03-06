@@ -8,20 +8,16 @@ Verify that one file is contained in another
 # SPDX-License-Identifier: Apache-2.0
 #
 
-
 import argparse
 import sys
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description='Verify the contents of one file are in another.')
+    parser = argparse.ArgumentParser(description='Verify the contents of one file are in another.')
 
-    parser.add_argument('needle_file',
-                        help='Determine whether needle_file is in haystack_file')
+    parser.add_argument('needle_file', help='Determine whether needle_file is in haystack_file')
 
-    parser.add_argument('haystack_file',
-                        help='Determine whether needle_file is in haystack_file')
+    parser.add_argument('haystack_file', help='Determine whether needle_file is in haystack_file')
 
     return parser.parse_args()
 

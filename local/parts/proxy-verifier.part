@@ -2,11 +2,8 @@ Import("*")
 PartVersion("2.12.1")
 PartName("proxy-verifier")
 
-DependsOn([
-    "proxy-verifier.core",
-    "proxy-verifier.verifier-client",
-    "proxy-verifier.verifier-server"
-])
+DependsOn(
+    ["proxy-verifier.core", "proxy-verifier.verifier-client", "proxy-verifier.verifier-server"])
 
 env.Part("../src/core/core.part")
 env.Part("../src/client/verifier-client.part")

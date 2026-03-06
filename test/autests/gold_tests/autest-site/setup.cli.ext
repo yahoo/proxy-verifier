@@ -16,8 +16,9 @@ def check_file(dir_name, file_name):
         if os.path.isfile(os.path.join(dir_name, 'bin', file_name)):
             hint = "\nDid you mean '--verifier-bin {}'?".\
                 format(os.path.join(dir_name, 'bin'))
-        host.WriteError("verifier-server is not found. Aborting tests - "
-                        "Bad build or install.{}".format(hint), show_stack=False)
+        host.WriteError(
+            "verifier-server is not found. Aborting tests - "
+            "Bad build or install.{}".format(hint), show_stack=False)
 
 
 if Arguments.verifier_bin is not None:
