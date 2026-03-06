@@ -23,6 +23,5 @@ gh pr create \
   --head "$(git config user.name | tr '[:upper:]' '[:lower:]')":"$(git branch --show-current)" \
   --title "$subj" \
   --body "$body" \
-  --assignee @me \
-  --milestone "11.0.0"
+  --assignee @me
 ```
