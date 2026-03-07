@@ -9,6 +9,7 @@
 #include "core/ProxyVerifier.h"
 
 #include <dirent.h>
+#include <cstring>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
@@ -69,7 +70,7 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::SSLError const &error)
     w.write(short_name(error._e));
     auto const *error_reason = ERR_reason_error_string(error._e);
     if (error_reason != nullptr) {
-      w.write(error_reason);
+      w.write(error_reason, std::strlen(error_reason));
     }
     if (spec._type != 's' && spec._type != 'S') {
       w.write(' ');

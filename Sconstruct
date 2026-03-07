@@ -98,10 +98,9 @@ else:
   Part(
     "openssl",
     "#lib/openssl.part",
-    vcs_type=VcsGit(server="github.com", repository="quictls/openssl",
+    vcs_type=VcsGit(server="github.com", repository="openssl/openssl",
                     protocol="https",
-                    # A pinned commit from branch openssl-3.3.0-quic.
-                    revision="96b7f14fa936d1b8c43c4003f09ef9ded4c4bc93"
+                    tag="openssl-3.5.5"
                     ),
     mode=['SKIP_DOCS'],
   )
@@ -115,7 +114,7 @@ else:
     "#lib/nghttp2.part",
     vcs_type=VcsGit(server="github.com", repository="nghttp2/nghttp2",
                     protocol="https",
-                    tag="v1.62.1"
+                    tag="v1.68.0"
                     ),
     GIT_CLONE_ARGS="--depth=1 --recurse-submodules --shallow-submodules",
     mode=['SKIP_DOCS'],
@@ -131,7 +130,7 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/ngtcp2",
                     protocol="https",
                     # A pinned commit on branch main.
-                    tag="v1.6.0"
+                    tag="v1.21.0"
                     ),
     GIT_CLONE_ARGS="--depth=1 --recurse-submodules --shallow-submodules",
     mode=['SKIP_DOCS'],
@@ -147,13 +146,13 @@ else:
     vcs_type=VcsGit(server="github.com", repository="ngtcp2/nghttp3",
                     protocol="https",
                     # A pinned commit on branch main.
-                    tag="v1.4.0"
+                    tag="v1.15.0"
                     ),
     GIT_CLONE_ARGS="--depth=1 --recurse-submodules --shallow-submodules",
     mode=['SKIP_DOCS'],
   )
 
-Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="0.8.0"), package_group="proxy-verifier")
+Part("#lib/libyaml-cpp.part",vcs_type=VcsGit(server="github.com", repository="jbeder/yaml-cpp.git", tag="yaml-cpp-0.9.0"), package_group="proxy-verifier")
 
 custom_rpath=[]
 if path_ssl is not None:
@@ -166,7 +165,7 @@ if path_nghttp3 is not None:
   custom_rpath.append(path_nghttp3 + "/lib")
 SetOptionDefault("RPATH",  custom_rpath)
 
-Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="SolidWallOfCode/libswoc.git", tag="1.5.1"), package_group="proxy-verifier")
+Part("code/libswoc.part",vcs_type=VcsGit(server="github.com", repository="apache/trafficserver-libswoc.git", tag="1.5.15"), package_group="proxy-verifier")
 
 pv_mode = []
 if GetOption("enable_asan"):

@@ -37,12 +37,20 @@ function main() {
   tmp_dir=$(mktemp -d -t tracked-git-files.XXXXXXXXXX)
   files=${tmp_dir}/git_files.txt
   files_filtered=${tmp_dir}/git_files_filtered.txt
+  files_existing=${tmp_dir}/git_files_existing.txt
   git ls-tree -r HEAD --name-only ${DIR} | grep -vE "lib/yamlcpp" > ${files}
   git diff --cached --name-only --diff-filter=A >> ${files}
   grep -E '\.part$|\.py$|\.cli.ext$|\.test.ext$' ${files} > ${files_filtered}
   grep -rl '#!.*python' "${REPO_ROOT}/tools" | grep -vE '(yapf.sh|.py)' | sed "s:${REPO_ROOT}/::g" >> ${files_filtered}
+  while read -r path
+  do
+    if [ -f "${path}" ]
+    then
+      echo "${path}"
+    fi
+  done < "${files_filtered}" > "${files_existing}"
 
-  if [ ! -s "${files_filtered}" ]
+  if [ ! -s "${files_existing}" ]
   then
     rm -rf "${tmp_dir}"
     exit 0
@@ -56,8 +64,8 @@ function main() {
       --style "${YAPF_CONFIG}" \
       --parallel \
       --in-place \
-      $(cat ${files_filtered})
-  find $(cat ${files_filtered}) -newer ${start_time_file}
+      $(cat ${files_existing})
+  find $(cat ${files_existing}) -newer ${start_time_file}
   echo "yapf completed."
   rm -rf "${tmp_dir}"
 }

@@ -27,7 +27,7 @@ else:
         Component("openssl", requires=REQ.DEFAULT(internal=True)),
     ])
     PartVersion(
-        GitVersionFromTag("v1.62.1", regex=r'\d+\_\d+\_\d+[a-z]',
+        GitVersionFromTag("v1.68.0", regex=r'\d+\_\d+\_\d+[a-z]',
                           converter=lambda ver, env: ver.replace("_", ".")))
     auto_scanner = {}
     if "SKIP_DOCS" in env['mode']:

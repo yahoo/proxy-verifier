@@ -539,9 +539,8 @@ on_header_callback(
   return 0;
 }
 
-/* nghttp2_send_callback. Here we transmit the |data|, |length| bytes,
- *    to the network. Because we are using libevent bufferevent, we just
- *       write those bytes into bufferevent buffer. */
+/* nghttp2_send_callback. Here we transmit the |data| bytes to the socket
+ * managed by the HTTP/2 session. */
 static ssize_t
 send_nghttp2_data(
     nghttp2_session *session,

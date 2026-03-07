@@ -6,30 +6,35 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-# Inspired by:
-# https://github.com/curl/curl/blob/master/docs/HTTP3.md
-
-fail()
-{
-  echo $1
+fail() {
+  echo "$1"
   exit 1
 }
 
+set -euo pipefail
 set -x
-set -e
+
+OPENSSL_TAG=openssl-3.5.5
+NGHTTP3_TAG=v1.15.0
+NGTCP2_TAG=v1.21.0
+NGHTTP2_TAG=v1.68.0
 
 os=$(uname)
-[ "${os}" = "Linux" -o "${os}" = "Darwin" ] || fail "Unrecognized OS: ${os}"
+[ "${os}" = "Linux" ] || [ "${os}" = "Darwin" ] || fail "Unrecognized OS: ${os}"
 
-#
-# Determine the number of threads to build with.
-#
+for tool in git make pkg-config autoreconf autoconf automake
+do
+  command -v "${tool}" >/dev/null 2>&1 || fail "Missing required tool: ${tool}"
+done
+
 if [ "${os}" = "Linux" ]
 then
   num_threads=$(nproc)
 else
-  # MacOS.
   num_threads=$(sysctl -n hw.logicalcpu)
+  export CC="$(xcrun -find clang)"
+  export CXX="$(xcrun -find clang++)"
+  export SDKROOT="$(xcrun --show-sdk-path)"
 fi
 
 [ $# -eq 1 ] || fail "Please provide a directory in which to install the libraries."
@@ -39,71 +44,83 @@ echo
 echo "Building with ${num_threads} threads, installing in ${install_dir}"
 echo
 
-# Only try using sudo if the install directory is not writable by the current
-# user.
 SUDO=""
-[ -d "${install_dir}" ] || \
-    mkdir -p ${install_dir} || \
-    sudo mkdir -p ${install_dir}
+[ -d "${install_dir}" ] || mkdir -p "${install_dir}" || sudo mkdir -p "${install_dir}"
 [ -w "${install_dir}" ] || SUDO=sudo
-sudo chmod -R ugo+rX ${install_dir}
+sudo chmod -R ugo+rX "${install_dir}"
 
-mkdir -p ${install_dir}
-repo_dir=/var/tmp/http3_dependency_repos_$$
-mkdir -p ${repo_dir}
+mkdir -p "${install_dir}"
+repo_dir=$(mktemp -d /var/tmp/http3_dependency_repos_XXXXXX)
+cleanup() {
+  rm -rf "${repo_dir}"
+}
+trap cleanup EXIT
 
-# 1. OpenSSL version that supports quic.
-cd ${repo_dir}
-git clone -b openssl-3.3.0+quic --depth 1 https://github.com/quictls/openssl.git openssl
+autoreconf --version >/dev/null 2>&1 || fail \
+  "autoreconf is not runnable; please fix your autotools install"
+autoconf --version >/dev/null 2>&1 || fail \
+  "autoconf is not runnable; please fix your autotools install"
+automake --version >/dev/null 2>&1 || fail \
+  "automake is not runnable; please fix your autotools install"
+
+clone_tagged_repo() {
+  local repo_url=$1
+  local repo_name=$2
+  local repo_tag=$3
+
+  git clone --branch "${repo_tag}" --depth 1 "${repo_url}" "${repo_name}"
+}
+
+install_with_permissions() {
+  local target_dir=$1
+
+  ${SUDO} make install
+  sudo chmod -R ugo+rX "${target_dir}"
+}
+
+cd "${repo_dir}"
+
+# 1. OpenSSL with built-in QUIC support.
+clone_tagged_repo https://github.com/openssl/openssl.git openssl "${OPENSSL_TAG}"
 cd openssl
-git checkout 96b7f14fa936d1b8c43c4003f09ef9ded4c4bc93
-./config enable-tls1_3 --prefix=${install_dir}/openssl --libdir=lib
-make -j ${num_threads}
+./config enable-tls1_3 --prefix="${install_dir}/openssl" --libdir=lib
+make -j "${num_threads}"
 ${SUDO} make install_sw
-sudo chmod -R ugo+rX ${install_dir}/openssl
+sudo chmod -R ugo+rX "${install_dir}/openssl"
 
 # 2. nghttp3
-cd ${repo_dir}
-git clone https://github.com/ngtcp2/nghttp3.git
-cd nghttp3/
-git checkout v1.4.0
+cd "${repo_dir}"
+clone_tagged_repo https://github.com/ngtcp2/nghttp3.git nghttp3 "${NGHTTP3_TAG}"
+cd nghttp3
 git submodule update --init
 autoreconf -if
-./configure --prefix=${install_dir}/nghttp3 --enable-lib-only
-make -j ${num_threads}
-${SUDO} make install
-sudo chmod -R ugo+rX ${install_dir}/nghttp3
+./configure --prefix="${install_dir}/nghttp3" --enable-lib-only
+make -j "${num_threads}"
+install_with_permissions "${install_dir}/nghttp3"
 
 # 3. ngtcp2
-cd ${repo_dir}
-git clone https://github.com/ngtcp2/ngtcp2.git
+cd "${repo_dir}"
+clone_tagged_repo https://github.com/ngtcp2/ngtcp2.git ngtcp2 "${NGTCP2_TAG}"
 cd ngtcp2
-git checkout v1.6.0
 git submodule update --init
 autoreconf -if
+PKG_CONFIG_PATH="${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig" \
+LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib" \
 ./configure \
-  PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
-  LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib" \
-  --prefix=${install_dir}/ngtcp2 \
+  --prefix="${install_dir}/ngtcp2" \
   --enable-lib-only
-make -j ${num_threads}
-${SUDO} make install
-sudo chmod -R ugo+rX ${install_dir}/ngtcp2
+make -j "${num_threads}"
+install_with_permissions "${install_dir}/ngtcp2"
 
-#4. nghttp2
-cd ${repo_dir}
-git clone https://github.com/nghttp2/nghttp2.git
+# 4. nghttp2
+cd "${repo_dir}"
+clone_tagged_repo https://github.com/nghttp2/nghttp2.git nghttp2 "${NGHTTP2_TAG}"
 cd nghttp2
-git checkout v1.62.1
 git submodule update --init
 autoreconf -if
+PKG_CONFIG_PATH="${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig" \
 ./configure \
-  PKG_CONFIG_PATH=${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig \
-  --prefix=${install_dir}/nghttp2 \
+  --prefix="${install_dir}/nghttp2" \
   --enable-lib-only
-make -j ${num_threads}
-${SUDO} make install
-sudo chmod -R ugo+rX ${install_dir}/nghttp2
-
-# Everything worked. Cleanup the build directory.
-rm -rf ${repo_dir}
+make -j "${num_threads}"
+install_with_permissions "${install_dir}/nghttp2"

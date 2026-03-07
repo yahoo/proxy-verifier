@@ -1711,8 +1711,8 @@ conveniently support this, the
 [build_library_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_library_dependencies.sh)
 script is provided to build these libraries. To build and install the
 libraries, run that script, passing as an argument the desired install location
-for the various libraries. Then point Scons to those libraries using various
-`--with` directives.
+for the various libraries. Then point Scons at that directory with the
+`--with-libs` directive.
 
 Here's an example invocation of `scons` along with the use of the library build
 script:
@@ -1721,40 +1721,29 @@ script:
 # Alter this to your desired library location.
 http3_libs_dir=${HOME}/src/http3_libs
 
-bash ./tools/build_http3_dependencies.sh ${http3_libs_dir}
+bash ./tools/build_library_dependencies.sh ${http3_libs_dir}
 
-uv run scons \
-    -j4 \
-    --with-ssl=${http3_libs_dir}/openssl \
-    --with-nghttp2=${http3_libs_dir}/nghttp2 \
-    --with-ngtcp2=${http3_libs_dir}/ngtcp2 \
-    --with-nghttp3=${http3_libs_dir}/nghttp3
+uv run scons -j4 --with-libs=${http3_libs_dir}
 ```
 
 The [Dockerfile](https://github.com/yahoo/proxy-verifier/tree/master/docker)
-documents run this build script, installing the HTTP packages in `/opt`.
-Therefore, if you are developing in a container made from images generated from
-these Dockerfile documents, you can use the following `scons` command to build
-Proxy Verifier:
+documents use `/opt/pv_libs` as the install location for these libraries.
+Therefore, if you are developing in an environment that follows the same
+layout, you can use the following `scons` command to build Proxy Verifier:
 
 ```
-uv run scons \
-    -j4 \
-    --with-ssl=/opt/openssl \
-    --with-nghttp2=/opt/nghttp2 \
-    --with-ngtcp2=/opt/ngtcp2 \
-    --with-nghttp3=/opt/nghttp3
+uv run scons -j4 --with-libs=/opt/pv_libs
 ```
 
 As a further convenience, if these libraries (`openssl`, `nghttp2`, `ngtcp2`,
 and `nghttp3`, with those exact names) exist under a single directory, such as
-is the case with images built from the provided
+is the case with the provided
 [Dockerfile](https://github.com/yahoo/proxy-verifier/tree/master/docker)
-documemnts, then you can specify the location of these libraries with a single
+documents, then you can specify the location of these libraries with a single
 `--with-libs` argument. Thus the previous command can be expressed like so:
 
 ```
-uv run scons -j4 --with-libs=/opt
+uv run scons -j4 --with-libs=/opt/pv_libs
 ```
 
 #### ASan Instrumentation
@@ -1768,13 +1757,7 @@ system. Thus the above invocation would look like the following to compile it
 with AddressSanitizer instrumentation:
 
 ```
-uv run scons \
-    -j4 \
-    --with-ssl=/path/to/openssl \
-    --with-nghttp2=/path/to/nghttp2 \
-    --with-ngtcp2=/path/to/ngtcp2 \
-    --with-nghttp3=/path/to/nghttp3 \
-    --enable-asan
+uv run scons -j4 --with-libs=/opt/pv_libs --enable-asan
 ```
 
 #### Debug Build
@@ -1812,11 +1795,12 @@ uv run scons -j$(nproc)
 ```
 
 Any arguments passed to `build_static` will be passed through to the scons
-command. Thus, if you desire to build Proxy Verifier with `--with-libs=/opt`,
+command. Thus, if you desire to build Proxy Verifier with
+`--with-libs=/opt/pv_libs`,
 run the script like so:
 
 ```
-./tools/build_static --with-libs=/opt`
+./tools/build_static --with-libs=/opt/pv_libs
 ```
 
 ### Running the Tests
@@ -1826,13 +1810,7 @@ run the script like so:
 To build and run the unit tests, use the `run_utest` Scons target:
 
 ```
-uv run scons \
-    -j4 \
-    --with-ssl=/path/to/openssl \
-    --with-nghttp2=/path/to/nghttp2 \
-    --with-ngtcp2=/path/to/ngtcp2 \
-    --with-nghttp3=/path/to/nghttp3 \
-    run_utest::
+uv run scons -j4 --with-libs=/opt/pv_libs run_utest::
 ```
 
 #### Gold Tests

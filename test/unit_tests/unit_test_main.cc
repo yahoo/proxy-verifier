@@ -8,6 +8,12 @@
 #define CATCH_CONFIG_RUNNER
 #include "catch.hpp"
 
+#include <chrono>
+
+using namespace std::chrono_literals;
+
+std::chrono::milliseconds Poll_Timeout{5s};
+
 int
 main(int argc, char *argv[])
 {
