@@ -108,21 +108,39 @@ class HttpRequestHandler:
             new_headers.add_header(key, value)
         return new_headers
 
+    @staticmethod
+    def split_headers(headers):
+        # HTTP/3 pseudo-headers are not regular HTTP field names. We keep them
+        # out of HTTPMessage because names like ':method' are rejected there,
+        # and they must be sent separately ahead of the regular headers when we
+        # forward the request upstream.
+        pseudo_headers = {}
+        regular_headers = http.client.HTTPMessage()
+
+        header_items = headers.items() if hasattr(headers, 'items') else headers
+        for name, value in header_items:
+            if isinstance(name, bytes):
+                name = name.decode()
+            if isinstance(value, bytes):
+                value = value.decode()
+            if name.startswith(':'):
+                pseudo_headers[name] = value
+            else:
+                regular_headers.add_header(name, value)
+
+        return pseudo_headers, regular_headers
+
     # TODO: Gah...this should be asynchronous. Punting on that for now. It will
     # currently block.
     def _send_http1_request_to_server(self, request_headers, req_body, stream_id):
-        if not isinstance(request_headers, HttpHeaders):
-            request_headers_message = HttpHeaders()
-            for name, value in request_headers:
-                request_headers_message.add_header(name.decode(), value.decode())
-            request_headers = request_headers_message
+        pseudo_headers, request_headers = self.split_headers(request_headers)
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         # For all of these, for convenience, we simply talk HTTP (not HTTPS).
         scheme = 'http'
         replay_server = f"127.0.0.1:{self.server_port}"
-        method = request_headers[':method']
-        path = request_headers[':path']
+        method = pseudo_headers[':method']
+        path = pseudo_headers[':path']
 
         try:
             origin = (scheme, replay_server)
@@ -142,7 +160,7 @@ class HttpRequestHandler:
 
             response_body = res.read()
         except Exception as e:
-            authority = request_headers.get(':authority', '')
+            authority = pseudo_headers.get(':authority', '')
             print(f"Connection to '{replay_server}' initiated with request to "
                   f"'{scheme}://{authority}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)
@@ -156,8 +174,9 @@ class HttpRequestHandler:
             ]
             for k, v in res.headers.items():
                 response_headers += ((k.encode(), v.encode()), )
-            self.print_info(request_headers, req_body, response_headers, response_body, res.status,
-                            res.reason)
+            request_headers_for_print = list(pseudo_headers.items()) + list(request_headers.items())
+            self.print_info(request_headers_for_print, req_body, response_headers, response_body,
+                            res.status, res.reason)
 
         except Exception as e:
             print(f"Curating the HTTP/1 response to proxy to HTTP/3 failed: {e}")
@@ -173,7 +192,9 @@ class HttpRequestHandler:
                              for k, v in urllib.parse.parse_qsl(s, keep_blank_values=True))
 
         print("==== REQUEST HEADERS ====")
-        for k, v in request_headers.items():
+        header_items = request_headers.items() if hasattr(request_headers,
+                                                          'items') else request_headers
+        for k, v in header_items:
             print(f"{k}: {v}")
 
         if req_body is not None:
@@ -359,9 +380,8 @@ def configure_http3_server(listen_port, server_port, https_pem, ca_pem, listenin
     configuration.load_cert_chain(https_pem, ca_pem)
     ticket_store = SessionTicketStore()
 
-    # TODO
-    # In 3.7: how about asyncio.run(serve(...))
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     server_side_proto = "HTTP/3" if h3_to_server else "HTTP/1"
     print(f"Serving HTTP/3 Proxy on 127.0.0.1:{listen_port} with pem '{https_pem}', "
           f"forwarding to 127.0.0.1:{server_port} over {server_side_proto}")

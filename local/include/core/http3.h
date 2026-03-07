@@ -16,6 +16,7 @@
 #include <mutex>
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
+#include <ngtcp2/ngtcp2_crypto_ossl.h>
 #include <nghttp3/nghttp3.h>
 #include <openssl/ssl.h>
 #include <random>
@@ -155,6 +156,7 @@ public:
   ngtcp2_transport_params transport_params;
   ngtcp2_ccerr last_error;
   ngtcp2_crypto_conn_ref conn_ref;
+  ngtcp2_crypto_ossl_ctx *ossl_ctx = nullptr;
   SSL_CTX *sslctx = nullptr;
   SSL *ssl = nullptr;
   /// 3 is the maximum enum value in ngtcp2_crypto_level.

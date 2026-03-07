@@ -138,9 +138,10 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
                         proxy_to_server_context = WrapSSSLContext(client_sni)
                     else:
                         proxy_to_server_context = ssl.SSLContext()
+                    if self.cert_file:
+                        proxy_to_server_context.load_cert_chain(self.cert_file)
                     self.tls.conns[origin] = http.client.HTTPSConnection(
-                        replay_server, timeout=self.timeout, context=proxy_to_server_context,
-                        cert_file=self.cert_file)
+                        replay_server, timeout=self.timeout, context=proxy_to_server_context)
                 else:
                     self.tls.conns[origin] = http.client.HTTPConnection(
                         replay_server, timeout=self.timeout)

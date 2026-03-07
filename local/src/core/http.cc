@@ -11,6 +11,7 @@
 
 #include <arpa/inet.h>
 #include <cassert>
+#include <cstring>
 #include <cstdint>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -915,9 +916,15 @@ Session::read_and_parse_proxy_hdr()
   auto &&[ppNumBytes, ppParseErrata] = ppUtil.parse_header(w.view());
   errata.note(std::move(ppParseErrata));
   if (ppNumBytes > 0) {
+    static constexpr size_t PP_CONSUME_CHUNK_SIZE = 4096;
     errata.note(S_DIAG, "Got {} of pp bytes. consuming it from socket.", ppNumBytes);
-    char unusedBuf[ppNumBytes];
-    recv(_fd, unusedBuf, ppNumBytes, 0); // Peek at the data
+    char unused_buf[PP_CONSUME_CHUNK_SIZE];
+    auto remaining_pp_bytes = ppNumBytes;
+    while (remaining_pp_bytes > 0) {
+      auto bytes_to_consume = std::min(remaining_pp_bytes, ssize_t{PP_CONSUME_CHUNK_SIZE});
+      recv(_fd, unused_buf, bytes_to_consume, 0); // Consume the data.
+      remaining_pp_bytes -= bytes_to_consume;
+    }
     // print the proxy message
     errata.note(S_INFO, "{}", ppUtil);
   } else {

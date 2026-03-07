@@ -1,6 +1,6 @@
 Import('*')
 PartName("yaml-cpp")
-PartVersion(GitVersionFromTag("0.8.0"))
+PartVersion(GitVersionFromTag("yaml-cpp-0.9.0"))
 
 env.AppendUnique(
     CPPPATH=["${CHECK_OUT_DIR}/include"],

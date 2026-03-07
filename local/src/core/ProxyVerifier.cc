@@ -13,6 +13,7 @@
 #include <cassert>
 #include <csignal>
 #include <cstddef>
+#include <cstring>
 #include <dirent.h>
 #include <fcntl.h>
 #include <iostream>
@@ -189,18 +190,16 @@ Resolve_FQDN(swoc::TextView fqdn)
           zret.result().assign(swoc::IPSrv{addr, port});
         } else {
           addrinfo *addrs = nullptr;
-          addrinfo hints;
-          char buff[host_str.size() + 1];
-          memcpy(buff, host_str.data(), host_str.size());
-          buff[host_str.size()] = '\0';
+          addrinfo hints{};
+          std::string hostname{host_str};
           hints.ai_family = AF_UNSPEC;
           hints.ai_socktype = SOCK_STREAM;
           hints.ai_protocol = IPPROTO_TCP;
           hints.ai_flags = 0;
-          auto result = getaddrinfo(buff, nullptr, &hints, &addrs);
+          auto result = getaddrinfo(hostname.c_str(), nullptr, &hints, &addrs);
           if (0 == result) {
             zret.result().assign(swoc::IPSrv{addrs->ai_addr});
-            zret.result().network_order_port() = htons(port);
+            swoc::IPEndpoint::port(&zret.result().sa) = htons(port);
             freeaddrinfo(addrs);
           } else {
             zret.note(

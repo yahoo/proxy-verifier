@@ -24,7 +24,7 @@ if path:
 else:
     # No path provided.
     PartVersion(
-        GitVersionFromTag("v1.4.0", regex=r'\d+\_\d+\_\d+[a-z]',
+        GitVersionFromTag("v1.15.0", regex=r'\d+\_\d+\_\d+[a-z]',
                           converter=lambda ver, env: ver.replace("_", ".")))
     auto_scanner = {}
     if "SKIP_DOCS" in env['mode']:

@@ -223,18 +223,36 @@ class Http2ConnectionManager(object):
             new_headers.add_header(key, value)
         return new_headers
 
+    @staticmethod
+    def split_headers(headers):
+        # HTTP/2 pseudo-headers are not normal HTTP field names. Python's
+        # email/http header helpers reject names like ':method', and when we
+        # send an upstream H2 request those pseudo-headers must be emitted
+        # separately before the regular headers.
+        pseudo_headers = {}
+        regular_headers = http.client.HTTPMessage()
+
+        header_items = headers.items() if hasattr(headers, 'items') else headers
+        for name, value in header_items:
+            if isinstance(name, bytes):
+                name = name.decode("utf-8")
+            if isinstance(value, bytes):
+                value = value.decode("utf-8")
+            if name.startswith(':'):
+                pseudo_headers[name] = value
+            else:
+                regular_headers.add_header(name, value)
+
+        return pseudo_headers, regular_headers
+
     def _send_http1_request_to_server(self, request_headers, req_body, stream_id):
-        if not isinstance(request_headers, HttpHeaders):
-            request_headers_message = HttpHeaders()
-            for name, value in request_headers:
-                request_headers_message.add_header(name.decode("utf-8"), value.decode("utf-8"))
-            request_headers = request_headers_message
+        pseudo_headers, request_headers = self.split_headers(request_headers)
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
-        scheme = request_headers[':scheme']
+        scheme = pseudo_headers[':scheme']
         replay_server = f"127.0.0.1:{self.server_port}"
-        method = request_headers[':method']
-        path = request_headers[':path']
+        method = pseudo_headers[':method']
+        path = pseudo_headers[':path']
 
         try:
             origin = (scheme, replay_server)
@@ -244,9 +262,10 @@ class Http2ConnectionManager(object):
                         gcontext = WrapSSSLContext(self.client_sni)
                     else:
                         gcontext = ssl.SSLContext()
+                    if self.cert_file:
+                        gcontext.load_cert_chain(self.cert_file)
                     self.tls.http_conns[origin] = http.client.HTTPSConnection(
-                        replay_server, timeout=self.timeout, context=gcontext,
-                        cert_file=self.cert_file)
+                        replay_server, timeout=self.timeout, context=gcontext)
                 else:
                     self.tls.http_conns[origin] = http.client.HTTPConnection(
                         replay_server, timeout=self.timeout)
@@ -267,11 +286,13 @@ class Http2ConnectionManager(object):
                 self.listening_conn.send_headers(stream_id, [(':status', '502')], end_stream=True)
             except StreamClosedError as err:
                 print(err)
-            authority = request_headers.get(':authority', '')
+            authority = pseudo_headers.get(':authority', '')
             print(f"Connection to '{replay_server}' initiated with request to "
                   f"'{scheme}://{authority}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)
             return
+
+        request_headers_for_print = list(pseudo_headers.items()) + list(request_headers.items())
 
         setattr(res, 'headers', ProxyRequestHandler.filter_headers(res.headers))
 
@@ -280,7 +301,7 @@ class Http2ConnectionManager(object):
         ]
         for k, v in res.headers.items():
             response_headers.append((k, v))
-        self.print_info(request_headers, req_body, response_headers, response_body, None,
+        self.print_info(request_headers_for_print, req_body, response_headers, response_body, None,
                         res.status, res.reason)
         # do not return trailers
         return response_headers, response_body, None
@@ -290,15 +311,12 @@ class Http2ConnectionManager(object):
             raise RuntimeError(
                 "Unexpected received non is_h2_to_server in _send_http2_request_to_server")
 
-        request_headers_message = HttpHeaders()
-        for name, value in request_headers:
-            request_headers_message.add_header(name.decode("utf-8"), value.decode("utf-8"))
-        request_headers = request_headers_message
+        pseudo_headers, request_headers = self.split_headers(request_headers)
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
-        scheme = request_headers[':scheme']
+        scheme = pseudo_headers[':scheme']
         replay_server = f"127.0.0.1:{self.server_port}"
-        path = request_headers[':path']
+        path = pseudo_headers[':path']
 
         try:
             origin = (scheme, replay_server, self.client_sni)
@@ -321,7 +339,9 @@ class Http2ConnectionManager(object):
                 if sock.selected_alpn_protocol() != 'h2':
                     # Server downgrades to HTTP/1. Send an http/1 request
                     # instead.
-                    return self._send_http1_request_to_server(request_headers, req_body,
+                    request_headers_to_server = list(pseudo_headers.items()) + list(
+                        request_headers.items())
+                    return self._send_http1_request_to_server(request_headers_to_server, req_body,
                                                               client_stream_id)
                 # Initiate a HTTP/2 connection.
                 http2_connection = H2Connection()
@@ -330,7 +350,12 @@ class Http2ConnectionManager(object):
                 self.tls.http_conns[origin] = Http2Connection(sock, http2_connection)
 
             client = self.tls.http_conns[origin]
-            response_from_server = client.send_request(client_stream_id, request_headers.items(),
+            request_headers_to_server = []
+            for name in (':method', ':scheme', ':authority', ':path'):
+                if name in pseudo_headers:
+                    request_headers_to_server.append((name, pseudo_headers[name]))
+            request_headers_to_server.extend(request_headers.items())
+            response_from_server = client.send_request(client_stream_id, request_headers_to_server,
                                                        req_body)
             if response_from_server.errors:
                 if origin in self.tls.http_conns:
@@ -348,7 +373,7 @@ class Http2ConnectionManager(object):
                 del self.tls.http_conns[origin]
             self.listening_conn.send_headers(client_stream_id, [(':status', '502')],
                                              end_stream=True)
-            authority = request_headers.get(':authority', '')
+            authority = pseudo_headers.get(':authority', '')
             print(f"Connection to '{replay_server}' initiated with request to "
                   f"'{scheme}://{authority}{path}' failed: {e}")
             traceback.print_exc(file=sys.stdout)
@@ -359,7 +384,9 @@ class Http2ConnectionManager(object):
         # Http/2 response does not have reason phrase.
         empty_reason_phrase = ''
 
-        self.print_info(request_headers, req_body, filtered_response_headers,
+        request_headers_for_print = list(pseudo_headers.items()) + list(request_headers.items())
+
+        self.print_info(request_headers_for_print, req_body, filtered_response_headers,
                         response_from_server.body, response_from_server.trailers,
                         response_from_server.status_code, empty_reason_phrase)
         return filtered_response_headers, response_from_server.body, response_from_server.trailers
@@ -378,7 +405,9 @@ class Http2ConnectionManager(object):
                              for k, v in urllib.parse.parse_qsl(s, keep_blank_values=True))
 
         print("==== REQUEST HEADERS ====")
-        for k, v in request_headers.items():
+        header_items = request_headers.items() if hasattr(request_headers,
+                                                          'items') else request_headers
+        for k, v in header_items:
             print(f"{k}: {v}")
 
         if req_body is not None:

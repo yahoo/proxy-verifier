@@ -11,10 +11,11 @@
 #include "core/ProxyVerifier.h"
 
 #include <cassert>
+#include <cstring>
 #include <filesystem>
 #include <fcntl.h>
 #include <ngtcp2/ngtcp2.h>
-#include <ngtcp2/ngtcp2_crypto_quictls.h>
+#include <ngtcp2/ngtcp2_crypto_ossl.h>
 #include <netdb.h>
 
 #include "swoc/bwf_ex.h"
@@ -141,7 +142,7 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::Ngtcp2Error const &error)
     w.write(short_name(error._e));
     auto const *error_reason = ngtcp2_strerror(error._e);
     if (error_reason != nullptr) {
-      w.write(error_reason);
+      w.write(error_reason, std::strlen(error_reason));
     }
     if (spec._type != 's' && spec._type != 'S') {
       w.write(' ');
@@ -208,7 +209,7 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::Nghttp3Error const &error)
     w.write(short_name(error._e));
     auto const *error_reason = nghttp3_strerror(error._e);
     if (error_reason != nullptr) {
-      w.write(error_reason);
+      w.write(error_reason, std::strlen(error_reason));
     }
     if (spec._type != 's' && spec._type != 'S') {
       w.write(' ');
@@ -493,11 +494,11 @@ static ngtcp2_callbacks client_ngtcp2_callbacks = {
     nullptr, /* lost_datagram */
     ngtcp2_crypto_get_path_challenge_data_cb,
     cb_stream_stop_sending,
-    nullptr, /* version_negotiation */
+    ngtcp2_crypto_version_negotiation_cb,
     cb_recv_rx_key,
     nullptr, /* recv_tx_key */
     nullptr, /* early_data_rejected */
-
+    nullptr, /* begin_path_validation */
 };
 
 // TODO: fill this out when we add server-side code.
@@ -1379,6 +1380,10 @@ static nghttp3_callbacks nghttp3_client_callbacks = {
     cb_h3_reset_stream,
     nullptr, /* shutdown */
     nullptr, /* rcv_settings */
+    nullptr, /* recv_origin */
+    nullptr, /* end_origin */
+    nullptr, /* rand */
+    nullptr, /* recv_settings2 */
 };
 // -----------------------------------------------------
 // End nghttp3 callbacks.
@@ -1395,6 +1400,10 @@ initialize_nghttp3_connection(H3Session *session)
   int64_t ctrl_stream_id = 0;
   int64_t qpack_enc_stream_id = 0;
   int64_t qpack_dec_stream_id = 0;
+
+  if (qs.h3conn != nullptr) {
+    return SUCCEEDED;
+  }
 
   auto const max_streams = ngtcp2_conn_get_streams_uni_left(qs.qconn);
   if (max_streams < 3) {
@@ -1497,9 +1506,14 @@ QuicSocket::~QuicSocket()
   }
   qlogfd = -1;
   if (ssl != nullptr) {
+    SSL_set_app_data(ssl, nullptr);
     SSL_free(ssl);
   }
   ssl = nullptr;
+  if (ossl_ctx != nullptr) {
+    ngtcp2_crypto_ossl_ctx_del(ossl_ctx);
+  }
+  ossl_ctx = nullptr;
   ngtcp2_conn_del(qconn);
   nghttp3_conn_del(h3conn);
 }
@@ -1526,7 +1540,7 @@ QuicSocket::open_qlog_file()
     qlog_filename += std::string{hex, strlen(hex)};
   }
   qlog_filename += std::string{".qlog"};
-  qlog_path /= qlog_filename;
+  qlog_path /= std::string_view{qlog_filename};
 
   qlogfd = ::open(qlog_path.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
@@ -2179,6 +2193,10 @@ H3Session::init(int *process_exit_code, TextView qlog_dir)
 {
   Errata errata;
   H3Session::process_exit_code = process_exit_code;
+  if (ngtcp2_crypto_ossl_init() != 0) {
+    errata.note(S_ERROR, "ngtcp2_crypto_ossl_init failed.");
+    return errata;
+  }
   errata.note(QuicSocket::configure_qlog_dir(qlog_dir));
   errata.note(H3Session::client_ssl_ctx_init(_h3_client_context));
   errata.note(H3Session::server_ssl_ctx_init(_h3_server_context));
@@ -2208,14 +2226,6 @@ H3Session::client_ssl_ctx_init(SSL_CTX *&client_context)
 {
   Errata errata;
   client_context = SSL_CTX_new(TLS_method());
-
-  if (ngtcp2_crypto_quictls_configure_client_context(client_context) != 0) {
-    errata.note(
-        S_ERROR,
-        "ngtcp2_crypto_quictls_configure_client_context failed: {}",
-        swoc::bwf::SSLError{});
-    return errata;
-  }
 
   SSL_CTX_set_default_verify_paths(client_context);
 
@@ -2260,12 +2270,28 @@ H3Session::client_ssl_session_init(SSL_CTX *client_context)
 
   assert(quic_socket.ssl == nullptr);
   quic_socket.ssl = SSL_new(client_context);
+  if (quic_socket.ssl == nullptr) {
+    errata.note(S_ERROR, "SSL_new failed: {}", swoc::bwf::SSLError{});
+    return errata;
+  }
+  if (ngtcp2_crypto_ossl_ctx_new(&quic_socket.ossl_ctx, nullptr) != 0) {
+    errata.note(S_ERROR, "ngtcp2_crypto_ossl_ctx_new failed.");
+    return errata;
+  }
+  ngtcp2_crypto_ossl_ctx_set_ssl(quic_socket.ossl_ctx, quic_socket.ssl);
+  quic_socket.conn_ref.get_conn = get_conn;
+  quic_socket.conn_ref.user_data = this;
 
   if (SSL_set_app_data(quic_socket.ssl, &this->quic_socket.conn_ref) == 0) {
     errata.note(S_ERROR, "SSL_set_app_data failed: {}", swoc::bwf::SSLError{});
   }
+  if (ngtcp2_crypto_ossl_configure_client_session(quic_socket.ssl) != 0) {
+    errata.note(
+        S_ERROR,
+        "ngtcp2_crypto_ossl_configure_client_session failed: {}",
+        swoc::bwf::SSLError{});
+  }
   SSL_set_connect_state(quic_socket.ssl);
-  SSL_set_quic_use_legacy_codepoint(quic_socket.ssl, 0);
 
   alpn = reinterpret_cast<uint8_t const *>(H3_ALPN_H3_29_H3.data());
   alpnlen = H3_ALPN_H3_29_H3.size();
@@ -2370,10 +2396,8 @@ H3Session::client_session_init(PacketIoContext *packet_context)
     return errata;
   }
 
-  ngtcp2_conn_set_tls_native_handle(quic_socket.qconn, quic_socket.ssl);
+  ngtcp2_conn_set_tls_native_handle(quic_socket.qconn, quic_socket.ossl_ctx);
   ngtcp2_ccerr_default(&quic_socket.last_error);
-  quic_socket.conn_ref.get_conn = get_conn;
-  quic_socket.conn_ref.user_data = this;
 
   // Commence handshake.
   if (ngtcp2_progress_egress(*this, packet_context) < 0) {

@@ -3,7 +3,12 @@ PartName("tests")
 
 DependsOn([
     Component("libswoc.static"),
-    Component("nghttp2", requires=REQ.DEFAULT(internal=False)), "proxy-verifier.core"
+    Component("openssl", requires=REQ.DEFAULT(internal=False)),
+    Component("nghttp2", requires=REQ.DEFAULT(internal=False)),
+    Component("ngtcp2", requires=REQ.DEFAULT(internal=False)),
+    Component("nghttp3", requires=REQ.DEFAULT(internal=False)),
+    Component("yaml-cpp"),
+    "proxy-verifier.core",
 ])
 
 env.AppendUnique(CCFLAGS=['-std=c++17', '-g'], )
