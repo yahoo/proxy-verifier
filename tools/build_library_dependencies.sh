@@ -2,7 +2,7 @@
 #
 # Build QUIC/HTTP3 library dependencies.
 #
-# Copyright 2023, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 

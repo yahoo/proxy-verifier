@@ -2,7 +2,7 @@
 #
 # Given a commit, update all the Copyrights of the changed files.
 #
-# Copyright 2021, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -15,10 +15,19 @@ fail()
 }
 [ $# -eq 1 ] || fail "Provide a git commit to check changed files for.\n\n${usage}"
 commit=${1}
-tools_dir=$(dirname $0)
-git_root=$(dirname ${tools_dir})
-cd ${git_root}
+tools_dir=$(dirname "$0")
+git_root=$(dirname "${tools_dir}")
+cd "${git_root}"
 current_year=$(date +%Y)
-sed -i'.sedbak' "s/Copyright 20[[:digit:]][[:digit:]]/Copyright ${current_year}/g" \
-  `git diff-tree --no-commit-id --name-only -r ${commit}`
+
+while IFS= read -r -d '' changed_file; do
+  [ -f "${changed_file}" ] || continue
+  grep -q "Copyright " "${changed_file}" || continue
+  sed -i'.sedbak' \
+    "s/Copyright 20[[:digit:]][[:digit:]]/Copyright ${current_year}/g" \
+    "${changed_file}"
+done < <(
+  git diff-tree --no-commit-id --name-only --diff-filter=ACMRTUXB -r -z "${commit}"
+)
+
 find . -name '*.sedbak' -delete

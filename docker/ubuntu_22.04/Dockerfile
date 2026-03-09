@@ -7,8 +7,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Packages for building Proxy Verifier and its dependencies.
 RUN apt-get update; \
     apt-get install -y \
-        python3-pip libssl-dev autoconf libtool pkg-config git curl sudo
-RUN python3 -m pip install uv
+        python3-pip libssl-dev autoconf automake libtool pkg-config git curl sudo make
+RUN python3 -m pip install "cmake==4.2.3" ninja uv
 
 # Install the library dependencies in /opt.
 WORKDIR /var/tmp

@@ -1,7 +1,7 @@
 /** @file
  * Common implementation for Proxy Verifier
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -706,7 +706,7 @@ receive_nghttp2_request(
   while (!session_data->is_closed() && session_data->get_is_server() &&
          !session_data->get_a_stream_has_ended())
   {
-    if (start_time - ClockType::now() > timeout) {
+    if (ClockType::now() - start_time > timeout) {
       return 0;
     }
     int n = SSL_read(session_data->get_ssl(), buffer, sizeof(buffer));

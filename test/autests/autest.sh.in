@@ -1,0 +1,40 @@
+#!/bin/bash
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+fail()
+{
+  echo "$1"
+  exit 1
+}
+
+script_dir=$(cd "$(dirname "$0")" && pwd)
+source_autest_dir="@CMAKE_CURRENT_SOURCE_DIR@"
+default_verifier_bin="${script_dir}/bin"
+
+pushd "${source_autest_dir}" > /dev/null
+export PYTHONPATH="$(pwd):${PYTHONPATH}"
+./test-env-check.sh || fail "Setting up the test environment failed."
+
+args=("$@")
+has_verifier_bin=false
+for ((i = 0; i < ${#args[@]}; ++i)); do
+  case "${args[$i]}" in
+    --verifier-bin|--verifier-bin=*)
+      has_verifier_bin=true
+      break
+      ;;
+  esac
+done
+
+if [[ "${has_verifier_bin}" == false && -z "${VERIFIER_BIN:-}" ]]; then
+  export VERIFIER_BIN="${default_verifier_bin}"
+fi
+
+# this is for rhel or centos systems
+echo "Environment config finished. Running AuTest..."
+uv run autest -D gold_tests "${args[@]}"
+ret=$?
+popd > /dev/null
+exit $ret

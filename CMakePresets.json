@@ -1,0 +1,200 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 4,
+    "minor": 2,
+    "patch": 3
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_INSTALL_BINDIR": "bin"
+      }
+    },
+    {
+      "name": "dev-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "/usr/local"
+      }
+    },
+    {
+      "name": "external-base",
+      "hidden": true,
+      "inherits": "dev-base",
+      "cacheVariables": {
+        "PV_BOOTSTRAP_DEPS": "OFF",
+        "PV_DEPS_ROOT": "/opt/pv_libs"
+      }
+    },
+    {
+      "name": "bootstrap-base",
+      "hidden": true,
+      "inherits": "dev-base",
+      "cacheVariables": {
+        "PV_BOOTSTRAP_DEPS": "ON"
+      }
+    },
+    {
+      "name": "release-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "/tmp",
+        "PV_RELEASE_LAYOUT": "ON",
+        "PV_STATIC_BUILD": "ON"
+      }
+    },
+    {
+      "name": "release-external-base",
+      "hidden": true,
+      "inherits": "release-base",
+      "cacheVariables": {
+        "PV_BOOTSTRAP_DEPS": "OFF",
+        "PV_DEPS_ROOT": "/opt/pv_libs"
+      }
+    },
+    {
+      "name": "dev-bootstrap",
+      "inherits": "bootstrap-base"
+    },
+    {
+      "name": "dev-bootstrap-asan",
+      "inherits": "dev-bootstrap",
+      "cacheVariables": {
+        "PV_ENABLE_ASAN": "ON"
+      }
+    },
+    {
+      "name": "dev-external",
+      "inherits": "external-base"
+    },
+    {
+      "name": "ci",
+      "inherits": "external-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "release-native",
+      "inherits": "release-external-base"
+    },
+    {
+      "name": "release-linux-amd64",
+      "inherits": "release-external-base",
+      "cacheVariables": {
+        "PV_RELEASE_TARGET": "linux-amd64"
+      }
+    },
+    {
+      "name": "release-linux-arm64",
+      "inherits": "release-external-base",
+      "cacheVariables": {
+        "PV_RELEASE_TARGET": "linux-arm64"
+      }
+    },
+    {
+      "name": "release-darwin-arm64",
+      "inherits": "release-external-base",
+      "cacheVariables": {
+        "PV_RELEASE_TARGET": "darwin-arm64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev-bootstrap",
+      "configurePreset": "dev-bootstrap"
+    },
+    {
+      "name": "dev-bootstrap-asan",
+      "configurePreset": "dev-bootstrap-asan"
+    },
+    {
+      "name": "dev-external",
+      "configurePreset": "dev-external"
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci"
+    },
+    {
+      "name": "release-native",
+      "configurePreset": "release-native",
+      "targets": [
+        "all",
+        "install/strip"
+      ]
+    },
+    {
+      "name": "release-linux-amd64",
+      "configurePreset": "release-linux-amd64",
+      "targets": [
+        "all",
+        "install/strip"
+      ]
+    },
+    {
+      "name": "release-linux-arm64",
+      "configurePreset": "release-linux-arm64",
+      "targets": [
+        "all",
+        "install/strip"
+      ]
+    },
+    {
+      "name": "release-darwin-arm64",
+      "configurePreset": "release-darwin-arm64",
+      "targets": [
+        "all",
+        "install/strip"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev-bootstrap",
+      "configurePreset": "dev-bootstrap",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-bootstrap-asan",
+      "configurePreset": "dev-bootstrap-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "dev-external",
+      "configurePreset": "dev-external",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-native",
+      "configurePreset": "release-native",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

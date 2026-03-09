@@ -3,7 +3,7 @@ Implement the Test Proxy autest common setup extension.
 '''
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -11,7 +11,8 @@ import os
 
 
 def check_file(dir_name, file_name):
-    if not os.path.isfile(file_name):
+    candidate = os.path.join(dir_name, file_name)
+    if not os.path.isfile(candidate):
         hint = ''
         if os.path.isfile(os.path.join(dir_name, 'bin', file_name)):
             hint = "\nDid you mean '--verifier-bin {}'?".\
@@ -19,28 +20,40 @@ def check_file(dir_name, file_name):
         host.WriteError(
             "verifier-server is not found. Aborting tests - "
             "Bad build or install.{}".format(hint), show_stack=False)
+    return candidate
+
+
+def resolve_verifier_bin():
+    if Arguments.verifier_bin is not None:
+        return Arguments.verifier_bin
+
+    env_verifier_bin = ENV.get('VERIFIER_BIN')
+    if env_verifier_bin is not None:
+        return env_verifier_bin
+
+    return "/usr/local/bin"
 
 
 if Arguments.verifier_bin is not None:
     # Add environment variables
     ENV['VERIFIER_BIN'] = Arguments.verifier_bin
 
-if ENV['VERIFIER_BIN'] is not None:
-    # Add variables for Tests
-    verifier_bin = ENV['VERIFIER_BIN']
-    if not os.path.isdir(verifier_bin):
-        host.WriteError("--verifier-bin requires a directory", show_stack=False)
-    verifier_client = os.path.join(verifier_bin, "verifier-client")
-    check_file(verifier_bin, verifier_client)
-    verifier_server = os.path.join(verifier_bin, "verifier-server")
-    check_file(verifier_bin, verifier_server)
+verifier_bin = resolve_verifier_bin()
+if not os.path.isdir(verifier_bin):
+    host.WriteError(
+        "--verifier-bin requires a directory. "
+        "Prefer running the build-generated autest.sh from the build directory, "
+        "or use --verifier-bin <build preset>/bin for build-tree binaries.", show_stack=False)
 
-    new_variables = {
-        'VERIFIER_BIN': verifier_bin,
-        'VERIFIER_CLIENT': verifier_client,
-        'VERIFIER_SERVER': verifier_server,
-    }
-    Variables.update(new_variables)
+verifier_client = check_file(verifier_bin, "verifier-client")
+verifier_server = check_file(verifier_bin, "verifier-server")
+
+new_variables = {
+    'VERIFIER_BIN': verifier_bin,
+    'VERIFIER_CLIENT': verifier_client,
+    'VERIFIER_SERVER': verifier_server,
+}
+Variables.update(new_variables)
 
 # Modify delay times as we always have to kill server-replay, thus there's no
 # need to wait.

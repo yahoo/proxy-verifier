@@ -4,12 +4,12 @@ FROM centos:7
 RUN yum -y update; \
     yum install -y centos-release-scl epel-release
 RUN yum install -y \
-        git wget autoconf automake libtool \
+        git wget autoconf automake libtool make \
         devtoolset-9 rh-python38-python-devel rh-python38 \
         rh-python38-python-pip openssl11-devel
 
 RUN source /opt/rh/rh-python38/enable; \
-    pip3 install uv
+    pip3 install "cmake==4.2.3" ninja uv
 
 # Install the library dependencies in /opt.
 WORKDIR /var/tmp

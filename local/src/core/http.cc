@@ -1,7 +1,7 @@
 /** @file
  * Common implementation for Proxy Verifier
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -1041,12 +1041,12 @@ Session::write(HttpHeader const &hdr)
 swoc::Rv<int>
 Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
 {
-  assert(timeout.count() > 0);
   if (is_closed()) {
     return {-1, Errata(S_DIAG, "Poll called on a closed connection.")};
   }
+  auto const timeout_ms = std::max<chrono::milliseconds::rep>(timeout.count(), 0);
   struct pollfd pfd = {.fd = _fd, .events = events, .revents = 0};
-  return ::poll(&pfd, 1, timeout.count());
+  return ::poll(&pfd, 1, timeout_ms);
 }
 
 swoc::Rv<int>
@@ -1177,10 +1177,11 @@ Session::drain_body(
     return num_drained_body_bytes;
   }
 
-  // Read the above conditionals: they should guaranteed that
-  // expected_content_size > initial.size()
-  assert(expected_content_size > num_drained_body_bytes);
-  auto buff_storage_size = expected_content_size;
+  // Non-chunked bodies are handled above when the drained size already
+  // satisfies our expectation. Chunked bodies can legitimately begin with
+  // zero content bytes or an amount of buffered data that already meets the
+  // nominal content size, so size the buffer from the larger known value.
+  auto buff_storage_size = std::max(expected_content_size, num_drained_body_bytes.result());
   if (expected_content_size > MAX_DRAIN_BUFFER_SIZE) {
     num_drained_body_bytes.note(
         S_DIAG,

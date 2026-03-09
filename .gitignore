@@ -37,7 +37,8 @@
 /lib/cmake
 /lib/pkgconfig
 /lib64
-/cmake*
+/cmake-build*
+/build/
 
 # Editor artifacts.
 .vscode

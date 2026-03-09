@@ -5,17 +5,19 @@ description: Format and build Proxy Verifier.
 
 # Build Proxy Verifier
 
-Proxy Verifier is built via scons and scons-parts. One of the challenges is
-that the project, in order to be built with full HTTP/2 and Quic support,
-requires building a set of libraries to support these features, such
-as openssl, nghttp2, and nghttp3. This skill explains how to build these
-dependencies and the proxy verifier project.
+Proxy Verifier is built with CMake and the checked-in presets. The main build
+choices are:
+
+- `dev-external`: use a prebuilt dependency tree such as `/opt/pv_libs`.
+- `dev-bootstrap`: let CMake fetch and build the QUIC/TLS dependencies.
+- `dev-bootstrap-asan`: ASan build.
+- `release-native`: stage stripped release binaries under `/tmp/proxy-verifier-v<version>/<platform>`.
 
 ## Dependency build
 
-Proxy verifier dependencies are installed in: `/opt/pv_libs`. If that directory
-does not exist, or if the user explicitly asks to rebuild it, then run the
-following to build them:
+Proxy verifier can still use an external dependency tree in `/opt/pv_libs`. If
+that directory does not exist, or if the user explicitly asks to rebuild it,
+run the following:
 
 ```bash
 sudo rm -rf /opt/pv_libs # If the user is asking to reinstall the libraries.
@@ -42,19 +44,21 @@ first repair step should be:
 brew reinstall perl autoconf automake
 ```
 
-## Subsequent builds
+## Build commands
 
-Once `/opt/pv_libs` exists, the build is done via scons:
+For an external dependency tree where the dependencies live in /opt/pv_libs:
 
 ```bash
-if [ "$(uname)" = "Linux" ]
-then
-  num_threads=$(nproc)
-else
-  num_threads=$(sysctl -n hw.logicalcpu)
-fi
-uv run scons -j${num_threads} --with-libs=/opt/pv_libs
+cmake --preset dev-external
+cmake --build --preset dev-external --parallel
+```
+
+For CMake-managed dependency bootstrap:
+
+```bash
+cmake --preset dev-bootstrap
+cmake --build --preset dev-bootstrap --parallel
 ```
 
 On macOS, keep the `CC`, `CXX`, and `SDKROOT` exports above in the environment
-for the `scons` build as well.
+for the CMake configure and build as well.

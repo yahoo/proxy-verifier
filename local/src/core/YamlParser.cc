@@ -1,7 +1,7 @@
 /** @file
  * Definition of YamlParser.
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -571,11 +571,6 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
   if (auto const &version_node{headers_frame[YAML_HTTP_VERSION_KEY]}; version_node) {
     if (version_node.IsScalar()) {
       message._http_version = Localizer::localize(version_node.Scalar());
-      // The message._http_protocol will already, by default, be HTTP_1. For
-      // HTTP/2 and HTTP/3, it is the responsibility of session-parsing (as
-      // opposed to this transaction parsing) to set the _http_protocol
-      // correctly via set_is_http2() or set_is_http3().
-      assert(message.is_http1());
     } else {
       errata.note(
           S_ERROR,

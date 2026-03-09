@@ -1,7 +1,7 @@
 /** @file
  * This file used for catch based tests. It is the main() stub.
  *
- * Copyright 2020, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 

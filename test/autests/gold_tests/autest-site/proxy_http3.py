@@ -3,7 +3,7 @@ Implement HTTP/3 proxy behavior in Python.
 '''
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 import asyncio

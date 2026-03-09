@@ -3,7 +3,7 @@ Implement HTTP/1 proxy behavior in Python.
 '''
 # @file
 #
-# Copyright 2022, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 

@@ -1630,198 +1630,176 @@ on your local machine for development and testing purposes.
 
 #### Prerequisites
 
-Proxy Verifier is built using [SCons](https://scons.org). Scons is a Python
-module, so installing it is as straightforward as installing any Python
-package. A top-level
-[pyproject.toml](https://github.com/yahoo/proxy-verifier/tree/master/pyproject.toml)
-is provided to install SCons under [uv](https://docs.astral.sh/uv/), and its
-use is described and assumed in these instructions.
+Proxy Verifier is built with CMake and the checked-in
+[`CMakePresets.json`](https://github.com/yahoo/proxy-verifier/tree/master/CMakePresets.json)
+presets. The build requires:
 
-Scons will clone and build the dependent libraries using Automake. Thus
-building will require the installation of the following system packages:
-
+* CMake 4.2.3 or newer
+* Ninja
 * git
-* uv
+* make
 * autoconf
+* automake
 * libtool
 * pkg-config
 
-For system-specific commands to install these packages (Ubuntu, CentOS, etc.),
-one can view the
-[Dockerfile](https://docs.docker.com/engine/reference/builder/) documents
-provided under
-[docker](https://github.com/yahoo/proxy-verifier/tree/master/docker). These
-demonstrate, for each system, what commands are used to install these package
-dependencies. Naturally, performing a `docker build` against these Dockerfiles
-can also be used to create Docker images, containers from which builds can be
-performed.
-
-In addition to the above system package dependencies, Proxy Verifier utilizes
-the following C++ libraries:
-
-* [OpenSSL](https://www.openssl.org) is used to implement TLS encryption.
-  Proxy Verifier requires the version of OpenSSL that supports QUIC.
-* [Nghttp2](https://nghttp2.org) is used for parsing HTTP/2 traffic.
-* [ngtcp2](https://github.com/ngtcp2/ngtcp2) is used for parsing QUIC
-  traffic.
-* [nghttp3](https://github.com/ngtcp2/nghttp3) is used for parsing HTTP/3
-  traffic.
-* [yaml-cpp](https://github.com/jbeder/yaml-cpp) is used for parsing the YAML
-  replay files.
-* [libswoc](https://github.com/SolidWallOfCode/libswoc) are a set of C++
-  library extensions to support string parsing, memory management, logging, and
-  other features.
-
-*Note*: None of these libraries need to be explicitly installed before you
-build.  By default, Scons will fetch and build each of these libraries as a
-part of building the project.
+CMake fetches pinned `libswoc` and `yaml-cpp` sources during configure. The
+remaining QUIC and TLS dependencies can either be bootstrapped as part of the
+CMake build or provided from an existing install tree such as `/opt/pv_libs`
+(see [Using Prebuilt Libraries](#using-prebuilt-libraries) below).
 
 #### Build
 
-Once the above-listed system packages (git, autoconf, etc.) are installed on
-your system, you can build Proxy Verifier using Scons. This involves first
-running the `scons` command under `uv`. `uv run` will create the virtual
-environment automatically if it does not already exist. Here is an example
-invocation:
+For the common external-dependency layout used by the Dockerfiles (HTTP library
+dependencies are installed in `/opt/pv_libs`), configure and build with the
+`dev-external` preset:
 
 ```
-# Note: for older RHEL/CentOS systems, you will have to souce the appropriate
-# Python 3 enable script to initialize the correct Python 3 environment. For
-# example:
-# source /opt/rh/rh-python38/enable
-uv run scons -j4
+cmake --preset dev-external
+cmake --build --preset dev-external --parallel
 ```
 
-This will build and install `verifier-client` and `verifier-server` in the
-`bin/` directory at the root of the repository. `-j4` directs Scons to build
-with 4 threads. Adjust according to the capabilities of your build system.
+This places the build-tree binaries under `build/dev-external/bin`.
+
+#### Bootstrapping Dependencies Under CMake
+
+If you want CMake to fetch and build OpenSSL, nghttp3, ngtcp2, and nghttp2 as
+part of the build, use the `dev-bootstrap` preset:
+
+```
+cmake --preset dev-bootstrap
+cmake --build --preset dev-bootstrap --parallel
+```
+
+This populates the dependency prefix under `build/dev-bootstrap/pv-deps/`.
 
 #### Using Prebuilt Libraries
 
-As mentioned above, Scons will by default fetch the various library
-dependencies (OpenSSL, Nghttp2, etc.), build, and manage those for you. If you
-do not change the fetched source code for these libraries, they will not be
-rebuilt after the first `scons` build invocation. This behavior is convenient
-as it relieves the burden of fetching and building these libraries from the
-developer. However, Scons will rescan the fetched source trees for these
-libraries on every call of `scons` to inspect them for any changes. For
-long-term development projects, a developer may find it more efficient to build
-these libraries externally and relieve Scons from managing them. To
-conveniently support this, the
+If you prefer to manage the external QUIC/TLS libraries separately, use the
 [build_library_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_library_dependencies.sh)
-script is provided to build these libraries. To build and install the
-libraries, run that script, passing as an argument the desired install location
-for the various libraries. Then point Scons at that directory with the
-`--with-libs` directive.
-
-Here's an example invocation of `scons` along with the use of the library build
 script:
 
-```
-# Alter this to your desired library location.
+```bash
 http3_libs_dir=${HOME}/src/http3_libs
 
+# The following takes a while as it builds openssl and various ng* libraries.
 bash ./tools/build_library_dependencies.sh ${http3_libs_dir}
-
-uv run scons -j4 --with-libs=${http3_libs_dir}
+cmake --preset dev-external -DPV_DEPS_ROOT=${http3_libs_dir}
+cmake --build --preset dev-external --parallel
 ```
 
-The [Dockerfile](https://github.com/yahoo/proxy-verifier/tree/master/docker)
-documents use `/opt/pv_libs` as the install location for these libraries.
-Therefore, if you are developing in an environment that follows the same
-layout, you can use the following `scons` command to build Proxy Verifier:
+The checked-in `dev-external` preset assumes `/opt/pv_libs`, which matches the
+provided Dockerfiles. Thus:
+
+```bash
+http3_libs_dir=/opt/pv_libs
+
+# The following takes a while as it builds openssl and various ng* libraries.
+bash ./tools/build_library_dependencies.sh ${http3_libs_dir}
+cmake --preset dev-external
+cmake --build --preset dev-external --parallel
+```
+
+#### Install
+
+The install root is fully configurable through standard CMake install
+variables. For normal local installs, the development presets default to
+`/usr/local`. To install the `dev-external` build there:
 
 ```
-uv run scons -j4 --with-libs=/opt/pv_libs
+cmake --install build/dev-external
 ```
 
-As a further convenience, if these libraries (`openssl`, `nghttp2`, `ngtcp2`,
-and `nghttp3`, with those exact names) exist under a single directory, such as
-is the case with the provided
-[Dockerfile](https://github.com/yahoo/proxy-verifier/tree/master/docker)
-documents, then you can specify the location of these libraries with a single
-`--with-libs` argument. Thus the previous command can be expressed like so:
-
-```
-uv run scons -j4 --with-libs=/opt/pv_libs
-```
+This places `verifier-client` and `verifier-server` under `/usr/local/bin` by
+default.
 
 #### ASan Instrumentation
 
-The local Sconstruct file is configured to take an optional `--enable-asan`
-parameter. If this is passed to the `scons` build line then the Proxy Verifier
-objects and binaries will be compiled and linked with the flags that instrument
-them for [AddressSanatizer](https://clang.llvm.org/docs/AddressSanitizer.html).
-This assumes that the system has the AddressSanatizer library installed on the
-system. Thus the above invocation would look like the following to compile it
-with AddressSanitizer instrumentation:
+Use the `dev-bootstrap-asan` preset or enable `PV_ENABLE_ASAN` directly:
 
 ```
-uv run scons -j4 --with-libs=/opt/pv_libs --enable-asan
+cmake --preset dev-bootstrap-asan
+cmake --build --preset dev-bootstrap-asan --parallel
 ```
 
 #### Debug Build
 
-By default, Scons will build the Proxy Verifier project in `release` mode. This
-means that the binaries will compiled with optimization. If an unoptimized
-debug build is desired, then pass the `--cfg=debug` option to `scons`:
+The development presets inherit from a shared `dev-base` preset and default to
+`CMAKE_BUILD_TYPE=Debug`.
+
+#### Release Build
+
+Release artifacts inherit from a shared `release-base` preset. The
+`release-native` preset builds a static `Release` binary and automatically maps
+the current platform to a release directory name such as `linux-amd64`,
+`linux-arm64`, or `darwin-arm64`.
 
 ```
-uv run scons -j4 --cfg=debug
+cmake --preset release-native
+cmake --build --preset release-native --parallel
 ```
+
+The `release-native` build preset drives the normal build and the
+`install/strip` target, so it stages stripped binaries under
+`/tmp/proxy-verifier-v<version>/<platform>` as part of the build. For example,
+on an Apple Silicon Mac the build places the binaries under
+`/tmp/proxy-verifier-v2.12.1/darwin-arm64`.
+
+The `<version>` portion comes from the top-level
+`project(ProxyVerifier VERSION ...)` declaration in
+[`CMakeLists.txt`](/Users/bneradt/project_not_synced/codex/fix_tickets_4/proxy-verifier/CMakeLists.txt).
+CMake exposes that value as `PROJECT_VERSION`, and the release layout logic
+uses it when `PV_RELEASE_LAYOUT=ON` to turn the default `/tmp` install prefix
+into `/tmp/proxy-verifier-v${PROJECT_VERSION}`. The `--version` output uses
+that same `PROJECT_VERSION` value via the build's compile definitions, so the
+CLI version string and release staging directory stay in sync.
+
+For CI or dedicated builders, the explicit `release-linux-amd64`,
+`release-linux-arm64`, and `release-darwin-arm64` presets are also available.
+They are native-only and fail fast if used on the wrong platform.
 
 #### Statically Link
 
-The current Scons configuration dynamically links the binaries with the various
-OpenSSL and HTTP build libraries. This is fine for local testing and execution,
-but can be inconvenient when copying the binaries to other machines. Ideally
-the
-[Sconstruct](https://github.com/yahoo/proxy-verifier/blob/master/Sconstruct)
-file can be updated to support an option to link the binaries statically. This
-currently does not exist and is not trivial to create. Future updates to
-`scons-parts` may help with this. As a current stopgap measure,
-[tools/build_static](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_static)
-is provided which automatically links the Verifier binaries statically. It is
-run from the root directory of your repository like so:
+For a build that links Proxy Verifier and its third-party dependencies
+statically, use a release preset:
 
 ```
-./tools/build_static
+cmake --preset release-native
+cmake --build --preset release-native --parallel
 ```
 
-By default this builds Proxy Verifier with the following invocation:
-
-```
-uv run scons -j$(nproc)
-```
-
-Any arguments passed to `build_static` will be passed through to the scons
-command. Thus, if you desire to build Proxy Verifier with
-`--with-libs=/opt/pv_libs`,
-run the script like so:
-
-```
-./tools/build_static --with-libs=/opt/pv_libs
-```
+On Linux this targets a fully static executable. On macOS it links Proxy
+Verifier and its third-party dependencies via static archives while leaving the
+system libraries dynamic. The staged release binaries land under
+`/tmp/proxy-verifier-v<version>/<platform>`.
 
 ### Running the Tests
 
 #### Unit Tests
 
-To build and run the unit tests, use the `run_utest` Scons target:
+Build the test executable with CMake, then run it through CTest:
 
 ```
-uv run scons -j4 --with-libs=/opt/pv_libs run_utest::
+cmake --preset dev-external
+cmake --build --preset dev-external --parallel
+ctest --preset dev-external
 ```
 
 #### Gold Tests
 Proxy Verifier ships with a set of automated end to end tests written using the
 [AuTest](https://bitbucket.org/autestsuite/reusable-gold-testing-system/src/master/)
-framework. To run them, simply run the `autest.sh` script:
+framework. After configuring a preset, CMake generates an `autest.sh` wrapper
+in that build directory. To run the tests for `dev-external`, use:
 
 ```
-cd test/autests
-./autest.sh
+./build/dev-external/autest.sh
 ```
+
+That wrapper defaults `VERIFIER_BIN` to its sibling `bin/` directory, so each
+build tree uses its own `verifier-client` and `verifier-server` binaries. If
+you bypass the wrapper and invoke AuTest directly, binary lookup still follows
+this order: explicit `--verifier-bin`, then `VERIFIER_BIN`, then
+`/usr/local/bin`.
 
 When doing development for which a particular AuTest is relevant, the `-f`
 option can be used to run just a particular test (or set of tests, specified
@@ -1829,10 +1807,11 @@ in a space-separated list). For instance, the following invocation runs
 just the http and https tests:
 
 ```
-./autest.sh -f http https
+./build/dev-external/autest.sh -f http https
 ```
 
-AuTest supports a variety of other options. Run `./autest.sh --help` to get a
+AuTest supports a variety of other options. Run
+`./build/dev-external/autest.sh --help` to get a
 quick description of the various command-line options. See the [AuTest
 Documentation](https://autestsuite.bitbucket.io) for further details about the
 framework.

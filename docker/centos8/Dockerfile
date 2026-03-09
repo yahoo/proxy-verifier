@@ -4,7 +4,7 @@ FROM centos:8
 RUN yum -y update; \
     yum install -y python38-pip git
 RUN dnf -y group install "Development Tools"
-RUN pip3 install uv
+RUN pip3 install "cmake==4.2.3" ninja uv
 
 # Install the library dependencies in /opt.
 WORKDIR /var/tmp

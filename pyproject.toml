@@ -11,6 +11,6 @@ description = "Development dependencies for Proxy Verifier"
 requires-python = ">=3.11"
 
 dependencies = [
-  "scons",
-  "scons-parts",
+  "cmake>=4.2.3",
+  "ninja",
 ]
