@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 proxy_http1.py
 
-The test HTTP/1.x proxy named test/autest/gold_test/autest-site/proxy_http1.py
+The test HTTP/1.x proxy named tests/autests/gold_tests/autest-site/proxy_http1.py
 was initially copied from:
 https://github.com/inaz2/proxy2/tree/50ae4b9ef7fbc51799f95e405d4d7adf1af239f7
 
@@ -54,7 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 proxy_http2.py
 
-The test HTTP/2 proxy named test/autest/gold_test/autest-site/proxy_http2.py
+The test HTTP/2 proxy named tests/autests/gold_tests/autest-site/proxy_http2.py
 was initially copied from:
 https://github.com/python-hyper/hyper-h2/blob/e0a3e2eb5449b78ab811f32b7672bfd4e1033cf0/examples/eventlet/eventlet-server.py
 

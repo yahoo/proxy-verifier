@@ -46,7 +46,7 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081, use
         pem_file = https_pem
         if not pem_file:
             git_root = dirname(dirname(dirname(test_root)))
-            pem_file = os.path.join(git_root, "test", "keys", "client.pem")
+            pem_file = os.path.join(git_root, "tests", "keys", "client.pem")
 
             if not os.path.isfile(pem_file):
                 raise ValueError(f"Tried to use '{pem_file}' for --https-pem, but it is not "
@@ -59,7 +59,7 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081, use
         ca_file = ca_pem
         if not ca_file:
             git_root = dirname(dirname(dirname(test_root)))
-            ca_file = os.path.join(git_root, "test", "keys", "ca.pem")
+            ca_file = os.path.join(git_root, "tests", "keys", "ca.pem")
 
             if not os.path.isfile(ca_file):
                 raise ValueError(f"Tried to use '{ca_file}' for --ca-pem, but it is not "

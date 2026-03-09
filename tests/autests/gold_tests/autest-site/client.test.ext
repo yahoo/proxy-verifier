@@ -91,7 +91,7 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
             # Search for the root-level cert.
             test_root = process.TestRoot
             git_root = dirname(dirname(dirname(test_root)))
-            ssl_cert = os.path.join(git_root, "test", "keys", "client.pem")
+            ssl_cert = os.path.join(git_root, "tests", "keys", "client.pem")
 
             if not os.path.isfile(ssl_cert):
                 raise ValueError("Tried to use '{}' for --client-cert, but it is not "
@@ -107,7 +107,7 @@ def _configure_client(obj, process, name, replay_dir, find_ports=True, use_ipv6=
             # Search for the root-level cert.
             test_root = process.TestRoot
             git_root = dirname(dirname(dirname(test_root)))
-            ca_certs = os.path.join(git_root, "test", "keys", "ca.pem")
+            ca_certs = os.path.join(git_root, "tests", "keys", "ca.pem")
 
             if not os.path.exists(ca_certs):
                 raise ValueError(f"Tried to use '{ca_certs}' for --ca-certs, but it is not "
@@ -184,7 +184,7 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False, c
 
         ssl_cert: (path) The location of the cert for HTTPS encryption. If this
             is not provided and https_ports is non-empty, the root-level
-            test/keys/client.pem will be searched for and used if it can be found.
+            tests/keys/client.pem will be searched for and used if it can be found.
             To explicitly test verifier-server with no --client-cert argument, pass in
             None for ssl_cert. Whitespace can be passed in to test --client-cert with
             an empty argument.
@@ -193,7 +193,7 @@ def MakeClientProcess(test, name, replay_dir, find_ports=True, use_ipv6=False, c
             encryption. This can be either a single file with multiple
             certificate sections or a directory of certificate files.  If this
             is not provided and https_ports is non-empty, the root-level
-            test/keys/ca.pem will be searched for and used if it can be found.
+            tests/keys/ca.pem will be searched for and used if it can be found.
             To explicitly test verifier-server with no --ca-certs argument,
             pass in None for ca_certs.  Whitespace can be passed in to test
             --ca-certs with an empty argument.

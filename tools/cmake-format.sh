@@ -31,24 +31,31 @@ main() {
   tmp_dir="$(mktemp -d -t tracked-git-files.XXXXXXXXXX)"
   local files="${tmp_dir}/git_files.txt"
   local files_filtered="${tmp_dir}/git_files_filtered.txt"
+  local files_existing="${tmp_dir}/git_files_existing.txt"
 
   git ls-tree -r HEAD --name-only "${target_dir}" > "${files}"
   git diff --cached --name-only --diff-filter=A >> "${files}"
   grep -E '(^|/)CMakeLists.txt$|\.cmake$' "${files}" > "${files_filtered}" || true
 
-  if [[ ! -s "${files_filtered}" ]]; then
+  while read -r path; do
+    if [[ -f "${path}" ]]; then
+      echo "${path}"
+    fi
+  done < "${files_filtered}" > "${files_existing}"
+
+  if [[ ! -s "${files_existing}" ]]; then
     rm -rf "${tmp_dir}"
     return 0
   fi
 
-  sed -i'.bak' 's:^:\./:' "${files_filtered}"
-  rm -f "${files_filtered}.bak"
+  sed -i'.bak' 's:^:\./:' "${files_existing}"
+  rm -f "${files_existing}.bak"
 
   local start_time_file="${tmp_dir}/format_start.$$"
   touch "${start_time_file}"
   uv tool run --quiet --from "cmakelang@${CMAKE_FORMAT_VERSION}" --with pyaml \
-    cmake-format -i $(cat "${files_filtered}")
-  find $(cat "${files_filtered}") -newer "${start_time_file}"
+    cmake-format -i $(cat "${files_existing}")
+  find $(cat "${files_existing}") -newer "${start_time_file}"
 
   rm -rf "${tmp_dir}"
 }

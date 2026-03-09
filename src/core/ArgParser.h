@@ -26,8 +26,7 @@ constexpr int INDENT_TWO = 46;
 #define PROXY_VERIFIER_VERSION "unknown"
 #endif
 
-inline constexpr std::string_view Proxy_Verifier_Version{
-    PROXY_VERIFIER_VERSION};
+inline constexpr std::string_view Proxy_Verifier_Version{PROXY_VERIFIER_VERSION};
 
 namespace ts
 {

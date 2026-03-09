@@ -14,7 +14,7 @@ function main() {
   ROOT=${ROOT:-$(cd $(dirname $0) && git rev-parse --show-toplevel)/.git/fmt/${PKGDATE}}
 
   TOP_LEVEL=`cd $(dirname $0) && git rev-parse --show-toplevel`
-  DIR=${@:-"${TOP_LEVEL}/local ${TOP_LEVEL}/test"}
+  DIR=${@:-"${TOP_LEVEL}/src ${TOP_LEVEL}/tests"}
   PACKAGE="clang-format-${PKGDATE}.tar.bz2"
   VERSION="clang-format version 10.0.0 (https://github.com/llvm/llvm-project.git d32170dbd5b0d54436537b6b75beaf44324e0c28)"
 

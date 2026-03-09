@@ -34,7 +34,20 @@ fi
 uv --version &> /dev/null
 if [ $? -eq 0 ]; then
     echo "uv detected!"
+
+    recreate_venv=false
     if [ ! -d .venv ]; then
+        recreate_venv=true
+    elif ! .venv/bin/python3 --version &> /dev/null; then
+        echo "The existing virtual environment is stale. Recreating it."
+        recreate_venv=true
+    elif ! .venv/bin/autest --help &> /dev/null; then
+        echo "The existing AuTest entry point is stale. Recreating the virtual environment."
+        recreate_venv=true
+    fi
+
+    if [ "${recreate_venv}" = true ]; then
+        rm -rf .venv
         echo "Installing a new virtual environment via uv"
 
         os_name=$(uname)

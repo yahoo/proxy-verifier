@@ -178,6 +178,6 @@ pv_define_http_dependencies(
   OUT_BOOTSTRAP_PREFIX
   PV_BOOTSTRAP_PREFIX)
 
-add_subdirectory(local)
-add_subdirectory(test/autests)
-add_subdirectory(test/unit_tests)
+add_subdirectory(src)
+add_subdirectory(tests/autests)
+add_subdirectory(tests/unit_tests)

@@ -66,7 +66,7 @@ share/
 
 *.lock
 !uv.lock
-!test/autests/uv.lock
+!tests/autests/uv.lock
 
 # vim temporary files
 *.sw[a-p]

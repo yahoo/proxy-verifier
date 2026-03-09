@@ -1903,7 +1903,7 @@ certificate file containing the public and private key or a directory
 containing pem and key files. Similarly, the `--ca-certs` takes either a file
 containing one or more certificates or a directory with separate certificate
 files.  For convenience, the
-[test/keys](https://github.com/bneradt/proxy-verifier/tree/expand_readme/test/keys)
+[tests/keys](https://github.com/bneradt/proxy-verifier/tree/expand_readme/tests/keys)
 directory contains key files which can be used for testing. These certificate
 arguments are only required if HTTPS traffic will be replayed.
 

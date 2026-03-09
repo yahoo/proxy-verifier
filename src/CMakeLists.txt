@@ -1,16 +1,16 @@
 set(PV_COMMON_WARNING_FLAGS -Wall -Wextra -Werror)
 
 set(PV_CORE_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ArgParser.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/http.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/http2.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/http3.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/https.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/Localizer.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/ProxyVerifier.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/proxy_protocol_util.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/verification.cc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/YamlParser.cc")
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/ArgParser.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/http.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/http2.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/http3.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/https.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/Localizer.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/ProxyVerifier.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/proxy_protocol_util.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/verification.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/YamlParser.cc")
 
 find_package(Threads REQUIRED)
 
@@ -19,8 +19,7 @@ add_library(verifier-core STATIC ${PV_CORE_SOURCES})
 target_compile_options(verifier-core PRIVATE ${PV_COMMON_WARNING_FLAGS})
 target_compile_definitions(verifier-core
                            PUBLIC PROXY_VERIFIER_VERSION=\"${PROJECT_VERSION}\")
-target_include_directories(verifier-core
-                           PUBLIC "${PROJECT_SOURCE_DIR}/local/include")
+target_include_directories(verifier-core PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(
   verifier-core PUBLIC Threads::Threads libswoc-static yaml-cpp::yaml-cpp
                        ${PV_EXTERNAL_DEPENDENCY_TARGETS})
@@ -40,9 +39,9 @@ if(PV_ENABLE_ASAN)
 endif()
 
 add_executable(verifier-client
-               "${CMAKE_CURRENT_SOURCE_DIR}/src/client/verifier-client.cc")
+               "${CMAKE_CURRENT_SOURCE_DIR}/client/verifier-client.cc")
 add_executable(verifier-server
-               "${CMAKE_CURRENT_SOURCE_DIR}/src/server/verifier-server.cc")
+               "${CMAKE_CURRENT_SOURCE_DIR}/server/verifier-server.cc")
 
 target_link_libraries(verifier-client PRIVATE verifier-core)
 target_link_libraries(verifier-server PRIVATE verifier-core)
