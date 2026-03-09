@@ -1,0 +1,6 @@
+.git
+.github
+.venv
+build
+tests/autests/.venv
+**/__pycache__

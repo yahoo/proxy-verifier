@@ -959,6 +959,42 @@ nghttp3_receive_and_send_data(H3Session &session, milliseconds timeout)
   return errata;
 }
 
+static void
+finalize_h3_stream(int64_t stream_id, H3StreamState &stream_state)
+{
+  Errata errata;
+
+  if (stream_state.will_receive_request()) {
+    if (stream_state.specified_request && stream_state.specified_request->_content_rule) {
+      if (!stream_state.specified_request->_content_rule
+               ->test(stream_state.key, "body", swoc::TextView(stream_state.body_received)))
+      {
+        errata.note(S_DIAG, R"(Body content did not match expected value.)");
+      }
+    }
+  } else {
+    if (stream_state.specified_response && stream_state.specified_response->_content_rule) {
+      if (!stream_state.specified_response->_content_rule
+               ->test(stream_state.key, "body", swoc::TextView(stream_state.body_received)))
+      {
+        errata.note(S_DIAG, R"(Body content did not match expected value.)");
+      }
+    }
+  }
+
+  auto const &message_start = stream_state.stream_start;
+  auto const message_end = ClockType::now();
+  auto const elapsed_ms = duration_cast<milliseconds>(message_end - message_start);
+  if (elapsed_ms > Transaction_Delay_Cutoff) {
+    errata.note(
+        S_ERROR,
+        R"(HTTP/3 transaction in stream id {} with key {} took {}.)",
+        stream_id,
+        stream_state.key,
+        elapsed_ms);
+  }
+}
+
 // --------------------------------------------
 // Begin nghttp3 callbacks.
 // --------------------------------------------
@@ -1041,48 +1077,17 @@ cb_h3_stream_close(
     void *stream_user_data)
 {
   Errata errata;
-  errata.note(S_DIAG, "HTTP/3 stream is closed with id: {}", stream_id);
 
   auto *session = reinterpret_cast<H3Session *>(conn_user_data);
   auto iter = session->stream_map.find(stream_id);
   if (iter == session->stream_map.end()) {
-    errata.note(
-        S_ERROR,
-        "HTTP/3 stream is closed with id {} but could not find it tracked internally",
-        stream_id);
+    if (session->clear_completed_response_stream(stream_id)) {
+      return 0;
+    }
     return 0;
   }
   auto &stream_state = *reinterpret_cast<H3StreamState *>(stream_user_data);
-
-  if (stream_state.will_receive_request()) {
-    if (stream_state.specified_request->_content_rule) {
-      if (!stream_state.specified_request->_content_rule
-               ->test(stream_state.key, "body", swoc::TextView(stream_state.body_received)))
-      {
-        errata.note(S_DIAG, R"(Body content did not match expected value.)");
-      }
-    }
-  } else {
-    if (stream_state.specified_response->_content_rule) {
-      if (!stream_state.specified_response->_content_rule
-               ->test(stream_state.key, "body", swoc::TextView(stream_state.body_received)))
-      {
-        errata.note(S_DIAG, R"(Body content did not match expected value.)");
-      }
-    }
-  }
-
-  auto const &message_start = stream_state.stream_start;
-  auto const message_end = ClockType::now();
-  auto const elapsed_ms = duration_cast<milliseconds>(message_end - message_start);
-  if (elapsed_ms > Transaction_Delay_Cutoff) {
-    errata.note(
-        S_ERROR,
-        R"(HTTP/3 transaction in stream id {} with key {} took {}.)",
-        stream_id,
-        stream_state.key,
-        elapsed_ms);
-  }
+  finalize_h3_stream(stream_id, stream_state);
 
   session->stream_map.erase(stream_id);
 
@@ -1316,6 +1321,11 @@ cb_h3_end_stream(
     key = stream_state->key;
   }
   session_data->set_stream_has_ended(stream_id, key);
+  if (stream_state->will_receive_response()) {
+    finalize_h3_stream(stream_id, *stream_state);
+    session_data->stream_map.erase(stream_id);
+    session_data->mark_completed_response_stream(stream_id);
+  }
   return 0;
 }
 
@@ -1742,6 +1752,18 @@ H3Session::record_stream_state(int64_t stream_id, std::shared_ptr<H3StreamState>
 {
   stream_map[stream_id] = stream_state;
   _last_added_stream = stream_state;
+}
+
+void
+H3Session::mark_completed_response_stream(int64_t stream_id)
+{
+  _completed_response_streams.emplace(stream_id);
+}
+
+bool
+H3Session::clear_completed_response_stream(int64_t stream_id)
+{
+  return _completed_response_streams.erase(stream_id) > 0;
 }
 
 void

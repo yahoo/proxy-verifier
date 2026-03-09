@@ -1689,7 +1689,8 @@ cmake --build --preset dev-external --parallel
 ```
 
 The checked-in `dev-external` preset assumes `/opt/pv_libs`, which matches the
-provided Dockerfiles. Thus:
+provided Dockerfiles under `docker/rockylinux_9`, `docker/rockylinux_10`, and
+`docker/ubuntu_24.04`. Thus:
 
 ```bash
 http3_libs_dir=/opt/pv_libs
@@ -1698,6 +1699,43 @@ http3_libs_dir=/opt/pv_libs
 bash ./tools/build_library_dependencies.sh ${http3_libs_dir}
 cmake --preset dev-external
 cmake --build --preset dev-external --parallel
+```
+
+#### Development Docker Images
+
+The Dockerfiles under `docker/rockylinux_9`, `docker/rockylinux_10`, and
+`docker/ubuntu_24.04` are for development workflows, not deployment images.
+
+Each image build has two phases:
+
+* `pv-libs-builder` compiles OpenSSL, nghttp3, ngtcp2, and nghttp2 and installs them into `/opt/pv_libs`.
+* The final `dev` stage copies `/opt/pv_libs` and installs the full toolchain
+  needed to build Proxy Verifier, run unit tests and AuTests, and generate
+  release binaries. Tooling for the dev image lives in the `/opt/pv-venv`
+  virtual environment, which provides `cmake`, `ninja`, and `uv`, all available
+  in the `/opt/pv_libs/bin` added to the `PATH` per the Dockerfile `ENV`
+  configuration.
+
+The Dockerfiles are self-contained, so you can build them from within each
+image directory. By default the builder stage clones
+`https://github.com/yahoo/proxy-verifier.git` at `master` to run
+`tools/build_library_dependencies.sh`; override that with `--build-arg
+PV_REPO_URL=... --build-arg PV_REPO_REF=...` if you need a different fork or
+branch.
+
+Here's an example of building the rockylinux:9 based image:
+
+```bash
+cd docker/rockylinux_9
+docker build -t pv-dev:rocky9 .
+docker run --rm -it -v "$(git rev-parse --show-toplevel)":/workspace pv-dev:rocky9
+
+# Now, within the container.
+cd /workspace
+cmake --preset dev-external
+cmake --build --preset dev-external --parallel
+ctest --preset dev-external
+./build/dev-external/autest.sh --sandbox /tmp/pv-autest --clean=none
 ```
 
 #### Install

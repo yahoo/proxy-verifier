@@ -45,9 +45,27 @@ echo "Building with ${num_threads} threads, installing in ${install_dir}"
 echo
 
 SUDO=""
-[ -d "${install_dir}" ] || mkdir -p "${install_dir}" || sudo mkdir -p "${install_dir}"
-[ -w "${install_dir}" ] || SUDO=sudo
-sudo chmod -R ugo+rX "${install_dir}"
+[ -d "${install_dir}" ] || mkdir -p "${install_dir}" || {
+  command -v sudo >/dev/null 2>&1 || fail "Cannot create ${install_dir} without sudo"
+  sudo mkdir -p "${install_dir}"
+}
+[ -w "${install_dir}" ] || {
+  command -v sudo >/dev/null 2>&1 || fail "Cannot write to ${install_dir} without sudo"
+  SUDO=sudo
+}
+
+chmod_with_permissions() {
+  local target_dir=$1
+
+  if [ -n "${SUDO}" ]
+  then
+    sudo chmod -R ugo+rX "${target_dir}"
+  else
+    chmod -R ugo+rX "${target_dir}"
+  fi
+}
+
+chmod_with_permissions "${install_dir}"
 
 mkdir -p "${install_dir}"
 repo_dir=$(mktemp -d /var/tmp/http3_dependency_repos_XXXXXX)
@@ -75,7 +93,7 @@ install_with_permissions() {
   local target_dir=$1
 
   ${SUDO} make install
-  sudo chmod -R ugo+rX "${target_dir}"
+  chmod_with_permissions "${target_dir}"
 }
 
 cd "${repo_dir}"
@@ -86,7 +104,7 @@ cd openssl
 ./config enable-tls1_3 --prefix="${install_dir}/openssl" --libdir=lib
 make -j "${num_threads}"
 ${SUDO} make install_sw
-sudo chmod -R ugo+rX "${install_dir}/openssl"
+chmod_with_permissions "${install_dir}/openssl"
 
 # 2. nghttp3
 cd "${repo_dir}"

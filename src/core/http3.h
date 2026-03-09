@@ -383,6 +383,10 @@ public:
 
   void record_stream_state(int64_t stream_id, std::shared_ptr<H3StreamState> stream_state);
 
+  void mark_completed_response_stream(int64_t stream_id);
+
+  bool clear_completed_response_stream(int64_t stream_id);
+
 public:
   /// A mapping from stream_id to H3StreamState.
   std::unordered_map<int64_t, std::shared_ptr<H3StreamState>> stream_map;
@@ -438,6 +442,9 @@ private:
 
   /// The set of streams which have completed already.
   std::unordered_set<std::string> _finished_streams;
+
+  /// Response streams that were finalized on END_STREAM before STREAM_CLOSE.
+  std::unordered_set<int64_t> _completed_response_streams;
 
   /** The client context to use for HTTP/3 connections.
    *

@@ -38,7 +38,6 @@ x-added-header: 1
 
 ``
 0000000 0000001 0000002 0000003 
-``
 ``Equals Success: Key: "2", Field Name: "content-length", Value: "10240"
 ``Equals Success: Key: "2", Field Name: "x-response-header", Value: "response2"
 ``
@@ -76,7 +75,6 @@ content-length: 16
 
 ``
 0000000 0000001 
-``
 ``Equals Success: Key: "4", Field Name: "content-length", Value: "50"
 ``Equals Success: Key: "4", Field Name: "x-response-header", Value: "response4"
 ``
@@ -86,5 +84,4 @@ content-length: 50
 
 ``
 0000000 0000001 0000002 0000003 0000004 0000005 00
-``
 ``4 transactions in 2 sessions``

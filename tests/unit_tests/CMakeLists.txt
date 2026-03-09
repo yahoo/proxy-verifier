@@ -13,6 +13,8 @@ set(PV_UNIT_TEST_SOURCES
 
 add_executable(proxy-verifier-tests ${PV_UNIT_TEST_SOURCES})
 
+target_compile_definitions(proxy-verifier-tests
+                           PRIVATE CATCH_CONFIG_NO_POSIX_SIGNALS)
 target_compile_options(proxy-verifier-tests PRIVATE -g)
 target_include_directories(proxy-verifier-tests
                            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")

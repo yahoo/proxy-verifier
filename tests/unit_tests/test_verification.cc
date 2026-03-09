@@ -192,7 +192,7 @@ TEST_CASE("RuleChecks of duplicate fields", "[RuleCheck]")
         RuleCheck::make_rule_check(test_name, std::move(empty_values_arg), "equal");
     REQUIRE(equal_check_blank);
 
-    swoc::TextView non_empty_values{"some", "values"};
+    std::vector<swoc::TextView> non_empty_values{"some_value"};
     CHECK_FALSE(equal_check_blank->test(key, empty_name, empty_values));
     CHECK_FALSE(equal_check_blank->test(key, empty_name, non_empty_values));
     CHECK(equal_check_blank->test(key, test_name, empty_values));
