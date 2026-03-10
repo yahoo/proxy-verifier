@@ -237,7 +237,7 @@ public:
   bool have_received_headers = false;
 
   /// The time the stream started. Used for timing calculations.
-  std::chrono::time_point<std::chrono::system_clock> stream_start;
+  std::chrono::time_point<std::chrono::steady_clock> stream_start;
 
   /// The HTTP request headers for this stream.
   std::shared_ptr<HttpHeader> request_from_client;

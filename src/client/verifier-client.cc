@@ -49,7 +49,7 @@ using std::chrono::duration_cast;
 using std::chrono::microseconds;
 using std::chrono::milliseconds;
 using std::chrono::nanoseconds;
-using ClockType = std::chrono::system_clock;
+using ClockType = std::chrono::steady_clock;
 using TimePoint = std::chrono::time_point<ClockType, nanoseconds>;
 using std::this_thread::sleep_for;
 

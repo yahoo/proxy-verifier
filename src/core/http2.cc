@@ -25,7 +25,7 @@ using namespace std::literals;
 using std::this_thread::sleep_for;
 
 namespace chrono = std::chrono;
-using ClockType = std::chrono::system_clock;
+using ClockType = std::chrono::steady_clock;
 using chrono::duration_cast;
 using chrono::milliseconds;
 constexpr bool IS_TRAILER = true;

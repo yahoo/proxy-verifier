@@ -47,7 +47,7 @@ using namespace std::literals;
 using std::this_thread::sleep_for;
 
 namespace chrono = std::chrono;
-using ClockType = chrono::system_clock;
+using ClockType = chrono::steady_clock;
 using chrono::duration_cast;
 using chrono::milliseconds;
 using chrono::nanoseconds;
@@ -223,6 +223,8 @@ bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::Nghttp3Error const &error)
 
 /** Return a representation of the current time compatible with ngtcp
  * expectations.
+ *
+ * ngtcp2 expects timestamps from a monotonic clock.
  *
  * @return The current time.
  */

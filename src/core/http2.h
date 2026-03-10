@@ -77,7 +77,7 @@ public:
    * assigns from this string TextViews.
    */
   std::string _composed_url;
-  std::chrono::time_point<std::chrono::system_clock> _stream_start;
+  std::chrono::time_point<std::chrono::steady_clock> _stream_start;
   HttpHeader const *_specified_request = nullptr;
   HttpHeader const *_specified_response = nullptr;
 

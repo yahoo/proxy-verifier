@@ -653,7 +653,7 @@ struct Ssn
   swoc::file::path _path;
   unsigned _line_no = 0;
 
-  using ClockType = std::chrono::system_clock;
+  using ClockType = std::chrono::steady_clock;
   using TimePoint = std::chrono::time_point<ClockType, std::chrono::nanoseconds>;
   TimePoint _start; ///< Start time at which the session began.
 

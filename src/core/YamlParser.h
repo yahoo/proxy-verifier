@@ -379,7 +379,7 @@ private:
       swoc::TextView content = "");
 
 private:
-  using ClockType = std::chrono::system_clock;
+  using ClockType = std::chrono::steady_clock;
   using TimePoint = std::chrono::time_point<ClockType, std::chrono::nanoseconds>;
   static TimePoint _parsing_start_time;
 };

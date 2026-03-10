@@ -10,6 +10,7 @@ Implement Proxy Verifier test proxy logic
 from __future__ import print_function
 import os
 from os.path import dirname
+import uuid
 
 sentinel_counter = 0
 
@@ -79,7 +80,8 @@ def _configure_proxy(obj, process, name, listen_port=8080, server_port=8081, use
         command += " --http2_to_2"
 
     if use_http3_to_1:
-        listening_http3_sentinel = f'quic_socket_is_ready_{sentinel_counter}'
+        listening_http3_sentinel = os.path.join(
+            proxy_rundir, f'quic_socket_is_ready_{sentinel_counter}_{uuid.uuid4().hex}')
         sentinel_counter += 1
         command += f" --http3_to_1 --listening-http3-sentinel {listening_http3_sentinel}"
 
