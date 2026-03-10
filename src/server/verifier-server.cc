@@ -67,6 +67,9 @@ std::list<std::unique_ptr<std::thread>> Accept_Threads;
 /** Set this to true when it's time for the threads to stop. */
 bool Shutdown_Flag = false;
 
+/** Whether shutdown should ignore verification rules that were never reached. */
+bool Allow_Unprocessed_Verifications = false;
+
 milliseconds Poll_Timeout{5s};
 
 class ServerThreadInfo : public ThreadInfo
@@ -182,29 +185,32 @@ struct Engine
 
 int Engine::process_exit_code = 0;
 
-/** Handle SIGINT, exiting with an appropriate exit code.
+/** Handle SIGINT or SIGTERM, exiting with an appropriate exit code.
  *
  * The Proxy Verifier server is long-lived and will likely be stopped by the
- * user via a SIGINT. Handle this signal and exit with a non-zero status if
- * some error has happened over the lifetime of the server.
+ * user via a signal from the test harness. Handle this signal and exit with a
+ * non-zero status if some error has happened over the lifetime of the server.
  *
  * @param[in] signal The signal number of the signal being handled. This will
- * always be SIGINT since that is all that is registered with this handler.
+ * be either SIGINT or SIGTERM.
  */
 void
-sigint_handler(int /* signal */)
+shutdown_signal_handler(int signal)
 {
   Errata errata;
+  auto const *signal_name = signal == SIGTERM ? "SIGTERM" : "SIGINT";
   if (Engine::process_exit_code == 0) {
     errata.note(
         S_DIAG,
-        "Handling SIGINT: shutting down and "
-        "exiting with a 0 response code because no errors have been seen.");
+        "Handling {}: shutting down and "
+        "exiting with a 0 response code because no errors have been seen.",
+        signal_name);
   } else {
     errata.note(
         S_DIAG,
-        "Handling SIGINT: shutting down and "
+        "Handling {}: shutting down and "
         "exiting with response code {} because errors have been seen.",
+        signal_name,
         Engine::process_exit_code);
   }
   Shutdown_Flag = true;
@@ -690,6 +696,7 @@ TF_Serve_Connection(std::thread *t)
       }
 
       [[maybe_unused]] auto &[unused_key, specified_transaction] = *specified_transaction_it;
+      specified_transaction.mark_request_verification_performed();
 
       thread_errata.note(req_hdr->update_content_length(req_hdr->_method));
       thread_errata.note(req_hdr->update_transfer_encoding());
@@ -961,6 +968,9 @@ Engine::command_run()
     if (arguments.get("strict")) {
       Use_Strict_Checking = true;
     }
+    if (arguments.get("allow-unprocessed-verifications")) {
+      Allow_Unprocessed_Verifications = true;
+    }
 
     auto key_format_arg{arguments.get("format")};
     if (key_format_arg) {
@@ -1113,6 +1123,21 @@ Engine::command_run()
       [](std::unique_ptr<std::thread> const &thread) { thread->join(); });
   Accept_Threads.clear();
   Server_Thread_Pool.join_threads();
+  if (!Allow_Unprocessed_Verifications) {
+    std::vector<Txn const *> transactions;
+    transactions.reserve(Transactions.size());
+    for (auto const &[key, txn] : Transactions) {
+      transactions.push_back(&txn);
+    }
+    auto errata = check_for_unprocessed_verifications(
+        transactions,
+        UnprocessedVerificationTarget::Request,
+        "before shutdown",
+        "Shutdown occurred");
+    if (!errata.is_ok()) {
+      Engine::process_exit_code = 1;
+    }
+  }
 
   TLSSession::terminate();
   H2Session::terminate();
@@ -1134,10 +1159,11 @@ main(int /* argc */, char const *argv[])
   }
 
   struct sigaction sigIntHandler;
-  sigIntHandler.sa_handler = sigint_handler;
+  sigIntHandler.sa_handler = shutdown_signal_handler;
   sigemptyset(&sigIntHandler.sa_mask);
   sigIntHandler.sa_flags = 0;
   sigaction(SIGINT, &sigIntHandler, nullptr);
+  sigaction(SIGTERM, &sigIntHandler, nullptr);
 
   Engine engine;
 
@@ -1244,7 +1270,12 @@ main(int /* argc */, char const *argv[])
           "Verify all proxy requests against the proxy-request fields as if "
           "they had equality verification rules in them if no other "
           "verification "
-          "rule is provided.");
+          "rule is provided.")
+      .add_option(
+          "--allow-unprocessed-verifications",
+          "",
+          "Do not fail shutdown if configured verification rules were never "
+          "reached by an incoming proxy request.");
 
   // parse the arguments
   engine.arguments = engine.parser.parse(argv);

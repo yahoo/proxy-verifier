@@ -2112,6 +2112,20 @@ field to be verified regardless of specification, then the `--strict` option
 can be passed to either or both the Proxy Verifier client and server to report
 any verification issues against every field specified in the replay file.
 
+#### --allow-unprocessed-verifications
+
+By default, Proxy Verifier fails if a transaction had configured verification
+rules but the corresponding message never arrived, so the verification logic
+was never reached. On the verifier-server this is checked at shutdown for
+unprocessed proxy-request verification. On the verifier-client this is checked
+after replay completes for unprocessed proxy-response verification. This
+catches cases such as the proxy crashing or otherwise failing to forward
+traffic.
+
+If a test intentionally tolerates that condition, pass
+`--allow-unprocessed-verifications` to the verifier-client or verifier-server
+to suppress that failure.
+
 #### --rate \<requests/second\>
 
 By default, the client will replay the session and transactions in the replay

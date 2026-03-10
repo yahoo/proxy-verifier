@@ -56,11 +56,6 @@ sessions:
             data: server_test
             size: 11
 
-    proxy-response:
-      content:
-        encoding: plain
-        data: server_test
-        verify: {as: equal}
 
   - client-request:
       delay: 500ms

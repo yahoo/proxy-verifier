@@ -187,6 +187,9 @@ private:
 
 bool Shutdown_Flag = false;
 
+/** Whether replay should ignore verification rules that were never reached. */
+bool Allow_Unprocessed_Verifications = false;
+
 class ClientThreadInfo : public ThreadInfo
 {
 public:
@@ -796,6 +799,9 @@ Engine::parse_args()
   if (arguments.get("strict")) {
     Use_Strict_Checking = true;
   }
+  if (arguments.get("allow-unprocessed-verifications")) {
+    Allow_Unprocessed_Verifications = true;
+  }
 
   auto server_addr_http_arg{arguments.get("connect-http")};
   auto server_addr_https_arg{arguments.get("connect-https")};
@@ -1156,6 +1162,23 @@ Engine::replay_traffic()
       replay_duration.count(),
       swoc::bwf::If(replay_duration.count() != 1, "s"),
       n_megabytes / static_cast<double>(replay_duration.count()));
+  if (!Allow_Unprocessed_Verifications) {
+    std::vector<Txn const *> transactions;
+    transactions.reserve(_transaction_count);
+    for (auto const &ssn : Session_List) {
+      for (auto const &txn : ssn->_transactions) {
+        transactions.push_back(&txn);
+      }
+    }
+    auto unprocessed_errata = check_for_unprocessed_verifications(
+        transactions,
+        UnprocessedVerificationTarget::Response,
+        "before replay completed",
+        "Replay completed");
+    if (!unprocessed_errata.is_ok()) {
+      Engine::process_exit_code = 1;
+    }
+  }
   return true;
 }
 
@@ -1294,6 +1317,11 @@ main(int /* argc */, char const *argv[])
           "Verify all proxy responses against the content in the yaml "
           "file as opposed to "
           "just those with verification elements.")
+      .add_option(
+          "--allow-unprocessed-verifications",
+          "",
+          "Do not fail replay completion if configured response verification "
+          "rules were never reached.")
       .add_option(
           "--client-cert",
           "",

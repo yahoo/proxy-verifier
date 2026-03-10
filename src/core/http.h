@@ -9,6 +9,7 @@
 
 #include "case_insensitive_utils.h"
 
+#include <atomic>
 #include <chrono>
 #include <list>
 #include <deque>
@@ -324,6 +325,9 @@ public:
    */
   void add_fields_to_ngnva(nghttp3_nv *l) const;
 
+  /** Return whether any verification rules were configured. */
+  bool has_rules() const;
+
   bool verify(swoc::TextView transaction_key, HttpFields const &rules_) const;
 
   friend class HttpHeader;
@@ -439,6 +443,15 @@ public:
    * @param[in] other The HttpFields from which to add fields and rules.
    */
   void merge(HttpFields const &other);
+
+  /** Return whether this message has any verification rules configured. */
+  bool has_verification_rules(bool include_trailer_rules = true) const;
+
+  /** Mark that verification for this message reached runtime processing. */
+  void mark_verification_performed() const;
+
+  /** Return whether verification for this message reached runtime processing. */
+  bool verification_performed() const;
 
   /// Get the HTTP protocol type of this message.
   HTTP_PROTOCOL_TYPE get_http_protocol() const;
@@ -632,6 +645,8 @@ private:
 
   /// Whether this contains an Expect: 100-continue header.
   bool _contains_expect_100_continue = false;
+  std::shared_ptr<std::atomic_bool> _verification_performed{
+      std::make_shared<std::atomic_bool>(false)};
 };
 
 struct Txn
@@ -660,7 +675,54 @@ struct Txn
   HttpHeader _req;         ///< Request to send.
   HttpHeader _rsp;         ///< Rules for response to expect.
   HttpHeader _rsp_trailer; ///< Rules for response trailer to expect.
+
+  bool
+  request_has_verification_rules() const
+  {
+    return _req.has_verification_rules(false);
+  }
+
+  void
+  mark_request_verification_performed() const
+  {
+    _req.mark_verification_performed();
+  }
+
+  bool
+  request_verification_performed() const
+  {
+    return _req.verification_performed();
+  }
+
+  bool
+  response_has_verification_rules() const
+  {
+    return _rsp.has_verification_rules();
+  }
+
+  void
+  mark_response_verification_performed() const
+  {
+    _rsp.mark_verification_performed();
+  }
+
+  bool
+  response_verification_performed() const
+  {
+    return _rsp.verification_performed();
+  }
 };
+
+enum class UnprocessedVerificationTarget {
+  Request,
+  Response,
+};
+
+swoc::Errata check_for_unprocessed_verifications(
+    std::vector<Txn const *> const &transactions,
+    UnprocessedVerificationTarget target,
+    swoc::TextView per_transaction_context,
+    swoc::TextView summary_prefix);
 
 struct Ssn
 {

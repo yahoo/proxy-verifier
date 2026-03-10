@@ -30,6 +30,7 @@ from aioquic.quic.logger import QuicLogger, QuicLoggerTrace
 from aioquic.quic.events import DatagramFrameReceived, ProtocolNegotiated, QuicEvent
 from aioquic.tls import SessionTicket
 
+from directive_engine import DirectiveEngine
 from proxy_http1 import ProxyRequestHandler
 
 AsgiApplication = Callable
@@ -134,6 +135,13 @@ class HttpRequestHandler:
     # currently block.
     def _send_http1_request_to_server(self, request_headers, req_body, stream_id):
         pseudo_headers, request_headers = self.split_headers(request_headers)
+        directive_engine = DirectiveEngine(request_headers)
+        if directive_engine.should_close_connection():
+            request_id = request_headers.get('uuid', '<unknown>')
+            print(f"Closing downstream connection for key {request_id} without sending a response.")
+            self.protocol._quic.close()
+            self.transmit()
+            return None, None
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         # For all of these, for convenience, we simply talk HTTP (not HTTPS).
@@ -235,6 +243,8 @@ class HttpRequestHandler:
         else:
             self.response_headers, self.response_body = self._send_http1_request_to_server(
                 self.request_headers, self.request_body, self.stream_id)
+            if self.response_headers is None:
+                return
 
         try:
             self.connection.send_headers(stream_id=self.stream_id, headers=self.response_headers,

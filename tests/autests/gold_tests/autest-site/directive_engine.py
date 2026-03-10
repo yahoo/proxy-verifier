@@ -67,6 +67,8 @@ class Directive:
             return InsertDirective(value)
         if command.lower() == SetURLDirective.get_command_name().lower():
             return SetURLDirective(value)
+        if command.lower() == CloseConnectionDirective.get_command_name().lower():
+            return CloseConnectionDirective(value)
         return None
 
 
@@ -239,6 +241,36 @@ class InsertDirective(Directive):
         return None
 
 
+class CloseConnectionDirective(Directive):
+    """
+    Implement a directive that closes the client-side connection immediately.
+
+    This is associated with the CloseConnection=%<value%> specification. The
+    value is currently informational only.
+    """
+
+    _command_name = "CloseConnection"
+
+    def __init__(self, value):
+        self._value = value
+
+    @staticmethod
+    def get_command_name():
+        """
+        Return the command name associated with this Directive.
+        """
+        return CloseConnectionDirective._command_name
+
+    def apply_headers(self, headers):
+        return headers
+
+    def apply_url(self):
+        return None
+
+    def should_close_connection(self):
+        return True
+
+
 class DirectiveEngine:
     """
     Implements directive parsing and header manipulation.
@@ -310,7 +342,8 @@ class DirectiveEngine:
         >>> DirectiveEngine._directive_value_parser(directive)
         [('SetURL', 'http://example.one:8080/config/settings.yaml?q=3#F')]
         """
-        return re.findall(r"(Delete|Insert|SetURL)=%<(.*?)%>", x_proxy_directive_value)
+        return re.findall(r"(Delete|Insert|SetURL|CloseConnection)=%<(.*?)%>",
+                          x_proxy_directive_value)
 
     def get_new_url(self):
         """
@@ -396,6 +429,26 @@ class DirectiveEngine:
         except KeyError:
             pass
         return new_headers
+
+    def should_close_connection(self):
+        """
+        Return whether any configured directive requests closing the connection.
+
+        >>> import email.message
+        >>> headers = email.message.Message()
+        >>> headers.add_header('X-Proxy-Directive', 'CloseConnection=%<now%>')
+        >>> DirectiveEngine(headers).should_close_connection()
+        True
+
+        >>> headers = email.message.Message()
+        >>> headers.add_header('X-Proxy-Directive', 'Delete=%<x-test%>')
+        >>> DirectiveEngine(headers).should_close_connection()
+        False
+        """
+        for directive in self._directives:
+            if getattr(directive, "should_close_connection", lambda: False)():
+                return True
+        return False
 
 
 if __name__ == '__main__':

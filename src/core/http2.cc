@@ -904,6 +904,9 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
         } else {
           stream_state._wait_for_response_after_100_continue = false;
           auto const &specified_response = stream_state._specified_response;
+          if (specified_response) {
+            specified_response->mark_verification_performed();
+          }
           if (specified_response &&
               response_from_wire.verify_headers(key, *specified_response->_fields_rules))
           {

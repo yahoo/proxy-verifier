@@ -238,6 +238,20 @@ HttpFields::merge(HttpFields const &other)
   }
 }
 
+bool
+HttpFields::has_rules() const
+{
+  if (!_rules.empty()) {
+    return true;
+  }
+  for (auto const &url_rule_set : _url_rules) {
+    if (!url_rule_set.empty()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void
 HttpFields::add_fields_to_ngnva(nghttp2_nv *l) const
 {
@@ -515,12 +529,90 @@ HttpHeader::merge(HttpFields const &other)
   derive_key();
 }
 
+bool
+HttpHeader::has_verification_rules(bool include_trailer_rules) const
+{
+  if (_content_rule != nullptr) {
+    return true;
+  }
+  if (_fields_rules != nullptr && _fields_rules->has_rules()) {
+    return true;
+  }
+  return include_trailer_rules && _trailer_fields_rules != nullptr &&
+         _trailer_fields_rules->has_rules();
+}
+
+void
+HttpHeader::mark_verification_performed() const
+{
+  _verification_performed->store(true, std::memory_order_relaxed);
+}
+
+bool
+HttpHeader::verification_performed() const
+{
+  return _verification_performed->load(std::memory_order_relaxed);
+}
+
 HttpHeader::HttpHeader(bool verify_strictly)
   : _fields_rules{std::make_shared<HttpFields>()}
   , _trailer_fields_rules{std::make_shared<HttpFields>()}
   , _verify_strictly{verify_strictly}
   , _key{TRANSACTION_KEY_NOT_SET}
 {
+}
+
+Errata
+check_for_unprocessed_verifications(
+    std::vector<Txn const *> const &transactions,
+    UnprocessedVerificationTarget target,
+    TextView per_transaction_context,
+    TextView summary_prefix)
+{
+  Errata errata;
+  size_t unprocessed_count = 0;
+
+  for (auto const *txn : transactions) {
+    if (txn == nullptr) {
+      continue;
+    }
+
+    bool has_rules = false;
+    bool was_processed = false;
+    switch (target) {
+    case UnprocessedVerificationTarget::Request:
+      has_rules = txn->request_has_verification_rules();
+      was_processed = txn->request_verification_performed();
+      break;
+    case UnprocessedVerificationTarget::Response:
+      has_rules = txn->response_has_verification_rules();
+      was_processed = txn->response_verification_performed();
+      break;
+    }
+
+    if (!has_rules || was_processed) {
+      continue;
+    }
+
+    ++unprocessed_count;
+    errata.note(
+        S_ERROR,
+        R"(Verification rules for transaction key "{}" were never processed {}.)",
+        txn->_req.get_key(),
+        per_transaction_context);
+  }
+
+  if (unprocessed_count == 0) {
+    return errata;
+  }
+
+  errata.note(
+      S_ERROR,
+      R"({} with {} transaction{} whose verification rules were never processed. Use "--allow-unprocessed-verifications" to disable this failure.)",
+      summary_prefix,
+      unprocessed_count,
+      swoc::bwf::If(unprocessed_count != 1, "s"));
+  return errata;
 }
 
 HTTP_PROTOCOL_TYPE
@@ -1532,6 +1624,7 @@ Session::run_transaction(Txn const &json_txn)
             rsp_hdr_from_wire._status,
             key,
             rsp_hdr_from_wire);
+        json_txn.mark_response_verification_performed();
         // Verify the status code and reason string.
         bool found_violation = false;
         if (json_txn._rsp._status != 0 && rsp_hdr_from_wire._status != json_txn._rsp._status &&

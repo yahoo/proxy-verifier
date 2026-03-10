@@ -17,6 +17,7 @@ import urllib.parse
 import threading
 import traceback
 
+from directive_engine import DirectiveEngine
 from proxy_http1 import ProxyRequestHandler
 from proxy_protocol_context import ProxyProtocolUtil, ProxyProtocolVersion
 
@@ -79,6 +80,12 @@ class Http2ConnectionManager(object):
         self.request_infos = {}
         self.client_sni = None
         self.close_on_goaway = close_on_goaway
+        self.downstream_closed = False
+
+    def _close_downstream_connection(self, request_id):
+        print(f"Closing downstream connection for key {request_id} without sending a response.")
+        self.downstream_closed = True
+        self.sock.close()
 
     def run_forever(self):
         self.listening_conn.initiate_connection()
@@ -182,16 +189,17 @@ class Http2ConnectionManager(object):
                             if ret_vals is not None:
                                 resp_from_server[stream_id] = ret_vals
 
-                else:
-                    if isinstance(event, ConnectionTerminated):
-                        frame_seq.append('GOAWAY')
-                        f_str = ', '.join(frame_seq)
-                        print(f'Frame sequence from client: {f_str}')
-                        err = H2ErrorCodes(event.error_code).name
-                        print(
-                            f'Received GOAWAY frame with error code {err} on with last stream id {event.last_stream_id}.'
-                        )
-                        self.listening_conn.close_connection()
+                if self.downstream_closed:
+                    break
+                if isinstance(event, ConnectionTerminated):
+                    frame_seq.append('GOAWAY')
+                    f_str = ', '.join(frame_seq)
+                    print(f'Frame sequence from client: {f_str}')
+                    err = H2ErrorCodes(event.error_code).name
+                    print(
+                        f'Received GOAWAY frame with error code {err} on with last stream id {event.last_stream_id}.'
+                    )
+                    self.listening_conn.close_connection()
 
             for stream_id in stream_id_list:
                 try:
@@ -205,6 +213,8 @@ class Http2ConnectionManager(object):
             except KeyError:
                 pass
 
+            if self.downstream_closed:
+                break
             try:
                 self.sock.sendall(self.listening_conn.data_to_send())
             except (SSLError, SSLSysCallError) as e:
@@ -247,6 +257,11 @@ class Http2ConnectionManager(object):
 
     def _send_http1_request_to_server(self, request_headers, req_body, stream_id):
         pseudo_headers, request_headers = self.split_headers(request_headers)
+        directive_engine = DirectiveEngine(request_headers)
+        if directive_engine.should_close_connection():
+            request_id = request_headers.get('uuid', '<unknown>')
+            self._close_downstream_connection(request_id)
+            return
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         scheme = pseudo_headers[':scheme']
@@ -317,6 +332,11 @@ class Http2ConnectionManager(object):
                 "Unexpected received non is_h2_to_server in _send_http2_request_to_server")
 
         pseudo_headers, request_headers = self.split_headers(request_headers)
+        directive_engine = DirectiveEngine(request_headers)
+        if directive_engine.should_close_connection():
+            request_id = request_headers.get('uuid', '<unknown>')
+            self._close_downstream_connection(request_id)
+            return
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         scheme = pseudo_headers[':scheme']

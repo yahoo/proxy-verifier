@@ -1,0 +1,42 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+# Define one processed HTTP/2 request plus one extra proxy-request verification
+# so shutdown detects the unprocessed server-side verification rule.
+
+meta:
+  version: "1.0"
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  transactions:
+  - proxy-request:
+      headers:
+        fields:
+        - [ :method, { value: GET, as: equal } ]
+        - [ :scheme, { value: https, as: equal } ]
+        - [ :authority, { value: example.com, as: equal } ]
+        - [ :path, { value: /processed, as: equal } ]
+        - [ uuid, { value: processed-h2-1, as: equal } ]
+        - [ X-Processed, { value: expected-value, as: equal } ]
+    server-response:
+      status: 200
+  - proxy-request:
+      headers:
+        fields:
+        - [ :method, { value: GET, as: equal } ]
+        - [ :scheme, { value: https, as: equal } ]
+        - [ :authority, { value: example.com, as: equal } ]
+        - [ :path, { value: /unprocessed, as: equal } ]
+        - [ uuid, { value: unprocessed-h2-1, as: equal } ]
+        - [ X-Unprocessed, { value: expected-value, as: equal } ]
+    server-response:
+      status: 200

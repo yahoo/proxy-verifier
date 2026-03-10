@@ -100,6 +100,14 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             req_body = req_body_modified
             req.headers['Content-length'] = str(len(req_body))
 
+        directive_engine = DirectiveEngine(req.headers)
+        if directive_engine.should_close_connection():
+            request_id = req.headers.get('uuid', '<unknown>')
+            print(f"Closing downstream connection for key {request_id} without sending a response.")
+            self.close_connection = True
+            self.connection.close()
+            return
+
         u = urllib.parse.urlsplit(req.path)
         scheme, netloc, path = u.scheme, u.netloc, (u.path + '?' + u.query if u.query else u.path)
         assert scheme in ('http', 'https')
@@ -268,8 +276,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def get_url(headers, original_url):
-        directive_engine = DirectiveEngine(headers)
-        new_url = directive_engine.get_new_url()
+        new_url = DirectiveEngine(headers).get_new_url()
         if new_url is None:
             return original_url
         else:

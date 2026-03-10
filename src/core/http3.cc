@@ -1258,6 +1258,9 @@ cb_h3_end_headers(
         response_from_wire);
     auto const &key = stream_state->key;
     auto const &specified_response = stream_state->specified_response;
+    if (specified_response) {
+      specified_response->mark_verification_performed();
+    }
     if (response_from_wire.verify_headers(key, *specified_response->_fields_rules)) {
       errata.note(S_ERROR, R"(HTTP/3 response headers did not match expected response headers.)");
       session_data->set_non_zero_exit_status();

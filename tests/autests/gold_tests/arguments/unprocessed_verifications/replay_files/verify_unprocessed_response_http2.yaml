@@ -1,0 +1,35 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+# Close the HTTP/2 proxy connection before any response arrives so the
+# proxy-response verification rule is never processed by the client.
+
+meta:
+  version: "1.0"
+sessions:
+- protocol:
+  - name: http
+    version: 2
+  - name: tls
+    sni: test_sni
+  - name: tcp
+  - name: ip
+    version: 4
+  transactions:
+  - client-request:
+      method: GET
+      scheme: https
+      url: https://example.com/close-without-response
+      version: "1.1"
+      headers:
+        fields:
+        - [Host, example.com]
+        - [uuid, unprocessed-response-h2-1]
+        - [X-Proxy-Directive, CloseConnection=%<now%>]
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [X-Expected, {value: expected-value, as: equal}]
