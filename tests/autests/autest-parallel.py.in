@@ -1,0 +1,647 @@
+#!/usr/bin/env python3
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+"""
+Parallel AuTest runner for Proxy Verifier.
+
+This wrapper partitions top-level tests across workers, gives each worker an
+isolated sandbox, and offsets the per-test port allocator so `autest.sh -jN`
+does not collide on localhost ports.
+"""
+
+import argparse
+import fnmatch
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+SOURCE_AUTEST_DIR = Path("@CMAKE_CURRENT_SOURCE_DIR@").resolve()
+DEFAULT_TEST_DIR = SOURCE_AUTEST_DIR / "gold_tests"
+DEFAULT_SERIAL_TESTS_FILE = SOURCE_AUTEST_DIR / "serial_tests.txt"
+DEFAULT_SANDBOX = Path("/tmp/proxy-verifier-autest")
+DEFAULT_TEST_TIME = 15.0
+
+
+@dataclass
+class TestResult:
+    worker_id: int
+    tests: List[str]
+    passed: int = 0
+    failed: int = 0
+    skipped: int = 0
+    warnings: int = 0
+    exceptions: int = 0
+    unknown: int = 0
+    duration: float = 0.0
+    failed_tests: List[str] = field(default_factory=list)
+    test_timings: Dict[str, float] = field(default_factory=dict)
+    output: str = ""
+    return_code: int = 0
+    is_serial: bool = False
+
+
+def resolve_test_dir(test_dir: str) -> Path:
+    path = Path(test_dir)
+    if not path.is_absolute():
+        path = SOURCE_AUTEST_DIR / path
+    return path.resolve()
+
+
+def discover_tests(test_dir: Path, filter_patterns: Optional[List[str]] = None) -> List[str]:
+    tests = []
+    for test_file in test_dir.rglob("*.test.py"):
+        test_name = test_file.stem.replace(".test", "")
+        if filter_patterns and not any(fnmatch.fnmatch(test_name, pattern) for pattern in filter_patterns):
+            continue
+        tests.append(test_name)
+    return sorted(tests)
+
+
+def load_serial_tests(serial_file: Path) -> set[str]:
+    serial_tests: set[str] = set()
+    if not serial_file.exists():
+        return serial_tests
+
+    try:
+        with serial_file.open() as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.endswith(".test.py"):
+                    line = line[:-8]
+                serial_tests.add(Path(line).stem.replace(".test", ""))
+    except IOError:
+        pass
+    return serial_tests
+
+
+def load_timings(timing_file: Path) -> Dict[str, float]:
+    if timing_file.exists():
+        try:
+            with timing_file.open() as handle:
+                return json.load(handle)
+        except (IOError, json.JSONDecodeError):
+            pass
+    return {}
+
+
+def save_timings(timing_file: Path, timings: Dict[str, float]) -> None:
+    try:
+        with timing_file.open("w") as handle:
+            json.dump(timings, handle, indent=2, sort_keys=True)
+    except IOError as exc:
+        print(f"Warning: could not save timings to {timing_file}: {exc}", file=sys.stderr)
+
+
+def partition_tests(tests: List[str], num_jobs: int) -> List[List[str]]:
+    if not tests:
+        return []
+    worker_count = max(1, min(num_jobs, len(tests)))
+    partitions = [[] for _ in range(worker_count)]
+    for index, test in enumerate(tests):
+        partitions[index % worker_count].append(test)
+    return [partition for partition in partitions if partition]
+
+
+def partition_tests_by_time(
+    tests: List[str], num_jobs: int, timings: Dict[str, float]
+) -> Tuple[List[List[str]], List[float]]:
+    if not tests:
+        return [], []
+
+    worker_count = max(1, min(num_jobs, len(tests)))
+    partitions = [[] for _ in range(worker_count)]
+    worker_loads = [0.0] * worker_count
+    unknown_tests = []
+    known_tests = []
+
+    for test in tests:
+        if test in timings:
+            known_tests.append((test, timings[test]))
+        else:
+            unknown_tests.append(test)
+
+    known_tests.sort(key=lambda item: item[1], reverse=True)
+
+    for test, duration in known_tests:
+        worker_id = min(range(worker_count), key=lambda idx: worker_loads[idx])
+        partitions[worker_id].append(test)
+        worker_loads[worker_id] += duration
+
+    for test in unknown_tests:
+        worker_id = min(range(worker_count), key=lambda idx: worker_loads[idx])
+        partitions[worker_id].append(test)
+        worker_loads[worker_id] += DEFAULT_TEST_TIME
+
+    return partitions, worker_loads
+
+
+def strip_ansi(text: str) -> str:
+    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+    return ansi_escape.sub("", text)
+
+
+def parse_autest_output(output: str) -> dict:
+    result = {
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "warnings": 0,
+        "exceptions": 0,
+        "unknown": 0,
+        "failed_tests": [],
+    }
+
+    clean_output = strip_ansi(output)
+    lines = clean_output.splitlines()
+
+    for line in lines:
+        stripped = line.strip()
+        if "Passed:" in stripped:
+            try:
+                result["passed"] = int(stripped.split(":")[-1].strip())
+            except ValueError:
+                pass
+        elif "Failed:" in stripped and "test" not in stripped.lower():
+            try:
+                result["failed"] = int(stripped.split(":")[-1].strip())
+            except ValueError:
+                pass
+        elif "Skipped:" in stripped:
+            try:
+                result["skipped"] = int(stripped.split(":")[-1].strip())
+            except ValueError:
+                pass
+        elif "Warning:" in stripped:
+            try:
+                result["warnings"] = int(stripped.split(":")[-1].strip())
+            except ValueError:
+                pass
+        elif "Exception:" in stripped:
+            try:
+                result["exceptions"] = int(stripped.split(":")[-1].strip())
+            except ValueError:
+                pass
+        elif "Unknown:" in stripped:
+            try:
+                result["unknown"] = int(stripped.split(":")[-1].strip())
+            except ValueError:
+                pass
+
+    failed_pattern = re.compile(r"Test:\s+(\S+):\s+Failed", re.IGNORECASE)
+    for match in failed_pattern.finditer(clean_output):
+        result["failed_tests"].append(match.group(1))
+
+    return result
+
+
+def extract_failure_output(output: str, failed_tests: List[str]) -> Dict[str, str]:
+    if not failed_tests:
+        return {}
+
+    clean_output = strip_ansi(output)
+    lines = clean_output.splitlines()
+    block_starts = []
+    block_pattern = re.compile(r"^Test:\s+(\S+):\s+(Passed|Failed|Skipped)", re.IGNORECASE)
+
+    for index, line in enumerate(lines):
+        match = block_pattern.match(line.strip())
+        if match:
+            block_starts.append((index, match.group(1)))
+
+    details: Dict[str, str] = {}
+    wanted = set(failed_tests)
+    for index, (start_line, test_name) in enumerate(block_starts):
+        if test_name not in wanted:
+            continue
+        end_line = block_starts[index + 1][0] if index + 1 < len(block_starts) else len(lines)
+        block = "\n".join(lines[start_line:end_line]).rstrip()
+        if block:
+            details[test_name] = block
+    return details
+
+
+def build_autest_command(test_dir: Path, sandbox: Path, extra_args: List[str], tests: Optional[List[str]] = None) -> List[str]:
+    cmd = [
+        "uv",
+        "run",
+        "autest",
+        "run",
+        "-D",
+        str(test_dir),
+        "--sandbox",
+        str(sandbox),
+    ]
+    if tests:
+        cmd.extend(["-f", *tests])
+    cmd.extend(extra_args)
+    return cmd
+
+
+def run_single_test(test: str, test_dir: Path, sandbox: Path, extra_args: List[str], env: dict) -> Tuple[str, float, str, str]:
+    cmd = build_autest_command(test_dir, sandbox / test, extra_args, [test])
+    start = time.time()
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=SOURCE_AUTEST_DIR,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=900,
+        )
+    except subprocess.TimeoutExpired:
+        return test, 900.0, "FAIL", "TIMEOUT"
+    except Exception as exc:
+        return test, time.time() - start, "FAIL", str(exc)
+
+    duration = time.time() - start
+    output = proc.stdout + proc.stderr
+    parsed = parse_autest_output(output)
+    if parsed["skipped"] > 0 and parsed["passed"] == 0 and parsed["failed"] == 0:
+        status = "SKIP"
+    elif parsed["failed"] == 0 and parsed["exceptions"] == 0 and proc.returncode == 0 and (
+        parsed["passed"] > 0 or parsed["skipped"] > 0
+    ):
+        status = "PASS"
+    else:
+        status = "FAIL"
+    return test, duration, status, output
+
+
+def run_worker(
+    worker_id: int,
+    tests: List[str],
+    test_dir: Path,
+    sandbox_base: Path,
+    extra_args: List[str],
+    port_offset_step: int,
+    collect_timings: bool,
+) -> TestResult:
+    start_time = time.time()
+    result = TestResult(worker_id=worker_id, tests=tests)
+    sandbox = sandbox_base / f"worker-{worker_id}"
+    sandbox.mkdir(parents=True, exist_ok=True)
+
+    env = os.environ.copy()
+    env["AUTEST_PORT_OFFSET"] = str(worker_id * port_offset_step)
+
+    try:
+        if collect_timings:
+            output_chunks = []
+            for test in tests:
+                test_name, duration, status, output = run_single_test(test, test_dir, sandbox, extra_args, env)
+                result.test_timings[test_name] = duration
+                output_chunks.append(output)
+                if status == "PASS":
+                    result.passed += 1
+                elif status == "SKIP":
+                    result.skipped += 1
+                else:
+                    result.failed += 1
+                    result.failed_tests.append(test_name)
+            result.output = "\n".join(output_chunks)
+            result.return_code = 0 if result.failed == 0 else 1
+        else:
+            proc = subprocess.run(
+                build_autest_command(test_dir, sandbox, extra_args, tests),
+                cwd=SOURCE_AUTEST_DIR,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=3600,
+            )
+            result.output = proc.stdout + proc.stderr
+            result.return_code = proc.returncode
+            parsed = parse_autest_output(result.output)
+            result.passed = parsed["passed"]
+            result.failed = parsed["failed"]
+            result.skipped = parsed["skipped"]
+            result.warnings = parsed["warnings"]
+            result.exceptions = parsed["exceptions"]
+            result.unknown = parsed["unknown"]
+            result.failed_tests = parsed["failed_tests"]
+
+            total_ran = result.passed + result.failed + result.skipped
+            if total_ran == 0 and proc.returncode != 0:
+                result.failed = len(tests)
+                result.failed_tests = list(tests)
+    except subprocess.TimeoutExpired:
+        result.output = "TIMEOUT: worker exceeded 1 hour timeout"
+        result.return_code = -1
+        result.failed = len(tests)
+        result.failed_tests = list(tests)
+    except KeyboardInterrupt:
+        result.output = "INTERRUPTED by user"
+        result.return_code = 130
+        result.failed = len(tests)
+        result.failed_tests = list(tests)
+    except Exception as exc:
+        result.output = f"ERROR: {exc}"
+        result.return_code = -1
+        result.failed = len(tests)
+        result.failed_tests = list(tests)
+
+    result.duration = time.time() - start_time
+    return result
+
+
+def print_summary(results: List[TestResult], total_duration: float) -> None:
+    total_passed = sum(result.passed for result in results)
+    total_failed = sum(result.failed for result in results)
+    total_skipped = sum(result.skipped for result in results)
+    total_warnings = sum(result.warnings for result in results)
+    total_exceptions = sum(result.exceptions for result in results)
+    total_unknown = sum(result.unknown for result in results)
+    total_tests = sum(len(result.tests) for result in results)
+
+    seen = set()
+    failed_tests = []
+    for result in results:
+        for test_name in result.failed_tests:
+            if test_name not in seen:
+                seen.add(test_name)
+                failed_tests.append(test_name)
+
+    print("\n" + "=" * 70)
+    print("PARALLEL AUTEST SUMMARY")
+    print("=" * 70)
+    print(f"Workers:     {len(results)}")
+    print(f"Total tests: {total_tests}")
+    print(f"Duration:    {total_duration:.1f}s")
+    print("-" * 70)
+    print(f"  Passed:     {total_passed}")
+    print(f"  Failed:     {total_failed}")
+    print(f"  Skipped:    {total_skipped}")
+    print(f"  Warnings:   {total_warnings}")
+    print(f"  Exceptions: {total_exceptions}")
+    print(f"  Unknown:    {total_unknown}")
+
+    if failed_tests:
+        print("-" * 70)
+        print("FAILED TESTS:")
+        for test_name in sorted(failed_tests):
+            print(f"  - {test_name}")
+        print("-" * 70)
+        print("FAILED TEST OUTPUT:")
+        print("-" * 70)
+        for result in results:
+            for test_name, detail in sorted(extract_failure_output(result.output, result.failed_tests).items()):
+                print(f"\n--- {test_name} ---")
+                print(detail)
+        print("-" * 70)
+
+    print("=" * 70)
+    print("\nPer-worker breakdown:")
+    for result in results:
+        status = "OK" if result.failed == 0 and result.exceptions == 0 else "FAIL"
+        worker_label = "  Serial:  " if result.is_serial else f"  Worker:{result.worker_id:2d}"
+        print(
+            f"{worker_label} {result.passed:3d} passed, {result.failed:3d} failed, "
+            f"{result.skipped:3d} skipped ({result.duration:6.1f}s) [{status}]"
+        )
+    print("-" * 70)
+    print(
+        f"  TOTAL:    {total_passed:3d} passed, {total_failed:3d} failed, "
+        f"{total_skipped:3d} skipped ({total_duration:6.1f}s)"
+    )
+
+
+def format_eta(elapsed: float, done: int, total: int) -> str:
+    if done <= 0 or done >= total:
+        return "--:--"
+    remaining = (elapsed / done) * (total - done)
+    minutes, seconds = divmod(int(remaining), 60)
+    if minutes >= 60:
+        hours, minutes = divmod(minutes, 60)
+        return f"{hours}h {minutes:02d}m"
+    return f"{minutes}m {seconds:02d}s"
+
+
+def print_progress(phase: str, tests_done: int, total_tests: int, workers_done: int, total_workers: int, tests_failed: int, tests_skipped: int, start_time: float) -> None:
+    elapsed = time.time() - start_time
+    fail_text = f" | {tests_failed} FAILED" if tests_failed else ""
+    skip_text = f" | {tests_skipped} skipped" if tests_skipped else ""
+    percent = (tests_done * 100 // total_tests) if total_tests else 0
+    line = (
+        f"\r[{phase}] {tests_done}/{total_tests} tests ({percent}%) "
+        f"| {workers_done}/{total_workers} workers done"
+        f"{fail_text}{skip_text} | {int(elapsed)}s elapsed | ETA: {format_eta(elapsed, tests_done, total_tests)}  "
+    )
+    print(line, end="", flush=True)
+
+
+def sigterm_handler(_signum, _frame) -> None:
+    raise KeyboardInterrupt
+
+
+def main() -> None:
+    signal.signal(signal.SIGTERM, sigterm_handler)
+
+    parser = argparse.ArgumentParser(description="Run Proxy Verifier AuTests in parallel")
+    parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4, help="Number of parallel workers")
+    parser.add_argument("--sandbox", default=str(DEFAULT_SANDBOX), help="Base sandbox directory")
+    parser.add_argument("-f", "--filters", nargs="+", action="extend", dest="filters", help="Filter tests by name or glob")
+    parser.add_argument("-D", "--directory", default="gold_tests", help="AuTest test directory")
+    parser.add_argument("--port-offset-step", type=int, default=1000, help="Port offset between workers")
+    parser.add_argument("--collect-timings", action="store_true", help="Run tests one at a time per worker")
+    parser.add_argument("--timings-file", type=Path, default=None, help="Timing data JSON file")
+    parser.add_argument("--no-timing", action="store_true", help="Disable timing-based load balancing")
+    parser.add_argument(
+        "--serial-tests-file",
+        type=Path,
+        default=DEFAULT_SERIAL_TESTS_FILE,
+        help=f"File listing tests that must run serially (default: {DEFAULT_SERIAL_TESTS_FILE})",
+    )
+    parser.add_argument("--no-serial", action="store_true", help="Do not run serial-only tests")
+    args, extra_args = parser.parse_known_args()
+
+    if extra_args and extra_args[0] == "run":
+        extra_args = extra_args[1:]
+    elif extra_args and extra_args[0] == "list":
+        print("The parallel runner does not support the explicit 'list' subcommand.", file=sys.stderr)
+        print("Run autest.sh without -j to list tests.", file=sys.stderr)
+        sys.exit(2)
+
+    if args.timings_file is None:
+        args.timings_file = Path(args.sandbox) / "test-timings.json"
+
+    test_dir = resolve_test_dir(args.directory)
+    if not test_dir.exists():
+        print(f"Error: test directory not found: {test_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    all_tests = discover_tests(test_dir, args.filters)
+    if not all_tests:
+        print("No tests found matching the specified filters.", file=sys.stderr)
+        sys.exit(1)
+
+    serial_tests = load_serial_tests(args.serial_tests_file)
+    parallel_tests = [test for test in all_tests if test not in serial_tests]
+    serial_tests_to_run = [test for test in all_tests if test in serial_tests]
+
+    print(f"Found {len(all_tests)} tests ({len(parallel_tests)} parallel, {len(serial_tests_to_run)} serial)")
+
+    timings = {}
+    if not args.no_timing:
+        timings = load_timings(args.timings_file)
+        if timings:
+            known_tests = sum(1 for test in parallel_tests if test in timings)
+            print(f"Loaded timing data for {known_tests}/{len(parallel_tests)} parallel tests from {args.timings_file}")
+
+    if timings and parallel_tests and not args.no_timing:
+        partitions, expected_loads = partition_tests_by_time(parallel_tests, args.jobs, timings)
+        print("Using timing-based load balancing")
+        for worker_id, load in enumerate(expected_loads):
+            preview = ", ".join(partitions[worker_id][:3])
+            suffix = f", ... (+{len(partitions[worker_id]) - 3} more)" if len(partitions[worker_id]) > 3 else ""
+            print(f"  Worker {worker_id}: {len(partitions[worker_id])} tests, ~{load:.1f}s expected [{preview}{suffix}]")
+    else:
+        partitions = partition_tests(parallel_tests, args.jobs)
+        print("Using round-robin partitioning")
+
+    total_tests = len(parallel_tests) + (0 if args.no_serial else len(serial_tests_to_run))
+    print(f"Running with {len(partitions)} parallel workers")
+    print(f"Total: {total_tests} tests")
+    print(f"Sandbox: {args.sandbox}")
+    print(f"Port offset step: {args.port_offset_step}")
+
+    sandbox_base = Path(args.sandbox)
+    sandbox_base.mkdir(parents=True, exist_ok=True)
+
+    tests_done = 0
+    tests_failed = 0
+    tests_skipped = 0
+    workers_done = 0
+    total_workers = len(partitions)
+    results: List[TestResult] = []
+    futures = {}
+    start_time = time.time()
+    interrupted = False
+    serial_result = None
+    serial_start = None
+
+    try:
+        if partitions:
+            print_progress("Parallel", tests_done, total_tests, workers_done, total_workers, tests_failed, tests_skipped, start_time)
+            print()
+            with ProcessPoolExecutor(max_workers=len(partitions)) as executor:
+                for worker_id, worker_tests in enumerate(partitions):
+                    future = executor.submit(
+                        run_worker,
+                        worker_id,
+                        worker_tests,
+                        test_dir,
+                        sandbox_base,
+                        extra_args,
+                        args.port_offset_step,
+                        args.collect_timings,
+                    )
+                    futures[future] = worker_id
+
+                for future in as_completed(futures):
+                    worker_id = futures[future]
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        result = TestResult(
+                            worker_id=worker_id,
+                            tests=partitions[worker_id],
+                            failed=len(partitions[worker_id]),
+                            failed_tests=list(partitions[worker_id]),
+                            output=str(exc),
+                            return_code=-1,
+                        )
+                    results.append(result)
+                    workers_done += 1
+                    tests_done += len(result.tests)
+                    tests_failed += len(set(result.failed_tests))
+                    tests_skipped += result.skipped
+                    print_progress("Parallel", tests_done, total_tests, workers_done, total_workers, tests_failed, tests_skipped, start_time)
+            print()
+
+        if serial_tests_to_run and not args.no_serial:
+            print("=" * 70)
+            print("RUNNING SERIAL TESTS")
+            print("=" * 70)
+            serial_start = time.time()
+            serial_result = TestResult(worker_id=len(partitions), tests=serial_tests_to_run, is_serial=True)
+            env = os.environ.copy()
+            env["AUTEST_PORT_OFFSET"] = "0"
+            serial_sandbox = sandbox_base / "serial"
+            serial_sandbox.mkdir(parents=True, exist_ok=True)
+
+            for test in serial_tests_to_run:
+                test_name, duration, status, output = run_single_test(test, test_dir, serial_sandbox, extra_args, env)
+                serial_result.test_timings[test_name] = duration
+                serial_result.output += output + "\n"
+                if status == "PASS":
+                    serial_result.passed += 1
+                elif status == "SKIP":
+                    serial_result.skipped += 1
+                    tests_skipped += 1
+                else:
+                    serial_result.failed += 1
+                    serial_result.failed_tests.append(test_name)
+                    tests_failed += 1
+                tests_done += 1
+                print_progress("Serial", tests_done, total_tests, workers_done, total_workers, tests_failed, tests_skipped, start_time)
+
+            serial_result.duration = time.time() - serial_start
+            results.append(serial_result)
+            print()
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\n\nInterrupted! Collecting completed results...")
+        seen_workers = {result.worker_id for result in results}
+        for future in futures:
+            if future.done() and not future.cancelled():
+                try:
+                    result = future.result(timeout=0)
+                except Exception:
+                    continue
+                if result.worker_id not in seen_workers:
+                    results.append(result)
+                    seen_workers.add(result.worker_id)
+        if serial_result is not None and serial_result.worker_id not in seen_workers and serial_start is not None:
+            serial_result.duration = time.time() - serial_start
+            results.append(serial_result)
+
+    total_duration = time.time() - start_time
+    results.sort(key=lambda result: result.worker_id)
+
+    if args.collect_timings:
+        new_timings = dict(timings)
+        tests_timed = 0
+        for result in results:
+            for test_name, duration in result.test_timings.items():
+                new_timings[test_name] = duration
+                tests_timed += 1
+        if tests_timed:
+            save_timings(args.timings_file, new_timings)
+            print(f"Saved timing data for {tests_timed} tests to {args.timings_file}")
+
+    print_summary(results, total_duration)
+
+    if interrupted:
+        print("\nRun was interrupted by user.")
+        sys.exit(130)
+
+    total_failed = sum(result.failed + result.exceptions for result in results)
+    sys.exit(1 if total_failed > 0 else 0)
+
+
+if __name__ == "__main__":
+    main()

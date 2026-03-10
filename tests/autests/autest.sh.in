@@ -12,6 +12,7 @@ fail()
 script_dir=$(cd "$(dirname "$0")" && pwd)
 source_autest_dir="@CMAKE_CURRENT_SOURCE_DIR@"
 default_verifier_bin="${script_dir}/bin"
+parallel_runner="${script_dir}/autest-parallel.py"
 
 pushd "${source_autest_dir}" > /dev/null
 export PYTHONPATH="$(pwd):${PYTHONPATH}"
@@ -34,7 +35,21 @@ fi
 
 # this is for rhel or centos systems
 echo "Environment config finished. Running AuTest..."
-uv run autest -D gold_tests "${args[@]}"
+parallel_mode=false
+for ((i = 0; i < ${#args[@]}; ++i)); do
+  case "${args[$i]}" in
+    -j|-j[0-9]*|--jobs|--jobs=*)
+      parallel_mode=true
+      break
+      ;;
+  esac
+done
+
+if [[ "${parallel_mode}" == true ]]; then
+  python3 "${parallel_runner}" "${args[@]}"
+else
+  uv run autest run -D gold_tests "${args[@]}"
+fi
 ret=$?
 popd > /dev/null
 exit $ret

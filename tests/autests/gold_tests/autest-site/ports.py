@@ -147,6 +147,10 @@ def _get_listening_ports() -> set[int]:
 def _setup_port_queue(amount=1000):
     """
     Build up the set of ports that the OS in theory will not use.
+
+    The AUTEST_PORT_OFFSET environment variable can be used to offset the
+    starting port range. This lets multiple autest worker processes reserve
+    disjoint port ranges while running in parallel.
     """
     global g_ports
     if g_ports is None:
@@ -157,6 +161,16 @@ def _setup_port_queue(amount=1000):
         host.WriteDebug('_setup_port_queue',
                         f"Queue was previously populated. Queue size: {g_ports.qsize()}")
         return
+
+    try:
+        port_offset = int(os.environ.get('AUTEST_PORT_OFFSET', 0))
+    except ValueError:
+        host.WriteWarning("AUTEST_PORT_OFFSET is not a valid integer, defaulting to 0")
+        port_offset = 0
+    port_offset = max(0, min(port_offset, 60000))
+    if port_offset > 0:
+        host.WriteVerbose('_setup_port_queue', f"Using port offset: {port_offset}")
+
     try:
         # Use sysctl to find the range of ports that the OS publishes it uses.
         # some docker setups don't have sbin setup correctly
@@ -182,7 +196,7 @@ def _setup_port_queue(amount=1000):
     listening_ports = _get_listening_ports()
     if rmax > amount:
         # Fill in ports, starting above the upper OS-usable port range.
-        port = dmax + 1
+        port = dmax + 1 + port_offset
         while port < 65536 and g_ports.qsize() < amount:
             if PortOpen(port, listening_ports=listening_ports):
                 host.WriteDebug('_setup_port_queue', f"Rejecting an already open port: {port}")
@@ -191,8 +205,8 @@ def _setup_port_queue(amount=1000):
                                 f"Adding a possible port to connect to: {port}")
                 g_ports.put(port)
             port += 1
-    if g_ports.qsize() < amount < rmin:
-        port = 2001
+    if rmin > amount and g_ports.qsize() < amount:
+        port = 2001 + port_offset
         # Fill in more ports, starting at 2001, well above well known ports,
         # and going up until the minimum port range used by the OS.
         while port < dmin and g_ports.qsize() < amount:

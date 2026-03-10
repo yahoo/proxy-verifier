@@ -1,0 +1,5 @@
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+# Add one top-level AuTest name per line when a test must not run in parallel.
+# Paths ending in .test.py are also accepted.

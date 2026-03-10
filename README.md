@@ -1884,6 +1884,14 @@ just the http and https tests:
 ./build/dev-external/autest.sh -f http https
 ```
 
+The build-generated wrapper also accepts `-j` or `--jobs` for parallel runs.
+That path uses worker-specific sandboxes and port offsets so the top-level
+AuTests do not stomp on each other:
+
+```
+./build/dev-external/autest.sh -j8 -f http https
+```
+
 AuTest supports a variety of other options. Run
 `./build/dev-external/autest.sh --help` to get a
 quick description of the various command-line options. See the [AuTest
