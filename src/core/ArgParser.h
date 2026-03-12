@@ -1,7 +1,7 @@
 /** @file
  * Powerful and easy-to-use command line parsing for ATS
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <string>
 #include <string_view>
@@ -31,6 +32,28 @@ inline constexpr std::string_view Proxy_Verifier_Version{PROXY_VERIFIER_VERSION}
 namespace ts
 {
 using AP_StrVec = std::vector<std::string>;
+
+/** Parse a non-negative integer command line value.
+ *
+ * The entire string must be consumed by the parse and the result must be in
+ * the range [minimum, INT_MAX].
+ *
+ * @param[in] text The text to parse.
+ * @param[out] value The parsed value.
+ * @param[out] error A human readable error string on failure.
+ * @param[in] option_name The option being parsed, used for diagnostics.
+ * @param[in] minimum The smallest allowed parsed value.
+ *
+ * @return True if parsing succeeded, false otherwise.
+ */
+bool parse_integer_option(
+    std::string_view text,
+    int &value,
+    std::string &error,
+    std::string_view option_name,
+    int minimum = 0,
+    int maximum = std::numeric_limits<int>::max());
+
 // The class holding both the ENV and String arguments
 class ArgumentData
 {

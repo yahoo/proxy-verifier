@@ -11,6 +11,8 @@
 #include <sstream>
 #include <sysexits.h>
 
+#include "swoc/TextView.h"
+
 std::string global_usage;
 std::string parser_program_name;
 std::string default_command;
@@ -28,7 +30,55 @@ is_long_option_with_inline_arg(std::string const &arg)
 {
   return arg.size() > 2 && arg[0] == '-' && arg[1] == '-' && arg.find('=') != std::string::npos;
 }
+
+std::string
+make_integer_parse_error(
+    std::string_view text,
+    std::string_view option_name,
+    int minimum,
+    int maximum)
+{
+  std::string range_description;
+  if (maximum == std::numeric_limits<int>::max()) {
+    range_description = minimum > 0 ? std::to_string(minimum) + " or greater" : "0 or greater";
+  } else {
+    range_description = std::to_string(minimum) + " to " + std::to_string(maximum);
+  }
+
+  return "Invalid value \"" + std::string(text) + "\" for option \"" + std::string(option_name) +
+         "\". Expected an integer in the range " + range_description + ".";
+}
 } // namespace
+
+bool
+parse_integer_option(
+    std::string_view text,
+    int &value,
+    std::string &error,
+    std::string_view option_name,
+    int minimum,
+    int maximum)
+{
+  error.clear();
+  swoc::TextView const input{text};
+  if (input.empty()) {
+    error = make_integer_parse_error(text, option_name, minimum, maximum);
+    return false;
+  }
+
+  swoc::TextView parsed;
+  auto const parsed_value = swoc::svtou(input, &parsed, 10);
+  if (parsed.empty() || parsed.size() != input.size() ||
+      parsed_value < static_cast<uintmax_t>(minimum) ||
+      parsed_value > static_cast<uintmax_t>(maximum))
+  {
+    error = make_integer_parse_error(text, option_name, minimum, maximum);
+    return false;
+  }
+
+  value = static_cast<int>(parsed_value);
+  return true;
+}
 
 ArgParser::ArgParser() { }
 

@@ -861,7 +861,17 @@ Engine::command_run()
     auto poll_timeout_arg{arguments.get("poll-timeout")};
     int poll_timeout_arg_int = 0;
     if (poll_timeout_arg.size() == 1) {
-      poll_timeout_arg_int = atoi(poll_timeout_arg[0].c_str());
+      std::string parse_error;
+      if (!ts::parse_integer_option(
+              poll_timeout_arg[0],
+              poll_timeout_arg_int,
+              parse_error,
+              "--poll-timeout"))
+      {
+        errata.note(S_ERROR, "{}", parse_error);
+        process_exit_code = 1;
+        return;
+      }
     } else {
       poll_timeout_arg_int = 5000;
     }
@@ -889,13 +899,34 @@ Engine::command_run()
 
     auto thread_limit_arg{arguments.get("thread-limit")};
     if (thread_limit_arg.size() == 1) {
-      auto const thread_limit_int = atoi(thread_limit_arg[0].c_str());
+      int thread_limit_int = 0;
+      std::string parse_error;
+      if (!ts::parse_integer_option(
+              thread_limit_arg[0],
+              thread_limit_int,
+              parse_error,
+              "--thread-limit")) {
+        errata.note(S_ERROR, "{}", parse_error);
+        process_exit_code = 1;
+        return;
+      }
       Server_Thread_Pool.set_max_threads(thread_limit_int);
     }
 
     auto send_buffer_size_arg{arguments.get("send-buffer-size")};
     if (send_buffer_size_arg.size() == 1) {
-      auto const send_buffer_size_int = atoi(send_buffer_size_arg[0].c_str());
+      int send_buffer_size_int = 0;
+      std::string parse_error;
+      if (!ts::parse_integer_option(
+              send_buffer_size_arg[0],
+              send_buffer_size_int,
+              parse_error,
+              "--send-buffer-size"))
+      {
+        errata.note(S_ERROR, "{}", parse_error);
+        process_exit_code = 1;
+        return;
+      }
       Send_Buffer_size = send_buffer_size_int;
     }
 

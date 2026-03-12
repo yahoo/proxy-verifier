@@ -1,7 +1,7 @@
 /** @file
  * Implement the Proxy Verifier client.
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -903,7 +903,17 @@ Engine::initialize_client()
   auto poll_timeout_arg{arguments.get("poll-timeout")};
   int poll_timeout_arg_int = 0;
   if (poll_timeout_arg.size() == 1) {
-    poll_timeout_arg_int = atoi(poll_timeout_arg[0].c_str());
+    std::string parse_error;
+    if (!ts::parse_integer_option(
+            poll_timeout_arg[0],
+            poll_timeout_arg_int,
+            parse_error,
+            "--poll-timeout"))
+    {
+      errata.note(S_ERROR, "{}", parse_error);
+      process_exit_code = 1;
+      return false;
+    }
   } else {
     poll_timeout_arg_int = 5000;
   }
@@ -956,12 +966,34 @@ Engine::replay_traffic()
   auto sleep_limit_arg{arguments.get("sleep-limit")};
   microseconds sleep_limit = 500ms;
   if (sleep_limit_arg.size() == 1) {
-    sleep_limit = microseconds(atoi(sleep_limit_arg[0].c_str()));
+    int sleep_limit_arg_int = 0;
+    std::string parse_error;
+    if (!ts::parse_integer_option(
+            sleep_limit_arg[0],
+            sleep_limit_arg_int,
+            parse_error,
+            "--sleep-limit"))
+    {
+      errata.note(S_ERROR, "{}", parse_error);
+      process_exit_code = 1;
+      return false;
+    }
+    sleep_limit = microseconds(sleep_limit_arg_int);
   }
 
   auto thread_limit_arg{arguments.get("thread-limit")};
   if (thread_limit_arg.size() == 1) {
-    auto const thread_limit_int = atoi(thread_limit_arg[0].c_str());
+    int thread_limit_int = 0;
+    std::string parse_error;
+    if (!ts::parse_integer_option(
+            thread_limit_arg[0],
+            thread_limit_int,
+            parse_error,
+            "--thread-limit")) {
+      errata.note(S_ERROR, "{}", parse_error);
+      process_exit_code = 1;
+      return false;
+    }
     Client_Thread_Pool.set_max_threads(thread_limit_int);
   }
 
@@ -989,7 +1021,13 @@ Engine::replay_traffic()
   auto sleep_time = 0us;
   bool use_sleep_time = false;
   if (rate_arg.size() == 1 && !Session_List.empty()) {
-    int target_rate = atoi(rate_arg[0].c_str());
+    int target_rate = 0;
+    std::string parse_error;
+    if (!ts::parse_integer_option(rate_arg[0], target_rate, parse_error, "--rate")) {
+      errata.note(S_ERROR, "{}", parse_error);
+      process_exit_code = 1;
+      return false;
+    }
     if (target_rate == 0.0) {
       rate_multiplier = 0.0;
     } else {
@@ -1049,7 +1087,12 @@ Engine::replay_traffic()
   }
 
   if (repeat_arg.size() == 1) {
-    repeat_count = atoi(repeat_arg[0].c_str());
+    std::string parse_error;
+    if (!ts::parse_integer_option(repeat_arg[0], repeat_count, parse_error, "--repeat")) {
+      errata.note(S_ERROR, "{}", parse_error);
+      process_exit_code = 1;
+      return false;
+    }
   } else {
     repeat_count = 1;
   }
