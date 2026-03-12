@@ -1,7 +1,7 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -129,6 +129,11 @@ protected:
   bool _is_nocase;   ///< Whether the Rule looks at upper/lower case the same.
 
 public:
+  /// Named booleans for make_rule_check option arguments.
+  static constexpr bool IS_INVERTED_RULE = true;
+  static constexpr bool IS_NOCASE_RULE = true;
+  static constexpr bool IS_BODY_RULE = true;
+
   virtual ~RuleCheck() = default;
 
   /** Initialize options with std::functions for creating RuleChecks.
@@ -149,9 +154,9 @@ public:
       swoc::TextView localized_name,
       swoc::TextView localized_value,
       swoc::TextView rule_type,
-      bool is_inverted = false,
-      bool is_nocase = false,
-      bool is_body = false);
+      bool is_inverted = !IS_INVERTED_RULE,
+      bool is_nocase = !IS_NOCASE_RULE,
+      bool is_body = !IS_BODY_RULE);
 
   /** Generate @a RuleCheck with @a node with factory pattern.
    *
@@ -166,9 +171,9 @@ public:
       UrlPart url_part,
       swoc::TextView localized_value,
       swoc::TextView rule_type,
-      bool is_inverted = false,
-      bool is_nocase = false,
-      bool is_body = false);
+      bool is_inverted = !IS_INVERTED_RULE,
+      bool is_nocase = !IS_NOCASE_RULE,
+      bool is_body = !IS_BODY_RULE);
 
   /**
    * @param values The values of the field. This should be localized.
@@ -177,9 +182,9 @@ public:
       swoc::TextView localized_name,
       std::vector<swoc::TextView> &&localized_values,
       swoc::TextView rule_type,
-      bool is_inverted = false,
-      bool is_nocase = false,
-      bool is_body = false);
+      bool is_inverted = !IS_INVERTED_RULE,
+      bool is_nocase = !IS_NOCASE_RULE,
+      bool is_body = !IS_BODY_RULE);
 
   /** Generate @a EqualityCheck, invoked by the factory function when the
    * "equals" flag is present for a field check.

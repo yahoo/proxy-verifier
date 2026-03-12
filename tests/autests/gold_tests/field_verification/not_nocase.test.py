@@ -4,7 +4,7 @@ for not and nocase modifiers.
 '''
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -40,6 +40,10 @@ server.Streams.stdout += Testers.ContainsExpression(
 server.Streams.stdout += Testers.ContainsExpression(
     'Not Contains Success: Not Found. Key: "5", Field Name: "host", Required Value: "leo", Actual Value: "example.one"',
     'Validation should be happy that "leo" is not contained in "example.one".')
+
+server.Streams.stdout += Testers.ContainsExpression(
+    'Not Contains Success: Not Found. Key: "5", Field Name: "cookie", Required Value: "12345678", Actual Value: "foo=bar"',
+    'Validation should be happy that a longer required substring is treated as not found.')
 
 server.Streams.stdout += Testers.ContainsExpression(
     'Not Prefix Success: Not Found. Key: "5", Field Name: "x-test-request", Required Value: "equ", Actual Value: "RequestData"',

@@ -1,7 +1,7 @@
 /** @file
  * Common implementation for Proxy Verifier
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -1084,7 +1084,7 @@ ContainsCheck::test_tv(TextView value, TextView test) const
 {
   auto const test_length = test.length();
   if (test_length > value.length()) {
-    return invert_if_applicable(true);
+    return true;
   }
   if (_is_nocase) {
     auto spot =

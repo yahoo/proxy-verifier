@@ -86,6 +86,35 @@ TEST_CASE("RuleChecks of non-duplicate fields", "[RuleCheck]")
     CHECK(contains_check->test(key, test_name, contained_value));
   }
 
+  SECTION("contains checks with a longer required value")
+  {
+    swoc::TextView longer_value("testValueLong");
+    std::shared_ptr<RuleCheck> contains_check =
+        RuleCheck::make_rule_check(test_name, longer_value, "contains");
+    REQUIRE(contains_check);
+
+    CHECK_FALSE(contains_check->test(key, test_name, expected_value));
+
+    std::shared_ptr<RuleCheck> not_contains_check = RuleCheck::make_rule_check(
+        test_name,
+        longer_value,
+        "contains",
+        RuleCheck::IS_INVERTED_RULE);
+    REQUIRE(not_contains_check);
+
+    CHECK(not_contains_check->test(key, test_name, expected_value));
+
+    std::shared_ptr<RuleCheck> nocase_not_contains_check = RuleCheck::make_rule_check(
+        test_name,
+        "TESTVALUEXYZ",
+        "contains",
+        RuleCheck::IS_INVERTED_RULE,
+        RuleCheck::IS_NOCASE_RULE);
+    REQUIRE(nocase_not_contains_check);
+
+    CHECK(nocase_not_contains_check->test(key, test_name, expected_value));
+  }
+
   SECTION("prefix checks")
   {
     swoc::TextView prefix_value("test");

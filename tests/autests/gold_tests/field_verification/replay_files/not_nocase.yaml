@@ -11,6 +11,7 @@ sessions:
       headers:
         fields:
         - [ Host, example.one ]
+        - [ Cookie, foo=bar ]
         - [ X-Test-Request, RequestData ]
         - [ X-Test-Present, It's there ]
         - [ uuid, 5 ]
@@ -24,6 +25,7 @@ sessions:
         - [ X-Test-Absent, { not: present } ]
         - [ X-Test-Present, { not: absent } ]
         - [ Host, { value: leo, not: contains } ]
+        - [ Cookie, { value: [12345678], not: contains } ]
         - [ X-Test-Request, { value: equ, not: prefix } ]
         - [ X-Test-Present, { value: It's, not: suffix } ]
         - [ Host, { value: EXAMpLE.ONE, as: equal, case: ignore } ]

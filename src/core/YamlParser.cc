@@ -1246,7 +1246,13 @@ YamlParser::parse_body_verification(
     if (body_value_node.IsScalar()) {
       // Single value
       TextView value = Localizer::localize(body_value_node.Scalar());
-      tester = RuleCheck::make_rule_check("body", value, rule_type, is_inverted, is_nocase, true);
+      tester = RuleCheck::make_rule_check(
+          "body",
+          value,
+          rule_type,
+          is_inverted,
+          is_nocase,
+          RuleCheck::IS_BODY_RULE);
     } else if (body_value_node.IsSequence()) {
       errata.note(
           S_ERROR,
@@ -1254,7 +1260,13 @@ YamlParser::parse_body_verification(
           node.Mark());
     }
   } else {
-    tester = RuleCheck::make_rule_check("body", content, rule_type, is_inverted, is_nocase, true);
+    tester = RuleCheck::make_rule_check(
+        "body",
+        content,
+        rule_type,
+        is_inverted,
+        is_nocase,
+        RuleCheck::IS_BODY_RULE);
   }
 
   if (!tester) {
