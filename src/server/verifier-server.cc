@@ -286,9 +286,6 @@ ServerReplayFileHandler::ssn_open(YAML::Node const &node)
 swoc::Errata
 ServerReplayFileHandler::txn_open(YAML::Node const &node)
 {
-  LoadMutex.lock();
-  _txn._req.set_is_request();
-  _txn._rsp.set_is_response();
   Errata errata;
   if (!node[YAML_SERVER_RSP_KEY]) {
     errata.note(
@@ -301,6 +298,9 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
   if (!errata.is_ok()) {
     return errata;
   }
+  LoadMutex.lock();
+  _txn._req.set_is_request();
+  _txn._rsp.set_is_response();
   _txn_node = &node;
   return {};
 }

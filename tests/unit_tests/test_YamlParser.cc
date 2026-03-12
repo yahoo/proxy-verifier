@@ -26,6 +26,37 @@ public:
   using ReplayFileHandler::ParsedProtocolNode;
   using ReplayFileHandler::parse_protocol_node;
 };
+
+class FailingTxnOpenHandler : public ReplayFileHandler
+{
+public:
+  swoc::Errata
+  txn_open(YAML::Node const & /* node */) override
+  {
+    swoc::Errata errata;
+    errata.note(S_ERROR, "Synthetic transaction open failure.");
+    ++txn_open_calls;
+    return errata;
+  }
+
+  swoc::Errata
+  client_request(YAML::Node const & /* node */) override
+  {
+    ++client_request_calls;
+    return {};
+  }
+
+  swoc::Errata
+  txn_close() override
+  {
+    ++txn_close_calls;
+    return {};
+  }
+
+  int txn_open_calls = 0;
+  int client_request_calls = 0;
+  int txn_close_calls = 0;
+};
 } // namespace
 
 struct ParseDelaySpecificationTestCase
@@ -348,4 +379,29 @@ tls:
   CHECK(parsed_protocol.result().get_tls_sni_name().value() == "test_sni_with_map");
   REQUIRE(parsed_protocol.result().should_request_certificate().has_value());
   CHECK(parsed_protocol.result().should_request_certificate().value());
+}
+
+TEST_CASE("Verify transaction callbacks are skipped after transaction open failure", "[yaml]")
+{
+  auto const content = R"(
+meta:
+  version: "1.0"
+sessions:
+  - transactions:
+      - client-request:
+          method: GET
+          url: http://example.com/
+          version: "1.1"
+          headers:
+            fields:
+              - [ Host, example.com ]
+)";
+
+  FailingTxnOpenHandler handler;
+  auto errata = YamlParser::load_replay_file(swoc::file::path{"synthetic.yaml"}, content, handler);
+
+  CHECK_FALSE(errata.is_ok());
+  CHECK(handler.txn_open_calls == 1);
+  CHECK(handler.client_request_calls == 0);
+  CHECK(handler.txn_close_calls == 0);
 }

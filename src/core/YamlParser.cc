@@ -2121,8 +2121,10 @@ YamlParser::load_replay_file(
       // HeaderRules txn_rules = ssn_rules;
       auto txn_errata = handler.txn_open(txn_node);
       if (!txn_errata.is_ok()) {
-        session_errata
+        txn_errata
             .note(S_ERROR, R"(Could not open transaction at {} in "{}".)", txn_node.Mark(), path);
+        session_errata.note(std::move(txn_errata));
+        continue;
       }
       HttpFields all_fields;
       if (auto all_node{txn_node[YAML_ALL_MESSAGES_KEY]}; all_node) {
