@@ -2,13 +2,9 @@ meta:
   version: '1.0'
 sessions:
 - protocol:
-  - name: http
-    version: 3
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
-    version: 4
+    stack: http3
+    tls:
+      sni: test_sni
   transactions:
   - client-request:
       headers:
@@ -28,12 +24,9 @@ sessions:
     proxy-request:
       # HTTP/1 on the server-side.
       protocol:
-      - name: http
-        version: 1
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: https
+        tls:
+          sni: test_sni
       content:
         verify: {value: wrong, not: equal}
 
@@ -71,12 +64,9 @@ sessions:
     proxy-request:
       # HTTP/1 on the server-side.
       protocol:
-      - name: http
-        version: 1
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: https
+        tls:
+          sni: test_sni
       content:
         verify: {value: Client_Test, not: equal, case: ignore}
 

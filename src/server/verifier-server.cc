@@ -218,63 +218,6 @@ shutdown_signal_handler(int signal)
 
 std::mutex LoadMutex;
 
-/** Parse the "tls" node for whether the proxy provided a certificate.
- *
- * This looks for the presence of "proxy-provided-certificate":true.
- *
- * @param[in] tls_node The "tls" node to parse.
- *
- * @return -1 if the proxy-provided-certificate element did not exist, 0 if it existed
- * and was false, 1 if it existed and was true.
- */
-static swoc::Rv<int>
-parse_proxy_provided_certificate(YAML::Node const &tls_node)
-{
-  swoc::Rv<int> proxy_provided_certificate{-1};
-  if (auto proxy_provided_certificate_node{tls_node[YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY]};
-      proxy_provided_certificate_node)
-  {
-    if (proxy_provided_certificate_node.IsScalar()) {
-      proxy_provided_certificate = proxy_provided_certificate_node.Scalar() == "true" ? 1 : 0;
-    } else {
-      proxy_provided_certificate.note(
-          S_ERROR,
-          R"(Session has a value for key "{}" that is not a scalar as required.)",
-          YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY);
-    }
-  }
-  return proxy_provided_certificate;
-}
-
-/** Parse the "tls" node for whether the server is directed to request a
- * certificate from the proxy.
- *
- * This looks for the presence of "request-certificate":true.
- *
- * @param[in] tls_node The "tls" node to parse.
- *
- * @return -1 if the request-certificate element did not exist, 0 if it existed
- * and was false, 1 if it existed and was true.
- */
-static swoc::Rv<int>
-parse_request_certificate(YAML::Node const &tls_node)
-{
-  swoc::Rv<int> should_request_certificate{-1};
-  if (auto request_certificate_node{tls_node[YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY]};
-      request_certificate_node)
-  {
-    if (request_certificate_node.IsScalar()) {
-      should_request_certificate = request_certificate_node.Scalar() == "true" ? 1 : 0;
-    } else {
-      should_request_certificate.note(
-          S_ERROR,
-          R"(Session has a value for key "{}" that is not a scalar as required.)",
-          YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY);
-    }
-  }
-  return should_request_certificate;
-}
-
 std::unordered_map<std::string, Txn, std::hash<std::string_view>> Transactions;
 
 class ServerReplayFileHandler : public ReplayFileHandler
@@ -296,7 +239,9 @@ public:
 
 private:
   swoc::Errata handle_protocol_node(YAML::Node const &proxy_request_node);
-  swoc::Errata handle_tls_node_directives(YAML::Node const &tls_node, std::string_view sni);
+  swoc::Errata handle_tls_node_directives(
+      ParsedProtocolNode const &parsed_protocol,
+      YAML::Mark const &mark);
 
 private:
   YAML::Node const *_ssn_node = nullptr;
@@ -362,43 +307,41 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
 
 swoc::Errata
 ServerReplayFileHandler::handle_tls_node_directives(
-    YAML::Node const &tls_node,
-    std::string_view sni)
+    ReplayFileHandler::ParsedProtocolNode const &parsed_protocol,
+    YAML::Mark const &mark)
 {
   swoc::Errata errata;
-  auto should_request_certificate = parse_request_certificate(tls_node);
-  if (!should_request_certificate.is_ok()) {
-    errata.note(std::move(should_request_certificate.errata()));
-    return errata;
-  }
+  auto const should_request_certificate =
+      parsed_protocol.should_request_certificate().value_or(false);
+  auto const has_request_certificate = parsed_protocol.should_request_certificate().has_value();
+  auto const proxy_provided_certificate =
+      parsed_protocol.proxy_provided_certificate().value_or(false);
+  auto const has_proxy_provided_certificate =
+      parsed_protocol.proxy_provided_certificate().has_value();
+  auto const has_verify_mode = parsed_protocol.get_tls_verify_mode().has_value();
+  auto const verify_mode = parsed_protocol.get_tls_verify_mode().value_or(0);
+  auto const sni = parsed_protocol.get_tls_sni_name().value_or("");
 
-  auto proxy_provided_certificate = parse_proxy_provided_certificate(tls_node);
-  if (!proxy_provided_certificate.is_ok()) {
-    errata.note(std::move(proxy_provided_certificate.errata()));
-    return errata;
-  }
-
-  auto const verify_mode_node_value = parse_verify_mode(tls_node);
-  if (!verify_mode_node_value.is_ok()) {
-    errata.note(std::move(verify_mode_node_value.errata()));
-    return errata;
-  }
+  auto const request_certificate_value =
+      has_request_certificate ? (should_request_certificate ? 1 : 0) : -1;
+  auto const proxy_provided_certificate_value =
+      has_proxy_provided_certificate ? (proxy_provided_certificate ? 1 : 0) : -1;
 
   /* And all of these can exist concurrently but they must all agree. */
-  if ((proxy_provided_certificate == 1 && should_request_certificate == 0) ||
-      (proxy_provided_certificate == 0 && should_request_certificate == 1) ||
+  if ((proxy_provided_certificate_value == 1 && request_certificate_value == 0) ||
+      (proxy_provided_certificate_value == 0 && request_certificate_value == 1) ||
 
-      (proxy_provided_certificate == 1 && verify_mode_node_value == 0) ||
-      (proxy_provided_certificate == 0 && verify_mode_node_value > 0) ||
+      (proxy_provided_certificate_value == 1 && has_verify_mode && verify_mode == 0) ||
+      (proxy_provided_certificate_value == 0 && has_verify_mode && verify_mode > 0) ||
 
-      (should_request_certificate == 1 && verify_mode_node_value == 0) ||
-      (should_request_certificate == 0 && verify_mode_node_value > 0))
+      (request_certificate_value == 1 && has_verify_mode && verify_mode == 0) ||
+      (request_certificate_value == 0 && has_verify_mode && verify_mode > 0))
   {
     errata.note(
         S_ERROR,
         R"(The "tls" node at "{}":{} has conflicting {}, {}, and {} values.)",
         _path,
-        tls_node.Mark().line,
+        mark.line,
         YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY,
         YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY,
         YAML_SSN_TLS_VERIFY_MODE_KEY);
@@ -406,29 +349,30 @@ ServerReplayFileHandler::handle_tls_node_directives(
   }
 
   TLSHandshakeBehavior handshake_behavior;
-  if (verify_mode_node_value > 0) {
-    handshake_behavior.set_verify_mode(verify_mode_node_value);
+  if (verify_mode > 0) {
+    handshake_behavior.set_verify_mode(verify_mode);
     errata.note(
         S_DIAG,
         R"(Registered an SNI for client certification "{}":{}. SNI: {}, verify_mode: {}.)",
         _path,
-        tls_node.Mark().line,
+        mark.line,
         sni,
-        verify_mode_node_value.result());
-  } else if (should_request_certificate == 1 || proxy_provided_certificate == 1) {
+        verify_mode);
+  } else if (should_request_certificate || proxy_provided_certificate) {
     handshake_behavior.set_verify_mode(SSL_VERIFY_PEER);
     errata.note(
         S_DIAG,
         R"(Registered an SNI for client certification "{}":{}. SNI: {}.)",
         _path,
-        tls_node.Mark().line,
+        mark.line,
         sni);
   }
 
-  auto const alpn_protocols = parse_alpn_protocols_node(tls_node);
-  if (!alpn_protocols.result().empty()) {
-    handshake_behavior.set_alpn_protocols_string(alpn_protocols.result());
-    auto const printable_alpn = get_printable_alpn_string(alpn_protocols.result());
+  if (auto const &alpn_protocols = parsed_protocol.get_tls_alpn_protocols_string();
+      alpn_protocols.has_value())
+  {
+    handshake_behavior.set_alpn_protocols_string(*alpn_protocols);
+    auto const printable_alpn = get_printable_alpn_string(*alpn_protocols);
     errata.note(S_DIAG, R"(Using ALPN protocol string "{}" for SNI "{}")", printable_alpn, sni);
   }
 
@@ -465,44 +409,34 @@ ServerReplayFileHandler::handle_protocol_node(YAML::Node const &proxy_request_no
     return errata;
   }
 
-  auto const http_node =
-      parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_HTTP_NAME);
-  if (!http_node.is_ok()) {
-    errata.note(std::move(http_node.errata()));
+  auto const parsed_protocol = parse_protocol_node(protocol_sequence_node);
+  if (!parsed_protocol.is_ok()) {
+    errata.note(std::move(parsed_protocol.errata()));
     return errata;
   }
-  if (http_node.result().IsDefined() && http_node.result()[YAML_SSN_PROTOCOL_VERSION]) {
-    if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
-      _txn._req.set_is_http2();
-      _txn._rsp.set_is_http2();
-    } else if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "3") {
-      _txn._req.set_is_http3();
-      _txn._rsp.set_is_http3();
-    } else {
-      _txn._req.set_is_http1();
-      _txn._rsp.set_is_http1();
-    }
+  auto const &protocol = parsed_protocol.result();
+
+  switch (protocol.get_http_protocol()) {
+  case ReplayFileHandler::HttpProtocol::HTTP:
+  case ReplayFileHandler::HttpProtocol::HTTPS:
+    _txn._req.set_is_http1();
+    _txn._rsp.set_is_http1();
+    break;
+  case ReplayFileHandler::HttpProtocol::HTTP2:
+    _txn._req.set_is_http2();
+    _txn._rsp.set_is_http2();
+    break;
+  case ReplayFileHandler::HttpProtocol::HTTP3:
+    _txn._req.set_is_http3();
+    _txn._rsp.set_is_http3();
+    break;
   }
 
-  auto const tls_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
-  if (!tls_node.is_ok()) {
-    errata.note(std::move(tls_node.errata()));
-    return errata;
-  }
-  if (!tls_node.result()) {
-    return errata;
-  }
-  auto const &sni_rv = parse_sni(tls_node);
-  if (!sni_rv.is_ok()) {
-    errata.note(std::move(sni_rv.errata()));
-    return errata;
-  }
-  auto const sni = sni_rv.result();
-  if (sni.empty()) {
+  if (!protocol.get_tls_sni_name().has_value()) {
     return errata;
   }
 
-  auto handle_errata = handle_tls_node_directives(tls_node, sni);
+  auto handle_errata = handle_tls_node_directives(protocol, protocol_sequence_node.Mark());
   if (!handle_errata.is_ok()) {
     errata.note(std::move(handle_errata));
     return errata;

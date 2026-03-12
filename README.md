@@ -514,12 +514,9 @@ The following sample replay file snippet demonstrate how to specify such a test 
 ```YAML
 sessions:
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
     version: 4
   transactions:
   - client-request:
@@ -614,12 +611,9 @@ the RFC. Here's an example session configured with `close-on-goaway` set to
 ```YAML
 sessions:
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
     version: 4
   close-on-goaway: false
   transactions:
@@ -758,13 +752,51 @@ lower layer protocols used to transport this HTTP traffic.
 As stated above, each HTTP session is described as an item under the `sessions`
 node sequence. Each session takes a map. HTTP transactions are described under
 the `transactions` key described above. In addition to `transactions`, a
-session also takes an optional `protocol` node. This node takes an ordered
-sequence of maps, where each item in the sequence describes the characteristics
-of a protocol layer.  The sequence is expected to be ordered from higher layer
-protocols (such as HTTP and TLS) to lower layer protocols (such as IP).
+session also takes an optional `protocol` node. This node can be specified in
+either of two forms:
 
-Here is an example protocol node along with `sessions` and `transactions`
-nodes provided to give some context:
+1. A concise map form, recommended for human-written replay files.
+1. A verbose sequence form, which is still useful for tools that dump the
+   protocol stack explicitly.
+
+The concise map form uses a `stack` key for common defaults. The rest of the
+map can then selectively include the already defined protocol layer maps as
+overrides. For example:
+
+```YAML
+sessions:
+
+- protocol:
+    stack: http2
+    tls:
+      sni: test_sni
+
+  transactions:
+  # ...
+```
+
+This selects the HTTP/2 stack and then overrides the TLS layer to apply the SNI
+of `test_sni`. If you omit override maps such as `tls`, then the selected stack
+is used with its default behavior.
+
+The supported concise map keys are:
+
+| Key               | Supported Values           | Description
+| -----             | ----------------          | -----------
+| stack             | `http`, `https`, `http2`, `http3` | Shorthand for common protocol stacks.
+| tls               | map                        | Optional TLS layer override. Supports the same TLS keys as the verbose form, such as `sni`, `request-certificate`, `proxy-provided-certificate`, `verify-mode`, and `alpn-protocols`.
+| proxy-protocol    | `1`, `2`, or map           | A PROXY protocol version shorthand or a map with `version`, `src-addr`, and `dst-addr`.
+| http              | scalar version or map      | Optional explicit HTTP layer override when not using `stack`.
+| tcp               | map                        | Optional explicit TCP layer override.
+| ip                | map                        | Optional explicit IP layer override.
+
+The verbose sequence form takes an ordered sequence of maps, where each item in
+the sequence describes the characteristics of a protocol layer. The sequence is
+expected to be ordered from higher layer protocols (such as HTTP and TLS) to
+lower layer protocols (such as IP).
+
+Here is the equivalent verbose protocol node along with `sessions` and
+`transactions` nodes provided to give some context:
 
 ```YAML
 sessions:
@@ -791,7 +823,7 @@ this session has four layers described for it: http, tls, tcp, and ip. The
 `tls` node specifies that the client should use an SNI of "test\_sni" in the
 TLS client hello handshake. Further, this should be transported over TCP on IP.
 
-The following nodes are supported for `protocol`:
+The following verbose `name` values are supported for `protocol`:
 
 | Name            | Node                         | Supported Values    | Description
 | -----           |--------                      | ----------------    | -----------
@@ -822,10 +854,10 @@ The following protocol specification features are not currently implemented:
   behavior. An enhancement request to support A TLS version specification
   feature request is recorded in issue
   [101](https://github.com/yahoo/proxy-verifier/issues/101).
-* Similarly, the user cannot specify whether to use IPv4 or IPv6 via an
-  `ip:version` node.  Proxy Verifier can test IPv6, but it does so via the user
-  passing IPv6 addresses on the commandline. An IP version feature request is
-  recorded in issue [100](https://github.com/yahoo/proxy-verifier/issues/100).
+* Similarly, the user cannot specify whether to use IPv4 or IPv6 via YAML.
+  Proxy Verifier can test IPv6, but it does so via the user passing IPv6
+  addresses on the command line. An IP version feature request is recorded in
+  issue [100](https://github.com/yahoo/proxy-verifier/issues/100).
 * Only TCP is supported. There have been recent discussions about adding
   HTTP/3 support, which is over UDP, but work for that has not yet started.
 * The PROXY protocol support is limited to the `PROXY` command via TCP over IPv4 or IPv6. Therefore,
@@ -1511,12 +1543,9 @@ sessions:
 # SNI of # test_sni in the TLS handshake.
 #
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
 
   transactions:
 
@@ -1577,13 +1606,9 @@ sessions:
 # For the third session, we demonstrate how body verification should be specified.
 #
 - protocol:
-  - name: http
-    version: 1.1
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
-    version: 4
+    stack: https
+    tls:
+      sni: test_sni
 
   transactions:
 

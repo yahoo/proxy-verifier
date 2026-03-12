@@ -254,90 +254,47 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
   }
 
   if (auto protocol_sequence_node{node[YAML_SSN_PROTOCOL_KEY]}; protocol_sequence_node) {
-    auto const tls_node =
-        parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_TLS_NAME);
-    if (!tls_node.is_ok()) {
-      errata.note(std::move(tls_node.errata()));
+    auto const parsed_protocol = parse_protocol_node(protocol_sequence_node);
+    if (!parsed_protocol.is_ok()) {
+      errata.note(std::move(parsed_protocol.errata()));
       return errata;
     }
-    if (tls_node.result().IsDefined()) {
+    auto const &protocol = parsed_protocol.result();
+    switch (protocol.get_http_protocol()) {
+    case ReplayFileHandler::HttpProtocol::HTTP:
+      break;
+    case ReplayFileHandler::HttpProtocol::HTTPS:
       _ssn->is_tls = true;
-      auto const sni = parse_sni(tls_node);
-      if (!sni.is_ok()) {
-        errata.note(std::move(sni.errata()));
-        return errata;
-      }
-      if (!sni.result().empty()) {
-        _ssn->_client_sni = sni.result();
-      }
-      auto const verify_mode = parse_verify_mode(tls_node);
-      if (!verify_mode.is_ok()) {
-        errata.note(std::move(verify_mode.errata()));
-        return errata;
-      }
-      if (verify_mode > 0) {
-        _ssn->_client_verify_mode = verify_mode;
-      }
+      break;
+    case ReplayFileHandler::HttpProtocol::HTTP2:
+      _ssn->is_h2 = true;
+      break;
+    case ReplayFileHandler::HttpProtocol::HTTP3:
+      _ssn->is_h3 = true;
+      break;
     }
 
-    auto const http_node =
-        parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_HTTP_NAME);
-    if (!http_node.is_ok()) {
-      errata.note(std::move(http_node.errata()));
-      return errata;
+    if (auto const &sni = protocol.get_tls_sni_name(); sni.has_value()) {
+      _ssn->_client_sni = *sni;
     }
-    if (http_node.result().IsDefined() && http_node.result()[YAML_SSN_PROTOCOL_VERSION]) {
-      if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "2") {
-        _ssn->is_h2 = true;
-      } else if (http_node.result()[YAML_SSN_PROTOCOL_VERSION].Scalar() == "3") {
-        _ssn->is_h3 = true;
-      }
+
+    if (auto const &verify_mode = protocol.get_tls_verify_mode();
+        verify_mode.has_value() && *verify_mode > 0)
+    {
+      _ssn->_client_verify_mode = *verify_mode;
     }
-    // parse the proxy protocol node
-    auto const pp_node = parse_for_protocol_node(protocol_sequence_node, YAML_SSN_PROTOCOL_PP_NAME);
-    if (!pp_node.is_ok()) {
-      errata.note(std::move(pp_node.errata()));
-      return errata;
-    }
-    if (pp_node.result().IsDefined()) {
-      auto const &pp_version_node = pp_node.result()[YAML_SSN_PROTOCOL_VERSION];
-      if (pp_version_node.IsDefined() &&
-          (pp_version_node.Scalar() == "1" || pp_version_node.Scalar() == "2"))
-      {
-        errata.note(S_DIAG, "Enabling PROXY protocol for this session.");
-        // Set the PROXY protocol version as specified.
-        _ssn->_pp_msg = std::make_unique<ProxyProtocolMsg>(
-            (pp_version_node.Scalar() == "1") ? ProxyProtocolVersion::V1 :
-                                                ProxyProtocolVersion::V2);
-        // If the addresses are specified, set them in the PROXY protocol
-        // message.
-        auto const &pp_src_addr_node = pp_node.result()[YAML_SSN_PP_SRC_ADDR_KEY];
-        auto const &pp_dst_addr_node = pp_node.result()[YAML_SSN_PP_DST_ADDR_KEY];
-        if (pp_src_addr_node.IsDefined() && pp_dst_addr_node.IsDefined()) {
-          // Both are specified.
-          swoc::IPEndpoint src_ep{pp_src_addr_node.Scalar()};
-          swoc::IPEndpoint dst_ep{pp_dst_addr_node.Scalar()};
-          _ssn->_pp_msg->set_endpoints(src_ep, dst_ep);
-        } else if (pp_src_addr_node.IsDefined() || pp_dst_addr_node.IsDefined()) {
-          // Only one of the source and destination address is specified.
-          errata.note(
-              S_ERROR,
-              R"(Invalid PROXY protocol address specification detected in
-              session at "{}":{} - Need to specify none or both of the source
-              and destination addresses)",
-              _path,
-              _ssn->_line_no);
-          return errata;
-        }
-      } else {
-        // PROXY protocol node exists, but the version is unspecified or
-        // invalid.
-        errata.note(
-            S_ERROR,
-            R"(Invalid PROXY protocol version specified in session at "{}":{}.)",
-            _path,
-            _ssn->_line_no);
-        return errata;
+
+    if (auto const &proxy_protocol_version = protocol.get_proxy_protocol_version();
+        proxy_protocol_version.has_value())
+    {
+      errata.note(S_DIAG, "Enabling PROXY protocol for this session.");
+      _ssn->_pp_msg = std::make_unique<ProxyProtocolMsg>(
+          *proxy_protocol_version == 1 ? ProxyProtocolVersion::V1 : ProxyProtocolVersion::V2);
+
+      if (auto const &src_addr = protocol.get_proxy_protocol_src_addr(); src_addr.has_value()) {
+        swoc::IPEndpoint src_ep{*src_addr};
+        swoc::IPEndpoint dst_ep{*protocol.get_proxy_protocol_dst_addr()};
+        _ssn->_pp_msg->set_endpoints(src_ep, dst_ep);
       }
     }
   }

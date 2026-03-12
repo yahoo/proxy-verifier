@@ -17,6 +17,17 @@ using std::chrono::microseconds;
 
 constexpr bool IS_VALID = true;
 
+namespace
+{
+class ReplayFileHandlerTester : public ReplayFileHandler
+{
+public:
+  using ReplayFileHandler::HttpProtocol;
+  using ReplayFileHandler::ParsedProtocolNode;
+  using ReplayFileHandler::parse_protocol_node;
+};
+} // namespace
+
 struct ParseDelaySpecificationTestCase
 {
   std::string const description;
@@ -226,4 +237,115 @@ TEST_CASE("Verify server-response validation for on_connect", "[on_connect]")
   } else {
     CHECK_FALSE(errata.is_ok());
   }
+}
+
+TEST_CASE("Verify verbose protocol sequences parse into a common protocol object", "[protocol]")
+{
+  auto const protocol_node = YAML::Load(R"(
+[
+  { name: http, version: 2 },
+  { name: tls, sni: test_sni, verify-mode: 1 },
+  { name: proxy-protocol, version: 2, src-addr: 127.0.0.1:1000, dst-addr: 127.0.0.1:2000 },
+  { name: tcp },
+  { name: ip }
+]
+)");
+
+  ReplayFileHandlerTester::ParsedProtocolNode parsed_protocol{protocol_node};
+  REQUIRE(parsed_protocol.is_valid());
+  CHECK(parsed_protocol.get_http_protocol() == ReplayFileHandlerTester::HttpProtocol::HTTP2);
+  CHECK(parsed_protocol.is_tls());
+  REQUIRE(parsed_protocol.get_tls_sni_name().has_value());
+  CHECK(parsed_protocol.get_tls_sni_name().value() == "test_sni");
+  REQUIRE(parsed_protocol.get_tls_verify_mode().has_value());
+  CHECK(parsed_protocol.get_tls_verify_mode().value() == 1);
+  REQUIRE(parsed_protocol.get_proxy_protocol_version().has_value());
+  CHECK(parsed_protocol.get_proxy_protocol_version().value() == 2);
+  REQUIRE(parsed_protocol.get_proxy_protocol_src_addr().has_value());
+  CHECK(parsed_protocol.get_proxy_protocol_src_addr().value() == "127.0.0.1:1000");
+  REQUIRE(parsed_protocol.get_proxy_protocol_dst_addr().has_value());
+  CHECK(parsed_protocol.get_proxy_protocol_dst_addr().value() == "127.0.0.1:2000");
+}
+
+TEST_CASE("Verify protocol stack shorthand parses into a common protocol object", "[protocol]")
+{
+  auto const protocol_node = YAML::Load(R"(
+stack: http2
+tls:
+  sni: test_sni
+  verify-mode: 1
+proxy-protocol: 2
+)");
+
+  auto const parsed_protocol = ReplayFileHandlerTester::parse_protocol_node(protocol_node);
+  REQUIRE(parsed_protocol.is_ok());
+  CHECK(
+      parsed_protocol.result().get_http_protocol() == ReplayFileHandlerTester::HttpProtocol::HTTP2);
+  CHECK(parsed_protocol.result().is_tls());
+  REQUIRE(parsed_protocol.result().get_tls_sni_name().has_value());
+  CHECK(parsed_protocol.result().get_tls_sni_name().value() == "test_sni");
+  REQUIRE(parsed_protocol.result().get_tls_verify_mode().has_value());
+  CHECK(parsed_protocol.result().get_tls_verify_mode().value() == 1);
+  REQUIRE(parsed_protocol.result().get_proxy_protocol_version().has_value());
+  CHECK(parsed_protocol.result().get_proxy_protocol_version().value() == 2);
+}
+
+TEST_CASE("Verify http stack synthesizes HTTP/1 defaults", "[protocol]")
+{
+  auto const protocol_node = YAML::Load("{ stack: http }");
+  ReplayFileHandlerTester::ParsedProtocolNode parsed_protocol{protocol_node};
+  REQUIRE(parsed_protocol.is_valid());
+  CHECK(parsed_protocol.get_http_protocol() == ReplayFileHandlerTester::HttpProtocol::HTTP);
+  CHECK_FALSE(parsed_protocol.is_tls());
+}
+
+TEST_CASE("Verify https stack synthesizes TLS defaults", "[protocol]")
+{
+  auto const protocol_node = YAML::Load("{ stack: https }");
+  ReplayFileHandlerTester::ParsedProtocolNode parsed_protocol{protocol_node};
+  REQUIRE(parsed_protocol.is_valid());
+  CHECK(parsed_protocol.get_http_protocol() == ReplayFileHandlerTester::HttpProtocol::HTTPS);
+  CHECK(parsed_protocol.is_tls());
+}
+
+TEST_CASE("Verify conflicting protocol stack and TLS options are rejected", "[protocol]")
+{
+  SECTION("flattened TLS shorthand")
+  {
+    auto const protocol_node = YAML::Load("{ stack: http2, sni: test_sni }");
+    ReplayFileHandlerTester::ParsedProtocolNode parsed_protocol{protocol_node};
+    CHECK_FALSE(parsed_protocol.is_valid());
+  }
+
+  SECTION("explicit tls map")
+  {
+    auto const protocol_node = YAML::Load("{ stack: http, tls: { sni: test_sni } }");
+    ReplayFileHandlerTester::ParsedProtocolNode parsed_protocol{protocol_node};
+    CHECK_FALSE(parsed_protocol.is_valid());
+  }
+
+  SECTION("explicit http layer override")
+  {
+    auto const protocol_node = YAML::Load("{ stack: http2, http: { version: 3 } }");
+    ReplayFileHandlerTester::ParsedProtocolNode parsed_protocol{protocol_node};
+    CHECK_FALSE(parsed_protocol.is_valid());
+  }
+}
+
+TEST_CASE("Verify explicit TLS maps can be combined with stack shorthand", "[protocol]")
+{
+  auto const protocol_node = YAML::Load(R"(
+stack: http2
+tls:
+  sni: test_sni_with_map
+  request-certificate: true
+)");
+
+  auto const parsed_protocol = ReplayFileHandlerTester::parse_protocol_node(protocol_node);
+  REQUIRE(parsed_protocol.is_ok());
+  CHECK(parsed_protocol.result().is_tls());
+  REQUIRE(parsed_protocol.result().get_tls_sni_name().has_value());
+  CHECK(parsed_protocol.result().get_tls_sni_name().value() == "test_sni_with_map");
+  REQUIRE(parsed_protocol.result().should_request_certificate().has_value());
+  CHECK(parsed_protocol.result().should_request_certificate().value());
 }

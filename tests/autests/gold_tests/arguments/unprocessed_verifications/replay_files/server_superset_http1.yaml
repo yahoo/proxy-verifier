@@ -10,11 +10,7 @@ meta:
   version: "1.0"
 sessions:
 - protocol:
-  - name: http
-    version: 1.1
-  - name: tcp
-  - name: ip
-    version: 4
+    stack: http
   transactions:
   - proxy-request:
       method: GET

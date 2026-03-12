@@ -118,38 +118,148 @@
     },
     "protocol": {
       "description": "The characteristics of the lower level protocols.",
-      "type": "array",
-      "required": ["name"],
-      "properties": {
-        "name": {
-          "desciption": "The name of the protocol.",
-          "type": "string"
+      "oneOf": [
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "The name of the protocol layer.",
+                "type": "string",
+                "enum": ["http", "tls", "proxy-protocol", "tcp", "ip"]
+              },
+              "version": {
+                "description": "The version of the protocol.",
+                "type": ["string", "integer"]
+              },
+              "sni": {
+                "description": "The SNI in the client hello.",
+                "type": "string"
+              },
+              "request-certificate": {
+                "description": "Whether a certificate should be requested from the proxy.",
+                "type": "boolean"
+              },
+              "verify-mode": {
+                "description": "The server or client's OpenSSL verify mode against the proxy.",
+                "type": "integer"
+              },
+              "proxy-provided-certificate": {
+                "description": "Whether the proxy provided a cert in the handshake.",
+                "type": "boolean"
+              },
+              "alpn-protocols": {
+                "description": "The ALPN protocol list to advertise or expect.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "src-addr": {
+                "description": "The source address and port in the PROXY header.",
+                "type": "string"
+              },
+              "dst-addr": {
+                "description": "The destination address and port in the PROXY header.",
+                "type": "string"
+              }
+            }
+          }
         },
-        "version": {
-          "desciption": "The version of the protocol.",
-          "type": "string"
-        },
-        "sni": {
-          "desciption": "The SNI in the client hello.",
-          "type": "string"
-        },
-        "request-certificate": {
-          "desciption": "Whether a certificate should be requested from the proxy.",
-          "type": "boolean"
-        },
-        "verify-mode": {
-          "desciption": "The server or client's OpenSSL verify mode against the proxy.",
-          "type": "boolean"
-        },
-        "proxy-verify-mode": {
-          "desciption": "The proxy's OpenSSL verify mode against the peer.",
-          "type": "integer"
-        },
-        "proxy-provided-certificate": {
-          "desciption": "Whether the proxy provided a cert in the handshake.",
-          "type": "boolean"
+        {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "stack": {
+              "description": "A shorthand for common protocol stacks.",
+              "type": "string",
+              "enum": ["http", "https", "http2", "http3"]
+            },
+            "http": {
+              "description": "Optional explicit HTTP layer override.",
+              "oneOf": [
+                {
+                  "type": ["string", "integer"]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "version": {
+                      "type": ["string", "integer"]
+                    }
+                  }
+                }
+              ]
+            },
+            "tls": {
+              "description": "Optional explicit TLS layer override.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "sni": {
+                  "type": "string"
+                },
+                "request-certificate": {
+                  "type": "boolean"
+                },
+                "verify-mode": {
+                  "type": "integer"
+                },
+                "proxy-provided-certificate": {
+                  "type": "boolean"
+                },
+                "alpn-protocols": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "proxy-protocol": {
+              "description": "Optional PROXY protocol configuration.",
+              "oneOf": [
+                {
+                  "type": ["string", "integer"],
+                  "enum": ["1", "2", 1, 2]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "version": {
+                      "type": ["string", "integer"],
+                      "enum": ["1", "2", 1, 2]
+                    },
+                    "src-addr": {
+                      "type": "string"
+                    },
+                    "dst-addr": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            },
+            "tcp": {
+              "description": "Optional explicit TCP layer override.",
+              "type": "object",
+              "additionalProperties": false
+            },
+            "ip": {
+              "description": "Optional explicit IP layer override.",
+              "type": "object",
+              "additionalProperties": false
+            }
+          }
         }
-      }
+      ]
     },
     "header-fields": {
       "description": "HTTP header fields.",

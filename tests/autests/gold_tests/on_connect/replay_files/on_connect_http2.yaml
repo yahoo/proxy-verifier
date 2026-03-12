@@ -9,12 +9,9 @@ meta:
 
 sessions:
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
 
   transactions:
   - client-request:
@@ -28,11 +25,9 @@ sessions:
 
     proxy-request:
       protocol:
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
-
+        stack: https
+        tls:
+          sni: test_sni
     proxy-response:
       status: 200
 
@@ -45,12 +40,9 @@ sessions:
         - [ uuid, 1 ]
 
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
 
   transactions:
   - client-request:
@@ -64,11 +56,9 @@ sessions:
 
     proxy-request:
       protocol:
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
-
+        stack: https
+        tls:
+          sni: test_sni
     proxy-response:
       status: 502
 
@@ -76,12 +66,9 @@ sessions:
       on_connect: refuse
 
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
 
   transactions:
   - client-request:
@@ -95,11 +82,9 @@ sessions:
 
     proxy-request:
       protocol:
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
-
+        stack: https
+        tls:
+          sni: test_sni
     proxy-response:
       status: 502
 

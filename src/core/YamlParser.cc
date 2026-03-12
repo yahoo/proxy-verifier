@@ -1414,97 +1414,611 @@ YamlParser::process_pseudo_headers(YAML::Node const &node, HttpHeader &message)
   return errata;
 }
 
-swoc::Rv<YAML::Node const>
-ReplayFileHandler::parse_for_protocol_node(
-    YAML::Node const &protocol_node,
-    std::string_view protocol_name)
+ReplayFileHandler::ParsedProtocolNode::ParsedProtocolNode(YAML::Node const &protocol_node)
 {
-  swoc::Rv<YAML::Node const> desired_node = YAML::Node{YAML::NodeType::Undefined};
-  if (!protocol_node.IsSequence()) {
-    desired_node.note(
+  parse_node(protocol_node);
+}
+
+bool
+ReplayFileHandler::ParsedProtocolNode::is_valid() const
+{
+  return _errata.is_ok();
+}
+
+swoc::Errata const &
+ReplayFileHandler::ParsedProtocolNode::errata() const
+{
+  return _errata;
+}
+
+ReplayFileHandler::HttpProtocol
+ReplayFileHandler::ParsedProtocolNode::get_http_protocol() const
+{
+  return _http_protocol;
+}
+
+bool
+ReplayFileHandler::ParsedProtocolNode::is_tls() const
+{
+  return _http_protocol == HttpProtocol::HTTPS || _http_protocol == HttpProtocol::HTTP2 ||
+         _http_protocol == HttpProtocol::HTTP3 || _is_tls;
+}
+
+std::optional<std::string> const &
+ReplayFileHandler::ParsedProtocolNode::get_tls_sni_name() const
+{
+  return _tls_sni_name;
+}
+
+std::optional<int> const &
+ReplayFileHandler::ParsedProtocolNode::get_tls_verify_mode() const
+{
+  return _tls_verify_mode;
+}
+
+std::optional<bool> const &
+ReplayFileHandler::ParsedProtocolNode::should_request_certificate() const
+{
+  return _should_request_certificate;
+}
+
+std::optional<bool> const &
+ReplayFileHandler::ParsedProtocolNode::proxy_provided_certificate() const
+{
+  return _proxy_provided_certificate;
+}
+
+std::optional<std::string> const &
+ReplayFileHandler::ParsedProtocolNode::get_tls_alpn_protocols_string() const
+{
+  return _tls_alpn_protocols_string;
+}
+
+std::optional<int> const &
+ReplayFileHandler::ParsedProtocolNode::get_proxy_protocol_version() const
+{
+  return _proxy_protocol_version;
+}
+
+std::optional<std::string> const &
+ReplayFileHandler::ParsedProtocolNode::get_proxy_protocol_src_addr() const
+{
+  return _proxy_protocol_src_addr;
+}
+
+std::optional<std::string> const &
+ReplayFileHandler::ParsedProtocolNode::get_proxy_protocol_dst_addr() const
+{
+  return _proxy_protocol_dst_addr;
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_node(YAML::Node const &protocol_node)
+{
+  if (protocol_node.IsSequence()) {
+    parse_verbose_sequence(protocol_node);
+  } else if (protocol_node.IsMap()) {
+    parse_concise_map(protocol_node);
+  } else {
+    _errata.note(
         S_ERROR,
-        "Protocol node at {} is not a sequence as required.",
+        "Protocol node at {} is not a sequence or map as required.",
         protocol_node.Mark());
-    return desired_node;
   }
+
+  if (_errata.is_ok()) {
+    finalize_http_protocol();
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_verbose_sequence(YAML::Node const &protocol_node)
+{
   if (protocol_node.size() == 0) {
-    desired_node.note(S_ERROR, "Protocol node at {} is an empty sequence.", protocol_node.Mark());
-    return desired_node;
+    _errata.note(S_ERROR, "Protocol node at {} is an empty sequence.", protocol_node.Mark());
+    return;
   }
+
   for (auto const &protocol_element : protocol_node) {
-    if (!protocol_element.IsMap()) {
-      desired_node.note(S_ERROR, "Protocol element at {} is not a map.", protocol_element.Mark());
-      return desired_node;
+    parse_verbose_protocol_element(protocol_element);
+    if (!_errata.is_ok()) {
+      return;
     }
-    if (!protocol_element[YAML_SSN_PROTOCOL_NAME]) {
-      desired_node.note(
-          S_ERROR,
-          R"(Protocol element at {} does not have a "{}" element.)",
-          protocol_element.Mark(),
-          YAML_SSN_PROTOCOL_NAME);
-      return desired_node;
-    }
-    if (protocol_element[YAML_SSN_PROTOCOL_NAME].Scalar() != protocol_name) {
-      continue;
-    }
-    return swoc::Rv<YAML::Node const>{protocol_element};
   }
-  return desired_node;
 }
 
-swoc::Rv<std::string>
-ReplayFileHandler::parse_sni(YAML::Node const &tls_node)
+void
+ReplayFileHandler::ParsedProtocolNode::parse_verbose_protocol_element(
+    YAML::Node const &protocol_element)
 {
-  swoc::Rv<std::string> sni;
-  if (auto sni_node{tls_node[YAML_SSN_TLS_SNI_KEY]}; sni_node) {
-    if (sni_node.IsScalar()) {
-      sni.result() = sni_node.Scalar();
+  if (!protocol_element.IsMap()) {
+    _errata.note(S_ERROR, "Protocol element at {} is not a map.", protocol_element.Mark());
+    return;
+  }
+
+  auto const name_node = protocol_element[YAML_SSN_PROTOCOL_NAME];
+  if (!name_node) {
+    _errata.note(
+        S_ERROR,
+        R"(Protocol element at {} does not have a "{}" element.)",
+        protocol_element.Mark(),
+        YAML_SSN_PROTOCOL_NAME);
+    return;
+  }
+
+  if (!name_node.IsScalar()) {
+    _errata.note(
+        S_ERROR,
+        R"(Protocol element "{}" at {} is not a scalar.)",
+        YAML_SSN_PROTOCOL_NAME,
+        name_node.Mark());
+    return;
+  }
+
+  auto const protocol_name = name_node.Scalar();
+  if (protocol_name == YAML_SSN_PROTOCOL_HTTP_NAME) {
+    if (!_has_http_details) {
+      parse_http_node(protocol_element, false);
+    }
+  } else if (protocol_name == YAML_SSN_PROTOCOL_TLS_NAME) {
+    if (!_has_tls_details) {
+      parse_tls_node(protocol_element);
+    }
+  } else if (protocol_name == YAML_SSN_PROTOCOL_PP_NAME) {
+    if (!_has_proxy_protocol_details) {
+      parse_proxy_protocol_node(protocol_element, false);
+    }
+  } else if (
+      protocol_name == YAML_SSN_PROTOCOL_TCP_NAME || protocol_name == YAML_SSN_PROTOCOL_IP_NAME)
+  {
+    validate_transport_node(protocol_element, protocol_name);
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_concise_map(YAML::Node const &protocol_node)
+{
+  bool saw_protocol_entry = false;
+  for (auto const &[key, value] : protocol_node) {
+    static_cast<void>(value);
+    auto const key_name = key.Scalar();
+    if (!is_supported_map_key(key_name)) {
+      _errata.note(
+          S_ERROR,
+          R"(Protocol map at {} has unsupported key "{}".)",
+          protocol_node.Mark(),
+          key_name);
     } else {
-      sni.note(
-          S_ERROR,
-          R"(Session has a value for key "{}" that is not a scalar as required.)",
-          YAML_SSN_TLS_SNI_KEY);
+      saw_protocol_entry = true;
     }
   }
-  return sni;
-}
+  if (!_errata.is_ok()) {
+    return;
+  }
 
-swoc::Rv<int>
-ReplayFileHandler::parse_verify_mode(YAML::Node const &tls_node)
-{
-  swoc::Rv<int> verify_mode{-1};
-  if (auto tls_verify_mode{tls_node[YAML_SSN_TLS_VERIFY_MODE_KEY]}; tls_verify_mode) {
-    if (tls_verify_mode.IsScalar()) {
-      verify_mode = std::stoi(tls_verify_mode.Scalar());
-    } else {
-      verify_mode.note(
-          S_ERROR,
-          R"(Session has a value for key "{}" that is not a scalar as required.)",
-          YAML_SSN_TLS_SNI_KEY);
+  if (protocol_node[YAML_SSN_PROTOCOL_STACK_KEY] && protocol_node[YAML_SSN_PROTOCOL_HTTP_NAME]) {
+    _errata.note(
+        S_ERROR,
+        R"(Protocol map at {} cannot specify both "{}" and "{}".)",
+        protocol_node.Mark(),
+        YAML_SSN_PROTOCOL_STACK_KEY,
+        YAML_SSN_PROTOCOL_HTTP_NAME);
+    return;
+  }
+
+  parse_stack_value(protocol_node);
+  if (!_errata.is_ok()) {
+    return;
+  }
+
+  if (auto const http_node{protocol_node[YAML_SSN_PROTOCOL_HTTP_NAME]}; http_node) {
+    parse_http_node(http_node, true);
+    if (!_errata.is_ok()) {
+      return;
     }
   }
-  return verify_mode;
+
+  if (auto const explicit_tls_node{protocol_node[YAML_SSN_PROTOCOL_TLS_NAME]}; explicit_tls_node) {
+    auto const stack_node = protocol_node[YAML_SSN_PROTOCOL_STACK_KEY];
+    if (stack_node && stack_node.IsScalar() && stack_node.Scalar() == YAML_SSN_STACK_HTTP) {
+      _errata.note(
+          S_ERROR,
+          R"(Protocol map at {} cannot specify TLS options when "{}" is "{}". Did you mean "{}: {}"?)",
+          protocol_node.Mark(),
+          YAML_SSN_PROTOCOL_STACK_KEY,
+          YAML_SSN_STACK_HTTP,
+          YAML_SSN_PROTOCOL_STACK_KEY,
+          YAML_SSN_STACK_HTTPS);
+      return;
+    }
+    parse_tls_node(explicit_tls_node);
+    if (!_errata.is_ok()) {
+      return;
+    }
+  }
+
+  if (auto const pp_node{protocol_node[YAML_SSN_PROTOCOL_PP_NAME]}; pp_node) {
+    parse_proxy_protocol_node(pp_node, true);
+    if (!_errata.is_ok()) {
+      return;
+    }
+  }
+
+  for (auto const *transport_name : {&YAML_SSN_PROTOCOL_TCP_NAME, &YAML_SSN_PROTOCOL_IP_NAME}) {
+    if (auto const transport_node{protocol_node[*transport_name]}; transport_node) {
+      validate_transport_node(transport_node, *transport_name);
+      if (!_errata.is_ok()) {
+        return;
+      }
+    }
+  }
+
+  if (!saw_protocol_entry) {
+    _errata.note(S_ERROR, "Protocol node at {} is an empty map.", protocol_node.Mark());
+  }
 }
 
-swoc::Rv<std::string>
-ReplayFileHandler::parse_alpn_protocols_node(YAML::Node const &tls_node)
+bool
+ReplayFileHandler::ParsedProtocolNode::is_supported_map_key(std::string_view key_name) const
 {
-  swoc::Rv<std::string> alpn_protocol_string;
-  if (auto alpn_protocols_node{tls_node[YAML_SSN_TLS_ALPN_PROTOCOLS_KEY]}; alpn_protocols_node) {
+  return key_name == YAML_SSN_PROTOCOL_STACK_KEY || key_name == YAML_SSN_PROTOCOL_HTTP_NAME ||
+         key_name == YAML_SSN_PROTOCOL_TLS_NAME || key_name == YAML_SSN_PROTOCOL_PP_NAME ||
+         key_name == YAML_SSN_PROTOCOL_TCP_NAME || key_name == YAML_SSN_PROTOCOL_IP_NAME;
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_stack_value(YAML::Node const &protocol_node)
+{
+  auto const stack_node = protocol_node[YAML_SSN_PROTOCOL_STACK_KEY];
+  if (!stack_node) {
+    return;
+  }
+
+  if (!stack_node.IsScalar()) {
+    _errata.note(
+        S_ERROR,
+        R"("{}" value at {} must be a scalar.)",
+        YAML_SSN_PROTOCOL_STACK_KEY,
+        stack_node.Mark());
+    return;
+  }
+
+  auto const stack = stack_node.Scalar();
+  _has_http_details = true;
+  if (stack == YAML_SSN_STACK_HTTP) {
+    _http_version = "1.1";
+  } else if (stack == YAML_SSN_STACK_HTTPS) {
+    _http_version = "1.1";
+    _is_tls = true;
+  } else if (stack == YAML_SSN_STACK_HTTP2) {
+    _http_version = "2";
+  } else if (stack == YAML_SSN_STACK_HTTP3) {
+    _http_version = "3";
+  } else {
+    _errata.note(
+        S_ERROR,
+        R"(Unsupported "{}" value "{}" at {}. Expected one of: {}, {}, {}, {}.)",
+        YAML_SSN_PROTOCOL_STACK_KEY,
+        stack,
+        stack_node.Mark(),
+        YAML_SSN_STACK_HTTP,
+        YAML_SSN_STACK_HTTPS,
+        YAML_SSN_STACK_HTTP2,
+        YAML_SSN_STACK_HTTP3);
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_http_node(
+    YAML::Node const &http_node,
+    bool allow_scalar_version)
+{
+  if (http_node.IsScalar()) {
+    if (!allow_scalar_version) {
+      _errata.note(
+          S_ERROR,
+          R"("{}" value at {} must be a map.)",
+          YAML_SSN_PROTOCOL_HTTP_NAME,
+          http_node.Mark());
+      return;
+    }
+    _has_http_details = true;
+    parse_http_version_node(http_node);
+    return;
+  }
+
+  if (!http_node.IsMap()) {
+    _errata.note(
+        S_ERROR,
+        R"("{}" value at {} must be a map{}.)",
+        YAML_SSN_PROTOCOL_HTTP_NAME,
+        http_node.Mark(),
+        allow_scalar_version ? " or scalar" : "");
+    return;
+  }
+
+  _has_http_details = true;
+  if (auto const version_node{http_node[YAML_SSN_PROTOCOL_VERSION]}; version_node) {
+    parse_http_version_node(version_node);
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_http_version_node(YAML::Node const &version_node)
+{
+  if (!version_node.IsScalar()) {
+    _errata.note(
+        S_ERROR,
+        R"(Protocol "{}" value at {} must be a scalar.)",
+        YAML_SSN_PROTOCOL_VERSION,
+        version_node.Mark());
+    return;
+  }
+
+  _http_version = version_node.Scalar();
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_tls_node(YAML::Node const &tls_node)
+{
+  if (!tls_node.IsMap()) {
+    _errata.note(
+        S_ERROR,
+        R"("{}" value at {} must be a map.)",
+        YAML_SSN_PROTOCOL_TLS_NAME,
+        tls_node.Mark());
+    return;
+  }
+
+  _is_tls = true;
+  _has_tls_details = true;
+  parse_scalar_string_node(tls_node, YAML_SSN_TLS_SNI_KEY, _tls_sni_name);
+  if (!_errata.is_ok()) {
+    return;
+  }
+
+  parse_scalar_integer_node(tls_node, YAML_SSN_TLS_VERIFY_MODE_KEY, _tls_verify_mode);
+  if (!_errata.is_ok()) {
+    return;
+  }
+
+  parse_boolean_directive(
+      tls_node,
+      YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY,
+      _should_request_certificate);
+  if (!_errata.is_ok()) {
+    return;
+  }
+
+  parse_boolean_directive(
+      tls_node,
+      YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY,
+      _proxy_provided_certificate);
+  if (!_errata.is_ok()) {
+    return;
+  }
+
+  if (auto const alpn_protocols_node{tls_node[YAML_SSN_TLS_ALPN_PROTOCOLS_KEY]};
+      alpn_protocols_node) {
     if (!alpn_protocols_node.IsSequence()) {
-      alpn_protocol_string.note(
+      _errata.note(
           S_ERROR,
           R"(Session has a value for key "{}" that is not a sequence as required.)",
           YAML_SSN_TLS_ALPN_PROTOCOLS_KEY);
-      return alpn_protocol_string;
+      return;
     }
     for (auto const &protocol : alpn_protocols_node) {
+      if (!protocol.IsScalar()) {
+        _errata.note(
+            S_ERROR,
+            R"(Session has a non-scalar entry in "{}" at {}.)",
+            YAML_SSN_TLS_ALPN_PROTOCOLS_KEY,
+            protocol.Mark());
+        return;
+      }
       std::string_view protocol_view{protocol.Scalar()};
-      alpn_protocol_string.result().append(1, (char)protocol_view.size());
-      alpn_protocol_string.result().append(protocol_view);
+      if (!_tls_alpn_protocols_string.has_value()) {
+        _tls_alpn_protocols_string = std::string{};
+      }
+      _tls_alpn_protocols_string->append(1, static_cast<char>(protocol_view.size()));
+      _tls_alpn_protocols_string->append(protocol_view);
     }
   }
-  return alpn_protocol_string;
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_proxy_protocol_node(
+    YAML::Node const &proxy_protocol_node,
+    bool allow_scalar_version)
+{
+  if (proxy_protocol_node.IsScalar()) {
+    if (!allow_scalar_version) {
+      _errata.note(
+          S_ERROR,
+          R"("{}" value at {} must be a map.)",
+          YAML_SSN_PROTOCOL_PP_NAME,
+          proxy_protocol_node.Mark());
+      return;
+    }
+    _has_proxy_protocol_details = true;
+    parse_proxy_protocol_version_node(proxy_protocol_node);
+    return;
+  }
+
+  if (!proxy_protocol_node.IsMap()) {
+    _errata.note(
+        S_ERROR,
+        R"("{}" value at {} must be a map{}.)",
+        YAML_SSN_PROTOCOL_PP_NAME,
+        proxy_protocol_node.Mark(),
+        allow_scalar_version ? " or scalar" : "");
+    return;
+  }
+
+  _has_proxy_protocol_details = true;
+  auto const version_node = proxy_protocol_node[YAML_SSN_PROTOCOL_VERSION];
+  if (!version_node) {
+    _errata.note(
+        S_ERROR,
+        R"(Invalid PROXY protocol version specified in session at {}.)",
+        proxy_protocol_node.Mark());
+    return;
+  }
+  parse_proxy_protocol_version_node(version_node);
+  if (!_errata.is_ok()) {
+    return;
+  }
+
+  parse_scalar_string_node(proxy_protocol_node, YAML_SSN_PP_SRC_ADDR_KEY, _proxy_protocol_src_addr);
+  if (!_errata.is_ok()) {
+    return;
+  }
+  parse_scalar_string_node(proxy_protocol_node, YAML_SSN_PP_DST_ADDR_KEY, _proxy_protocol_dst_addr);
+  if (!_errata.is_ok()) {
+    return;
+  }
+
+  if (_proxy_protocol_src_addr.has_value() != _proxy_protocol_dst_addr.has_value()) {
+    _errata.note(
+        S_ERROR,
+        R"(Invalid PROXY protocol address specification detected at {} - Need to specify none or both of the source and destination addresses.)",
+        proxy_protocol_node.Mark());
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_proxy_protocol_version_node(
+    YAML::Node const &version_node)
+{
+  if (!version_node.IsScalar()) {
+    _errata.note(
+        S_ERROR,
+        R"(Protocol "{}" value at {} must be a scalar.)",
+        YAML_SSN_PROTOCOL_VERSION,
+        version_node.Mark());
+    return;
+  }
+
+  auto const version = version_node.Scalar();
+  if (version == "1") {
+    _proxy_protocol_version = 1;
+  } else if (version == "2") {
+    _proxy_protocol_version = 2;
+  } else {
+    _errata.note(
+        S_ERROR,
+        R"(Invalid PROXY protocol version specified in session at {}.)",
+        version_node.Mark());
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::validate_transport_node(
+    YAML::Node const &transport_node,
+    std::string_view transport_name)
+{
+  if (!transport_node.IsMap()) {
+    _errata
+        .note(S_ERROR, R"("{}" value at {} must be a map.)", transport_name, transport_node.Mark());
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_scalar_string_node(
+    YAML::Node const &parent_node,
+    std::string_view key_name,
+    std::optional<std::string> &target)
+{
+  if (auto const child_node{parent_node[std::string{key_name}]}; child_node) {
+    if (!child_node.IsScalar()) {
+      _errata.note(
+          S_ERROR,
+          R"(Session has a value for key "{}" that is not a scalar as required.)",
+          key_name);
+      return;
+    }
+    target = child_node.Scalar();
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_scalar_integer_node(
+    YAML::Node const &parent_node,
+    std::string_view key_name,
+    std::optional<int> &target)
+{
+  if (auto const child_node{parent_node[std::string{key_name}]}; child_node) {
+    if (!child_node.IsScalar()) {
+      _errata.note(
+          S_ERROR,
+          R"(Session has a value for key "{}" that is not a scalar as required.)",
+          key_name);
+      return;
+    }
+
+    swoc::TextView const value{child_node.Scalar()};
+    swoc::TextView parsed;
+    auto const parsed_value = swoc::svtou(value, &parsed);
+    if (parsed.size() != value.size()) {
+      _errata.note(
+          S_ERROR,
+          R"(Session has an invalid integer value "{}" for key "{}".)",
+          value,
+          key_name);
+      return;
+    }
+    target = static_cast<int>(parsed_value);
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::finalize_http_protocol()
+{
+  if (_http_version == "2") {
+    _http_protocol = HttpProtocol::HTTP2;
+  } else if (_http_version == "3") {
+    _http_protocol = HttpProtocol::HTTP3;
+  } else if (_is_tls) {
+    _http_protocol = HttpProtocol::HTTPS;
+  } else {
+    _http_protocol = HttpProtocol::HTTP;
+  }
+}
+
+void
+ReplayFileHandler::ParsedProtocolNode::parse_boolean_directive(
+    YAML::Node const &parent_node,
+    std::string_view key_name,
+    std::optional<bool> &target)
+{
+  if (auto const child_node{parent_node[std::string{key_name}]}; child_node) {
+    if (!child_node.IsScalar()) {
+      _errata.note(
+          S_ERROR,
+          R"(Session has a value for key "{}" that is not a scalar as required.)",
+          key_name);
+      return;
+    }
+    try {
+      target = child_node.as<bool>();
+    } catch (std::exception const &) {
+      _errata.note(
+          S_ERROR,
+          R"(Session has an invalid boolean value "{}" for key "{}".)",
+          child_node.Scalar(),
+          key_name);
+    }
+  }
+}
+
+swoc::Rv<ReplayFileHandler::ParsedProtocolNode>
+ReplayFileHandler::parse_protocol_node(YAML::Node const &protocol_node)
+{
+  swoc::Rv<ParsedProtocolNode> parsed_protocol{ParsedProtocolNode{protocol_node}};
+  if (!parsed_protocol.result().is_valid()) {
+    parsed_protocol.note(parsed_protocol.result().errata());
+  }
+  return parsed_protocol;
 }
 
 Errata

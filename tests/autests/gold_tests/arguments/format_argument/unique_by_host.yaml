@@ -8,7 +8,8 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip} ]
+- protocol:
+    stack: http
   transactions:
   - all:
       headers:

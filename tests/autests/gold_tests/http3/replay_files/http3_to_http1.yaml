@@ -2,12 +2,9 @@ meta:
   version: '1.0'
 sessions:
 - protocol:
-  - name: http
-    version: 3
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http3
+    tls:
+      sni: test_sni
 
   transactions:
 
@@ -37,12 +34,9 @@ sessions:
     proxy-request:
       # HTTP/1 on the server-side.
       protocol:
-      - name: http
-        version: 1
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: https
+        tls:
+          sni: test_sni
 
       headers:
         url:
@@ -101,12 +95,9 @@ sessions:
     proxy-request:
       # HTTP/1 on the server-side.
       protocol:
-      - name: http
-        version: 1
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: https
+        tls:
+          sni: test_sni
 
       headers:
         url:
@@ -142,12 +133,9 @@ sessions:
 # Test 2: A few transactions in a second session
 #
 - protocol:
-  - name: http
-    version: 3
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http3
+    tls:
+      sni: test_sni
 
   transactions:
 
@@ -168,12 +156,9 @@ sessions:
     proxy-request:
       # HTTP/1 on the server-side.
       protocol:
-      - name: http
-        version: 1
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: https
+        tls:
+          sni: test_sni
 
       headers:
         url:
@@ -219,12 +204,9 @@ sessions:
     proxy-request:
       # HTTP/1 on the server-side.
       protocol:
-      - name: http
-        version: 1
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: https
+        tls:
+          sni: test_sni
 
       headers:
         url:

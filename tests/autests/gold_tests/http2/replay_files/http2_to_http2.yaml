@@ -2,12 +2,9 @@ meta:
   version: '1.0'
 sessions:
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
 
   transactions:
 
@@ -46,26 +43,24 @@ sessions:
     proxy-request:
       # HTTP/2 on the server-side.
       protocol:
-      - name: http
-        version: 2
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: http2
+        tls:
+          sni: test_sni
 
       # URL verification is supported for HTTP/2, with the appropriate fields
       # from :scheme, :authority, and :path used.
-      - [ scheme, { value: https, as: equal } ]
-      - [ host, { value: example.data.com, as: equal } ]
-      - [ path, { value: /a/path, as: equal } ]
-      - [ authority, { value: example.data.com, as: equal } ]
-      - [ net-loc, { value: example.data.com, as: equal } ]
-      - [ query, { value: q=3, as: present } ]
-      - [ query, { value: 3, as: contains } ]
-      - [ fragment, { as: absent } ]
-      - [ host, { as: present } ]
-      - [ path, { value: /, as: prefix } ]
-      - [ port, { as: absent } ]
+      url:
+        - [ scheme, { value: https, as: equal } ]
+        - [ host, { value: example.data.com, as: equal } ]
+        - [ path, { value: /a/path, as: equal } ]
+        - [ authority, { value: example.data.com, as: equal } ]
+        - [ net-loc, { value: example.data.com, as: equal } ]
+        - [ query, { value: q=3, as: present } ]
+        - [ query, { value: 3, as: contains } ]
+        - [ fragment, { as: absent } ]
+        - [ host, { as: present } ]
+        - [ path, { value: /, as: prefix } ]
+        - [ port, { as: absent } ]
       headers:
         encoding: esc_json
         fields:
@@ -134,12 +129,9 @@ sessions:
     proxy-request:
       # HTTP/2 on the server-side.
       protocol:
-      - name: http
-        version: 2
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: http2
+        tls:
+          sni: test_sni
 
       headers:
         fields:
@@ -199,12 +191,9 @@ sessions:
     proxy-request:
       # HTTP/2 on the server-side.
       protocol:
-      - name: http
-        version: 2
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: http2
+        tls:
+          sni: test_sni
 
       headers:
         encoding: esc_json
@@ -315,19 +304,17 @@ sessions:
     proxy-request:
       # HTTP/2 on the server-side.
       protocol:
-      - name: http
-        version: 2
-      - name: tls
-        sni: test_sni
-      - name: tcp
-      - name: ip
+        stack: http2
+        tls:
+          sni: test_sni
 
       # URL verification is supported for HTTP/2, with the appropriate fields
       # from :scheme, :authority, and :path used.
-      - [ scheme, { value: https, as: equal } ]
-      - [ host, { value: example.data.com, as: equal } ]
-      - [ path, { value: /a/path, as: equal } ]
-      - [ authority, { value: example.data.com, as: equal } ]
+      url:
+        - [ scheme, { value: https, as: equal } ]
+        - [ host, { value: example.data.com, as: equal } ]
+        - [ path, { value: /a/path, as: equal } ]
+        - [ authority, { value: example.data.com, as: equal } ]
       headers:
         encoding: esc_json
         fields:

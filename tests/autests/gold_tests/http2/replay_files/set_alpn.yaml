@@ -6,12 +6,9 @@ meta:
 #
 sessions:
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni_with_h2
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni_with_h2
 
   transactions:
   - all:
@@ -36,16 +33,13 @@ sessions:
     proxy-request:
       # HTTP/2 on the server-side.
       protocol:
-      - name: http
-        version: 2
-      - name: tls
-        sni: test_sni_with_h2
-        #
-        # *** NOTE "h2" is in this list.
-        #
-        alpn-protocols: [ "h2", "http/1.1", "http1.1" ]
-      - name: tcp
-      - name: ip
+        stack: http2
+        tls:
+          sni: test_sni_with_h2
+          #
+          # *** NOTE "h2" is in this list.
+          #
+          alpn-protocols: [ "h2", "http/1.1", "http1.1" ]
 
       headers:
         fields:
@@ -72,12 +66,9 @@ sessions:
   # Remove h2 from the server's ALPN protocol list.
   #
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni_no_h2
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni_no_h2
 
   transactions:
   - all:
@@ -102,16 +93,13 @@ sessions:
     proxy-request:
       # HTTP/2 on the server-side.
       protocol:
-      - name: http
-        version: 2
-      - name: tls
-        sni: test_sni_no_h2
-        #
-        # *** NOTE "h2" is not in this list.
-        #
-        alpn-protocols: [ "http/1.1", "http1.1" ]
-      - name: tcp
-      - name: ip
+        stack: http2
+        tls:
+          sni: test_sni_no_h2
+          #
+          # *** NOTE "h2" is not in this list.
+          #
+          alpn-protocols: [ "http/1.1", "http1.1" ]
 
       headers:
         encoding: esc_json

@@ -59,12 +59,9 @@ sessions:
 # Specify a session delay for an HTTP/2 conneciton.
 #
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
 
   # Verify the ability to specify seconds as a unit.
   delay: 1s

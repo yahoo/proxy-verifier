@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <queue>
 #include <string>
 #include <unordered_set>
@@ -44,11 +45,18 @@ static const std::string YAML_SSN_KEY{"sessions"};
 static const std::string YAML_TIME_START_KEY{"connection-time"};
 static const std::string YAML_TIME_DELAY_KEY{"delay"};
 static const std::string YAML_SSN_PROTOCOL_KEY{"protocol"};
+static const std::string YAML_SSN_PROTOCOL_STACK_KEY{"stack"};
 static const std::string YAML_SSN_PROTOCOL_NAME{"name"};
 static const std::string YAML_SSN_PROTOCOL_VERSION{"version"};
 static const std::string YAML_SSN_PROTOCOL_TLS_NAME{"tls"};
 static const std::string YAML_SSN_PROTOCOL_HTTP_NAME{"http"};
+static const std::string YAML_SSN_PROTOCOL_TCP_NAME{"tcp"};
+static const std::string YAML_SSN_PROTOCOL_IP_NAME{"ip"};
 static const std::string YAML_SSN_PROTOCOL_PP_NAME{"proxy-protocol"};
+static const std::string YAML_SSN_STACK_HTTP{"http"};
+static const std::string YAML_SSN_STACK_HTTPS{"https"};
+static const std::string YAML_SSN_STACK_HTTP2{"http2"};
+static const std::string YAML_SSN_STACK_HTTP3{"http3"};
 static const std::string YAML_SSN_PP_SRC_ADDR_KEY{"src-addr"};
 static const std::string YAML_SSN_PP_DST_ADDR_KEY{"dst-addr"};
 static const std::string YAML_SSN_TLS_SNI_KEY{"sni"};
@@ -229,40 +237,117 @@ public:
   }
 
 protected:
-  /** Parse the "protocol" node for the requested protocol.
-   *
-   * Keep in mind that the "protocol" node is the protocol stack containing a
-   * set of protocol descriptions, such as "tcp", "tls", etc.
-   *
-   * @param[in] protocol_node The "protocol" node from which to search for a
-   * specified protocol node.
-   *
-   * @para[in] protocol_name The key for the protocol node to return.
-   *
-   * @return The protocol node or a node whose type is "YAML::NodeType::Undefined"
-   * if the node did not exist in the protocol map.
-   */
-  static swoc::Rv<YAML::Node const> parse_for_protocol_node(
-      YAML::Node const &protocol_node,
-      std::string_view protocol_name);
+  enum class HttpProtocol {
+    HTTP,
+    HTTPS,
+    HTTP2,
+    HTTP3,
+  };
 
-  /** Parse a "tls" node for an "sni" key and return the value.
+  /** The parsed form of a "protocol" node.
    *
-   * @param[in] tls_node The tls node from which to parse the SNI.
-   *
-   * @return The SNI from the "tls" node or empty string if it doesn't exist.
+   * This provides a common representation for both the verbose sequence form
+   * and the concise map form.
    */
-  static swoc::Rv<std::string> parse_sni(YAML::Node const &tls_node);
+  class ParsedProtocolNode
+  {
+  public:
+    /** Parse the "protocol" node into semantic protocol settings.
+     *
+     * @param[in] protocol_node The YAML "protocol" node to parse.
+     */
+    explicit ParsedProtocolNode(YAML::Node const &protocol_node);
 
-  /** Parse a "tls" node for the given verify-mode node value.
+    /** Whether parsing succeeded. */
+    bool is_valid() const;
+
+    /** Any errata produced while parsing. */
+    swoc::Errata const &errata() const;
+
+    /** The semantic HTTP protocol selected by the parsed stack. */
+    HttpProtocol get_http_protocol() const;
+
+    /** Whether the parsed stack uses TLS. */
+    bool is_tls() const;
+
+    /** The configured TLS SNI name, if present. */
+    std::optional<std::string> const &get_tls_sni_name() const;
+
+    /** The configured TLS verify-mode, if present. */
+    std::optional<int> const &get_tls_verify_mode() const;
+
+    /** Whether request-certificate was specified, if present. */
+    std::optional<bool> const &should_request_certificate() const;
+
+    /** Whether proxy-provided-certificate was specified, if present. */
+    std::optional<bool> const &proxy_provided_certificate() const;
+
+    /** The wire-format ALPN protocol string, if present. */
+    std::optional<std::string> const &get_tls_alpn_protocols_string() const;
+
+    /** The PROXY protocol version, if present. */
+    std::optional<int> const &get_proxy_protocol_version() const;
+
+    /** The PROXY protocol source address, if present. */
+    std::optional<std::string> const &get_proxy_protocol_src_addr() const;
+
+    /** The PROXY protocol destination address, if present. */
+    std::optional<std::string> const &get_proxy_protocol_dst_addr() const;
+
+  private:
+    void parse_node(YAML::Node const &protocol_node);
+    void parse_verbose_sequence(YAML::Node const &protocol_node);
+    void parse_verbose_protocol_element(YAML::Node const &protocol_element);
+    void parse_concise_map(YAML::Node const &protocol_node);
+    bool is_supported_map_key(std::string_view key_name) const;
+    void parse_stack_value(YAML::Node const &protocol_node);
+    void parse_http_node(YAML::Node const &http_node, bool allow_scalar_version);
+    void parse_http_version_node(YAML::Node const &version_node);
+    void parse_tls_node(YAML::Node const &tls_node);
+    void parse_proxy_protocol_node(
+        YAML::Node const &proxy_protocol_node,
+        bool allow_scalar_version);
+    void parse_proxy_protocol_version_node(YAML::Node const &version_node);
+    void validate_transport_node(YAML::Node const &transport_node, std::string_view transport_name);
+    void parse_scalar_string_node(
+        YAML::Node const &parent_node,
+        std::string_view key_name,
+        std::optional<std::string> &target);
+    void parse_scalar_integer_node(
+        YAML::Node const &parent_node,
+        std::string_view key_name,
+        std::optional<int> &target);
+    void finalize_http_protocol();
+    void parse_boolean_directive(
+        YAML::Node const &parent_node,
+        std::string_view key_name,
+        std::optional<bool> &target);
+
+  private:
+    swoc::Errata _errata;
+    HttpProtocol _http_protocol = HttpProtocol::HTTP;
+    std::string _http_version = "1.1";
+    bool _has_http_details = false;
+    bool _has_tls_details = false;
+    bool _has_proxy_protocol_details = false;
+    bool _is_tls = false;
+    std::optional<std::string> _tls_sni_name;
+    std::optional<int> _tls_verify_mode;
+    std::optional<bool> _should_request_certificate;
+    std::optional<bool> _proxy_provided_certificate;
+    std::optional<std::string> _tls_alpn_protocols_string;
+    std::optional<int> _proxy_protocol_version;
+    std::optional<std::string> _proxy_protocol_src_addr;
+    std::optional<std::string> _proxy_protocol_dst_addr;
+  };
+
+  /** Parse the "protocol" node into a common representation.
    *
-   * @param[in] tls_node The tls node from which to parse the verify-mode.
+   * @param[in] protocol_node The "protocol" node to parse.
    *
-   * @return The value of verify-mode, or -1 if it doesn't exist.
+   * @return The parsed protocol object.
    */
-  static swoc::Rv<int> parse_verify_mode(YAML::Node const &tls_node);
-
-  static swoc::Rv<std::string> parse_alpn_protocols_node(YAML::Node const &tls_node);
+  static swoc::Rv<ParsedProtocolNode> parse_protocol_node(YAML::Node const &protocol_node);
 
 protected:
   /** The replay file associated with this handler.

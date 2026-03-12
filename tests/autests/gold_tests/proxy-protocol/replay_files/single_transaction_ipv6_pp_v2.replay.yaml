@@ -8,7 +8,10 @@ meta:
   version: "1.0"
 
 sessions:
-- protocol: [ { name: tcp }, {name: ip}, {name: proxy-protocol, version: 2}]
+- protocol:
+    stack: http
+    proxy-protocol:
+      version: 2
   transactions:
   - all: { headers: { fields: [ [ uuid, 1 ] ] } }
 

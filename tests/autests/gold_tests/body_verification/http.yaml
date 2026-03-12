@@ -2,13 +2,9 @@ meta:
   version: '1.0'
 sessions:
 - protocol:
-  - name: http
-    version: 1.1
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
-    version: 4
+    stack: https
+    tls:
+      sni: test_sni
   transactions:
   - client-request:
       method: POST

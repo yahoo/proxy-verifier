@@ -66,12 +66,9 @@ sessions:
 # Verify server-response delay in an HTTP/2 transaction.
 #
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
 
   transactions:
 

@@ -10,7 +10,8 @@ meta:
 # Basic HTTP transactions to verify the correct behavior of response status
 # verification(status code and reason string)
 sessions:
-  - protocol: [{ name: tcp }, { name: ip }]
+  - protocol:
+      stack: http
     transactions:
       - client-request:
           version: "1.1"

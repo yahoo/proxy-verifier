@@ -12,7 +12,8 @@ meta:
 # Notice there is no proxy-protocol specified in the protocol stack
 sessions:
 - connection-time: 1552705896896003926
-  protocol: [ { name: tcp }, {name: ip} ]
+  protocol:
+    stack: http
 
   transactions:
   - start-time: 1552705896896042340

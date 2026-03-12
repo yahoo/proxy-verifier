@@ -75,12 +75,9 @@ sessions:
 # SNI of # test_sni in the TLS handshake.
 #
 - protocol:
-  - name: http
-    version: 2
-  - name: tls
-    sni: test_sni
-  - name: tcp
-  - name: ip
+    stack: http2
+    tls:
+      sni: test_sni
 
   transactions:
 

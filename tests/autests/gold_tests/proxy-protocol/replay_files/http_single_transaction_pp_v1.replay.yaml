@@ -10,7 +10,10 @@ meta:
 # This file is taken largely from a sample Traffic Dump file.
 sessions:
 - connection-time: 1552705896896003926
-  protocol: [ { name: tcp }, {name: ip}, {name: proxy-protocol, version: 1} ]
+  protocol:
+    stack: http
+    proxy-protocol:
+      version: 1
 
   transactions:
   - start-time: 1552705896896042340

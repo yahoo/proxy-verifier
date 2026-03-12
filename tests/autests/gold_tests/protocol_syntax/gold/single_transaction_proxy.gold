@@ -1,0 +1,19 @@
+``
+Client SNI: test_sni
+``
+POST https://example.data.com/a/path HTTP/1.1
+``
+content-length: 10
+``
+uuid: 1
+``
+==== REQUEST BODY ====
+b'0000000 00'
+
+HTTP/1.1 200 OK
+``
+content-length: 12
+``
+==== RESPONSE BODY ====
+b'0000000 0000'
+``
