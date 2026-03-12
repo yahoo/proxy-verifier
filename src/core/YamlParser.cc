@@ -1581,6 +1581,10 @@ ReplayFileHandler::ParsedProtocolNode::parse_concise_map(YAML::Node const &proto
   bool saw_protocol_entry = false;
   for (auto const &[key, value] : protocol_node) {
     static_cast<void>(value);
+    if (!key.IsScalar()) {
+      _errata.note(S_ERROR, "Protocol map at {} has a non-scalar key.", protocol_node.Mark());
+      continue;
+    }
     auto const key_name = key.Scalar();
     if (!is_supported_map_key(key_name)) {
       _errata.note(
@@ -2059,7 +2063,7 @@ YamlParser::load_replay_file(
     errata.note(
         S_ERROR,
         R"(No sessions list ("{}") at "{}":{}.)",
-        YAML_META_KEY,
+        YAML_SSN_KEY,
         path,
         root.Mark().line);
     return errata;
@@ -2090,13 +2094,18 @@ YamlParser::load_replay_file(
       errata.note(S_ERROR, R"(Failure opening session at "{}":{}.)", path, ssn_node.Mark().line);
       continue;
     }
+    auto finalize_session = [&]() {
+      session_errata.note(handler.ssn_close());
+      errata.note(std::move(session_errata));
+    };
     if (!ssn_node[YAML_TXN_KEY]) {
-      errata.note(
+      session_errata.note(
           S_ERROR,
           R"(Session at "{}":{} has no "{}" key.)",
           path,
           ssn_node.Mark().line,
           YAML_TXN_KEY);
+      finalize_session();
       continue;
     }
     auto txn_list_node{ssn_node[YAML_TXN_KEY]};
@@ -2107,6 +2116,7 @@ YamlParser::load_replay_file(
           txn_list_node.Mark(),
           ssn_node.Mark(),
           path);
+      finalize_session();
       continue;
     }
     if (txn_list_node.size() == 0) {
@@ -2155,8 +2165,7 @@ YamlParser::load_replay_file(
       }
       session_errata.note(std::move(txn_errata));
     }
-    session_errata.note(handler.ssn_close());
-    errata.note(std::move(session_errata));
+    finalize_session();
   }
   return errata;
 }

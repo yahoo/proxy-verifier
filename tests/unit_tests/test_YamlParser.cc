@@ -57,6 +57,27 @@ public:
   int client_request_calls = 0;
   int txn_close_calls = 0;
 };
+
+class SessionTrackingHandler : public ReplayFileHandler
+{
+public:
+  swoc::Errata
+  ssn_open(YAML::Node const & /* node */) override
+  {
+    ++ssn_open_calls;
+    return {};
+  }
+
+  swoc::Errata
+  ssn_close() override
+  {
+    ++ssn_close_calls;
+    return {};
+  }
+
+  int ssn_open_calls = 0;
+  int ssn_close_calls = 0;
+};
 } // namespace
 
 struct ParseDelaySpecificationTestCase
@@ -404,4 +425,32 @@ sessions:
   CHECK(handler.txn_open_calls == 1);
   CHECK(handler.client_request_calls == 0);
   CHECK(handler.txn_close_calls == 0);
+}
+
+TEST_CASE("Verify malformed transaction lists fail the session cleanly", "[yaml]")
+{
+  auto const content = R"(
+meta:
+  version: "1.0"
+sessions:
+  - transactions: {}
+)";
+
+  SessionTrackingHandler handler;
+  auto errata = YamlParser::load_replay_file(swoc::file::path{"synthetic.yaml"}, content, handler);
+
+  CHECK_FALSE(errata.is_ok());
+  CHECK(handler.ssn_open_calls == 1);
+  CHECK(handler.ssn_close_calls == 1);
+}
+
+TEST_CASE("Verify concise protocol maps reject non-scalar keys", "[protocol]")
+{
+  auto const protocol_node = YAML::Load(R"(
+? [stack]
+: http
+)");
+
+  auto const parsed_protocol = ReplayFileHandlerTester::parse_protocol_node(protocol_node);
+  CHECK_FALSE(parsed_protocol.is_ok());
 }

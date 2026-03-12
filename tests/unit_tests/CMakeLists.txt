@@ -4,6 +4,7 @@
 #
 
 set(PV_UNIT_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_ArgParser.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_YamlParser.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_chunk_parsing.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_http.cc"

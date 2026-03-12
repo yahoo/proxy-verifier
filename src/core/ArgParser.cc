@@ -1,6 +1,6 @@
 /** @file
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -21,6 +21,15 @@ int usage_return_code = EX_USAGE;
 
 namespace ts
 {
+namespace
+{
+bool
+is_long_option_with_inline_arg(std::string const &arg)
+{
+  return arg.size() > 2 && arg[0] == '-' && arg[1] == '-' && arg.find('=') != std::string::npos;
+}
+} // namespace
+
 ArgParser::ArgParser() { }
 
 ArgParser::ArgParser(
@@ -451,7 +460,7 @@ ArgParser::Command::append_option_data(Arguments &ret, AP_StrVec &args, int inde
   std::map<std::string, unsigned> check_map;
   for (unsigned i = index; i < args.size(); i++) {
     // find matches of the arg
-    if (args[i][0] == '-' && args[i][1] == '-' && args[i].find('=') != std::string::npos) {
+    if (is_long_option_with_inline_arg(args[i])) {
       // deal with --args=
       std::string option_name = args[i].substr(0, args[i].find_first_of('='));
       std::string value = args[i].substr(args[i].find_last_of('=') + 1);
