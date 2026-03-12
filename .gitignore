@@ -41,7 +41,8 @@
 /build/
 
 # Editor artifacts.
-.vscode
+.vscode/*
+!.vscode/settings.json
 .idea
 .clangd/
 .ropeproject/
