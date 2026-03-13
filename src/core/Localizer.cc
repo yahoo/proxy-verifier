@@ -1,7 +1,7 @@
 /** @file
  * Definition of Localizer.
  *
- * Copyright 2021, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,28 +9,25 @@
 
 #include <algorithm>
 #include <cassert>
-#include <dirent.h>
-#include <thread>
 #include <vector>
 
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
-#include "swoc/bwf_std.h"
 #include "swoc/bwf_std.h"
 
 using swoc::TextView;
 using namespace swoc::literals;
 using namespace std::literals;
 
-Localizer::NameSet Localizer::_names;
-swoc::MemArena Localizer::_arena{8000};
-bool Localizer::_frozen = false;
+Localizer::NameSet Localizer::m_names;
+swoc::MemArena Localizer::m_arena{8000};
+bool Localizer::m_frozen = false;
 
 swoc::TextView
 Localizer::localize_helper(TextView text, LocalizeFlag flag)
 {
-  assert(!_frozen);
-  auto span{_arena.alloc(text.size()).rebind<char>()};
+  assert(!m_frozen);
+  auto span{m_arena.alloc(text.size()).rebind<char>()};
   if (flag == LocalizeFlag::Lower) {
     std::transform(text.begin(), text.end(), span.begin(), &tolower);
   } else if (flag == LocalizeFlag::Upper) {
@@ -40,7 +37,7 @@ Localizer::localize_helper(TextView text, LocalizeFlag flag)
   }
   TextView local{span.data(), text.size()};
   if (flag == LocalizeFlag::Lower || flag == LocalizeFlag::Upper) {
-    _names.insert(local);
+    m_names.insert(local);
   }
   return local;
 }
@@ -48,7 +45,7 @@ Localizer::localize_helper(TextView text, LocalizeFlag flag)
 void
 Localizer::freeze_localization()
 {
-  _frozen = true;
+  m_frozen = true;
 }
 
 swoc::TextView
@@ -78,11 +75,11 @@ Localizer::localize(TextView text)
 swoc::TextView
 Localizer::localize_lower(TextView text)
 {
-  // _names.find() does a case insensitive lookup, so cache lookup via
-  // _names only should be used for case-insensitive localization. It's
+  // m_names.find() does a case insensitive lookup, so cache lookup via
+  // m_names only should be used for case-insensitive localization. It's
   // value applies to well-known, common strings such as HTTP headers.
-  auto spot = _names.find(text);
-  if (spot != _names.end()) {
+  auto spot = m_names.find(text);
+  if (spot != m_names.end()) {
     return *spot;
   }
   return localize_helper(text, LocalizeFlag::Lower);
@@ -91,11 +88,11 @@ Localizer::localize_lower(TextView text)
 swoc::TextView
 Localizer::localize_upper(TextView text)
 {
-  // _names.find() does a case insensitive lookup, so cache lookup via
-  // _names only should be used for case-insensitive localization. It's
+  // m_names.find() does a case insensitive lookup, so cache lookup via
+  // m_names only should be used for case-insensitive localization. It's
   // value applies to well-known, common strings such as HTTP headers.
-  auto spot = _names.find(text);
-  if (spot != _names.end()) {
+  auto spot = m_names.find(text);
+  if (spot != m_names.end()) {
     return *spot;
   }
   return localize_helper(text, LocalizeFlag::Upper);
@@ -104,9 +101,9 @@ Localizer::localize_upper(TextView text)
 swoc::TextView
 Localizer::localize(TextView text, Encoding enc)
 {
-  assert(!_frozen);
+  assert(!m_frozen);
   if (Encoding::URI == enc) {
-    auto span{_arena.require(text.size()).remnant().rebind<char>()};
+    auto span{m_arena.require(text.size()).remnant().rebind<char>()};
     auto spot = text.begin(), limit = text.end();
     char *dst = span.begin();
     while (spot < limit) {
@@ -120,7 +117,7 @@ Localizer::localize(TextView text, Encoding enc)
       }
     }
     TextView text{span.data(), dst};
-    _arena.alloc(text.size());
+    m_arena.alloc(text.size());
     return text;
   }
   return localize(text);

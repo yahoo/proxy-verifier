@@ -50,17 +50,17 @@ public:
   Errata errata;
 
 public:
-  HandlerOpener(ReplayFileHandler &handler, swoc::file::path const &path) : _handler(handler)
+  HandlerOpener(ReplayFileHandler &handler, swoc::file::path const &path) : m_handler(handler)
   {
-    errata.note(_handler.file_open(path));
+    errata.note(m_handler.file_open(path));
   }
   ~HandlerOpener()
   {
-    errata.note(_handler.file_close());
+    errata.note(m_handler.file_close());
   }
 
 private:
-  ReplayFileHandler &_handler;
+  ReplayFileHandler &m_handler;
 };
 
 /** Shared data between file readers and file content parsers. */
@@ -77,10 +77,10 @@ public:
   push(swoc::file::path const &path, std::string &&file_content)
   {
     {
-      std::lock_guard<std::mutex> lock(_queue_mutex);
-      _queue.emplace(FileInformation{path, std::move(file_content)});
+      std::lock_guard<std::mutex> lock(m_queue_mutex);
+      m_queue.emplace(FileInformation{path, std::move(file_content)});
     }
-    _queue_cv.notify_one();
+    m_queue_cv.notify_one();
   }
 
   /** Pull out file content from the queue.
@@ -94,17 +94,17 @@ public:
   bool
   pop(swoc::file::path &path, std::string &file_content)
   {
-    std::unique_lock<std::mutex> lock(_queue_mutex);
-    _queue_cv.wait(lock, [this]() { return !_queue.empty() || _done_reading_files; });
-    // Note that we check empty rather than _done_reading_files because reader
+    std::unique_lock<std::mutex> lock(m_queue_mutex);
+    m_queue_cv.wait(lock, [this]() { return !m_queue.empty() || m_done_reading_files; });
+    // Note that we check empty rather than m_done_reading_files because reader
     // threads generally finish before parsing threads.
-    if (_queue.empty()) {
+    if (m_queue.empty()) {
       return false;
     }
-    auto const &file_info = _queue.front();
+    auto const &file_info = m_queue.front();
     path = std::move(file_info.file_name);
     file_content = std::move(file_info.content);
-    _queue.pop();
+    m_queue.pop();
     return true;
   }
 
@@ -118,11 +118,11 @@ public:
   set_is_done_reading_files()
   {
     {
-      std::lock_guard<std::mutex> lock(_queue_mutex);
-      _done_reading_files = true;
+      std::lock_guard<std::mutex> lock(m_queue_mutex);
+      m_done_reading_files = true;
     }
     // All parsing threads should be woken up to parse any remaining files.
-    _queue_cv.notify_all();
+    m_queue_cv.notify_all();
   }
 
   /** Stop reading the files.
@@ -133,8 +133,8 @@ public:
   bool
   is_done_reading_files() const
   {
-    std::lock_guard<std::mutex> lock(_queue_mutex);
-    return _done_reading_files;
+    std::lock_guard<std::mutex> lock(m_queue_mutex);
+    return m_done_reading_files;
   }
 
 private:
@@ -145,10 +145,10 @@ private:
   };
 
   /** The container for fully read files. */
-  std::queue<FileInformation> _queue;
-  mutable std::mutex _queue_mutex;
-  std::condition_variable _queue_cv;
-  bool _done_reading_files = false;
+  std::queue<FileInformation> m_queue;
+  mutable std::mutex m_queue_mutex;
+  std::condition_variable m_queue_cv;
+  bool m_done_reading_files = false;
 };
 
 /** The thread's logic for parsing file content and placing it in the queue. */
@@ -444,7 +444,7 @@ read_and_parse_files(
 }
 } // Anonymous namespace
 
-TimePoint YamlParser::_parsing_start_time{};
+TimePoint YamlParser::m_parsing_start_time{};
 
 swoc::Rv<microseconds>
 interpret_delay_string(TextView src)
@@ -1560,7 +1560,7 @@ YamlParser::parse_body_verification(
 Errata
 YamlParser::parsing_is_started()
 {
-  _parsing_start_time = ClockType::now();
+  m_parsing_start_time = ClockType::now();
   return {};
 }
 
@@ -1573,7 +1573,7 @@ YamlParser::parsing_is_done()
   Localizer::freeze_localization();
 
   Errata errata;
-  auto parsing_duration = ClockType::now() - _parsing_start_time;
+  auto parsing_duration = ClockType::now() - m_parsing_start_time;
   if (parsing_duration > 10s) {
     errata.note(
         S_INFO,
@@ -1709,74 +1709,74 @@ ReplayFileHandler::ParsedProtocolNode::ParsedProtocolNode(YAML::Node const &prot
 bool
 ReplayFileHandler::ParsedProtocolNode::is_valid() const
 {
-  return _errata.is_ok();
+  return m_errata.is_ok();
 }
 
 swoc::Errata const &
 ReplayFileHandler::ParsedProtocolNode::errata() const
 {
-  return _errata;
+  return m_errata;
 }
 
 ReplayFileHandler::HttpProtocol
 ReplayFileHandler::ParsedProtocolNode::get_http_protocol() const
 {
-  return _http_protocol;
+  return m_http_protocol;
 }
 
 bool
 ReplayFileHandler::ParsedProtocolNode::is_tls() const
 {
-  return _http_protocol == HttpProtocol::HTTPS || _http_protocol == HttpProtocol::HTTP2 ||
-         _http_protocol == HttpProtocol::HTTP3 || _is_tls;
+  return m_http_protocol == HttpProtocol::HTTPS || m_http_protocol == HttpProtocol::HTTP2 ||
+         m_http_protocol == HttpProtocol::HTTP3 || m_is_tls;
 }
 
 std::optional<std::string> const &
 ReplayFileHandler::ParsedProtocolNode::get_tls_sni_name() const
 {
-  return _tls_sni_name;
+  return m_tls_sni_name;
 }
 
 std::optional<int> const &
 ReplayFileHandler::ParsedProtocolNode::get_tls_verify_mode() const
 {
-  return _tls_verify_mode;
+  return m_tls_verify_mode;
 }
 
 std::optional<bool> const &
 ReplayFileHandler::ParsedProtocolNode::should_request_certificate() const
 {
-  return _should_request_certificate;
+  return m_should_request_certificate;
 }
 
 std::optional<bool> const &
 ReplayFileHandler::ParsedProtocolNode::proxy_provided_certificate() const
 {
-  return _proxy_provided_certificate;
+  return m_proxy_provided_certificate;
 }
 
 std::optional<std::string> const &
 ReplayFileHandler::ParsedProtocolNode::get_tls_alpn_protocols_string() const
 {
-  return _tls_alpn_protocols_string;
+  return m_tls_alpn_protocols_string;
 }
 
 std::optional<int> const &
 ReplayFileHandler::ParsedProtocolNode::get_proxy_protocol_version() const
 {
-  return _proxy_protocol_version;
+  return m_proxy_protocol_version;
 }
 
 std::optional<std::string> const &
 ReplayFileHandler::ParsedProtocolNode::get_proxy_protocol_src_addr() const
 {
-  return _proxy_protocol_src_addr;
+  return m_proxy_protocol_src_addr;
 }
 
 std::optional<std::string> const &
 ReplayFileHandler::ParsedProtocolNode::get_proxy_protocol_dst_addr() const
 {
-  return _proxy_protocol_dst_addr;
+  return m_proxy_protocol_dst_addr;
 }
 
 void
@@ -1787,13 +1787,13 @@ ReplayFileHandler::ParsedProtocolNode::parse_node(YAML::Node const &protocol_nod
   } else if (protocol_node.IsMap()) {
     parse_concise_map(protocol_node);
   } else {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         "Protocol node at {} is not a sequence or map as required.",
         protocol_node.Mark());
   }
 
-  if (_errata.is_ok()) {
+  if (m_errata.is_ok()) {
     finalize_http_protocol();
   }
 }
@@ -1802,13 +1802,13 @@ void
 ReplayFileHandler::ParsedProtocolNode::parse_verbose_sequence(YAML::Node const &protocol_node)
 {
   if (protocol_node.size() == 0) {
-    _errata.note(S_ERROR, "Protocol node at {} is an empty sequence.", protocol_node.Mark());
+    m_errata.note(S_ERROR, "Protocol node at {} is an empty sequence.", protocol_node.Mark());
     return;
   }
 
   for (auto const &protocol_element : protocol_node) {
     parse_verbose_protocol_element(protocol_element);
-    if (!_errata.is_ok()) {
+    if (!m_errata.is_ok()) {
       return;
     }
   }
@@ -1819,13 +1819,13 @@ ReplayFileHandler::ParsedProtocolNode::parse_verbose_protocol_element(
     YAML::Node const &protocol_element)
 {
   if (!protocol_element.IsMap()) {
-    _errata.note(S_ERROR, "Protocol element at {} is not a map.", protocol_element.Mark());
+    m_errata.note(S_ERROR, "Protocol element at {} is not a map.", protocol_element.Mark());
     return;
   }
 
   auto const name_node = protocol_element[YAML_SSN_PROTOCOL_NAME];
   if (!name_node) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"(Protocol element at {} does not have a "{}" element.)",
         protocol_element.Mark(),
@@ -1834,7 +1834,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_verbose_protocol_element(
   }
 
   if (!name_node.IsScalar()) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"(Protocol element "{}" at {} is not a scalar.)",
         YAML_SSN_PROTOCOL_NAME,
@@ -1844,15 +1844,15 @@ ReplayFileHandler::ParsedProtocolNode::parse_verbose_protocol_element(
 
   auto const protocol_name = name_node.Scalar();
   if (protocol_name == YAML_SSN_PROTOCOL_HTTP_NAME) {
-    if (!_has_http_details) {
+    if (!m_has_http_details) {
       parse_http_node(protocol_element, false);
     }
   } else if (protocol_name == YAML_SSN_PROTOCOL_TLS_NAME) {
-    if (!_has_tls_details) {
+    if (!m_has_tls_details) {
       parse_tls_node(protocol_element);
     }
   } else if (protocol_name == YAML_SSN_PROTOCOL_PP_NAME) {
-    if (!_has_proxy_protocol_details) {
+    if (!m_has_proxy_protocol_details) {
       parse_proxy_protocol_node(protocol_element, false);
     }
   } else if (
@@ -1869,12 +1869,12 @@ ReplayFileHandler::ParsedProtocolNode::parse_concise_map(YAML::Node const &proto
   for (auto const &[key, value] : protocol_node) {
     static_cast<void>(value);
     if (!key.IsScalar()) {
-      _errata.note(S_ERROR, "Protocol map at {} has a non-scalar key.", protocol_node.Mark());
+      m_errata.note(S_ERROR, "Protocol map at {} has a non-scalar key.", protocol_node.Mark());
       continue;
     }
     auto const key_name = key.Scalar();
     if (!is_supported_map_key(key_name)) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"(Protocol map at {} has unsupported key "{}".)",
           protocol_node.Mark(),
@@ -1883,12 +1883,12 @@ ReplayFileHandler::ParsedProtocolNode::parse_concise_map(YAML::Node const &proto
       saw_protocol_entry = true;
     }
   }
-  if (!_errata.is_ok()) {
+  if (!m_errata.is_ok()) {
     return;
   }
 
   if (protocol_node[YAML_SSN_PROTOCOL_STACK_KEY] && protocol_node[YAML_SSN_PROTOCOL_HTTP_NAME]) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"(Protocol map at {} cannot specify both "{}" and "{}".)",
         protocol_node.Mark(),
@@ -1898,13 +1898,13 @@ ReplayFileHandler::ParsedProtocolNode::parse_concise_map(YAML::Node const &proto
   }
 
   parse_stack_value(protocol_node);
-  if (!_errata.is_ok()) {
+  if (!m_errata.is_ok()) {
     return;
   }
 
   if (auto const http_node{protocol_node[YAML_SSN_PROTOCOL_HTTP_NAME]}; http_node) {
     parse_http_node(http_node, true);
-    if (!_errata.is_ok()) {
+    if (!m_errata.is_ok()) {
       return;
     }
   }
@@ -1912,7 +1912,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_concise_map(YAML::Node const &proto
   if (auto const explicit_tls_node{protocol_node[YAML_SSN_PROTOCOL_TLS_NAME]}; explicit_tls_node) {
     auto const stack_node = protocol_node[YAML_SSN_PROTOCOL_STACK_KEY];
     if (stack_node && stack_node.IsScalar() && stack_node.Scalar() == YAML_SSN_STACK_HTTP) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"(Protocol map at {} cannot specify TLS options when "{}" is "{}". Did you mean "{}: {}"?)",
           protocol_node.Mark(),
@@ -1923,14 +1923,14 @@ ReplayFileHandler::ParsedProtocolNode::parse_concise_map(YAML::Node const &proto
       return;
     }
     parse_tls_node(explicit_tls_node);
-    if (!_errata.is_ok()) {
+    if (!m_errata.is_ok()) {
       return;
     }
   }
 
   if (auto const pp_node{protocol_node[YAML_SSN_PROTOCOL_PP_NAME]}; pp_node) {
     parse_proxy_protocol_node(pp_node, true);
-    if (!_errata.is_ok()) {
+    if (!m_errata.is_ok()) {
       return;
     }
   }
@@ -1938,14 +1938,14 @@ ReplayFileHandler::ParsedProtocolNode::parse_concise_map(YAML::Node const &proto
   for (auto const *transport_name : {&YAML_SSN_PROTOCOL_TCP_NAME, &YAML_SSN_PROTOCOL_IP_NAME}) {
     if (auto const transport_node{protocol_node[*transport_name]}; transport_node) {
       validate_transport_node(transport_node, *transport_name);
-      if (!_errata.is_ok()) {
+      if (!m_errata.is_ok()) {
         return;
       }
     }
   }
 
   if (!saw_protocol_entry) {
-    _errata.note(S_ERROR, "Protocol node at {} is an empty map.", protocol_node.Mark());
+    m_errata.note(S_ERROR, "Protocol node at {} is an empty map.", protocol_node.Mark());
   }
 }
 
@@ -1966,7 +1966,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_stack_value(YAML::Node const &proto
   }
 
   if (!stack_node.IsScalar()) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"("{}" value at {} must be a scalar.)",
         YAML_SSN_PROTOCOL_STACK_KEY,
@@ -1975,18 +1975,18 @@ ReplayFileHandler::ParsedProtocolNode::parse_stack_value(YAML::Node const &proto
   }
 
   auto const stack = stack_node.Scalar();
-  _has_http_details = true;
+  m_has_http_details = true;
   if (stack == YAML_SSN_STACK_HTTP) {
-    _http_version = "1.1";
+    m_http_version = "1.1";
   } else if (stack == YAML_SSN_STACK_HTTPS) {
-    _http_version = "1.1";
-    _is_tls = true;
+    m_http_version = "1.1";
+    m_is_tls = true;
   } else if (stack == YAML_SSN_STACK_HTTP2) {
-    _http_version = "2";
+    m_http_version = "2";
   } else if (stack == YAML_SSN_STACK_HTTP3) {
-    _http_version = "3";
+    m_http_version = "3";
   } else {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"(Unsupported "{}" value "{}" at {}. Expected one of: {}, {}, {}, {}.)",
         YAML_SSN_PROTOCOL_STACK_KEY,
@@ -2006,20 +2006,20 @@ ReplayFileHandler::ParsedProtocolNode::parse_http_node(
 {
   if (http_node.IsScalar()) {
     if (!allow_scalar_version) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"("{}" value at {} must be a map.)",
           YAML_SSN_PROTOCOL_HTTP_NAME,
           http_node.Mark());
       return;
     }
-    _has_http_details = true;
+    m_has_http_details = true;
     parse_http_version_node(http_node);
     return;
   }
 
   if (!http_node.IsMap()) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"("{}" value at {} must be a map{}.)",
         YAML_SSN_PROTOCOL_HTTP_NAME,
@@ -2028,7 +2028,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_http_node(
     return;
   }
 
-  _has_http_details = true;
+  m_has_http_details = true;
   if (auto const version_node{http_node[YAML_SSN_PROTOCOL_VERSION]}; version_node) {
     parse_http_version_node(version_node);
   }
@@ -2038,7 +2038,7 @@ void
 ReplayFileHandler::ParsedProtocolNode::parse_http_version_node(YAML::Node const &version_node)
 {
   if (!version_node.IsScalar()) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"(Protocol "{}" value at {} must be a scalar.)",
         YAML_SSN_PROTOCOL_VERSION,
@@ -2046,14 +2046,14 @@ ReplayFileHandler::ParsedProtocolNode::parse_http_version_node(YAML::Node const 
     return;
   }
 
-  _http_version = version_node.Scalar();
+  m_http_version = version_node.Scalar();
 }
 
 void
 ReplayFileHandler::ParsedProtocolNode::parse_tls_node(YAML::Node const &tls_node)
 {
   if (!tls_node.IsMap()) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"("{}" value at {} must be a map.)",
         YAML_SSN_PROTOCOL_TLS_NAME,
@@ -2061,38 +2061,38 @@ ReplayFileHandler::ParsedProtocolNode::parse_tls_node(YAML::Node const &tls_node
     return;
   }
 
-  _is_tls = true;
-  _has_tls_details = true;
-  parse_scalar_string_node(tls_node, YAML_SSN_TLS_SNI_KEY, _tls_sni_name);
-  if (!_errata.is_ok()) {
+  m_is_tls = true;
+  m_has_tls_details = true;
+  parse_scalar_string_node(tls_node, YAML_SSN_TLS_SNI_KEY, m_tls_sni_name);
+  if (!m_errata.is_ok()) {
     return;
   }
 
-  parse_scalar_integer_node(tls_node, YAML_SSN_TLS_VERIFY_MODE_KEY, _tls_verify_mode);
-  if (!_errata.is_ok()) {
+  parse_scalar_integer_node(tls_node, YAML_SSN_TLS_VERIFY_MODE_KEY, m_tls_verify_mode);
+  if (!m_errata.is_ok()) {
     return;
   }
 
   parse_boolean_directive(
       tls_node,
       YAML_SSN_TLS_REQUEST_CERTIFICATE_KEY,
-      _should_request_certificate);
-  if (!_errata.is_ok()) {
+      m_should_request_certificate);
+  if (!m_errata.is_ok()) {
     return;
   }
 
   parse_boolean_directive(
       tls_node,
       YAML_SSN_TLS_PROXY_PROVIDED_CERTIFICATE_KEY,
-      _proxy_provided_certificate);
-  if (!_errata.is_ok()) {
+      m_proxy_provided_certificate);
+  if (!m_errata.is_ok()) {
     return;
   }
 
   if (auto const alpn_protocols_node{tls_node[YAML_SSN_TLS_ALPN_PROTOCOLS_KEY]};
       alpn_protocols_node) {
     if (!alpn_protocols_node.IsSequence()) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"(Session has a value for key "{}" that is not a sequence as required.)",
           YAML_SSN_TLS_ALPN_PROTOCOLS_KEY);
@@ -2100,7 +2100,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_tls_node(YAML::Node const &tls_node
     }
     for (auto const &protocol : alpn_protocols_node) {
       if (!protocol.IsScalar()) {
-        _errata.note(
+        m_errata.note(
             S_ERROR,
             R"(Session has a non-scalar entry in "{}" at {}.)",
             YAML_SSN_TLS_ALPN_PROTOCOLS_KEY,
@@ -2108,11 +2108,11 @@ ReplayFileHandler::ParsedProtocolNode::parse_tls_node(YAML::Node const &tls_node
         return;
       }
       std::string_view protocol_view{protocol.Scalar()};
-      if (!_tls_alpn_protocols_string.has_value()) {
-        _tls_alpn_protocols_string = std::string{};
+      if (!m_tls_alpn_protocols_string.has_value()) {
+        m_tls_alpn_protocols_string = std::string{};
       }
-      _tls_alpn_protocols_string->append(1, static_cast<char>(protocol_view.size()));
-      _tls_alpn_protocols_string->append(protocol_view);
+      m_tls_alpn_protocols_string->append(1, static_cast<char>(protocol_view.size()));
+      m_tls_alpn_protocols_string->append(protocol_view);
     }
   }
 }
@@ -2124,20 +2124,20 @@ ReplayFileHandler::ParsedProtocolNode::parse_proxy_protocol_node(
 {
   if (proxy_protocol_node.IsScalar()) {
     if (!allow_scalar_version) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"("{}" value at {} must be a map.)",
           YAML_SSN_PROTOCOL_PP_NAME,
           proxy_protocol_node.Mark());
       return;
     }
-    _has_proxy_protocol_details = true;
+    m_has_proxy_protocol_details = true;
     parse_proxy_protocol_version_node(proxy_protocol_node);
     return;
   }
 
   if (!proxy_protocol_node.IsMap()) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"("{}" value at {} must be a map{}.)",
         YAML_SSN_PROTOCOL_PP_NAME,
@@ -2146,31 +2146,37 @@ ReplayFileHandler::ParsedProtocolNode::parse_proxy_protocol_node(
     return;
   }
 
-  _has_proxy_protocol_details = true;
+  m_has_proxy_protocol_details = true;
   auto const version_node = proxy_protocol_node[YAML_SSN_PROTOCOL_VERSION];
   if (!version_node) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"(Invalid PROXY protocol version specified in session at {}.)",
         proxy_protocol_node.Mark());
     return;
   }
   parse_proxy_protocol_version_node(version_node);
-  if (!_errata.is_ok()) {
+  if (!m_errata.is_ok()) {
     return;
   }
 
-  parse_scalar_string_node(proxy_protocol_node, YAML_SSN_PP_SRC_ADDR_KEY, _proxy_protocol_src_addr);
-  if (!_errata.is_ok()) {
+  parse_scalar_string_node(
+      proxy_protocol_node,
+      YAML_SSN_PP_SRC_ADDR_KEY,
+      m_proxy_protocol_src_addr);
+  if (!m_errata.is_ok()) {
     return;
   }
-  parse_scalar_string_node(proxy_protocol_node, YAML_SSN_PP_DST_ADDR_KEY, _proxy_protocol_dst_addr);
-  if (!_errata.is_ok()) {
+  parse_scalar_string_node(
+      proxy_protocol_node,
+      YAML_SSN_PP_DST_ADDR_KEY,
+      m_proxy_protocol_dst_addr);
+  if (!m_errata.is_ok()) {
     return;
   }
 
-  if (_proxy_protocol_src_addr.has_value() != _proxy_protocol_dst_addr.has_value()) {
-    _errata.note(
+  if (m_proxy_protocol_src_addr.has_value() != m_proxy_protocol_dst_addr.has_value()) {
+    m_errata.note(
         S_ERROR,
         R"(Invalid PROXY protocol address specification detected at {} - Need to specify none or both of the source and destination addresses.)",
         proxy_protocol_node.Mark());
@@ -2182,7 +2188,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_proxy_protocol_version_node(
     YAML::Node const &version_node)
 {
   if (!version_node.IsScalar()) {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"(Protocol "{}" value at {} must be a scalar.)",
         YAML_SSN_PROTOCOL_VERSION,
@@ -2192,11 +2198,11 @@ ReplayFileHandler::ParsedProtocolNode::parse_proxy_protocol_version_node(
 
   auto const version = version_node.Scalar();
   if (version == "1") {
-    _proxy_protocol_version = 1;
+    m_proxy_protocol_version = 1;
   } else if (version == "2") {
-    _proxy_protocol_version = 2;
+    m_proxy_protocol_version = 2;
   } else {
-    _errata.note(
+    m_errata.note(
         S_ERROR,
         R"(Invalid PROXY protocol version specified in session at {}.)",
         version_node.Mark());
@@ -2209,7 +2215,7 @@ ReplayFileHandler::ParsedProtocolNode::validate_transport_node(
     std::string_view transport_name)
 {
   if (!transport_node.IsMap()) {
-    _errata
+    m_errata
         .note(S_ERROR, R"("{}" value at {} must be a map.)", transport_name, transport_node.Mark());
   }
 }
@@ -2222,7 +2228,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_scalar_string_node(
 {
   if (auto const child_node{parent_node[std::string{key_name}]}; child_node) {
     if (!child_node.IsScalar()) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           key_name);
@@ -2240,7 +2246,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_scalar_integer_node(
 {
   if (auto const child_node{parent_node[std::string{key_name}]}; child_node) {
     if (!child_node.IsScalar()) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           key_name);
@@ -2251,7 +2257,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_scalar_integer_node(
     swoc::TextView parsed;
     auto const parsed_value = swoc::svtou(value, &parsed);
     if (parsed.size() != value.size()) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"(Session has an invalid integer value "{}" for key "{}".)",
           value,
@@ -2265,14 +2271,14 @@ ReplayFileHandler::ParsedProtocolNode::parse_scalar_integer_node(
 void
 ReplayFileHandler::ParsedProtocolNode::finalize_http_protocol()
 {
-  if (_http_version == "2") {
-    _http_protocol = HttpProtocol::HTTP2;
-  } else if (_http_version == "3") {
-    _http_protocol = HttpProtocol::HTTP3;
-  } else if (_is_tls) {
-    _http_protocol = HttpProtocol::HTTPS;
+  if (m_http_version == "2") {
+    m_http_protocol = HttpProtocol::HTTP2;
+  } else if (m_http_version == "3") {
+    m_http_protocol = HttpProtocol::HTTP3;
+  } else if (m_is_tls) {
+    m_http_protocol = HttpProtocol::HTTPS;
   } else {
-    _http_protocol = HttpProtocol::HTTP;
+    m_http_protocol = HttpProtocol::HTTP;
   }
 }
 
@@ -2284,7 +2290,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_boolean_directive(
 {
   if (auto const child_node{parent_node[std::string{key_name}]}; child_node) {
     if (!child_node.IsScalar()) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"(Session has a value for key "{}" that is not a scalar as required.)",
           key_name);
@@ -2293,7 +2299,7 @@ ReplayFileHandler::ParsedProtocolNode::parse_boolean_directive(
     try {
       target = child_node.as<bool>();
     } catch (std::exception const &) {
-      _errata.note(
+      m_errata.note(
           S_ERROR,
           R"(Session has an invalid boolean value "{}" for key "{}".)",
           child_node.Scalar(),

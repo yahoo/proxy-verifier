@@ -13,17 +13,13 @@
 #include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
 
-#include <assert.h>
 #include <chrono>
 #include <list>
 #include <mutex>
 #include <string>
-#include <sys/time.h>
 #include <thread>
-#include <unistd.h>
 #include <unordered_set>
 
-#include <dirent.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
@@ -180,9 +176,9 @@ public:
   void ssn_reset();
 
 private:
-  std::shared_ptr<Ssn> _ssn;
-  YAML::Node const *_txn_node = nullptr;
-  Txn _txn;
+  std::shared_ptr<Ssn> m_ssn;
+  YAML::Node const *m_txn_node = nullptr;
+  Txn m_txn;
 };
 
 bool Shutdown_Flag = false;
@@ -193,11 +189,11 @@ bool Allow_Unprocessed_Verifications = false;
 class ClientThreadInfo : public ThreadInfo
 {
 public:
-  Ssn *_ssn = nullptr;
+  Ssn *m_ssn = nullptr;
   bool
   data_ready() override
   {
-    return Shutdown_Flag || this->_ssn != nullptr;
+    return Shutdown_Flag || this->m_ssn != nullptr;
   }
 };
 
@@ -217,29 +213,29 @@ ClientThreadPool::make_thread(std::thread *t)
   return std::thread(TF_Client, t); // move the temporary into the list element for permanence.
 }
 
-ClientReplayFileHandler::ClientReplayFileHandler() : _txn{Use_Strict_Checking} { }
+ClientReplayFileHandler::ClientReplayFileHandler() : m_txn{Use_Strict_Checking} { }
 
 void
 ClientReplayFileHandler::ssn_reset()
 {
-  _ssn.reset();
+  m_ssn.reset();
 }
 
 void
 ClientReplayFileHandler::txn_reset()
 {
-  _txn_node = nullptr;
-  _txn.~Txn();
-  new (&_txn) Txn{Use_Strict_Checking};
+  m_txn_node = nullptr;
+  m_txn.~Txn();
+  new (&m_txn) Txn{Use_Strict_Checking};
 }
 
 Errata
 ClientReplayFileHandler::ssn_open(YAML::Node const &node)
 {
   Errata errata;
-  _ssn = std::make_shared<Ssn>();
-  _ssn->_path = _path;
-  _ssn->_line_no = node.Mark().line;
+  m_ssn = std::make_shared<Ssn>();
+  m_ssn->_path = _path;
+  m_ssn->_line_no = node.Mark().line;
 
   if (auto keep_connection_open_node{node[YAML_SSN_KEEP_CONNECTION_OPEN_KEY]};
       keep_connection_open_node)
@@ -247,7 +243,7 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
     if (keep_connection_open_node.IsScalar()) {
       auto &&[delay, delay_errata] = interpret_delay_string(keep_connection_open_node.Scalar());
       errata.note(std::move(delay_errata));
-      _ssn->_keep_connection_open = delay;
+      m_ssn->_keep_connection_open = delay;
     } else {
       errata.note(S_ERROR, R"("{}" key that is not a scalar.)", YAML_SSN_KEEP_CONNECTION_OPEN_KEY);
     }
@@ -264,37 +260,37 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
     case ReplayFileHandler::HttpProtocol::HTTP:
       break;
     case ReplayFileHandler::HttpProtocol::HTTPS:
-      _ssn->is_tls = true;
+      m_ssn->is_tls = true;
       break;
     case ReplayFileHandler::HttpProtocol::HTTP2:
-      _ssn->is_h2 = true;
+      m_ssn->is_h2 = true;
       break;
     case ReplayFileHandler::HttpProtocol::HTTP3:
-      _ssn->is_h3 = true;
+      m_ssn->is_h3 = true;
       break;
     }
 
     if (auto const &sni = protocol.get_tls_sni_name(); sni.has_value()) {
-      _ssn->_client_sni = *sni;
+      m_ssn->_client_sni = *sni;
     }
 
     if (auto const &verify_mode = protocol.get_tls_verify_mode();
         verify_mode.has_value() && *verify_mode > 0)
     {
-      _ssn->_client_verify_mode = *verify_mode;
+      m_ssn->_client_verify_mode = *verify_mode;
     }
 
     if (auto const &proxy_protocol_version = protocol.get_proxy_protocol_version();
         proxy_protocol_version.has_value())
     {
       errata.note(S_DIAG, "Enabling PROXY protocol for this session.");
-      _ssn->_pp_msg = std::make_unique<ProxyProtocolMsg>(
+      m_ssn->_pp_msg = std::make_unique<ProxyProtocolMsg>(
           *proxy_protocol_version == 1 ? ProxyProtocolVersion::V1 : ProxyProtocolVersion::V2);
 
       if (auto const &src_addr = protocol.get_proxy_protocol_src_addr(); src_addr.has_value()) {
         swoc::IPEndpoint src_ep{*src_addr};
         swoc::IPEndpoint dst_ep{*protocol.get_proxy_protocol_dst_addr()};
-        _ssn->_pp_msg->set_endpoints(src_ep, dst_ep);
+        m_ssn->_pp_msg->set_endpoints(src_ep, dst_ep);
       }
     }
   }
@@ -307,11 +303,11 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
           S_ERROR,
           R"(Session at "{}":{} has a bad "{}" key value.)",
           _path,
-          _ssn->_line_no,
+          m_ssn->_line_no,
           YAML_TIME_START_KEY);
       return errata;
     }
-    _ssn->_start = start_time;
+    m_ssn->_start = start_time;
   }
 
   if (node[YAML_TIME_DELAY_KEY]) {
@@ -322,36 +318,36 @@ ClientReplayFileHandler::ssn_open(YAML::Node const &node)
           S_ERROR,
           R"(Session at "{}":{} has a bad "{}" key value.)",
           _path,
-          _ssn->_line_no,
+          m_ssn->_line_no,
           YAML_TIME_DELAY_KEY);
       return errata;
     }
-    _ssn->_user_specified_delay_duration = delay_time;
+    m_ssn->_user_specified_delay_duration = delay_time;
   }
 
   if (node[YAML_CLOSE_ON_GOAWAY_KEY]) {
     auto close_on_goaway_node{node[YAML_CLOSE_ON_GOAWAY_KEY]};
     if (close_on_goaway_node.IsScalar()) {
       auto close_on_goaway = close_on_goaway_node.as<bool>();
-      _ssn->close_on_goaway = close_on_goaway;
+      m_ssn->close_on_goaway = close_on_goaway;
       errata.note(
           S_DIAG,
           R"(Setting close on goaway behavior to "{}" for session at "{}":{}.)",
           close_on_goaway,
           _path,
-          _ssn->_line_no);
+          m_ssn->_line_no);
     } else {
       errata.note(
           S_ERROR,
           R"(Value for "{}" key at "{}":{} is not a scalar.)",
           YAML_CLOSE_ON_GOAWAY_KEY,
           _path,
-          _ssn->_line_no);
+          m_ssn->_line_no);
     }
   } else {
     // If the close-on-goaway key is not specified, then the default is to
     // enable it.
-    _ssn->close_on_goaway = true;
+    m_ssn->close_on_goaway = true;
   }
 
   return errata;
@@ -361,9 +357,9 @@ Errata
 ClientReplayFileHandler::txn_open(YAML::Node const &node)
 {
   Errata errata;
-  _txn_node = &node;
-  _txn._req.set_is_request();
-  _txn._rsp.set_is_response();
+  m_txn_node = &node;
+  m_txn._req.set_is_request();
+  m_txn._rsp.set_is_response();
   if (!node[YAML_CLIENT_REQ_KEY]) {
     errata.note(
         S_ERROR,
@@ -387,15 +383,15 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
           YAML_TIME_START_KEY);
       return errata;
     }
-    if (transaction_start_time < _ssn->_start) {
+    if (transaction_start_time < m_ssn->_start) {
       // Maybe the mechanisms used to measure session start and transaction
       // count are different and for some reason the session start time is
       // recorded as later than the transaction start. For our purposes, this
       // simply means that we should consider session start to be the time of
       // the earliest transaction.
-      _ssn->_start = transaction_start_time;
+      m_ssn->_start = transaction_start_time;
     }
-    _txn._start = transaction_start_time - _ssn->_start;
+    m_txn._start = transaction_start_time - m_ssn->_start;
   }
 
   LoadMutex.lock();
@@ -407,15 +403,15 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
 {
   Errata errata;
   if (!Use_Proxy_Request_Directives) {
-    if (_ssn->is_h2) {
-      _txn._req.set_is_http2();
-    } else if (_ssn->is_h3) {
-      _txn._req.set_is_http3();
+    if (m_ssn->is_h2) {
+      m_txn._req.set_is_http2();
+    } else if (m_ssn->is_h3) {
+      m_txn._req.set_is_http3();
     } else {
-      _txn._req.set_is_http1();
+      m_txn._req.set_is_http1();
     }
-    errata.note(YamlParser::populate_http_message(node, _txn._req));
-    if (_txn._req._method.empty()) {
+    errata.note(YamlParser::populate_http_message(node, m_txn._req));
+    if (m_txn._req._method.empty()) {
       errata.note(
           S_ERROR,
           R"(client-request node without a method at "{}":{}.)",
@@ -430,11 +426,11 @@ ClientReplayFileHandler::client_request(YAML::Node const &node)
             S_ERROR,
             R"(client-request node at "{}":{} has a bad "{}" key value.)",
             _path,
-            _ssn->_line_no,
+            m_ssn->_line_no,
             YAML_TIME_DELAY_KEY);
         return errata;
       }
-      _txn._user_specified_delay_duration = delay_time;
+      m_txn._user_specified_delay_duration = delay_time;
     }
   }
   return errata;
@@ -445,15 +441,15 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
 {
   Errata errata;
   if (Use_Proxy_Request_Directives) {
-    if (_ssn->is_h2) {
-      _txn._req.set_is_http2();
-    } else if (_ssn->is_h3) {
-      _txn._req.set_is_http3();
+    if (m_ssn->is_h2) {
+      m_txn._req.set_is_http2();
+    } else if (m_ssn->is_h3) {
+      m_txn._req.set_is_http3();
     } else {
-      _txn._req.set_is_http1();
+      m_txn._req.set_is_http1();
     }
-    errata.note(YamlParser::populate_http_message(node, _txn._req));
-    if (_txn._req._method.empty()) {
+    errata.note(YamlParser::populate_http_message(node, m_txn._req));
+    if (m_txn._req._method.empty()) {
       errata.note(
           S_ERROR,
           R"(proxy-request node without a method at "{}":{}.)",
@@ -469,11 +465,11 @@ ClientReplayFileHandler::proxy_request(YAML::Node const &node)
             S_ERROR,
             R"(proxy-request node at "{}":{} has a bad "{}" key value.)",
             _path,
-            _ssn->_line_no,
+            m_ssn->_line_no,
             YAML_TIME_DELAY_KEY);
         return errata;
       }
-      _txn._user_specified_delay_duration = delay_time;
+      m_txn._user_specified_delay_duration = delay_time;
     }
   }
   return errata;
@@ -487,15 +483,15 @@ ClientReplayFileHandler::proxy_response(YAML::Node const &node)
   if (!Use_Proxy_Request_Directives) {
     // We only expect proxy responses when we are behaving according to the
     // client-request directives and there is a proxy.
-    if (_ssn->is_h2) {
-      _txn._rsp.set_is_http2();
-    } else if (_ssn->is_h3) {
-      _txn._rsp.set_is_http3();
+    if (m_ssn->is_h2) {
+      m_txn._rsp.set_is_http2();
+    } else if (m_ssn->is_h3) {
+      m_txn._rsp.set_is_http3();
     } else {
-      _txn._rsp.set_is_http1();
+      m_txn._rsp.set_is_http1();
     }
-    _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-    errata.note(YamlParser::populate_http_message(node, _txn._rsp));
+    m_txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+    errata.note(YamlParser::populate_http_message(node, m_txn._rsp));
   }
   return errata;
 }
@@ -507,16 +503,16 @@ ClientReplayFileHandler::server_response(YAML::Node const &node)
   if (Use_Proxy_Request_Directives) {
     // If we are behaving like the proxy, then replay-client is talking directly
     // with the server and should expect the server's responses.
-    if (_ssn->is_h2) {
-      _txn._rsp.set_is_http2();
-    } else if (_ssn->is_h3) {
-      _txn._rsp.set_is_http3();
+    if (m_ssn->is_h2) {
+      m_txn._rsp.set_is_http2();
+    } else if (m_ssn->is_h3) {
+      m_txn._rsp.set_is_http3();
     } else {
-      _txn._rsp.set_is_http1();
+      m_txn._rsp.set_is_http1();
     }
-    _txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-    errata.note(YamlParser::populate_http_message(node, _txn._rsp));
-    if (_txn._rsp._status == 0) {
+    m_txn._rsp._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+    errata.note(YamlParser::populate_http_message(node, m_txn._rsp));
+    if (m_txn._rsp._status == 0) {
       errata.note(
           S_ERROR,
           R"(server-response node without a status at "{}":{})",
@@ -530,8 +526,8 @@ ClientReplayFileHandler::server_response(YAML::Node const &node)
 Errata
 ClientReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
 {
-  _txn._req.merge(all_headers);
-  _txn._rsp.merge(all_headers);
+  m_txn._req.merge(all_headers);
+  m_txn._rsp.merge(all_headers);
   return {};
 }
 
@@ -539,7 +535,7 @@ Errata
 ClientReplayFileHandler::txn_close()
 {
   Errata errata;
-  const auto &key{_txn._req.get_key()};
+  auto const &key{m_txn._req.get_key()};
   if (key == HttpHeader::TRANSACTION_KEY_NOT_SET) {
     // A key cannot be found for this transaction. Fail parsing for this
     // because this is almost surely not what the user wants.
@@ -548,13 +544,13 @@ ClientReplayFileHandler::txn_close()
         R"(Could not find a key of format "{}" for transaction at "{}":{}.)",
         HttpHeader::_key_format,
         _path,
-        _txn_node->Mark().line);
+        m_txn_node->Mark().line);
   } else {
     // The user need not specify the key in the server-response node. For logging
-    // purposes, make sure _txn._rsp is aware of the key.
-    _txn._rsp.set_key(key);
+    // purposes, make sure m_txn._rsp is aware of the key.
+    m_txn._rsp.set_key(key);
     if (Keys_Whitelist.empty() || Keys_Whitelist.count(key) > 0) {
-      _ssn->_transactions.emplace_back(std::move(_txn));
+      m_ssn->_transactions.emplace_back(std::move(m_txn));
     }
   }
   this->txn_reset();
@@ -568,17 +564,17 @@ ClientReplayFileHandler::ssn_close()
   Errata errata;
   {
     std::lock_guard<std::mutex> lock(LoadMutex);
-    if (!_ssn->_transactions.empty()) {
-      auto const &e = _ssn->post_process_transactions();
+    if (!m_ssn->_transactions.empty()) {
+      auto const &e = m_ssn->post_process_transactions();
       if (!e.is_ok()) {
         errata.note(e);
         errata.note(
             S_ERROR,
             R"("{}":{} Could not process transactions in session.)",
             _path,
-            _ssn->_line_no);
+            m_ssn->_line_no);
       }
-      Session_List.push_back(_ssn);
+      Session_List.push_back(m_ssn);
     }
   }
   this->ssn_reset();
@@ -618,16 +614,16 @@ private:
 
 private:
   /// The location (file or directory) of the traffic to replay.
-  std::string _replay_location;
+  std::string m_replay_location;
 
   /// The number of sessions after parse_replay_files() is called.
-  size_t _session_count = 0;
+  size_t m_session_count = 0;
 
   /// The number of transactions after parse_replay_files() is called.
-  size_t _transaction_count = 0;
+  size_t m_transaction_count = 0;
 
   /// The maximum Content-Length value after parse_replay_files() is called.
-  size_t _max_content_length = 0;
+  size_t m_max_content_length = 0;
 };
 
 int Engine::process_exit_code = 0;
@@ -725,11 +721,11 @@ TF_Client(std::thread *t)
   thread_info._thread = t;
 
   while (!Shutdown_Flag) {
-    thread_info._ssn = nullptr;
+    thread_info.m_ssn = nullptr;
     Client_Thread_Pool.wait_for_work(&thread_info);
 
-    if (thread_info._ssn != nullptr) {
-      Run_Session(*thread_info._ssn, Target_Selector);
+    if (thread_info.m_ssn != nullptr) {
+      Run_Session(*thread_info.m_ssn, Target_Selector);
     }
   }
 }
@@ -841,7 +837,7 @@ Engine::parse_args()
     return false;
   }
 
-  _replay_location = TextView{args[0]};
+  m_replay_location = TextView{args[0]};
 
   return true;
 }
@@ -851,9 +847,9 @@ Engine::parse_replay_files()
 {
   Errata errata;
   // Phase 2: Parse the YAML replay files.
-  errata.note(S_INFO, R"(Loading replay data from "{}".)", _replay_location);
+  errata.note(S_INFO, R"(Loading replay data from "{}".)", m_replay_location);
   errata.note(YamlParser::load_replay_files(
-      swoc::file::path{_replay_location},
+      swoc::file::path{m_replay_location},
       [](swoc::file::path const &file, std::string const &content) -> Errata {
         ClientReplayFileHandler handler;
         return YamlParser::load_replay_file(file, content, handler);
@@ -865,21 +861,21 @@ Engine::parse_replay_files()
     process_exit_code = 1;
     return false;
   }
-  _session_count = Session_List.size();
+  m_session_count = Session_List.size();
   for (auto ssn : Session_List) {
-    _transaction_count += ssn->_transactions.size();
+    m_transaction_count += ssn->_transactions.size();
     for (auto const &txn : ssn->_transactions) {
-      _max_content_length = std::max<size_t>(_max_content_length, txn._req._content_length);
+      m_max_content_length = std::max<size_t>(m_max_content_length, txn._req._content_length);
     }
   }
   errata.note(
       S_INFO,
       "Parsed {} transaction{} in {} session{}.",
-      _transaction_count,
-      swoc::bwf::If(_transaction_count != 1, "s"),
-      _session_count,
-      swoc::bwf::If(_session_count != 1, "s"));
-  HttpHeader::set_max_content_length(_max_content_length);
+      m_transaction_count,
+      swoc::bwf::If(m_transaction_count != 1, "s"),
+      m_session_count,
+      swoc::bwf::If(m_session_count != 1, "s"));
+  HttpHeader::set_max_content_length(m_max_content_length);
 
   return true;
 }
@@ -894,7 +890,7 @@ Engine::initialize_client()
     return ssn1->_start < ssn2->_start;
   });
 
-  errata.note(Session::init(_transaction_count));
+  errata.note(Session::init(m_transaction_count));
   if (!errata.is_ok()) {
     process_exit_code = 1;
     return false;
@@ -1065,14 +1061,14 @@ Engine::replay_traffic()
         // Session timing data is not provided, but the user wants a specific
         // rate. We simply need to calculate how much time to sleep between
         // sessions. To simplify the math, our "recording_duration" will simply be
-        // the _session_count, i.e, 1 microsecond for each session.
+        // the m_session_count, i.e, 1 microsecond for each session.
         auto const sleep_time_raw =
-            static_cast<int>((_transaction_count * 1'000'000.0) / (target_rate * _session_count));
+            static_cast<int>((m_transaction_count * 1'000'000.0) / (target_rate * m_session_count));
         auto sleep_time = microseconds(sleep_time_raw);
         sleep_time = std::min(sleep_time, sleep_limit);
         use_sleep_time = true;
       } else {
-        rate_multiplier = (_transaction_count * 1'000'000.0) /
+        rate_multiplier = (m_transaction_count * 1'000'000.0) /
                           (target_rate * duration_cast<microseconds>(recording_duration).count());
       }
     }
@@ -1082,7 +1078,7 @@ Engine::replay_traffic()
         "duration: {} ms",
         rate_multiplier,
         duration_cast<milliseconds>(sleep_time).count(),
-        _transaction_count,
+        m_transaction_count,
         duration_cast<milliseconds>(recording_duration).count());
   }
 
@@ -1125,7 +1121,7 @@ Engine::replay_traffic()
         // Only pointer to worker thread info.
         {
           std::unique_lock<std::mutex> lock(thread_info->_data_ready_mutex);
-          thread_info->_ssn = ssn.get();
+          thread_info->m_ssn = ssn.get();
           lock.unlock();
           thread_info->_data_ready_cvar.notify_one();
         }
@@ -1164,7 +1160,7 @@ Engine::replay_traffic()
       n_megabytes / static_cast<double>(replay_duration.count()));
   if (!Allow_Unprocessed_Verifications) {
     std::vector<Txn const *> transactions;
-    transactions.reserve(_transaction_count);
+    transactions.reserve(m_transaction_count);
     for (auto const &ssn : Session_List) {
       for (auto const &txn : ssn->_transactions) {
         transactions.push_back(&txn);

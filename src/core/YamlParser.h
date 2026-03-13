@@ -325,21 +325,21 @@ protected:
         std::optional<bool> &target);
 
   private:
-    swoc::Errata _errata;
-    HttpProtocol _http_protocol = HttpProtocol::HTTP;
-    std::string _http_version = "1.1";
-    bool _has_http_details = false;
-    bool _has_tls_details = false;
-    bool _has_proxy_protocol_details = false;
-    bool _is_tls = false;
-    std::optional<std::string> _tls_sni_name;
-    std::optional<int> _tls_verify_mode;
-    std::optional<bool> _should_request_certificate;
-    std::optional<bool> _proxy_provided_certificate;
-    std::optional<std::string> _tls_alpn_protocols_string;
-    std::optional<int> _proxy_protocol_version;
-    std::optional<std::string> _proxy_protocol_src_addr;
-    std::optional<std::string> _proxy_protocol_dst_addr;
+    swoc::Errata m_errata;
+    HttpProtocol m_http_protocol = HttpProtocol::HTTP;
+    std::string m_http_version = "1.1";
+    bool m_has_http_details = false;
+    bool m_has_tls_details = false;
+    bool m_has_proxy_protocol_details = false;
+    bool m_is_tls = false;
+    std::optional<std::string> m_tls_sni_name;
+    std::optional<int> m_tls_verify_mode;
+    std::optional<bool> m_should_request_certificate;
+    std::optional<bool> m_proxy_provided_certificate;
+    std::optional<std::string> m_tls_alpn_protocols_string;
+    std::optional<int> m_proxy_protocol_version;
+    std::optional<std::string> m_proxy_protocol_src_addr;
+    std::optional<std::string> m_proxy_protocol_dst_addr;
   };
 
   /** Parse the "protocol" node into a common representation.
@@ -478,5 +478,5 @@ private:
 private:
   using ClockType = std::chrono::steady_clock;
   using TimePoint = std::chrono::time_point<ClockType, std::chrono::nanoseconds>;
-  static TimePoint _parsing_start_time;
+  static TimePoint m_parsing_start_time;
 };

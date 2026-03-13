@@ -1,7 +1,7 @@
 /** @file
  * Implementation for the PROXY protocol utility functions.
  *
- * Copyright 2023, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -22,8 +22,8 @@ void
 ProxyProtocolMsg::set_endpoints(const swoc::IPEndpoint &src_ep, const swoc::IPEndpoint &dst_ep)
 {
   // set the source and destination endpoints
-  _src_addr = src_ep;
-  _dst_addr = dst_ep;
+  m_src_addr = src_ep;
+  m_dst_addr = dst_ep;
 }
 
 swoc::Rv<ssize_t>
@@ -104,14 +104,14 @@ ProxyProtocolMsg::parse_pp_header_v1(swoc::TextView data)
   }
   in_port_t dstPort = static_cast<in_port_t>(n);
   // assign the source and destination addresses
-  _src_addr.assign(IPSrv{srcIP, srcPort});
-  _dst_addr.assign(IPSrv{dstIP, dstPort});
-  if (!_src_addr.is_valid() || !_dst_addr.is_valid()) {
+  m_src_addr.assign(IPSrv{srcIP, srcPort});
+  m_dst_addr.assign(IPSrv{dstIP, dstPort});
+  if (!m_src_addr.is_valid() || !m_dst_addr.is_valid()) {
     zret.note(S_ERROR, "Invalid PROXY header: IP address not valid");
     return zret;
   }
   // valid PORXY header, return the size of it
-  _version = ProxyProtocolVersion::V1;
+  m_version = ProxyProtocolVersion::V1;
   zret = size;
   return zret;
 }
@@ -138,10 +138,10 @@ ProxyProtocolMsg::parse_pp_header_v2(swoc::TextView data)
       // the ntohl() is needed because the address is stored in network byte
       // order and IPAddr expects a host byte order, which would in turn get
       // converted to network byte order in IPEndpoint.assign()
-      _src_addr.assign(IPSrv{
+      m_src_addr.assign(IPSrv{
           IPAddr{reinterpret_cast<in_addr_t>(ntohl(hdr->v2.addr.ip4.src_addr))},
           ntohs(hdr->v2.addr.ip4.src_port)});
-      _dst_addr.assign(IPSrv{
+      m_dst_addr.assign(IPSrv{
           IPAddr{reinterpret_cast<in_addr_t>(ntohl(hdr->v2.addr.ip4.dst_addr))},
           ntohs(hdr->v2.addr.ip4.dst_port)});
       break;
@@ -150,8 +150,8 @@ ProxyProtocolMsg::parse_pp_header_v2(swoc::TextView data)
       // IPv6 address doesn't have to handle endianess
       IPAddr srcAddr(reinterpret_cast<const in6_addr &>(hdr->v2.addr.ip6.src_addr));
       IPAddr dstAddr(reinterpret_cast<const in6_addr &>(hdr->v2.addr.ip6.dst_addr));
-      _src_addr.assign(IPSrv{srcAddr, ntohs(hdr->v2.addr.ip6.src_port)});
-      _dst_addr.assign(IPSrv{dstAddr, ntohs(hdr->v2.addr.ip6.dst_port)});
+      m_src_addr.assign(IPSrv{srcAddr, ntohs(hdr->v2.addr.ip6.src_port)});
+      m_dst_addr.assign(IPSrv{dstAddr, ntohs(hdr->v2.addr.ip6.dst_port)});
       break;
     }
     default:
@@ -164,12 +164,12 @@ ProxyProtocolMsg::parse_pp_header_v2(swoc::TextView data)
     zret.note(S_DIAG, "unsupported command found in PROXY header");
     return zret; /* not a supported command */
   }
-  if (!_src_addr.is_valid() || !_dst_addr.is_valid()) {
+  if (!m_src_addr.is_valid() || !m_dst_addr.is_valid()) {
     zret.note(S_ERROR, "Invalid PROXY header: IP address not valid");
     return zret;
   }
   // valid PORXY header, return the size of it
-  _version = ProxyProtocolVersion::V2;
+  m_version = ProxyProtocolVersion::V2;
   zret = size;
   return zret;
 }
@@ -192,9 +192,9 @@ swoc::Errata
 ProxyProtocolMsg::serialize(swoc::BufferWriter &buf) const
 {
   swoc::Errata errata;
-  if (_version == ProxyProtocolVersion::V1) {
+  if (m_version == ProxyProtocolVersion::V1) {
     return construct_v1_header(buf);
-  } else if (_version == ProxyProtocolVersion::V2) {
+  } else if (m_version == ProxyProtocolVersion::V2) {
     return construct_v2_header(buf);
   }
   errata.note(S_ERROR, "unknown proxy protocol version.");
@@ -207,10 +207,10 @@ ProxyProtocolMsg::construct_v1_header(swoc::BufferWriter &buf) const
   swoc::Errata errata;
   buf.print(
       "PROXY {}{} {2::a} {3::a} {2::p} {3::p}\r\n",
-      swoc::bwf::If(_src_addr.is_ip4(), "TCP4"),
-      swoc::bwf::If(_src_addr.is_ip6(), "TCP6"),
-      _src_addr,
-      _dst_addr);
+      swoc::bwf::If(m_src_addr.is_ip4(), "TCP4"),
+      swoc::bwf::If(m_src_addr.is_ip6(), "TCP6"),
+      m_src_addr,
+      m_dst_addr);
   errata.note(
       S_DIAG,
       "construcuting {} bytes of proxy protocol v1 header content:\n{}",
@@ -228,23 +228,23 @@ ProxyProtocolMsg::construct_v2_header(swoc::BufferWriter &buf) const
   // only support the PROXY command
   proxy_hdr.v2.ver_cmd = 0x21;
   int addr_len = 0;
-  if (_src_addr.is_ip4()) {
+  if (m_src_addr.is_ip4()) {
     proxy_hdr.v2.fam = 0x11;
     addr_len = sizeof(proxy_hdr.v2.addr.ip4);
     proxy_hdr.v2.len = htons(addr_len);
-    proxy_hdr.v2.addr.ip4.src_addr = _src_addr.sa4.sin_addr.s_addr;
-    proxy_hdr.v2.addr.ip4.dst_addr = _dst_addr.sa4.sin_addr.s_addr;
-    proxy_hdr.v2.addr.ip4.src_port = _src_addr.network_order_port();
-    proxy_hdr.v2.addr.ip4.dst_port = _dst_addr.network_order_port();
+    proxy_hdr.v2.addr.ip4.src_addr = m_src_addr.sa4.sin_addr.s_addr;
+    proxy_hdr.v2.addr.ip4.dst_addr = m_dst_addr.sa4.sin_addr.s_addr;
+    proxy_hdr.v2.addr.ip4.src_port = m_src_addr.network_order_port();
+    proxy_hdr.v2.addr.ip4.dst_port = m_dst_addr.network_order_port();
   } else {
     // ipv6
     proxy_hdr.v2.fam = 0x21;
     addr_len = sizeof(proxy_hdr.v2.addr.ip6);
     proxy_hdr.v2.len = htons(addr_len);
-    memcpy(proxy_hdr.v2.addr.ip6.src_addr, _src_addr.sa6.sin6_addr.s6_addr, 16);
-    memcpy(proxy_hdr.v2.addr.ip6.dst_addr, _dst_addr.sa6.sin6_addr.s6_addr, 16);
-    proxy_hdr.v2.addr.ip6.src_port = _src_addr.network_order_port();
-    proxy_hdr.v2.addr.ip6.dst_port = _dst_addr.network_order_port();
+    memcpy(proxy_hdr.v2.addr.ip6.src_addr, m_src_addr.sa6.sin6_addr.s6_addr, 16);
+    memcpy(proxy_hdr.v2.addr.ip6.dst_addr, m_dst_addr.sa6.sin6_addr.s6_addr, 16);
+    proxy_hdr.v2.addr.ip6.src_port = m_src_addr.network_order_port();
+    proxy_hdr.v2.addr.ip6.dst_port = m_dst_addr.network_order_port();
   }
   buf.write(&proxy_hdr, addr_len + 16);
   errata.note(S_DIAG, "construcuting {} bytes of proxy protocol v2 header", buf.size());

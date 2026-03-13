@@ -1,7 +1,7 @@
 /** @file
  * Declaration of Localizer, the string localization class.
  *
- * Copyright 2021, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -61,7 +61,7 @@ private:
 
 private:
   using NameSet = std::unordered_set<swoc::TextView, Hash, Hash>;
-  static NameSet _names;
-  static swoc::MemArena _arena;
-  static bool _frozen;
+  static NameSet m_names;
+  static swoc::MemArena m_arena;
+  static bool m_frozen;
 };

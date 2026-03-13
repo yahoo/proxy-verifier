@@ -1,7 +1,7 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2021, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -147,9 +147,9 @@ public:
 
 private:
   /// The verify mode to pass to SSL_set_verify().
-  int _verify_mode = SSL_VERIFY_NONE;
+  int m_verify_mode = SSL_VERIFY_NONE;
   /// The exact set of bytes to pass to SSL_CTX_set_alpn_protos.
-  std::string _alpn_wire_string;
+  std::string m_alpn_wire_string;
 };
 
 class TLSSession : public Session

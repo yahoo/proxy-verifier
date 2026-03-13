@@ -8,7 +8,6 @@
 #include "core/https.h"
 #include "core/ProxyVerifier.h"
 
-#include <dirent.h>
 #include <cstring>
 #include <fcntl.h>
 #include <netdb.h>
@@ -196,25 +195,25 @@ get_printable_alpn_string(std::string_view alpn_wire_string)
 void
 TLSHandshakeBehavior::set_verify_mode(int verify_mode)
 {
-  _verify_mode = verify_mode;
+  m_verify_mode = verify_mode;
 }
 
 int
 TLSHandshakeBehavior::get_verify_mode() const
 {
-  return _verify_mode;
+  return m_verify_mode;
 }
 
 void
 TLSHandshakeBehavior::set_alpn_protocols_string(std::string_view alpn_protocols)
 {
-  _alpn_wire_string = alpn_protocols;
+  m_alpn_wire_string = alpn_protocols;
 }
 
 std::string_view
 TLSHandshakeBehavior::get_alpn_wire_string() const
 {
-  return _alpn_wire_string;
+  return m_alpn_wire_string;
 }
 
 TLSSession::TLSSession(TextView const &client_sni, int client_verify_mode)

@@ -1,7 +1,7 @@
 /** @file
  * Common data structures and definitions for the PROXY protocol utility
  *
- * Copyright 2023, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -68,11 +68,11 @@ class ProxyProtocolMsg
 {
 public:
   ProxyProtocolMsg() = default;
-  ProxyProtocolMsg(ProxyProtocolVersion version) : _version(version){};
+  ProxyProtocolMsg(ProxyProtocolVersion version) : m_version(version){};
   ProxyProtocolMsg(swoc::IPEndpoint src_ep, swoc::IPEndpoint dst_ep, ProxyProtocolVersion version)
-    : _version(version)
-    , _src_addr(src_ep)
-    , _dst_addr(dst_ep){};
+    : m_version(version)
+    , m_src_addr(src_ep)
+    , m_dst_addr(dst_ep){};
 
   /** Parse the data as a PROXY header
    *
@@ -122,25 +122,25 @@ private:
   swoc::Errata construct_v1_header(swoc::BufferWriter &buf) const;
   swoc::Errata construct_v2_header(swoc::BufferWriter &buf) const;
 
-  ProxyProtocolVersion _version = ProxyProtocolVersion::NONE;
-  swoc::IPEndpoint _src_addr;
-  swoc::IPEndpoint _dst_addr;
+  ProxyProtocolVersion m_version = ProxyProtocolVersion::NONE;
+  swoc::IPEndpoint m_src_addr;
+  swoc::IPEndpoint m_dst_addr;
 };
 
 inline ProxyProtocolVersion
 ProxyProtocolMsg::get_version() const
 {
-  return _version;
+  return m_version;
 }
 
 inline swoc::IPEndpoint
 ProxyProtocolMsg::get_src_ep() const
 {
-  return _src_addr;
+  return m_src_addr;
 }
 
 inline swoc::IPEndpoint
 ProxyProtocolMsg::get_dst_ep() const
 {
-  return _dst_addr;
+  return m_dst_addr;
 }

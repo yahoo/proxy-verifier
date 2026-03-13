@@ -24,7 +24,6 @@
 #include <thread>
 #include <unordered_map>
 
-#include <dirent.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -75,11 +74,11 @@ milliseconds Poll_Timeout{5s};
 class ServerThreadInfo : public ThreadInfo
 {
 public:
-  Session *_session = nullptr;
+  Session *m_session = nullptr;
   bool
   data_ready() override
   {
-    return Shutdown_Flag || this->_session;
+    return Shutdown_Flag || this->m_session;
   }
 };
 
@@ -244,8 +243,8 @@ private:
       YAML::Mark const &mark);
 
 private:
-  YAML::Node const *_ssn_node = nullptr;
-  YAML::Node const *_txn_node = nullptr;
+  YAML::Node const *m_ssn_node = nullptr;
+  YAML::Node const *m_txn_node = nullptr;
   /** The key for this transaction.
    *
    * This can be derived in a variety of ways:
@@ -255,31 +254,31 @@ private:
    *
    * This value tracks the derived key across these methods.
    */
-  std::string _key;
-  Txn _txn;
+  std::string m_key;
+  Txn m_txn;
 };
 
-ServerReplayFileHandler::ServerReplayFileHandler() : _txn{Use_Strict_Checking} { }
+ServerReplayFileHandler::ServerReplayFileHandler() : m_txn{Use_Strict_Checking} { }
 
 void
 ServerReplayFileHandler::txn_reset()
 {
-  _txn_node = nullptr;
-  _key.clear();
-  _txn.~Txn();
-  new (&_txn) Txn{Use_Strict_Checking};
+  m_txn_node = nullptr;
+  m_key.clear();
+  m_txn.~Txn();
+  new (&m_txn) Txn{Use_Strict_Checking};
 }
 
 void
 ServerReplayFileHandler::ssn_reset()
 {
-  _ssn_node = nullptr;
+  m_ssn_node = nullptr;
 }
 
 swoc::Errata
 ServerReplayFileHandler::ssn_open(YAML::Node const &node)
 {
-  _ssn_node = &node;
+  m_ssn_node = &node;
   return {};
 }
 
@@ -299,9 +298,9 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
     return errata;
   }
   LoadMutex.lock();
-  _txn._req.set_is_request();
-  _txn._rsp.set_is_response();
-  _txn_node = &node;
+  m_txn._req.set_is_request();
+  m_txn._rsp.set_is_response();
+  m_txn_node = &node;
   return {};
 }
 
@@ -387,7 +386,7 @@ ServerReplayFileHandler::client_request(YAML::Node const &node)
   Errata errata = YamlParser::populate_http_message(node, client_request);
   auto const key = client_request.get_key();
   if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
-    _key = key;
+    m_key = key;
   }
   return errata;
 }
@@ -401,8 +400,8 @@ ServerReplayFileHandler::handle_protocol_node(YAML::Node const &proxy_request_no
   YAML::Node protocol_sequence_node;
   if (proxy_request_node[YAML_SSN_PROTOCOL_KEY]) {
     protocol_sequence_node = proxy_request_node[YAML_SSN_PROTOCOL_KEY];
-  } else if ((*_ssn_node)[YAML_SSN_PROTOCOL_KEY]) {
-    protocol_sequence_node = (*_ssn_node)[YAML_SSN_PROTOCOL_KEY];
+  } else if ((*m_ssn_node)[YAML_SSN_PROTOCOL_KEY]) {
+    protocol_sequence_node = (*m_ssn_node)[YAML_SSN_PROTOCOL_KEY];
   } else {
     // There is no session-level nor transaction level protocol node to
     // process.
@@ -419,16 +418,16 @@ ServerReplayFileHandler::handle_protocol_node(YAML::Node const &proxy_request_no
   switch (protocol.get_http_protocol()) {
   case ReplayFileHandler::HttpProtocol::HTTP:
   case ReplayFileHandler::HttpProtocol::HTTPS:
-    _txn._req.set_is_http1();
-    _txn._rsp.set_is_http1();
+    m_txn._req.set_is_http1();
+    m_txn._rsp.set_is_http1();
     break;
   case ReplayFileHandler::HttpProtocol::HTTP2:
-    _txn._req.set_is_http2();
-    _txn._rsp.set_is_http2();
+    m_txn._req.set_is_http2();
+    m_txn._rsp.set_is_http2();
     break;
   case ReplayFileHandler::HttpProtocol::HTTP3:
-    _txn._req.set_is_http3();
-    _txn._rsp.set_is_http3();
+    m_txn._req.set_is_http3();
+    m_txn._rsp.set_is_http3();
     break;
   }
 
@@ -456,14 +455,14 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
     return errata;
   }
 
-  _txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-  errata.note(YamlParser::populate_http_message(node, _txn._req));
+  m_txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+  errata.note(YamlParser::populate_http_message(node, m_txn._req));
   if (!errata.is_ok()) {
     return errata;
   }
-  auto const key = _txn._req.get_key();
+  auto const key = m_txn._req.get_key();
   if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
-    _key = key;
+    m_key = key;
   }
   return errata;
 }
@@ -472,11 +471,11 @@ swoc::Errata
 ServerReplayFileHandler::server_response(YAML::Node const &node)
 {
   swoc::Errata errata;
-  errata.note(YamlParser::populate_http_message(node, _txn._rsp));
+  errata.note(YamlParser::populate_http_message(node, m_txn._rsp));
   auto &&[connect_action, on_connect_errata] = get_on_connect_action(node);
   errata.note(std::move(on_connect_errata));
-  _txn._connect_action = connect_action;
-  if (_txn._rsp._status == 0 && _txn._connect_action == Txn::ConnectAction::ACCEPT) {
+  m_txn._connect_action = connect_action;
+  if (m_txn._rsp._status == 0 && m_txn._connect_action == Txn::ConnectAction::ACCEPT) {
     errata.note(
         S_ERROR,
         R"(server-response node without a status at "{}":{}.)",
@@ -495,7 +494,7 @@ ServerReplayFileHandler::server_response(YAML::Node const &node)
           YAML_TIME_DELAY_KEY);
       return errata;
     }
-    _txn._user_specified_delay_duration = delay_time;
+    m_txn._user_specified_delay_duration = delay_time;
   }
   return errata;
 }
@@ -503,11 +502,11 @@ ServerReplayFileHandler::server_response(YAML::Node const &node)
 swoc::Errata
 ServerReplayFileHandler::apply_to_all_messages(HttpFields const &all_headers)
 {
-  _txn._req.merge(all_headers);
-  _txn._rsp.merge(all_headers);
-  auto const key = _txn._req.get_key();
+  m_txn._req.merge(all_headers);
+  m_txn._rsp.merge(all_headers);
+  auto const key = m_txn._req.get_key();
   if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
-    _key = key;
+    m_key = key;
   }
   return {};
 }
@@ -516,21 +515,21 @@ swoc::Errata
 ServerReplayFileHandler::txn_close()
 {
   swoc::Errata errata;
-  if (_key.empty()) {
+  if (m_key.empty()) {
     errata.note(
         S_ERROR,
         R"(Could not find a key of format "{}" for transaction at "{}":{}.)",
         HttpHeader::_key_format,
         _path,
-        _txn_node->Mark().line);
+        m_txn_node->Mark().line);
   } else {
     // For convenience, we do not require the user to set the key in
     // server-response nodes. Proxy Verifier functions fine in every way for
     // this, except for some debug logging which will show TRANSACTION_KEY_NOT_SET
     // in some places. For this reason make sure the response is aware of the
     // key.
-    _txn._rsp.set_key(_key);
-    Transactions.emplace(_key, std::move(_txn));
+    m_txn._rsp.set_key(m_key);
+    Transactions.emplace(m_key, std::move(m_txn));
   }
   this->txn_reset();
   LoadMutex.unlock();
@@ -547,12 +546,12 @@ ServerReplayFileHandler::ssn_close()
 void
 delete_thread_info_session(ServerThreadInfo &thread_info)
 {
-  if (thread_info._session == nullptr) {
+  if (thread_info.m_session == nullptr) {
     return;
   }
   std::unique_lock<std::mutex> lock(thread_info._data_ready_mutex);
-  delete thread_info._session;
-  thread_info._session = nullptr;
+  delete thread_info.m_session;
+  thread_info.m_session = nullptr;
 }
 
 void
@@ -572,16 +571,16 @@ TF_Serve_Connection(std::thread *t)
 
     // check for proxy protocol header from the socket
     errata.note(S_DIAG, "Checking for proxy protocol header.");
-    auto pp_eratta = thread_info._session->read_and_parse_proxy_hdr();
+    auto pp_eratta = thread_info.m_session->read_and_parse_proxy_hdr();
     errata.note(std::move(pp_eratta));
-    auto accept_errata = thread_info._session->accept();
+    auto accept_errata = thread_info.m_session->accept();
     errata.note(std::move(accept_errata));
-    while (!Shutdown_Flag && !thread_info._session->is_closed() && errata.is_ok()) {
+    while (!Shutdown_Flag && !thread_info.m_session->is_closed() && errata.is_ok()) {
       swoc::Errata thread_errata;
 
       // Poll so we can timeout and check for shutdown.
       auto &&[poll_return, poll_errata] =
-          thread_info._session->poll_for_headers(Thread_Sleep_Interval);
+          thread_info.m_session->poll_for_headers(Thread_Sleep_Interval);
       thread_errata.note(poll_errata);
       if (poll_return == 0) {
         // Poll timed out. Loop back around.
@@ -591,12 +590,12 @@ TF_Serve_Connection(std::thread *t)
         break;
       } else if (poll_return == -1) {
         // Socket closed.
-        thread_info._session->close();
+        thread_info.m_session->close();
         break;
       }
 
       swoc::LocalBufferWriter<MAX_HDR_SIZE> w;
-      auto &&[req_hdr, read_header_errata] = thread_info._session->read_and_parse_request(w);
+      auto &&[req_hdr, read_header_errata] = thread_info.m_session->read_and_parse_request(w);
       thread_errata.note(std::move(read_header_errata));
       if (!thread_errata.is_ok()) {
         thread_errata.note(S_ERROR, "Could not read the header.");
@@ -623,7 +622,7 @@ TF_Serve_Connection(std::thread *t)
         HttpHeader not_found_response =
             get_not_found_response(stream_id, req_hdr->get_http_protocol(), key);
         not_found_response.update_content_length(req_hdr->_method);
-        auto &&[written_bytes, write_errata] = thread_info._session->write(not_found_response);
+        auto &&[written_bytes, write_errata] = thread_info.m_session->write(not_found_response);
         thread_errata.note(std::move(write_errata));
         // This will end the loop and eventually drop the connection.
         break;
@@ -641,7 +640,7 @@ TF_Serve_Connection(std::thread *t)
         thread_errata.note(S_DIAG, "Writing an 100 Continue response for key {}.", key);
         HttpHeader continue_response =
             get_continue_response(stream_id, req_hdr->get_http_protocol(), key);
-        auto &&[bytes_written, write_errata] = thread_info._session->write(continue_response);
+        auto &&[bytes_written, write_errata] = thread_info.m_session->write(continue_response);
         thread_errata.note(std::move(write_errata));
       }
 
@@ -653,7 +652,7 @@ TF_Serve_Connection(std::thread *t)
         if (req_hdr->_chunked_p) {
           req_hdr->_content_length = specified_transaction._req._content_length;
         }
-        auto &&[bytes_drained, drain_errata] = thread_info._session->drain_body(
+        auto &&[bytes_drained, drain_errata] = thread_info.m_session->drain_body(
             *req_hdr,
             req_hdr->_content_length,
             w.view(),
@@ -665,7 +664,7 @@ TF_Serve_Connection(std::thread *t)
           break;
         }
       } else if (is_http2) {
-        H2Session *h2session = dynamic_cast<H2Session *>(thread_info._session);
+        H2Session *h2session = dynamic_cast<H2Session *>(thread_info.m_session);
         auto iter = h2session->_stream_map.find(stream_id);
         if (iter == h2session->_stream_map.end()) {
           thread_errata.note(S_ERROR, "Failed to find HTTP/2 stream with id {}.", stream_id);
@@ -674,7 +673,7 @@ TF_Serve_Connection(std::thread *t)
           stream_state._specified_request = &specified_transaction._req;
         }
       } else if (is_http3) {
-        H3Session *h3session = dynamic_cast<H3Session *>(thread_info._session);
+        H3Session *h3session = dynamic_cast<H3Session *>(thread_info.m_session);
         auto iter = h3session->stream_map.find(stream_id);
         if (iter == h3session->stream_map.end()) {
           thread_errata.note(S_ERROR, "Failed to find HTTP/3 stream with id {}.", stream_id);
@@ -708,7 +707,7 @@ TF_Serve_Connection(std::thread *t)
       }
       if (specified_transaction._connect_action == Txn::ConnectAction::ACCEPT) {
         auto &&[bytes_written, write_errata] =
-            thread_info._session->write(specified_transaction._rsp);
+            thread_info.m_session->write(specified_transaction._rsp);
         thread_errata.note(std::move(write_errata));
       } else {
         thread_errata.note(
@@ -717,7 +716,7 @@ TF_Serve_Connection(std::thread *t)
             specified_transaction._connect_action == Txn::ConnectAction::REFUSE ? "refuse" :
                                                                                   "reset",
             key);
-        perform_connect_action(*thread_info._session, specified_transaction._connect_action);
+        perform_connect_action(*thread_info.m_session, specified_transaction._connect_action);
         break;
       }
     }
@@ -776,7 +775,7 @@ TF_Accept(int socket_fd, bool do_https, bool do_http3)
       errata.note(S_ERROR, "Failed to get worker thread");
     } else {
       std::unique_lock<std::mutex> lock(thread_info->_data_ready_mutex);
-      thread_info->_session = session.release();
+      thread_info->m_session = session.release();
       thread_info->_data_ready_cvar.notify_one();
     }
   }
