@@ -682,7 +682,7 @@ TF_Serve_Connection(std::thread *t)
           stream_state.specified_request = &specified_transaction._req;
         }
       }
-      if (req_hdr->verify_headers(key, *specified_transaction._req._fields_rules)) {
+      if (req_hdr->verify_request(key, specified_transaction._req)) {
         thread_errata.note(S_ERROR, R"(Request headers did not match expected request headers.)");
         Engine::process_exit_code = 1;
       } else {

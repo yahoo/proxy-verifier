@@ -279,7 +279,10 @@ class ReplaySession:
     def get_hostname_from_url(url):
         parsed = urlparse(url)
         is_tls = True if parsed.scheme == "https" else False
-        return parsed.netloc, parsed.path, is_tls
+        path = parsed.path or '/'
+        if parsed.query:
+            path += '?' + parsed.query
+        return parsed.netloc, path, is_tls
 
 
 class RepalyFile:

@@ -458,16 +458,28 @@ public:
 
   /** Verify that the (header) fields in 'this' correspond to the provided rules.
    *
-   * @param key The key for this transaction.
-   * @param rules_ HeaderRules to iterate over, contains RuleCheck objects
+   * @param[in] key The key for this transaction.
+   * @param[in] rules_ HeaderRules to iterate over, contains RuleCheck objects
    * @return Whether any rules were violated
    */
   bool verify_headers(swoc::TextView key, HttpFields const &rules_) const;
 
+  /** Verify a request message against the provided request verification rules.
+   *
+   * This applies the normal header and URL verification rules and, for HTTP/1,
+   * also verifies the request method when the replay file specifies one via the
+   * top-level `method` node.
+   *
+   * @param[in] key The key for this transaction.
+   * @param[in] rules_ The request verification rules to apply.
+   * @return Whether any rules were violated.
+   */
+  bool verify_request(swoc::TextView key, HttpHeader const &rules_) const;
+
   /** Verify that the (trailer) fields in 'this' correspond to the provided rules.
    *
-   * @param key The key for this transaction.
-   * @param rules_ HeaderRules to iterate over, contains RuleCheck objects
+   * @param[in] key The key for this transaction.
+   * @param[in] rules_ HeaderRules to iterate over, contains RuleCheck objects
    * @return Whether any rules were violated
    */
   bool verify_trailers(swoc::TextView key, HttpFields const &rules_) const;
@@ -716,7 +728,7 @@ struct Txn
   bool
   request_has_verification_rules() const
   {
-    return _req.has_verification_rules(false);
+    return (_req.is_http1() && !_req._method.empty()) || _req.has_verification_rules(false);
   }
 
   void

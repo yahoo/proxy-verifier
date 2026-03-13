@@ -255,3 +255,38 @@ TEST_CASE("Test path parsing", "[ParseUrl]")
   CHECK(header.uri_query == test_case.expected_uri_query);
   CHECK(header.uri_fragment == test_case.expected_uri_fragment);
 }
+
+TEST_CASE("Verify HTTP/1 request methods participate in request verification", "[HttpHeader]")
+{
+  HttpHeader actual_request;
+  auto const parse_result = actual_request.parse_request(
+      "GET /method-verification HTTP/1.1\r\nHost: example.com\r\nuuid: 1\r\n\r\n");
+  REQUIRE(parse_result.is_ok());
+
+  HttpHeader expected_request;
+  expected_request.set_is_http1();
+  expected_request.set_is_request();
+  expected_request._method = "GET";
+
+  CHECK_FALSE(actual_request.verify_request("1", expected_request));
+
+  expected_request._method = "POST";
+  CHECK(actual_request.verify_request("1", expected_request));
+}
+
+TEST_CASE("Verify only HTTP/1 scalar methods count as request verification rules", "[Txn]")
+{
+  Txn http1_txn{false};
+  http1_txn._req.set_is_http1();
+  http1_txn._req.set_is_request();
+  http1_txn._req._method = "GET";
+
+  CHECK(http1_txn.request_has_verification_rules());
+
+  Txn http2_txn{false};
+  http2_txn._req.set_is_http2();
+  http2_txn._req.set_is_request();
+  http2_txn._req._method = "GET";
+
+  CHECK_FALSE(http2_txn.request_has_verification_rules());
+}

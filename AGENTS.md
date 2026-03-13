@@ -116,6 +116,8 @@ do_something(!IGNORE_CASE);
 - Add Doxygen comments for public functions.
 - Add Doxygen comments for public members and for public functions of classes
   and structs.
+- Decorate every Doxygen `@param` entry with `[in]`, `[out]`, or `[in,out]`
+  to make parameter direction explicit.
 - Keep comments high-signal: explain behavior, invariants, ownership,
   compatibility constraints, and protocol subtleties rather than narrating
   obvious syntax.

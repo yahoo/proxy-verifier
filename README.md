@@ -1021,10 +1021,10 @@ sessions:
 
 In addition to replaying HTTP traffic as described above, Proxy Verifier also
 implements proxy traffic verification. For any given transaction, Proxy
-Verifier can optionally verify characteristics of an HTTP request line (for
-HTTP/1 requests - HTTP/2 requests do not have a request line), the response
-status, and the content of HTTP fields for requests and responses.  Proxy
-Verifier also supports field verification of HTTP/2 pseudo header fields.
+Verifier can optionally verify the HTTP/1 request method, HTTP request target
+parts, the response status, and the content of HTTP fields for requests and
+responses. Proxy Verifier also supports field verification of HTTP/2 and
+HTTP/3 pseudo header fields.
 Whereas `client-request` and `server-response` nodes direct the Verifier client
 and server (respectively) on how to send traffic, `proxy-request` and
 `proxy-response` nodes direct the server and client (respectively) on how to
@@ -1308,6 +1308,30 @@ proxy-response:
   headers:
     fields:
     - [Set-Cookie, { as: absent }]
+```
+
+### Request Method Verification
+
+For HTTP/1, request method verification is specified via the scalar `method`
+node in `proxy-request`. If present, Proxy Verifier verifies that the proxy
+sent that exact HTTP method token.
+
+For example, the following `proxy-request` node directs the Verifier server to
+verify that the proxy sends an HTTP/1 `POST` request:
+
+```YAML
+  proxy-request:
+    method: POST
+```
+
+For HTTP/2 and HTTP/3, method verification is specified via the `:method`
+pseudo header field using the normal field verification syntax:
+
+```YAML
+  proxy-request:
+    headers:
+      fields:
+      - [ :method, { value: POST, as: equal } ]
 ```
 
 ### URL Verification

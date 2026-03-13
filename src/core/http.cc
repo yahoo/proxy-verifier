@@ -636,6 +636,42 @@ HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rul
   return _fields_rules->verify(transaction_key, rules_);
 }
 
+bool
+HttpHeader::verify_request(swoc::TextView transaction_key, HttpHeader const &rules_) const
+{
+  bool issue_exists = false;
+
+  if (is_http1() && rules_.is_request() && !rules_._method.empty()) {
+    Errata errata;
+    if (_method.empty()) {
+      errata.note(
+          S_INFO,
+          R"(HTTP/1 Method Violation: Absent. Key: "{}", Expected Method: "{}")",
+          transaction_key,
+          rules_._method);
+      issue_exists = true;
+    } else if (_method != rules_._method) {
+      errata.note(
+          S_INFO,
+          R"(HTTP/1 Method Violation: Different. Key: "{}", Expected Method: "{}", )"
+          R"(Received Method: "{}")",
+          transaction_key,
+          rules_._method,
+          _method);
+      issue_exists = true;
+    } else {
+      errata.note(
+          S_INFO,
+          R"(HTTP/1 Method Success: Key: "{}", Method: "{}")",
+          transaction_key,
+          _method);
+    }
+  }
+
+  issue_exists |= verify_headers(transaction_key, *rules_._fields_rules);
+  return issue_exists;
+}
+
 // Verify that the trailers in 'this' correspond to the provided rules.
 bool
 HttpHeader::verify_trailers(swoc::TextView transaction_key, HttpFields const &rules_) const

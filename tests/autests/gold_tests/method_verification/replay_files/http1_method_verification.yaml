@@ -1,0 +1,58 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+  version: "1.0"
+
+sessions:
+- protocol:
+    stack: http
+  transactions:
+  - client-request:
+      method: GET
+      url: http://example.com/pass
+      version: "1.1"
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, 1 ]
+
+    proxy-request:
+      method: GET
+      headers:
+        fields:
+        - [ Host, { value: example.com, as: equal } ]
+        - [ uuid, { value: 1, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, "0" ]
+
+  - client-request:
+      method: GET
+      url: http://example.com/fail
+      version: "1.1"
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, 2 ]
+
+    proxy-request:
+      method: POST
+      headers:
+        fields:
+        - [ Host, { value: example.com, as: equal } ]
+        - [ uuid, { value: 2, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, "0" ]
