@@ -149,7 +149,7 @@ perform_connect_action(Session &session, Txn::ConnectAction action)
       l.l_linger = 0;
       setsockopt(session.get_fd(), SOL_SOCKET, SO_LINGER, (char *)&l, sizeof(l));
     }
-  // [[fallthrough]]; fallthrough to close the socket after setting linger.
+    [[fallthrough]];
   case Txn::ConnectAction::REFUSE:
     // For a refuse action, simply closing the socket is sufficient to
     // instigate a FIN from the OS.
