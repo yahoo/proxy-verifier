@@ -55,7 +55,10 @@ When a change is localized, prefer running the relevant AuTest subset with
   it.
 - Almost all new files should contain the Apache license preface with this year
   referenced as the copyright, except of course files that cannot contain such
-  comments, such as .json files and autest .gold files.
+  comments, such as `.json` files and autest `.gold` files.
+- Replay YAML files, including AuTest replay files under `tests/autests`, also
+  need the same commented file prologue (`# @file`, copyright, SPDX). Do not
+  add new replay YAMLs without that header.
 
 ## C++ Style
 

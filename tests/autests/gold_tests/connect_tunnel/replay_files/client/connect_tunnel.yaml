@@ -1,0 +1,60 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+  version: '1.0'
+
+sessions:
+- protocol:
+    stack: http
+
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, connect-tunnel ]
+
+    client-request:
+      method: CONNECT
+      url: verifier.example:443
+      version: '1.1'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, verifier.example:443 ]
+
+    proxy-response:
+      status: 200
+      reason: Connection Established
+
+  - all:
+      headers:
+        fields:
+        - [ uuid, tunneled-request ]
+
+    client-request:
+      method: GET
+      url: /through/tunnel
+      version: '1.1'
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, verifier.example ]
+        - [ Connection, close ]
+        - [ X-Tunneled, true ]
+
+    proxy-response:
+      status: 200
+      reason: OK
+      content:
+        encoding: plain
+        data: tunnel-body
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Length, '11' ]
+        - [ Connection, close ]
+        - [ X-Tunneled-Response, true ]

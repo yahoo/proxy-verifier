@@ -10,6 +10,7 @@ Implement HTTP/1 proxy behavior in Python.
 import sys
 import socket
 import ssl
+import select
 import http.client
 import urllib.parse
 import threading
@@ -20,7 +21,6 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from directive_engine import DirectiveEngine
 from proxy_protocol_context import ProxyProtocolUtil
-import socket
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
@@ -46,6 +46,8 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     in DirectiveEngine for how these directives work.
     """
     timeout = 5
+    tunnel_timeout = 0.5
+    tunnel_buffer_size = 64 * 1024
     # For serializing output. See the uses of "with lock".
     lock = threading.Lock()
 
@@ -217,6 +219,35 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         with self.lock:
             self.save_handler(req, req_body, res, res_body)
 
+    def do_CONNECT(self):
+        request_id = self.headers.get('uuid', '<unknown>')
+        connect_target = self.path
+        upstream = ('127.0.0.1', self.server_port)
+        print(f"Received CONNECT request for key {request_id}: target {connect_target}")
+
+        try:
+            upstream_socket = socket.create_connection(upstream, timeout=self.timeout)
+        except Exception as e:
+            self.send_error(502)
+            print(f"Failed to establish CONNECT tunnel for key {request_id} to "
+                  f"{upstream[0]}:{upstream[1]}: {e}")
+            traceback.print_exc(file=sys.stdout)
+            return
+
+        self.send_response(200, "Connection Established")
+        self.end_headers()
+        self.wfile.flush()
+        print(f"Established CONNECT tunnel for key {request_id} to "
+              f"{upstream[0]}:{upstream[1]}")
+
+        # BaseHTTPRequestHandler should not attempt to parse any further HTTP
+        # requests on this socket once CONNECT upgrades the connection to a tunnel.
+        self.close_connection = True
+        try:
+            self.relay_connect_tunnel(upstream_socket, request_id)
+        finally:
+            upstream_socket.close()
+
     # Map all the do_<method> commands to our do_GET because that has our
     # request implementation for all of them.
     do_get = do_GET
@@ -230,6 +261,7 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
     do_delete = do_GET
     do_OPTIONS = do_GET
     do_options = do_GET
+    do_connect = do_CONNECT
 
     def relay_streaming(self, res):
         self.wfile.write(f"{self.protocol_version} {res.status} {res.reason}\r\n")
@@ -246,6 +278,34 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
         except socket.error:
             # connection closed by client
             pass
+
+    def relay_connect_tunnel(self, upstream_socket, request_id):
+        sockets = [self.connection, upstream_socket]
+        client_to_server_bytes = 0
+        server_to_client_bytes = 0
+
+        while True:
+            readable, _, exceptional = select.select(sockets, [], sockets, self.tunnel_timeout)
+            if exceptional:
+                print(f"CONNECT tunnel for key {request_id} hit an exceptional socket state.")
+                break
+            if not readable:
+                continue
+
+            for source in readable:
+                data = source.recv(self.tunnel_buffer_size)
+                if not data:
+                    print("CONNECT tunnel for key {} closed after relaying {} bytes client->server "
+                          "and {} bytes server->client.".format(request_id, client_to_server_bytes,
+                                                                server_to_client_bytes))
+                    return
+
+                destination = upstream_socket if source is self.connection else self.connection
+                destination.sendall(data)
+                if source is self.connection:
+                    client_to_server_bytes += len(data)
+                else:
+                    server_to_client_bytes += len(data)
 
     @staticmethod
     def classify_upstream_disconnect(exc):
