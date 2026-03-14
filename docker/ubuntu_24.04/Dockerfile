@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM ubuntu:24.04 AS pv-libs-builder-base
+FROM docker.io/library/ubuntu:24.04 AS pv-libs-builder-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -61,7 +61,7 @@ EOF
 
 # The final image is the development environment used to build, test,
 # and produce release binaries with the prebuilt /opt/pv_libs tree.
-FROM ubuntu:24.04 AS dev
+FROM docker.io/library/ubuntu:24.04 AS dev
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 

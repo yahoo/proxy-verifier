@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM rockylinux/rockylinux:10 AS pv-libs-builder-base
+FROM docker.io/rockylinux/rockylinux:10 AS pv-libs-builder-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -62,7 +62,7 @@ EOF
 
 # The final image is the development environment used to build, test,
 # and produce release binaries with the prebuilt /opt/pv_libs tree.
-FROM rockylinux/rockylinux:10 AS dev
+FROM docker.io/rockylinux/rockylinux:10 AS dev
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
