@@ -19,10 +19,13 @@ apt-get update
 apt-get install -y --no-install-recommends \
   autoconf \
   automake \
-  build-essential \
   ca-certificates \
   curl \
+  diffutils \
+  g++ \
+  gcc \
   git \
+  libc6-dev \
   libffi-dev \
   libssl-dev \
   libtool \
@@ -74,10 +77,13 @@ apt-get update
 apt-get install -y --no-install-recommends \
   autoconf \
   automake \
-  build-essential \
   ca-certificates \
   curl \
+  diffutils \
+  g++ \
+  gcc \
   git \
+  libc6-dev \
   libffi-dev \
   libssl-dev \
   libtool \

@@ -13,14 +13,19 @@ ENV PATH="/opt/pv-venv/bin:${PATH}" \
 RUN <<'EOF'
 set -eux
 
+dnf install -y dnf-plugins-core
+dnf config-manager --set-enabled crb
 dnf install -y \
   autoconf \
   automake \
   ca-certificates \
+  diffutils \
   gcc \
   gcc-c++ \
   git \
+  glibc-static \
   libffi-devel \
+  libstdc++-static \
   libtool \
   make \
   openssl-devel \
@@ -69,14 +74,19 @@ ENV PATH="/opt/pv-venv/bin:${PATH}" \
 RUN <<'EOF'
 set -eux
 
+dnf install -y dnf-plugins-core
+dnf config-manager --set-enabled crb
 dnf install -y \
   autoconf \
   automake \
   ca-certificates \
+  diffutils \
   gcc \
   gcc-c++ \
   git \
+  glibc-static \
   libffi-devel \
+  libstdc++-static \
   libtool \
   make \
   openssl-devel \
