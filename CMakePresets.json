@@ -26,7 +26,7 @@
       }
     },
     {
-      "name": "external-base",
+      "name": "dev-external-base",
       "hidden": true,
       "inherits": "dev-base",
       "cacheVariables": {
@@ -35,7 +35,7 @@
       }
     },
     {
-      "name": "bootstrap-base",
+      "name": "dev-bootstrap-base",
       "hidden": true,
       "inherits": "dev-base",
       "cacheVariables": {
@@ -43,28 +43,67 @@
       }
     },
     {
-      "name": "release-base",
+      "name": "portable-base",
       "hidden": true,
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_FLAGS_RELEASE": "-O2 -DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O2 -DNDEBUG",
         "CMAKE_INSTALL_PREFIX": "/tmp",
         "PV_RELEASE_LAYOUT": "ON",
         "PV_STATIC_BUILD": "ON"
       }
     },
     {
-      "name": "release-external-base",
+      "name": "portable-external-base",
       "hidden": true,
-      "inherits": "release-base",
+      "inherits": "portable-base",
       "cacheVariables": {
         "PV_BOOTSTRAP_DEPS": "OFF",
         "PV_DEPS_ROOT": "/opt/pv_libs"
       }
     },
     {
+      "name": "portable-bootstrap-base",
+      "hidden": true,
+      "inherits": "portable-base",
+      "cacheVariables": {
+        "PV_BOOTSTRAP_DEPS": "ON"
+      }
+    },
+    {
+      "name": "native-base",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -march=native -mtune=native",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -march=native -mtune=native",
+        "CMAKE_INSTALL_PREFIX": "/usr/local",
+        "PV_STATIC_BUILD": "OFF"
+      }
+    },
+    {
+      "name": "native-external-base",
+      "hidden": true,
+      "inherits": "native-base",
+      "cacheVariables": {
+        "PV_BOOTSTRAP_DEPS": "OFF",
+        "PV_DEPS_ROOT": "/opt/pv_libs"
+      }
+    },
+    {
+      "name": "native-bootstrap-base",
+      "hidden": true,
+      "inherits": "native-base",
+      "cacheVariables": {
+        "PV_BOOTSTRAP_DEPS": "ON"
+      }
+    },
+    {
       "name": "dev-bootstrap",
-      "inherits": "bootstrap-base"
+      "inherits": "dev-bootstrap-base"
     },
     {
       "name": "dev-bootstrap-asan",
@@ -75,39 +114,30 @@
     },
     {
       "name": "dev-external",
-      "inherits": "external-base"
+      "inherits": "dev-external-base"
     },
     {
-      "name": "ci",
-      "inherits": "external-base",
+      "name": "dev-external-asan",
+      "inherits": "dev-external",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "PV_ENABLE_ASAN": "ON"
       }
     },
     {
-      "name": "release-native",
-      "inherits": "release-external-base"
+      "name": "portable-external",
+      "inherits": "portable-external-base"
     },
     {
-      "name": "release-linux-amd64",
-      "inherits": "release-external-base",
-      "cacheVariables": {
-        "PV_RELEASE_TARGET": "linux-amd64"
-      }
+      "name": "portable-bootstrap",
+      "inherits": "portable-bootstrap-base"
     },
     {
-      "name": "release-linux-arm64",
-      "inherits": "release-external-base",
-      "cacheVariables": {
-        "PV_RELEASE_TARGET": "linux-arm64"
-      }
+      "name": "native-external",
+      "inherits": "native-external-base"
     },
     {
-      "name": "release-darwin-arm64",
-      "inherits": "release-external-base",
-      "cacheVariables": {
-        "PV_RELEASE_TARGET": "darwin-arm64"
-      }
+      "name": "native-bootstrap",
+      "inherits": "native-bootstrap-base"
     }
   ],
   "buildPresets": [
@@ -124,40 +154,24 @@
       "configurePreset": "dev-external"
     },
     {
-      "name": "ci",
-      "configurePreset": "ci"
+      "name": "dev-external-asan",
+      "configurePreset": "dev-external-asan"
     },
     {
-      "name": "release-native",
-      "configurePreset": "release-native",
-      "targets": [
-        "all",
-        "install/strip"
-      ]
+      "name": "portable-external",
+      "configurePreset": "portable-external"
     },
     {
-      "name": "release-linux-amd64",
-      "configurePreset": "release-linux-amd64",
-      "targets": [
-        "all",
-        "install/strip"
-      ]
+      "name": "portable-bootstrap",
+      "configurePreset": "portable-bootstrap"
     },
     {
-      "name": "release-linux-arm64",
-      "configurePreset": "release-linux-arm64",
-      "targets": [
-        "all",
-        "install/strip"
-      ]
+      "name": "native-external",
+      "configurePreset": "native-external"
     },
     {
-      "name": "release-darwin-arm64",
-      "configurePreset": "release-darwin-arm64",
-      "targets": [
-        "all",
-        "install/strip"
-      ]
+      "name": "native-bootstrap",
+      "configurePreset": "native-bootstrap"
     }
   ],
   "testPresets": [
@@ -183,15 +197,36 @@
       }
     },
     {
-      "name": "ci",
-      "configurePreset": "ci",
+      "name": "dev-external-asan",
+      "configurePreset": "dev-external-asan",
       "output": {
         "outputOnFailure": true
       }
     },
     {
-      "name": "release-native",
-      "configurePreset": "release-native",
+      "name": "portable-external",
+      "configurePreset": "portable-external",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "portable-bootstrap",
+      "configurePreset": "portable-bootstrap",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "native-external",
+      "configurePreset": "native-external",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "native-bootstrap",
+      "configurePreset": "native-bootstrap",
       "output": {
         "outputOnFailure": true
       }

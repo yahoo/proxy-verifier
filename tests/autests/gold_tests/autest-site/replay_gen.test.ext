@@ -1,5 +1,5 @@
 '''
-Implement the replay_gen.py extension.
+Implement the replay-gen.py extension.
 '''
 # @file
 #
@@ -16,12 +16,12 @@ from os.path import dirname
 def ConfigureReplayGenDefaultProcess(test, name, replay_dir=None, num_transactions=1, url_file=None,
                                      other_args=''):
     """
-    Create a replay_gen.py Process.
+    Create a replay-gen.py Process.
 
     Args:
-        test: (Test) The Test object being updated with the replay_gen.py process.
+        test: (Test) The Test object being updated with the replay-gen.py process.
 
-        name: (str) The name to apply to this particular replay_gen.py instance.
+        name: (str) The name to apply to this particular replay-gen.py instance.
             Individual verifier-client processes must have unique names to
             distinguish between them.
 
@@ -32,10 +32,10 @@ def ConfigureReplayGenDefaultProcess(test, name, replay_dir=None, num_transactio
         num_transactions: (int) The number of transactions that should be generated.
 
         url_file: (path) The path to a file with a list of URLs to be passed to
-            replay_gen.py as --url-file. If not specified, a default one will
+            replay-gen.py as --url-file. If not specified, a default one will
             be created that just has http://127.0.0.1 in it.
 
-        other_args: (str) Any other arbitrary options to pass to replay_gen.py.
+        other_args: (str) Any other arbitrary options to pass to replay-gen.py.
 
     Returns:
         A verifier-client process.
@@ -43,7 +43,7 @@ def ConfigureReplayGenDefaultProcess(test, name, replay_dir=None, num_transactio
     process = test.Processes.Default
 
     tools_dir = os.path.join(dirname(dirname(dirname(test.TestRoot))), "tools")
-    replay_script = os.path.join(tools_dir, "replay_gen.py")
+    replay_script = os.path.join(tools_dir, "replay-gen.py")
     process.Setup.Copy(replay_script, test.RunDirectory, CopyLogic.SoftFiles)
 
     if url_file is None:
@@ -54,7 +54,7 @@ def ConfigureReplayGenDefaultProcess(test, name, replay_dir=None, num_transactio
         replay_dir = os.path.join(test.RunDirectory, name, "replay_dir")
     process.Variables['replay_dir'] = replay_dir
 
-    command = "python replay_gen.py "
+    command = "python replay-gen.py "
     command += f" --number {num_transactions}"
     command += f" --url-file {url_file}"
     command += f" --output {replay_dir}"

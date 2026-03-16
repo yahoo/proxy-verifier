@@ -394,7 +394,7 @@ def main():
             tls_trans = True
             h2_trans = True
         else:
-            print('Please check the help message "python3 replay_gen.py -h/--help".')
+            print('Please check the help message "python3 replay-gen.py -h/--help".')
             exit(1)
 
     if pathlib.Path(args.output).is_file():

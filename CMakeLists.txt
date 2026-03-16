@@ -1,42 +1,10 @@
+#
+# @file
+#
+# Copyright 2026, Verizon Media SPDX-License-Identifier: Apache-2.0
+#
+
 cmake_minimum_required(VERSION 4.2.3)
-
-if(APPLE)
-  if(NOT DEFINED CMAKE_C_COMPILER)
-    execute_process(
-      COMMAND xcrun -find clang
-      OUTPUT_VARIABLE _pv_apple_cc
-      OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(_pv_apple_cc)
-      set(CMAKE_C_COMPILER
-          "${_pv_apple_cc}"
-          CACHE FILEPATH "Apple clang selected by Proxy Verifier." FORCE)
-    endif()
-  endif()
-
-  if(NOT DEFINED CMAKE_CXX_COMPILER)
-    execute_process(
-      COMMAND xcrun -find clang++
-      OUTPUT_VARIABLE _pv_apple_cxx
-      OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(_pv_apple_cxx)
-      set(CMAKE_CXX_COMPILER
-          "${_pv_apple_cxx}"
-          CACHE FILEPATH "Apple clang++ selected by Proxy Verifier." FORCE)
-    endif()
-  endif()
-
-  if(NOT DEFINED CMAKE_OSX_SYSROOT)
-    execute_process(
-      COMMAND xcrun --show-sdk-path
-      OUTPUT_VARIABLE _pv_sdkroot
-      OUTPUT_STRIP_TRAILING_WHITESPACE)
-    if(_pv_sdkroot)
-      set(CMAKE_OSX_SYSROOT
-          "${_pv_sdkroot}"
-          CACHE PATH "Apple SDKROOT selected by Proxy Verifier." FORCE)
-    endif()
-  endif()
-endif()
 
 project(
   ProxyVerifier

@@ -32,9 +32,6 @@ then
   num_threads=$(nproc)
 else
   num_threads=$(sysctl -n hw.logicalcpu)
-  export CC="$(xcrun -find clang)"
-  export CXX="$(xcrun -find clang++)"
-  export SDKROOT="$(xcrun --show-sdk-path)"
 fi
 
 [ $# -eq 1 ] || fail "Please provide a directory in which to install the libraries."

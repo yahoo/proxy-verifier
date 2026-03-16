@@ -1,0 +1,77 @@
+#! /usr/bin/env bash
+#
+# Build stripped portable binaries with the checked-in CMake presets.
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+fail()
+{
+  echo "$1"
+  exit 1
+}
+
+usage()
+{
+  cat <<'EOF'
+Usage: tools/build-portable-binaries [portable-external|portable-bootstrap]
+
+Builds the selected portable preset, installs it with --strip, and prints the
+resulting verifier-client and verifier-server paths.
+EOF
+}
+
+set -euo pipefail
+
+preset="${1:-portable-bootstrap}"
+[ $# -le 1 ] || {
+  usage
+  fail "Provide at most one preset argument."
+}
+
+case "${preset}" in
+  portable-external|portable-bootstrap)
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage
+    fail "Unsupported portable preset: ${preset}"
+    ;;
+esac
+
+repo_root="$(cd "$(dirname -- "$0")/.." && pwd)"
+build_dir="${repo_root}/build/${preset}"
+cache_file="${build_dir}/CMakeCache.txt"
+
+cd "${repo_root}"
+
+cmake --preset "${preset}"
+cmake --build --preset "${preset}" --parallel
+cmake --install "${build_dir}" --strip
+
+[ -r "${cache_file}" ] || fail "Missing CMake cache after install: ${cache_file}"
+
+install_prefix="$(
+  awk -F= '/^CMAKE_INSTALL_PREFIX:PATH=/{print $2}' "${cache_file}" | tail -n 1
+)"
+install_bindir="$(
+  awk -F= '/^CMAKE_INSTALL_BINDIR:STRING=/{print $2}' "${cache_file}" | tail -n 1
+)"
+
+[ -n "${install_prefix}" ] || fail "Could not determine CMAKE_INSTALL_PREFIX."
+[ -n "${install_bindir}" ] || fail "Could not determine CMAKE_INSTALL_BINDIR."
+
+client_path="${install_prefix}/${install_bindir}/verifier-client"
+server_path="${install_prefix}/${install_bindir}/verifier-server"
+
+[ -x "${client_path}" ] || fail "Missing installed verifier-client: ${client_path}"
+[ -x "${server_path}" ] || fail "Missing installed verifier-server: ${server_path}"
+
+echo
+echo "Portable binaries:"
+echo "${client_path}"
+echo "${server_path}"

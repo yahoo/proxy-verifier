@@ -1,5 +1,5 @@
 '''
-Verify replay_gen.py can generate parsable replay files.
+Verify replay-gen.py can generate parsable replay files.
 '''
 # @file
 #
@@ -8,13 +8,13 @@ Verify replay_gen.py can generate parsable replay files.
 #
 
 Test.Summary = '''
-Verify replay_gen.py can generate parsable replay files.
+Verify replay-gen.py can generate parsable replay files.
 '''
 
 #
 # Test 1: Generate replay files via replay_gen and verify they can be replayed.
 #
-r = Test.AddTestRun("Generate replay files via replay_gen.py")
+r = Test.AddTestRun("Generate replay files via replay-gen.py")
 replay_gen = r.ConfigureReplayGenDefaultProcess("replay_gen1", num_transactions=20)
 
 r = Test.AddTestRun("Make sure we can use the generated replay files")

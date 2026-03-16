@@ -55,8 +55,8 @@ RUN <<'EOF'
 set -eux
 
 git clone --depth 1 --branch "${PV_REPO_REF}" "${PV_REPO_URL}" /tmp/proxy-verifier
-chmod +x /tmp/proxy-verifier/tools/build_library_dependencies.sh
-/tmp/proxy-verifier/tools/build_library_dependencies.sh /opt/pv_libs
+chmod +x /tmp/proxy-verifier/tools/build-library-dependencies.sh
+/tmp/proxy-verifier/tools/build-library-dependencies.sh /opt/pv_libs
 rm -rf /tmp/proxy-verifier
 EOF
 

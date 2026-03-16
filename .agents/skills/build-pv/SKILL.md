@@ -10,8 +10,12 @@ choices are:
 
 - `dev-external`: use a prebuilt dependency tree such as `/opt/pv_libs`.
 - `dev-bootstrap`: let CMake fetch and build the QUIC/TLS dependencies.
-- `dev-bootstrap-asan`: ASan build.
-- `release-native`: stage stripped release binaries under `/tmp/proxy-verifier-v<version>/<platform>`.
+- `dev-external-asan`: ASan build with a prebuilt dependency tree.
+- `dev-bootstrap-asan`: ASan build with CMake-managed dependencies.
+- `portable-external`: portable release build using `/opt/pv_libs`.
+- `portable-bootstrap`: portable release build with CMake-managed dependencies.
+- `native-external`: host-tuned dynamic build using `/opt/pv_libs`.
+- `native-bootstrap`: host-tuned dynamic build with CMake-managed dependencies.
 
 ## Dependency build
 
@@ -21,7 +25,7 @@ run the following:
 
 ```bash
 sudo rm -rf /opt/pv_libs # If the user is asking to reinstall the libraries.
-tools/build_library_dependencies.sh /opt/pv_libs
+tools/build-library-dependencies.sh /opt/pv_libs
 ```
 
 ## macOS notes

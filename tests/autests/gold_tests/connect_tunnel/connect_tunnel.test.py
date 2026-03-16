@@ -39,8 +39,8 @@ client.Streams.stdout += Testers.ContainsExpression(
     "tunnel-body",
     "The client should receive the verifier-server response body through the tunnel.")
 
-client.Streams.stdout += Testers.ExcludesExpression(
-    "Violation:", "There should be no verification errors.")
+client.Streams.stdout += Testers.ExcludesExpression("Violation:",
+                                                    "There should be no verification errors.")
 
 client.Streams.stdout += Testers.ExcludesExpression(
     "Failed HTTP/1 transaction", "Both client transactions should complete successfully.")
@@ -60,12 +60,10 @@ proxy.Streams.stdout += Testers.ContainsExpression(
     reflags=re.MULTILINE)
 
 server.Streams.stdout += Testers.ContainsExpression(
-    "Ready with 1 transaction.",
-    "Only the tunneled transaction should reach verifier-server.")
+    "Ready with 1 transaction.", "Only the tunneled transaction should reach verifier-server.")
 
 server.Streams.stdout += Testers.ContainsExpression(
-    "GET /through/tunnel HTTP/1.1",
-    "Verifier-server should receive the tunneled request.")
+    "GET /through/tunnel HTTP/1.1", "Verifier-server should receive the tunneled request.")
 
 server.Streams.stdout += Testers.ContainsExpression(
     "Request with key tunneled-request passed validation.",

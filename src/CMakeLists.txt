@@ -1,3 +1,9 @@
+#
+# @file
+#
+# Copyright 2026, Verizon Media SPDX-License-Identifier: Apache-2.0
+#
+
 set(PV_COMMON_WARNING_FLAGS -Wall -Wextra -Werror)
 
 set(PV_CORE_SOURCES

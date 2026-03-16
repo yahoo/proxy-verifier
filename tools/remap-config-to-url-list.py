@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 
 description = \
     'Process a Traffic Server remap.config file and ' \
-    'produce a URL input file for replay_gen.py'
+    'produce a URL input file for replay-gen.py'
 
 
 def parse_remap_url(url):

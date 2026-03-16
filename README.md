@@ -63,7 +63,7 @@ Table of Contents
          * [--send-buffer-size &lt;size&gt;](#--send-buffer-size-size)
          * [--poll-timeout &lt;timeout_ms&gt;](#--poll-timeout-timeout_ms)
    * [Tools](#tools)
-      * [Replay Gen <a href="tools/replay_gen.py">replay_gen.py</a>](tools/replay_gen.py)
+      * [Replay Gen <a href="tools/replay-gen.py">replay-gen.py</a>](tools/replay-gen.py)
          * [-n,--number &lt;NUMBER&gt;](#-n--number-number)
          * [-tl,--trans-lower &lt;TRANS_LOWER&gt;](#-tl--trans-lower-trans_lower)
          * [-tu,--trans-upper &lt;TRANS_UPPER&gt;](#-tu--trans-upper-trans_upper)
@@ -74,7 +74,7 @@ Table of Contents
          * [-o,--output &lt;OUTPUT&gt;](#-o--output-output)
          * [-p,--prefix &lt;PREFIX&gt;](#-p--prefix-prefix)
          * [-j,--out-json](#-j--out-json)
-      * [Remap Config to URL List <a href="tools/remap_config_to_url_list.py">remap_config_to_url_list.py</a>](tools/remap_config_to_url_list.py)
+      * [Remap Config to URL List <a href="tools/remap-config-to-url-list.py">remap-config-to-url-list.py</a>](tools/remap-config-to-url-list.py)
          * [-o,--output &lt;OUTPUT_FILE&gt;](#-o--output-output_file)
          * [--no-ip](#--no-ip)
    * [Contribute](#contribute)
@@ -1731,15 +1731,14 @@ sessions:
 
 ### Prebuilt Binaries
 
-Starting with the v2.2.0 release, statically linked binaries for Linux and Mac
-are provided with the release in the
-[Releases](https://github.com/yahoo/proxy-verifier/releases) page. If you do not
-need your own customized build of Proxy Verifier, the easiest way to start
+Statically linked binaries for Linux and Mac are provided with the release in
+the [Releases](https://github.com/yahoo/proxy-verifier/releases) page. If you do
+not need your own customized build of Proxy Verifier, the easiest way to start
 using it is to simply download the proxy-verifier `tar.gz` for the desired
 release, untar it on the desired box, and copy the `verifier-client` and
-`verifier-server` binaries to a convenient location from which to run them.
-The Linux binaries should run on Ubuntu, Alma/CentOS/Fedora/RHEL, FreeBSD, and
-other Linux flavors.
+`verifier-server` binaries to a convenient location from which to run them.  The
+Linux binaries should run on Ubuntu, Alma/CentOS/Fedora/RHEL, FreeBSD, and other
+Linux flavors.
 
 ### Building from Source
 
@@ -1794,14 +1793,14 @@ This populates the dependency prefix under `build/dev-bootstrap/pv-deps/`.
 #### Using Prebuilt Libraries
 
 If you prefer to manage the external QUIC/TLS libraries separately, use the
-[build_library_dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build_library_dependencies.sh)
+[build-library-dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build-library-dependencies.sh)
 script:
 
 ```bash
 http3_libs_dir=${HOME}/src/http3_libs
 
 # The following takes a while as it builds openssl and various ng* libraries.
-bash ./tools/build_library_dependencies.sh ${http3_libs_dir}
+bash ./tools/build-library-dependencies.sh ${http3_libs_dir}
 cmake --preset dev-external -DPV_DEPS_ROOT=${http3_libs_dir}
 cmake --build --preset dev-external --parallel
 ```
@@ -1814,7 +1813,7 @@ provided Dockerfiles under `docker/rockylinux_9`, `docker/rockylinux_10`, and
 http3_libs_dir=/opt/pv_libs
 
 # The following takes a while as it builds openssl and various ng* libraries.
-bash ./tools/build_library_dependencies.sh ${http3_libs_dir}
+bash ./tools/build-library-dependencies.sh ${http3_libs_dir}
 cmake --preset dev-external
 cmake --build --preset dev-external --parallel
 ```
@@ -1837,7 +1836,7 @@ Each image build has two phases:
 The Dockerfiles are self-contained, so you can build them from within each
 image directory. By default the builder stage clones
 `https://github.com/yahoo/proxy-verifier.git` at `master` to run
-`tools/build_library_dependencies.sh`; override that with `--build-arg
+`tools/build-library-dependencies.sh`; override that with `--build-arg
 PV_REPO_URL=... --build-arg PV_REPO_REF=...` if you need a different fork or
 branch.
 
@@ -1871,63 +1870,90 @@ default.
 
 #### ASan Instrumentation
 
-Use the `dev-bootstrap-asan` preset or enable `PV_ENABLE_ASAN` directly:
+Use `dev-external-asan` with a prebuilt `/opt/pv_libs` tree, or
+`dev-bootstrap-asan` when CMake should also build the QUIC/TLS stack:
 
 ```
+cmake --preset dev-external-asan
+cmake --build --preset dev-external-asan --parallel
+
 cmake --preset dev-bootstrap-asan
 cmake --build --preset dev-bootstrap-asan --parallel
 ```
 
 #### Debug Build
 
-The development presets inherit from a shared `dev-base` preset and default to
-`CMAKE_BUILD_TYPE=Debug`.
+The development presets, `dev-external` and `dev-bootstrap`, inherit from a
+shared `dev-base` preset and default to `CMAKE_BUILD_TYPE=Debug`. Use the
+`external` flavor to utilize pre-built library dependencies in `/opt/pv_libs`
+(see `tools/build-library-dependencies`) or use the `bootstrap` flavor to have
+cmake build all dependencies.
 
-#### Release Build
+#### Portable Build
 
-Release artifacts inherit from a shared `release-base` preset. The
-`release-native` preset builds a static `Release` binary and automatically maps
-the current platform to a release directory name such as `linux-amd64`,
+Portable artifacts inherit from a shared `portable-base` preset. This is the
+target used to build the release binaries in the artifacts of a release. Use
+`portable-external` when the QUIC/TLS dependencies already live in
+`/opt/pv_libs` and `portable-bootstrap` when CMake should build those
+dependencies as part of the portable build. These presets automatically map the
+current platform to a release directory name such as `linux-amd64`,
 `linux-arm64`, or `darwin-arm64`.
 
 ```
-cmake --preset release-native
-cmake --build --preset release-native --parallel
+cmake --preset portable-external
+cmake --build --preset portable-external --parallel
+cmake --install build/portable-external --strip
 ```
 
-The `release-native` build preset drives the normal build and the
-`install/strip` target, so it stages stripped binaries under
-`/tmp/proxy-verifier-v<version>/<platform>` as part of the build. For example,
-on an Apple Silicon Mac the build places the binaries under
+Run `cmake --install build/<portable-preset> --strip` to stage stripped binaries
+under `/tmp/proxy-verifier-v<version>/<platform>`. For example, on an Apple
+Silicon Mac the install step places the binaries under
 `/tmp/proxy-verifier-v2.12.1/darwin-arm64`.
+
+`--strip` is used to shrink the binaries for optimal distribution. The binary
+artifacts in each of the Proxy Verifier release are stripped for this reason.
+This makes debugging issues much harder, of course, since symbols are removed
+from the binaries. Omit `--strip` if size is less of an issue for you.
+
+For the common case, `tools/build-portable-binaries` wraps the configure, build,
+and stripped install steps and then prints the resulting binary paths. It
+defaults to `portable-bootstrap` and also accepts `portable-external` if you want
+to use an `/opt/pv_libs` prebuilt dependency directory.
+
+On Linux this targets a fully static executable. On macOS it links Proxy
+Verifier and its third-party dependencies via static archives while leaving the
+system libraries dynamic. After the install step, the staged release binaries
+land under `/tmp/proxy-verifier-v<version>/<platform>`.
+
+The portable presets explicitly use `-O2 -DNDEBUG` rather than the toolchain's
+default `Release` optimization level so the staged binaries stay conservative
+for portable deployment.
 
 The `<version>` portion comes from the top-level
 `project(ProxyVerifier VERSION ...)` declaration in
-[`CMakeLists.txt`](/Users/bneradt/project_not_synced/codex/fix_tickets_4/proxy-verifier/CMakeLists.txt).
+[`CMakeLists.txt`](https://github.com/yahoo/proxy-verifier/blob/master/CMakeLists.txt).
 CMake exposes that value as `PROJECT_VERSION`, and the release layout logic
 uses it when `PV_RELEASE_LAYOUT=ON` to turn the default `/tmp` install prefix
 into `/tmp/proxy-verifier-v${PROJECT_VERSION}`. The `--version` output uses
 that same `PROJECT_VERSION` value via the build's compile definitions, so the
 CLI version string and release staging directory stay in sync.
 
-For CI or dedicated builders, the explicit `release-linux-amd64`,
-`release-linux-arm64`, and `release-darwin-arm64` presets are also available.
-They are native-only and fail fast if used on the wrong platform.
+#### Native Build
 
-#### Statically Link
-
-For a build that links Proxy Verifier and its third-party dependencies
-statically, use a release preset:
+Native artifacts inherit from a shared `native-base` preset. Use
+`native-external` when the QUIC/TLS dependencies already live in `/opt/pv_libs`
+and `native-bootstrap` when CMake should build those dependencies as part of
+the build:
 
 ```
-cmake --preset release-native
-cmake --build --preset release-native --parallel
+cmake --preset native-external
+cmake --build --preset native-external --parallel
 ```
 
-On Linux this targets a fully static executable. On macOS it links Proxy
-Verifier and its third-party dependencies via static archives while leaving the
-system libraries dynamic. The staged release binaries land under
-`/tmp/proxy-verifier-v<version>/<platform>`.
+These builds are intended for running optimally on the build machine rather than
+for redistribution. They keep dynamic linking and use `-O3 -DNDEBUG
+-march=native -mtune=native` for host-tuned performance.
+
 
 ### Running the Tests
 
@@ -2293,7 +2319,7 @@ different timeout in milliseconds for these operations.
 ## Tools
 This section describes how to use some of the scripts under the [tools](tools) directory.
 
-### Replay Gen [replay_gen.py](tools/replay_gen.py)
+### Replay Gen [replay-gen.py](tools/replay-gen.py)
 This tool is used to generate mock replay files for easy testing.
 Listed below are the available arguments for this script.
 
@@ -2329,7 +2355,7 @@ Prefix for the replay file names.
 #### -j,--out-json
 Dump replay files in JSON format. By default replay files will be formatted as YAML.
 
-### Remap Config to URL List [remap_config_to_url_list.py](tools/remap_config_to_url_list.py)
+### Remap Config to URL List [remap-config-to-url-list.py](tools/remap-config-to-url-list.py)
 This tool converts a `remap.config` file to a URL list file that is used by [Replay Gen](#replay-gen-replay_genpytoolsreplay_genpy)
 Listed below are the available arguments for this script.
 
