@@ -1505,7 +1505,9 @@ H2Session::write(HttpHeader const &hdr)
     while (!stream_state->_h2_frame_sequence.empty()) {
       auto curr_frame = stream_state->_h2_frame_sequence.front();
       stream_state->_h2_frame_sequence.pop_front();
-      auto next_frame = stream_state->_h2_frame_sequence.front();
+      auto const next_frame = stream_state->_h2_frame_sequence.empty() ?
+                                  H2Frame::INVALID :
+                                  stream_state->_h2_frame_sequence.front();
 
       uint8_t flags = 0;
 
