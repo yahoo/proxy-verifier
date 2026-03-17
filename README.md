@@ -1906,9 +1906,7 @@ cmake --install build/portable-external --strip
 ```
 
 Run `cmake --install build/<portable-preset> --strip` to stage stripped binaries
-under `/tmp/proxy-verifier-v<version>/<platform>`. For example, on an Apple
-Silicon Mac the install step places the binaries under
-`/tmp/proxy-verifier-v3.0.0/darwin-arm64`.
+under `/tmp/proxy-verifier-v<version>/<platform>`.
 
 `--strip` is used to shrink the binaries for optimal distribution. The binary
 artifacts in each of the Proxy Verifier release are stripped for this reason.
