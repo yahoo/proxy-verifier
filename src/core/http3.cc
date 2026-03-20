@@ -58,8 +58,7 @@ constexpr auto QUIC_HANDSHAKE_TIMEOUT = 10s;
 
 constexpr auto H3_STREAM_WINDOW_SIZE = 128 * 1024;
 
-// TextView H3_ALPN_H3_29_H3 = "\x5h3-29\x2h3";
-TextView H3_ALPN_H3_29_H3 = "\x5h3-29";
+TextView H3_ALPN_H3 = "\x2h3";
 constexpr char const *QUIC_CIPHERS = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_"
                                      "POLY1305_SHA256:TLS_AES_128_CCM_SHA256";
 
@@ -1044,28 +1043,44 @@ cb_h3_readfunction(
 /* this amount of data has now been acked on this stream */
 static int
 cb_h3_acked_stream_data(
-    nghttp3_conn *conn,
+    nghttp3_conn * /* conn */,
     int64_t stream_id,
     uint64_t datalen,
     void * /* conn_user_data */,
     void *stream_user_data)
 {
   Errata errata;
-  errata.note(S_DIAG, "HTTP/3 stream with id {} acked {} bytes", stream_id, datalen);
   auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
-  assert(stream_state->num_data_bytes_written >= datalen);
-  stream_state->num_data_bytes_written -= datalen;
+  auto const outstanding_bytes = stream_state->num_data_bytes_written;
+  errata.note(
+      S_DIAG,
+      "HTTP/3 stream with id {} acked {} bytes with {} bytes outstanding",
+      stream_id,
+      datalen,
+      outstanding_bytes);
+
+  if (datalen >= outstanding_bytes) {
+    if (datalen > outstanding_bytes) {
+      errata.note(
+          S_DIAG,
+          "HTTP/3 stream with id {} and key {} acked more bytes ({}) than remain "
+          "outstanding ({}). Treating the body as fully acknowledged.",
+          stream_id,
+          stream_state->key,
+          datalen,
+          outstanding_bytes);
+    }
+    stream_state->num_data_bytes_written = 0;
+  } else {
+    stream_state->num_data_bytes_written -= datalen;
+  }
+
   if (stream_state->num_data_bytes_written == 0) {
     errata.note(
         S_DIAG,
-        "Resuming HTTP/3 stream with id {} and key {}",
+        "HTTP/3 stream with id {} and key {} has no outstanding body bytes",
         stream_id,
-        stream_state->key,
-        datalen);
-    auto const rv = nghttp3_conn_resume_stream(conn, stream_id);
-    if (rv != 0) {
-      return NGTCP2_ERR_CALLBACK_FAILURE;
-    }
+        stream_state->key);
   }
   return 0;
 }
@@ -2320,8 +2335,8 @@ H3Session::client_ssl_session_init(SSL_CTX *client_context)
   }
   SSL_set_connect_state(quic_socket.ssl);
 
-  alpn = reinterpret_cast<uint8_t const *>(H3_ALPN_H3_29_H3.data());
-  alpnlen = H3_ALPN_H3_29_H3.size();
+  alpn = reinterpret_cast<uint8_t const *>(H3_ALPN_H3.data());
+  alpnlen = H3_ALPN_H3.size();
   if (alpn) {
     if (SSL_set_alpn_protos(quic_socket.ssl, alpn, (int)alpnlen) != 0) {
       errata.note(S_ERROR, "SSL_set_alpn_protos failed: {}", swoc::bwf::SSLError{});

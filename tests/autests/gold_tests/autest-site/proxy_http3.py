@@ -336,9 +336,10 @@ class HttpQuicServerHandler(QuicConnectionProtocol):
 
     def quic_event_received(self, event: QuicEvent) -> None:
         if isinstance(event, ProtocolNegotiated):
-            if event.alpn_protocol.startswith("h3-"):
+            alpn_protocol = event.alpn_protocol or ""
+            if alpn_protocol == "h3":
                 self._http = H3Connection(self._quic)
-            elif event.alpn_protocol.startswith("hq-"):
+            elif alpn_protocol.startswith("hq-"):
                 self._http = H0Connection(self._quic)
         elif isinstance(event, DatagramFrameReceived):
             if event.data == b"quack":
