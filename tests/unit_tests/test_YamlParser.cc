@@ -6,11 +6,20 @@
  */
 
 #include "catch.hpp"
+#include "core/Localizer.h"
 #include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
 
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <mutex>
+#include <stdlib.h>
 #include <string>
+#include <thread>
+#include <vector>
 
 using namespace std::literals;
 using std::chrono::microseconds;
@@ -77,6 +86,98 @@ public:
 
   int ssn_open_calls = 0;
   int ssn_close_calls = 0;
+};
+
+class CountingReplayFileHandler : public ReplayFileHandler
+{
+public:
+  swoc::Errata
+  ssn_open(YAML::Node const & /* node */) override
+  {
+    ++ssn_open_calls;
+    return {};
+  }
+
+  swoc::Errata
+  txn_open(YAML::Node const & /* node */) override
+  {
+    ++txn_open_calls;
+    return {};
+  }
+
+  swoc::Errata
+  client_request(YAML::Node const &node) override
+  {
+    ++client_request_calls;
+    HttpHeader message;
+    message.set_is_request();
+    return YamlParser::populate_http_message(node, message);
+  }
+
+  int ssn_open_calls = 0;
+  int txn_open_calls = 0;
+  int client_request_calls = 0;
+};
+
+class CapturingReplayFileHandler : public ReplayFileHandler
+{
+public:
+  swoc::Errata
+  client_request(YAML::Node const &node) override
+  {
+    request.set_is_request();
+    return YamlParser::populate_http_message(node, request);
+  }
+
+  HttpHeader request;
+};
+
+class LocalizerPhaseGuard
+{
+public:
+  LocalizerPhaseGuard() : m_was_frozen(Localizer::localization_is_frozen())
+  {
+    Localizer::start_localization();
+  }
+
+  ~LocalizerPhaseGuard()
+  {
+    if (m_was_frozen) {
+      Localizer::freeze_localization();
+    } else {
+      Localizer::start_localization();
+    }
+  }
+
+private:
+  bool m_was_frozen = false;
+};
+
+class TemporaryDirectory
+{
+public:
+  TemporaryDirectory()
+  {
+    std::error_code ec;
+    auto const temp_dir = std::filesystem::temp_directory_path(ec);
+    REQUIRE(!ec);
+
+    auto const template_path = (temp_dir / "pv-yamlparser-XXXXXX").string();
+    std::vector<char> dir_template(template_path.begin(), template_path.end());
+    dir_template.push_back('\0');
+
+    auto *created_dir = ::mkdtemp(dir_template.data());
+    REQUIRE(created_dir != nullptr);
+    path = created_dir;
+  }
+
+  ~TemporaryDirectory()
+  {
+    std::error_code ec;
+    std::filesystem::remove_all(path, ec);
+  }
+
+  std::filesystem::path path;
 };
 } // namespace
 
@@ -453,4 +554,191 @@ TEST_CASE("Verify concise protocol maps reject non-scalar keys", "[protocol]")
 
   auto const parsed_protocol = ReplayFileHandlerTester::parse_protocol_node(protocol_node);
   CHECK_FALSE(parsed_protocol.is_ok());
+}
+
+TEST_CASE("Verify Localizer supports concurrent localization", "[localizer]")
+{
+  LocalizerPhaseGuard localizer_phase;
+  static constexpr int thread_count = 8;
+  static constexpr int iterations = 256;
+
+  struct LocalizerThreadResult
+  {
+    swoc::TextView lower;
+    swoc::TextView upper;
+    swoc::TextView plain;
+    std::string expected_plain;
+  };
+
+  std::vector<LocalizerThreadResult> results(thread_count);
+  std::vector<std::thread> threads;
+  threads.reserve(thread_count);
+
+  for (int i = 0; i < thread_count; ++i) {
+    threads.emplace_back([&, i]() {
+      for (int iteration = 0; iteration < iterations; ++iteration) {
+        auto const lower_input =
+            iteration % 2 == 0 ? swoc::TextView{"HOST"} : swoc::TextView{"Host"};
+        auto const upper_input = iteration % 2 == 0 ? swoc::TextView{"content-length"} :
+                                                      swoc::TextView{"Content-Length"};
+        results[i].lower = Localizer::localize_lower(lower_input);
+        results[i].upper = Localizer::localize_upper(upper_input);
+
+        results[i].expected_plain =
+            "thread-" + std::to_string(i) + "-iteration-" + std::to_string(iteration);
+        results[i].plain = Localizer::localize(swoc::TextView{results[i].expected_plain});
+      }
+    });
+  }
+
+  for (auto &thread : threads) {
+    thread.join();
+  }
+  Localizer::freeze_localization();
+
+  for (auto const &result : results) {
+    CHECK(result.lower == "host");
+    CHECK(result.upper == "CONTENT-LENGTH");
+    CHECK(std::string(result.plain.data(), result.plain.size()) == result.expected_plain);
+  }
+  for (int i = 1; i < thread_count; ++i) {
+    CHECK(results[i].lower.data() == results[0].lower.data());
+    CHECK(results[i].upper.data() == results[0].upper.data());
+  }
+}
+
+TEST_CASE("Verify load_replay_files parses all files with multiple parser threads", "[yaml]")
+{
+  LocalizerPhaseGuard localizer_phase;
+  TemporaryDirectory temp_dir;
+
+  static constexpr int file_count = 12;
+  static constexpr int sessions_per_file = 2;
+  static constexpr int transactions_per_session = 3;
+
+  for (int file_index = 0; file_index < file_count; ++file_index) {
+    auto const file_path = temp_dir.path / ("replay_" + std::to_string(file_index) + ".json");
+    std::ofstream file(file_path);
+    REQUIRE(file.is_open());
+    file << "{\n"
+            "  \"meta\": {\"version\": \"1.0\"},\n"
+            "  \"sessions\": [\n";
+    for (int session_index = 0; session_index < sessions_per_file; ++session_index) {
+      file << "    {\n"
+              "      \"transactions\": [\n";
+      for (int transaction_index = 0; transaction_index < transactions_per_session;
+           ++transaction_index) {
+        file << "        {\n"
+                "          \"client-request\": {\n"
+                "            \"method\": \"GET\",\n"
+                "            \"url\": \"http://example.com/"
+             << file_index << "/" << session_index << "/" << transaction_index
+             << "\",\n"
+                "            \"version\": \"1.1\",\n"
+                "            \"headers\": {\n"
+                "              \"fields\": [[\"Host\", \"example.com\"]]\n"
+                "            }\n"
+                "          }\n"
+                "        }";
+        if (transaction_index + 1 < transactions_per_session) {
+          file << ",";
+        }
+        file << "\n";
+      }
+      file << "      ]\n"
+              "    }";
+      if (session_index + 1 < sessions_per_file) {
+        file << ",";
+      }
+      file << "\n";
+    }
+    file << "  ]\n"
+            "}\n";
+  }
+
+  std::atomic<int> parsed_files = 0;
+  std::atomic<int> parsed_sessions = 0;
+  std::atomic<int> parsed_transactions = 0;
+  std::atomic<int> parsed_requests = 0;
+  bool shutdown_flag = false;
+
+  auto errata = YamlParser::load_replay_files(
+      swoc::file::path{temp_dir.path.string()},
+      [&](swoc::file::path const &path, std::string const &content) -> swoc::Errata {
+        CountingReplayFileHandler handler;
+        auto file_errata = YamlParser::load_replay_file(path, content, handler);
+        parsed_files.fetch_add(1);
+        parsed_sessions.fetch_add(handler.ssn_open_calls);
+        parsed_transactions.fetch_add(handler.txn_open_calls);
+        parsed_requests.fetch_add(handler.client_request_calls);
+        return file_errata;
+      },
+      shutdown_flag,
+      1,
+      4);
+
+  CHECK(errata.is_ok());
+  CHECK(parsed_files.load() == file_count);
+  CHECK(parsed_sessions.load() == file_count * sessions_per_file);
+  CHECK(parsed_transactions.load() == file_count * sessions_per_file * transactions_per_session);
+  CHECK(parsed_requests.load() == file_count * sessions_per_file * transactions_per_session);
+}
+
+TEST_CASE(
+    "Verify replay file parsing preserves merge behavior while skipping merge-free files",
+    "[yaml]")
+{
+  auto const no_merge_content = R"(
+meta:
+  version: "1.0"
+sessions:
+  - transactions:
+      - client-request:
+          method: GET
+          url: http://example.com/plain
+          version: "1.1"
+          headers:
+            fields:
+              - [ Host, plain.example.com ]
+)";
+
+  CapturingReplayFileHandler plain_handler;
+  auto plain_errata =
+      YamlParser::load_replay_file(swoc::file::path{"plain.yaml"}, no_merge_content, plain_handler);
+
+  CHECK(plain_errata.is_ok());
+  CHECK(plain_handler.request._method == "GET");
+  CHECK(plain_handler.request._url == "http://example.com/plain");
+  REQUIRE(plain_handler.request._fields_rules != nullptr);
+  auto const plain_host = plain_handler.request._fields_rules->_fields.find("host");
+  REQUIRE(plain_host != plain_handler.request._fields_rules->_fields.end());
+  CHECK(plain_host->second == "plain.example.com");
+
+  auto const merge_content = R"(
+meta:
+  version: "1.0"
+base-request: &base-request
+  method: GET
+  url: http://example.com/merged
+  version: "1.1"
+  headers:
+    fields:
+      - [ Host, merged.example.com ]
+sessions:
+  - transactions:
+      - client-request:
+          <<: *base-request
+)";
+
+  CapturingReplayFileHandler merged_handler;
+  auto merged_errata =
+      YamlParser::load_replay_file(swoc::file::path{"merged.yaml"}, merge_content, merged_handler);
+
+  CHECK(merged_errata.is_ok());
+  CHECK(merged_handler.request._method == "GET");
+  CHECK(merged_handler.request._url == "http://example.com/merged");
+  REQUIRE(merged_handler.request._fields_rules != nullptr);
+  auto const merged_host = merged_handler.request._fields_rules->_fields.find("host");
+  REQUIRE(merged_host != merged_handler.request._fields_rules->_fields.end());
+  CHECK(merged_host->second == "merged.example.com");
 }

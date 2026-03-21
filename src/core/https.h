@@ -360,6 +360,7 @@ protected:
    * handshake as specified per the SNI received from the proxy.
    */
   static std::unordered_map<std::string, TLSHandshakeBehavior> _handshake_behavior_per_sni;
+  static std::mutex _handshake_behavior_mutex;
 
 private:
   /** Open the file for TLS secrets logging.

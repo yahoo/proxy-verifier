@@ -12,9 +12,13 @@
 #include "core/Localizer.h"
 #include "core/yaml_util.h"
 
+#include <algorithm>
 #include <cassert>
+#include <condition_variable>
+#include <cstring>
 #include <dirent.h>
 #include <mutex>
+#include <queue>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -42,6 +46,52 @@ namespace
 {
 static constexpr bool RULE_IS_CASE_INSENSITIVE = true;
 static constexpr bool RULE_IS_INVERTED = true;
+static constexpr size_t MAX_QUEUED_REPLAY_BYTES = 128U * 1024U * 1024U;
+
+struct ReplayParseThreadCounts
+{
+  int reader_threads = 0;
+  int parser_threads = 0;
+};
+
+/** Resolve the thread counts to use for replay file loading.
+ *
+ * The caller may pass explicit reader and parser counts or use values less
+ * than 1 to request the defaults derived from hardware concurrency. The
+ * resolved counts are always clamped to the number of files so we do not
+ * spawn more parser or reader threads than useful work items.
+ *
+ * @param[in] file_count The number of replay files that may be processed.
+ * @param[in] n_reader_threads The requested reader thread count, or a value
+ *   less than 1 to select the default.
+ * @param[in] n_parser_threads The requested parser thread count, or a value
+ *   less than 1 to select the default.
+ * @return The resolved reader and parser thread counts.
+ */
+ReplayParseThreadCounts
+resolve_replay_parse_thread_counts(size_t file_count, int n_reader_threads, int n_parser_threads)
+{
+  auto const default_parser_threads = []() -> int {
+    auto const hardware_threads = std::thread::hardware_concurrency();
+    if (hardware_threads == 0) {
+      return 10;
+    }
+    return std::clamp(static_cast<int>(hardware_threads), 1, 12);
+  }();
+  auto const default_reader_threads = std::clamp(default_parser_threads / 4, 1, 4);
+  auto const file_threads_cap = std::max<int>(1, static_cast<int>(file_count));
+
+  ReplayParseThreadCounts counts;
+  counts.parser_threads = std::clamp(
+      n_parser_threads > 0 ? n_parser_threads : default_parser_threads,
+      1,
+      file_threads_cap);
+  counts.reader_threads = std::clamp(
+      n_reader_threads > 0 ? n_reader_threads : default_reader_threads,
+      1,
+      file_threads_cap);
+  return counts;
+}
 
 /** RAII for managing the handler's file. */
 struct HandlerOpener
@@ -67,20 +117,32 @@ private:
 class ReadFileQueue
 {
 public:
+  explicit ReadFileQueue(size_t max_queued_bytes) : m_max_queued_bytes(max_queued_bytes) { }
+
   /** Push read file content into the queue.
    *
    * File reader threads use this to push their read content into the queue.
    *
    * @param[in] file_content The content of the file to push into the queue.
+   * @return True if the file was queued, false if reading has been stopped.
    */
-  void
+  bool
   push(swoc::file::path const &path, std::string &&file_content)
   {
-    {
-      std::lock_guard<std::mutex> lock(m_queue_mutex);
-      m_queue.emplace(FileInformation{path, std::move(file_content)});
+    auto const file_size = file_content.size();
+    std::unique_lock<std::mutex> lock(m_queue_mutex);
+    m_reader_cv.wait(lock, [this, file_size]() {
+      return m_done_reading_files || m_queue.empty() ||
+             m_queued_bytes + file_size <= m_max_queued_bytes;
+    });
+    if (m_done_reading_files) {
+      return false;
     }
-    m_queue_cv.notify_one();
+    m_queued_bytes += file_size;
+    m_queue.emplace(FileInformation{path, std::move(file_content)});
+    lock.unlock();
+    m_parser_cv.notify_one();
+    return true;
   }
 
   /** Pull out file content from the queue.
@@ -95,16 +157,19 @@ public:
   pop(swoc::file::path &path, std::string &file_content)
   {
     std::unique_lock<std::mutex> lock(m_queue_mutex);
-    m_queue_cv.wait(lock, [this]() { return !m_queue.empty() || m_done_reading_files; });
+    m_parser_cv.wait(lock, [this]() { return !m_queue.empty() || m_done_reading_files; });
     // Note that we check empty rather than m_done_reading_files because reader
     // threads generally finish before parsing threads.
     if (m_queue.empty()) {
       return false;
     }
-    auto const &file_info = m_queue.front();
+    auto file_info = std::move(m_queue.front());
+    m_queued_bytes -= file_info.content.size();
     path = std::move(file_info.file_name);
     file_content = std::move(file_info.content);
     m_queue.pop();
+    lock.unlock();
+    m_reader_cv.notify_one();
     return true;
   }
 
@@ -122,7 +187,8 @@ public:
       m_done_reading_files = true;
     }
     // All parsing threads should be woken up to parse any remaining files.
-    m_queue_cv.notify_all();
+    m_reader_cv.notify_all();
+    m_parser_cv.notify_all();
   }
 
   /** Stop reading the files.
@@ -147,7 +213,10 @@ private:
   /** The container for fully read files. */
   std::queue<FileInformation> m_queue;
   mutable std::mutex m_queue_mutex;
-  std::condition_variable m_queue_cv;
+  std::condition_variable m_reader_cv;
+  std::condition_variable m_parser_cv;
+  size_t m_queued_bytes = 0;
+  size_t const m_max_queued_bytes = 0;
   bool m_done_reading_files = false;
 };
 
@@ -173,7 +242,9 @@ reader_thread(
       errata.note(S_ERROR, R"(Error loading "{}": {})", file_path, ec);
       return errata;
     }
-    queue.push(file_path, std::move(content));
+    if (!queue.push(file_path, std::move(content))) {
+      break;
+    }
   }
   return errata;
 }
@@ -387,8 +458,10 @@ read_and_parse_files(
 {
   Errata errata;
   std::mutex errata_mutex;
-  ReadFileQueue queue;
+  ReadFileQueue queue(MAX_QUEUED_REPLAY_BYTES);
   std::atomic<size_t> index(0);
+  auto const thread_counts =
+      resolve_replay_parse_thread_counts(files.size(), n_reader_threads, n_parser_threads);
 
   errata.note(S_INFO, "Loading {} replay files.", files.size());
 
@@ -405,7 +478,7 @@ read_and_parse_files(
     std::lock_guard<std::mutex> lock(errata_mutex);
     errata.note(this_errata);
   };
-  for (int i = 0; i < n_reader_threads; ++i) {
+  for (int i = 0; i < thread_counts.reader_threads; ++i) {
     readers.emplace_back(reader_wrapper);
   }
 
@@ -421,7 +494,7 @@ read_and_parse_files(
     std::lock_guard<std::mutex> lock(errata_mutex);
     errata.note(this_errata);
   };
-  for (int i = 0; i < n_parser_threads; ++i) {
+  for (int i = 0; i < thread_counts.parser_threads; ++i) {
     parsers.emplace_back(parser_wrapper);
   }
 
@@ -1560,6 +1633,7 @@ YamlParser::parse_body_verification(
 Errata
 YamlParser::parsing_is_started()
 {
+  Localizer::start_localization();
   m_parsing_start_time = ClockType::now();
   return {};
 }
@@ -2333,7 +2407,9 @@ YamlParser::load_replay_file(
   auto global_fields_rules = std::make_shared<HttpFields>();
   try {
     root = YAML::Load(content);
-    yaml_merge(root);
+    if (content.find("<<") != std::string::npos) {
+      yaml_merge(root);
+    }
   } catch (std::exception const &ex) {
     errata.note(S_ERROR, R"(Exception: {} in "{}".)", ex.what(), path);
   }
@@ -2484,6 +2560,7 @@ YamlParser::load_replay_files(
     std::string content = swoc::file::load(path, ec);
     if (ec.value()) {
       errata.note(S_ERROR, R"(Error loading "{}": {})", path, ec);
+      errata.note(parsing_is_done());
       return errata;
     }
     errata.note(loader(path, content));
@@ -2495,35 +2572,35 @@ YamlParser::load_replay_files(
     return errata;
   }
 
-  if (0 == chdir(path.c_str())) {
-    dirent **elements = nullptr;
-    int n_sessions = ::scandir(
-        ".",
-        &elements,
-        [](dirent const *entry) -> int {
-          auto extension = swoc::TextView{entry->d_name, strlen(entry->d_name)}.suffix_at('.');
-          return 0 == strcasecmp(extension, "json") || 0 == strcasecmp(extension, "yaml");
-        },
-        &alphasort);
-    if (n_sessions > 0) {
-      // Working with swoc::file::path is more conventient than dirent.
-      std::vector<swoc::file::path> files;
-      for (int i = 0; i < n_sessions; i++) {
-        files.emplace_back(swoc::file::path{elements[i]->d_name});
-      }
-      for (int i = 0; i < n_sessions; i++) {
-        free(elements[i]);
-      }
-      free(elements);
-
-      errata.note(
-          read_and_parse_files(files, loader, shutdown_flag, n_reader_threads, n_parser_threads));
-
-    } else {
-      errata.note(S_ERROR, R"(No replay files found in "{}".)", path);
+  dirent **elements = nullptr;
+  int n_sessions = ::scandir(
+      path.c_str(),
+      &elements,
+      [](dirent const *entry) -> int {
+        auto extension = swoc::TextView{entry->d_name, strlen(entry->d_name)}.suffix_at('.');
+        return 0 == strcasecmp(extension, "json") || 0 == strcasecmp(extension, "yaml");
+      },
+      &alphasort);
+  if (n_sessions > 0) {
+    std::vector<swoc::file::path> files;
+    files.reserve(n_sessions);
+    for (int i = 0; i < n_sessions; ++i) {
+      files.emplace_back(swoc::file::path{path / elements[i]->d_name});
     }
+    for (int i = 0; i < n_sessions; ++i) {
+      free(elements[i]);
+    }
+    free(elements);
+
+    errata.note(
+        read_and_parse_files(files, loader, shutdown_flag, n_reader_threads, n_parser_threads));
   } else {
-    errata.note(S_ERROR, R"(Failed to access directory "{}": {}.)", path, swoc::bwf::Errno{});
+    free(elements);
+    if (n_sessions == 0) {
+      errata.note(S_ERROR, R"(No replay files found in "{}".)", path);
+    } else {
+      errata.note(S_ERROR, R"(Failed to access directory "{}": {}.)", path, swoc::bwf::Errno{});
+    }
   }
   errata.note(parsing_is_done());
   return errata;

@@ -215,7 +215,7 @@ shutdown_signal_handler(int signal)
   Shutdown_Flag = true;
 }
 
-std::mutex LoadMutex;
+std::mutex TransactionsMutex;
 
 std::unordered_map<std::string, Txn, std::hash<std::string_view>> Transactions;
 
@@ -297,7 +297,6 @@ ServerReplayFileHandler::txn_open(YAML::Node const &node)
   if (!errata.is_ok()) {
     return errata;
   }
-  LoadMutex.lock();
   m_txn._req.set_is_request();
   m_txn._rsp.set_is_response();
   m_txn_node = &node;
@@ -529,10 +528,10 @@ ServerReplayFileHandler::txn_close()
     // in some places. For this reason make sure the response is aware of the
     // key.
     m_txn._rsp.set_key(m_key);
+    std::lock_guard<std::mutex> lock(TransactionsMutex);
     Transactions.emplace(m_key, std::move(m_txn));
   }
   this->txn_reset();
-  LoadMutex.unlock();
   return errata;
 }
 
@@ -1025,9 +1024,7 @@ Engine::command_run()
           ServerReplayFileHandler handler;
           return YamlParser::load_replay_file(file, content, handler);
         },
-        Shutdown_Flag,
-        3,
-        10));
+        Shutdown_Flag));
 
     if (!errata.is_ok()) {
       process_exit_code = 1;

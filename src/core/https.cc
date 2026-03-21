@@ -29,6 +29,7 @@ namespace chrono = std::chrono;
 using chrono::milliseconds;
 
 std::unordered_map<std::string, TLSHandshakeBehavior> TLSSession::_handshake_behavior_per_sni;
+std::mutex TLSSession::_handshake_behavior_mutex;
 
 std::mutex TLSSession::tls_secrets_log_file_fd_mutex;
 int TLSSession::tls_secrets_log_file_fd = -1;
@@ -847,6 +848,7 @@ TLSSession::register_tls_handshake_behavior(
     std::string_view sni,
     TLSHandshakeBehavior &&handshake_behavior)
 {
+  std::lock_guard<std::mutex> lock(_handshake_behavior_mutex);
   _handshake_behavior_per_sni.emplace(sni, std::move(handshake_behavior));
 }
 
@@ -854,6 +856,7 @@ TLSSession::register_tls_handshake_behavior(
 int
 TLSSession::get_verify_mode_for_sni(std::string_view sni)
 {
+  std::lock_guard<std::mutex> lock(_handshake_behavior_mutex);
   auto const it = _handshake_behavior_per_sni.find(std::string(sni));
   if (it == _handshake_behavior_per_sni.end()) {
     return SSL_VERIFY_NONE;
@@ -865,6 +868,7 @@ TLSSession::get_verify_mode_for_sni(std::string_view sni)
 std::string_view
 TLSSession::get_alpn_protocol_string_for_sni(std::string_view sni)
 {
+  std::lock_guard<std::mutex> lock(_handshake_behavior_mutex);
   auto const it = _handshake_behavior_per_sni.find(std::string(sni));
   if (it == _handshake_behavior_per_sni.end()) {
     return "";

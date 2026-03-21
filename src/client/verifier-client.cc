@@ -58,7 +58,7 @@ std::unordered_set<std::string> Keys_Whitelist;
 
 TextView specified_interface;
 
-std::mutex LoadMutex;
+std::mutex SessionListMutex;
 
 std::list<std::shared_ptr<Ssn>> Session_List;
 
@@ -394,7 +394,6 @@ ClientReplayFileHandler::txn_open(YAML::Node const &node)
     m_txn._start = transaction_start_time - m_ssn->_start;
   }
 
-  LoadMutex.lock();
   return errata;
 }
 
@@ -554,7 +553,6 @@ ClientReplayFileHandler::txn_close()
     }
   }
   this->txn_reset();
-  LoadMutex.unlock();
   return errata;
 }
 
@@ -562,20 +560,18 @@ Errata
 ClientReplayFileHandler::ssn_close()
 {
   Errata errata;
-  {
-    std::lock_guard<std::mutex> lock(LoadMutex);
-    if (!m_ssn->_transactions.empty()) {
-      auto const &e = m_ssn->post_process_transactions();
-      if (!e.is_ok()) {
-        errata.note(e);
-        errata.note(
-            S_ERROR,
-            R"("{}":{} Could not process transactions in session.)",
-            _path,
-            m_ssn->_line_no);
-      }
-      Session_List.push_back(m_ssn);
+  if (!m_ssn->_transactions.empty()) {
+    auto const &e = m_ssn->post_process_transactions();
+    if (!e.is_ok()) {
+      errata.note(e);
+      errata.note(
+          S_ERROR,
+          R"("{}":{} Could not process transactions in session.)",
+          _path,
+          m_ssn->_line_no);
     }
+    std::lock_guard<std::mutex> lock(SessionListMutex);
+    Session_List.push_back(m_ssn);
   }
   this->ssn_reset();
   return errata;
@@ -854,9 +850,7 @@ Engine::parse_replay_files()
         ClientReplayFileHandler handler;
         return YamlParser::load_replay_file(file, content, handler);
       },
-      Shutdown_Flag,
-      3,
-      10));
+      Shutdown_Flag));
   if (!errata.is_ok()) {
     process_exit_code = 1;
     return false;

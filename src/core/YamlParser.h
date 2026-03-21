@@ -388,8 +388,10 @@ public:
    * @param[in] shutdown_flag A flag to indicate that the parsing should stop.
    *
    * @param[in] n_reader_threads The number of threads to use for reading files.
+   *   A value less than 1 selects the default based on hardware concurrency.
    *
    * @param[in] n_parser_threads The number of threads to use for parsing YAML file content.
+   *   A value less than 1 selects the default based on hardware concurrency.
    *
    * @return Any errata from parsing the file.
    */
@@ -397,8 +399,8 @@ public:
       swoc::file::path const &path,
       loader_t loader,
       bool &shutdown_flag,
-      int n_reader_threads = 4,
-      int n_parser_threads = 10);
+      int n_reader_threads = 0,
+      int n_parser_threads = 0);
 
   /** Populate an HTTP message from a YAML node.
    *

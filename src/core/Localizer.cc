@@ -19,15 +19,42 @@ using swoc::TextView;
 using namespace swoc::literals;
 using namespace std::literals;
 
+namespace
+{
+thread_local swoc::MemArena *Thread_Arena = nullptr;
+} // namespace
+
 Localizer::NameSet Localizer::m_names;
-swoc::MemArena Localizer::m_arena{8000};
-bool Localizer::m_frozen = false;
+std::shared_mutex Localizer::m_names_mutex;
+std::mutex Localizer::m_arenas_mutex;
+std::vector<std::unique_ptr<swoc::MemArena>> Localizer::m_arenas;
+std::atomic_bool Localizer::m_frozen = false;
+
+void
+Localizer::start_localization()
+{
+  m_frozen = false;
+}
+
+swoc::MemArena &
+Localizer::get_thread_arena()
+{
+  if (Thread_Arena != nullptr) {
+    return *Thread_Arena;
+  }
+
+  std::lock_guard<std::mutex> lock(m_arenas_mutex);
+  auto &arena = m_arenas.emplace_back(std::make_unique<swoc::MemArena>(8000));
+  Thread_Arena = arena.get();
+  return *Thread_Arena;
+}
 
 swoc::TextView
 Localizer::localize_helper(TextView text, LocalizeFlag flag)
 {
-  assert(!m_frozen);
-  auto span{m_arena.alloc(text.size()).rebind<char>()};
+  assert(!m_frozen.load());
+  auto &arena = get_thread_arena();
+  auto span{arena.alloc(text.size()).rebind<char>()};
   if (flag == LocalizeFlag::Lower) {
     std::transform(text.begin(), text.end(), span.begin(), &tolower);
   } else if (flag == LocalizeFlag::Upper) {
@@ -36,9 +63,6 @@ Localizer::localize_helper(TextView text, LocalizeFlag flag)
     std::copy(text.begin(), text.end(), span.begin());
   }
   TextView local{span.data(), text.size()};
-  if (flag == LocalizeFlag::Lower || flag == LocalizeFlag::Upper) {
-    m_names.insert(local);
-  }
   return local;
 }
 
@@ -46,6 +70,12 @@ void
 Localizer::freeze_localization()
 {
   m_frozen = true;
+}
+
+bool
+Localizer::localization_is_frozen()
+{
+  return m_frozen.load();
 }
 
 swoc::TextView
@@ -78,11 +108,19 @@ Localizer::localize_lower(TextView text)
   // m_names.find() does a case insensitive lookup, so cache lookup via
   // m_names only should be used for case-insensitive localization. It's
   // value applies to well-known, common strings such as HTTP headers.
-  auto spot = m_names.find(text);
-  if (spot != m_names.end()) {
-    return *spot;
+  {
+    std::shared_lock<std::shared_mutex> lock(m_names_mutex);
+    auto const spot = m_names.find(text);
+    if (spot != m_names.end()) {
+      return *spot;
+    }
   }
-  return localize_helper(text, LocalizeFlag::Lower);
+
+  auto const local = localize_helper(text, LocalizeFlag::Lower);
+  std::unique_lock<std::shared_mutex> lock(m_names_mutex);
+  auto const [spot, inserted] = m_names.insert(local);
+  static_cast<void>(inserted);
+  return *spot;
 }
 
 swoc::TextView
@@ -91,19 +129,28 @@ Localizer::localize_upper(TextView text)
   // m_names.find() does a case insensitive lookup, so cache lookup via
   // m_names only should be used for case-insensitive localization. It's
   // value applies to well-known, common strings such as HTTP headers.
-  auto spot = m_names.find(text);
-  if (spot != m_names.end()) {
-    return *spot;
+  {
+    std::shared_lock<std::shared_mutex> lock(m_names_mutex);
+    auto const spot = m_names.find(text);
+    if (spot != m_names.end()) {
+      return *spot;
+    }
   }
-  return localize_helper(text, LocalizeFlag::Upper);
+
+  auto const local = localize_helper(text, LocalizeFlag::Upper);
+  std::unique_lock<std::shared_mutex> lock(m_names_mutex);
+  auto const [spot, inserted] = m_names.insert(local);
+  static_cast<void>(inserted);
+  return *spot;
 }
 
 swoc::TextView
 Localizer::localize(TextView text, Encoding enc)
 {
-  assert(!m_frozen);
+  assert(!m_frozen.load());
   if (Encoding::URI == enc) {
-    auto span{m_arena.require(text.size()).remnant().rebind<char>()};
+    auto &arena = get_thread_arena();
+    auto span{arena.require(text.size()).remnant().rebind<char>()};
     auto spot = text.begin(), limit = text.end();
     char *dst = span.begin();
     while (spot < limit) {
@@ -117,7 +164,7 @@ Localizer::localize(TextView text, Encoding enc)
       }
     }
     TextView text{span.data(), dst};
-    m_arena.alloc(text.size());
+    arena.alloc(text.size());
     return text;
   }
   return localize(text);

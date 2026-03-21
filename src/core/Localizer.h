@@ -9,7 +9,12 @@
 
 #include "case_insensitive_utils.h"
 
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <unordered_set>
+#include <vector>
 
 #include "swoc/MemArena.h"
 #include "swoc/TextView.h"
@@ -27,6 +32,13 @@
 class Localizer
 {
 public:
+  /** Indicate that a new localization phase has started.
+   *
+   * This re-enables localization after a prior call to freeze_localization().
+   * Existing localized strings remain valid and can continue to be referenced.
+   */
+  static void start_localization();
+
   /** Indicate that no more localization should be performed.
    *
    * All localization should be completed during the YAML parsing stage. If
@@ -35,6 +47,15 @@ public:
    * requested elsewhere, assertions will be triggered.
    */
   static void freeze_localization();
+
+  /** Return whether localization is currently frozen.
+   *
+   * This is primarily useful for tests that need to restore the prior
+   * localization phase after exercising parsing helpers.
+   *
+   * @return True if localization is currently frozen, false otherwise.
+   */
+  static bool localization_is_frozen();
 
   static swoc::TextView localize(char const *text);
   static swoc::TextView localize_lower(char const *text);
@@ -58,10 +79,13 @@ private:
   enum class LocalizeFlag { None = 0, Upper = 1, Lower = 2 };
 
   static swoc::TextView localize_helper(swoc::TextView text, LocalizeFlag flag);
+  static swoc::MemArena &get_thread_arena();
 
 private:
   using NameSet = std::unordered_set<swoc::TextView, Hash, Hash>;
   static NameSet m_names;
-  static swoc::MemArena m_arena;
-  static bool m_frozen;
+  static std::shared_mutex m_names_mutex;
+  static std::mutex m_arenas_mutex;
+  static std::vector<std::unique_ptr<swoc::MemArena>> m_arenas;
+  static std::atomic_bool m_frozen;
 };
