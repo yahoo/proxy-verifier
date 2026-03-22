@@ -661,7 +661,7 @@ HttpHeader::verify_request(swoc::TextView transaction_key, HttpHeader const &rul
       issue_exists = true;
     } else {
       errata.note(
-          S_INFO,
+          S_DIAG,
           R"(HTTP/1 Method Success: Key: "{}", Method: "{}")",
           transaction_key,
           _method);
