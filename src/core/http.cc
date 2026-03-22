@@ -132,6 +132,59 @@ HttpHeader::global_init()
   RuleCheck::options_init();
 }
 
+namespace
+{
+bool
+http2_connection_token_matches(swoc::TextView header_value, swoc::TextView field_name)
+{
+  while (!header_value.empty()) {
+    auto token = header_value.take_prefix_at(',');
+    token.trim_if(&isspace);
+    if (strcasecmp(token, field_name) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool
+http2_field_is_hop_by_hop(HttpFields const &fields, swoc::TextView name)
+{
+  if (strcasecmp(name, HttpHeader::FIELD_CONNECTION) == 0 ||
+      strcasecmp(name, HttpHeader::FIELD_KEEP_ALIVE) == 0 ||
+      strcasecmp(name, HttpHeader::FIELD_PROXY_CONNECTION) == 0 ||
+      strcasecmp(name, HttpHeader::FIELD_TRANSFER_ENCODING) == 0 ||
+      strcasecmp(name, HttpHeader::FIELD_UPGRADE) == 0)
+  {
+    return true;
+  }
+
+  if (strcasecmp(name, HttpHeader::FIELD_TE) == 0) {
+    for (auto const &[field_name, field_value] : fields._fields_sequence) {
+      if (strcasecmp(field_name, name) != 0) {
+        continue;
+      }
+      auto trimmed_value = field_value;
+      trimmed_value.trim_if(&isspace);
+      if (strcasecmp(trimmed_value, "trailers") != 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (auto const &[field_name, field_value] : fields._fields_sequence) {
+    if (strcasecmp(field_name, HttpHeader::FIELD_CONNECTION) != 0) {
+      continue;
+    }
+    if (http2_connection_token_matches(field_value, name)) {
+      return true;
+    }
+  }
+  return false;
+}
+} // namespace
+
 swoc::Errata
 Ssn::post_process_transactions()
 {
@@ -303,7 +356,10 @@ HttpFields::add_fields_to_ngnva(nghttp3_nv *l) const
 }
 
 bool
-HttpFields::verify(swoc::TextView transaction_key, HttpFields const &rules_) const
+HttpFields::verify(
+    swoc::TextView transaction_key,
+    HttpFields const &rules_,
+    bool ignore_http2_hop_by_hop_fields) const
 {
   // Remains false if no issue is observed
   // Setting true does not break loop because test() calls errata.diag()
@@ -312,6 +368,9 @@ HttpFields::verify(swoc::TextView transaction_key, HttpFields const &rules_) con
   auto const *url_rules = rules_._url_rules;
   auto const *url_parts = this->_url_parts;
   for (auto const &[name, rule_check] : rules) {
+    if (ignore_http2_hop_by_hop_fields && http2_field_is_hop_by_hop(rules_, name)) {
+      continue;
+    }
     auto values = values_for(name);
     if (rule_check->expects_duplicate_fields()) {
       if (values.empty()) {
@@ -633,7 +692,7 @@ HttpHeader::derive_key()
 bool
 HttpHeader::verify_headers(swoc::TextView transaction_key, HttpFields const &rules_) const
 {
-  return _fields_rules->verify(transaction_key, rules_);
+  return _fields_rules->verify(transaction_key, rules_, is_http2() || is_http3());
 }
 
 bool

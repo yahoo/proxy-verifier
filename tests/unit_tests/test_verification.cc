@@ -228,3 +228,28 @@ TEST_CASE("HttpFields verify Set-Cookie rules separately", "[HttpFields]")
   CHECK_FALSE(no_cookie_actual.verify(key, no_cookie_rules));
   CHECK(actual.verify(key, no_cookie_rules));
 }
+
+TEST_CASE("HttpFields preserve TE trailers verification for HTTP/2 and HTTP/3", "[HttpFields]")
+{
+  RuleCheck::options_init();
+
+  HttpFields trailers_rules;
+  trailers_rules.add_field("te", "trailers");
+  trailers_rules._rules.emplace("te", RuleCheck::make_rule_check("te", "trailers", "equal"));
+
+  HttpFields matching_actual;
+  matching_actual.add_field("te", "trailers");
+  CHECK_FALSE(matching_actual.verify(key, trailers_rules, true));
+
+  HttpFields missing_actual;
+  CHECK(missing_actual.verify(key, trailers_rules, true));
+
+  HttpFields wrong_actual;
+  wrong_actual.add_field("te", "deflate");
+  CHECK(wrong_actual.verify(key, trailers_rules, true));
+
+  HttpFields ignored_rules;
+  ignored_rules.add_field("te", "deflate");
+  ignored_rules._rules.emplace("te", RuleCheck::make_rule_check("te", "deflate", "equal"));
+  CHECK_FALSE(missing_actual.verify(key, ignored_rules, true));
+}

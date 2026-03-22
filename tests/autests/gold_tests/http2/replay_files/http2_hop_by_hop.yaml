@@ -1,0 +1,137 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+  version: '1.0'
+sessions:
+- protocol:
+    stack: http2
+    tls:
+      sni: test_sni
+
+  transactions:
+  - all:
+      headers:
+        fields:
+        - [ uuid, h2-hop-by-hop-1 ]
+
+    client-request:
+      method: GET
+      scheme: https
+      url: https://example.data.com/redirect
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, example.data.com ]
+        - [ Connection, keep-alive ]
+        - [ Keep-Alive, timeout=30 ]
+        - [ Content-Length, "0" ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-request:
+      protocol:
+        stack: http2
+        tls:
+          sni: test_sni
+
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, { value: GET, as: equal } ]
+        - [ :scheme, { value: https, as: equal } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
+        - [ :path, { value: /redirect, as: equal } ]
+        - [ Host, { value: example.data.com, as: equal } ]
+        - [ Connection, { as: absent } ]
+        - [ Keep-Alive, { as: absent } ]
+
+    server-response:
+      status: 302
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Length, "0" ]
+        - [ Connection, keep-alive ]
+        - [ Keep-Alive, timeout=30 ]
+        - [ Location, https://example.data.com/final ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-response:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, { value: 302, as: equal } ]
+        - [ Content-Length, { value: "0", as: equal } ]
+        - [ Location, { value: https://example.data.com/final, as: equal } ]
+        - [ Connection, { as: absent } ]
+        - [ Keep-Alive, { as: absent } ]
+
+  - all:
+      headers:
+        fields:
+        - [ uuid, h2-hop-by-hop-2 ]
+
+    client-request:
+      method: GET
+      scheme: https
+      url: https://example.data.com/body
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Host, example.data.com ]
+        - [ Connection, close ]
+        - [ Proxy-Connection, keep-alive ]
+        - [ Content-Length, "0" ]
+      content:
+        encoding: plain
+        size: 0
+
+    proxy-request:
+      protocol:
+        stack: http2
+        tls:
+          sni: test_sni
+
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :method, { value: GET, as: equal } ]
+        - [ :scheme, { value: https, as: equal } ]
+        - [ :authority, { value: example.data.com, as: equal } ]
+        - [ :path, { value: /body, as: equal } ]
+        - [ Host, { value: example.data.com, as: equal } ]
+        - [ Connection, { as: absent } ]
+        - [ Proxy-Connection, { as: absent } ]
+
+    server-response:
+      status: 200
+      headers:
+        encoding: esc_json
+        fields:
+        - [ Content-Length, "4" ]
+        - [ Content-Type, text/plain ]
+        - [ Connection, keep-alive ]
+        - [ Upgrade, h2c ]
+      content:
+        encoding: plain
+        data: pong
+
+    proxy-response:
+      headers:
+        encoding: esc_json
+        fields:
+        - [ :status, { value: 200, as: equal } ]
+        - [ Content-Length, { value: "4", as: equal } ]
+        - [ Content-Type, { value: text/plain, as: equal } ]
+        - [ Connection, { as: absent } ]
+        - [ Upgrade, { as: absent } ]
+      content:
+        encoding: plain
+        data: pong

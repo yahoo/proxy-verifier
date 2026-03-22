@@ -47,5 +47,29 @@ server = r.AddServerProcess("server-h2", "replay/h2.yaml")
 client = r.AddClientProcess("client-h2", "replay/h2.yaml", http_ports=[server.Variables.http_port],
                             https_ports=[server.Variables.https_port], other_args="--no-proxy")
 
-client.Streams.stdout = "gold/h2_client.gold"
-server.Streams.stdout = "gold/h2_server.gold"
+client.Streams.stdout += Testers.ContainsExpression(
+    "Received an HTTP/2 response for key 1 with stream id 1:",
+    "The client should receive the zero-length HTTP/2 response from the replay server.")
+client.Streams.stdout += Testers.ContainsExpression(
+    "Received an HTTP/2 response for key 3 with stream id 1:",
+    "The client should receive the POST replay response on the second HTTP/2 session.")
+client.Streams.stdout += Testers.ContainsExpression(
+    r"HTTP/2 replay metrics: requests-submitted=2, max-in-flight-streams=2, "
+    r"send-phase-bytes-drained=[0-9]+, final-drain-duration=[0-9]+ms\.",
+    "The client should complete the HTTP/2 no-proxy replay and emit replay metrics.")
+client.Streams.stdout += Testers.ExcludesExpression(
+    "Violation:", "The client should not report verification failures in HTTP/2 no-proxy mode.")
+client.Streams.stdout += Testers.ExcludesExpression(
+    "HTTP/2 final response drain made no forward progress",
+    "The client should not hit the HTTP/2 stuck-session summary in HTTP/2 no-proxy mode.")
+
+server.Streams.stdout += Testers.ContainsExpression(
+    "Received an HTTP/2 request for key 1 with stream id 1:",
+    "The server should receive the first no-proxy HTTP/2 request.")
+server.Streams.stdout += Testers.ContainsExpression(
+    ":path: /some/path4", "The server should receive the final no-proxy HTTP/2 request path.")
+server.Streams.stdout += Testers.ContainsExpression(
+    "Request with key 4 passed validation.",
+    "The server should validate the final HTTP/2 no-proxy request.")
+server.Streams.stdout += Testers.ExcludesExpression(
+    "Violation:", "The server should not report verification failures in HTTP/2 no-proxy mode.")

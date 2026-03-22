@@ -28,11 +28,11 @@ server.Streams.stdout += Testers.ContainsExpression(
 # starts. And, further, that the entire second-request finishes before
 # third-request starts.
 client.Streams.stdout += Testers.ContainsExpression(
-    "Sent the following HTTP/2 request headers for key first-request.*"
+    "Submitted the following HTTP/2 request headers for key first-request.*"
     "Received an HTTP/2 body of 3432 bytes for key first-request.*"
-    "Sent the following HTTP/2 request headers for key second-request.*"
+    "Submitted the following HTTP/2 request headers for key second-request.*"
     "Received an HTTP/2 body of 3432 bytes for key second-request.*",
-    "Sent the following HTTP/2 request headers for key third-request.*"
+    "Submitted the following HTTP/2 request headers for key third-request.*"
     "Received an HTTP/2 body of 3432 bytes for key third-request.*",
     "second-request should start only after first-request finishes.",
     reflags=re.MULTILINE | re.DOTALL)

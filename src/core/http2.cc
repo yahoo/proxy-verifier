@@ -10,6 +10,7 @@
 #include "core/verification.h"
 #include "core/ProxyVerifier.h"
 
+#include <algorithm>
 #include <cassert>
 #include <netdb.h>
 #include <thread>
@@ -29,6 +30,199 @@ using ClockType = std::chrono::steady_clock;
 using chrono::duration_cast;
 using chrono::milliseconds;
 constexpr bool IS_TRAILER = true;
+size_t constexpr Default_H2_InFlight_Stream_Cap = 32;
+size_t constexpr H2NoProgressTimeoutBudget = 3;
+
+static ssize_t receive_nghttp2_data(
+    nghttp2_session *session,
+    uint8_t *buf,
+    size_t length,
+    int flags,
+    void *user_data,
+    milliseconds timeout);
+
+namespace
+{
+struct H2DrainWindow
+{
+  ssize_t bytes_received = 0;
+  size_t streams_completed = 0;
+  size_t inflight_before = 0;
+  size_t inflight_after = 0;
+
+  bool
+  made_progress() const
+  {
+    return bytes_received > 0 || streams_completed > 0;
+  }
+};
+
+bool
+http2_connection_token_matches(swoc::TextView header_value, swoc::TextView field_name)
+{
+  while (!header_value.empty()) {
+    auto token = header_value.take_prefix_at(',');
+    token.trim_if(&isspace);
+    if (strcasecmp(token, field_name) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool
+http2_field_is_hop_by_hop(HttpFields const &fields, swoc::TextView name, swoc::TextView value)
+{
+  if (strcasecmp(name, HttpHeader::FIELD_CONNECTION) == 0 ||
+      strcasecmp(name, HttpHeader::FIELD_KEEP_ALIVE) == 0 ||
+      strcasecmp(name, HttpHeader::FIELD_PROXY_CONNECTION) == 0 ||
+      strcasecmp(name, HttpHeader::FIELD_TRANSFER_ENCODING) == 0 ||
+      strcasecmp(name, HttpHeader::FIELD_UPGRADE) == 0)
+  {
+    return true;
+  }
+
+  if (strcasecmp(name, HttpHeader::FIELD_TE) == 0) {
+    auto trimmed_value = value;
+    trimmed_value.trim_if(&isspace);
+    return strcasecmp(trimmed_value, "trailers") != 0;
+  }
+
+  for (auto const &[field_name, field_value] : fields._fields_sequence) {
+    if (strcasecmp(field_name, HttpHeader::FIELD_CONNECTION) != 0) {
+      continue;
+    }
+    if (http2_connection_token_matches(field_value, name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+size_t
+get_h2_in_flight_stream_cap(H2Session &session)
+{
+  auto const remote_stream_cap = nghttp2_session_get_remote_settings(
+      session.get_session(),
+      NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS);
+  if (remote_stream_cap == 0 || remote_stream_cap == NGHTTP2_INITIAL_MAX_CONCURRENT_STREAMS) {
+    return Default_H2_InFlight_Stream_Cap;
+  }
+  return std::max<size_t>(1, remote_stream_cap);
+}
+
+void
+append_h2_stuck_stream_summary(
+    Errata &errata,
+    H2Session const &session,
+    std::string_view context,
+    size_t consecutive_no_progress_windows)
+{
+  errata.note(
+      S_ERROR,
+      "HTTP/2 {} made no forward progress for {} consecutive timeout windows. "
+      "Stopping replay for this session with {} in-flight stream{}.",
+      context,
+      consecutive_no_progress_windows,
+      session._stream_map.size(),
+      swoc::bwf::If(session._stream_map.size() != 1, "s"));
+  for (auto const &[stream_id, stream_state] : session._stream_map) {
+    errata.note(S_ERROR, "    {}: {}", stream_id, stream_state->_key);
+  }
+}
+
+swoc::Rv<H2DrainWindow>
+drain_h2_receive_window(H2Session &session, milliseconds timeout, std::string_view context)
+{
+  swoc::Rv<H2DrainWindow> zret{H2DrainWindow{}};
+  auto &progress = zret.result();
+  progress.inflight_before = session._stream_map.size();
+
+  auto const received_bytes =
+      receive_nghttp2_data(session.get_session(), nullptr, 0, 0, &session, timeout);
+  if (received_bytes < 0) {
+    zret.note(S_ERROR, "Failed to drain HTTP/2 {}.", context);
+    return zret;
+  }
+
+  progress.bytes_received = received_bytes;
+  progress.inflight_after = session._stream_map.size();
+  if (progress.inflight_before > progress.inflight_after) {
+    progress.streams_completed = progress.inflight_before - progress.inflight_after;
+  }
+
+  if (timeout > 0ms) {
+    zret.note(
+        S_DIAG,
+        "HTTP/2 {} receive window progress={} bytes={} completed-streams={} in-flight={} -> {}.",
+        context,
+        progress.made_progress() ? "yes" : "no",
+        progress.bytes_received,
+        progress.streams_completed,
+        progress.inflight_before,
+        progress.inflight_after);
+  }
+
+  return zret;
+}
+
+/** Drain HTTP/2 receive windows while request submission is backpressured.
+ *
+ * @param[in,out] session HTTP/2 session whose in-flight streams are being drained.
+ * @param[in,out] txn_errata Transaction-local errata to annotate on failure.
+ * @param[in,out] errata Session-level errata to annotate on failure.
+ * @param[in] timeout Poll timeout to use for each receive window.
+ * @param[in] context Diagnostic label describing the current drain phase.
+ * @param[in] target_in_flight Desired upper bound on in-flight streams before returning.
+ * @param[in] stop_after_stream_completion Whether to stop after any stream completes.
+ * @param[in,out] send_phase_bytes_drained Aggregate bytes drained while sending requests.
+ * @return `true` if the drain finished without a fatal error.
+ */
+bool
+drain_h2_send_phase_backpressure(
+    H2Session &session,
+    Errata &txn_errata,
+    Errata &errata,
+    milliseconds timeout,
+    std::string_view context,
+    size_t target_in_flight,
+    bool stop_after_stream_completion,
+    size_t &send_phase_bytes_drained)
+{
+  size_t no_progress_windows = 0;
+  while (!session._stream_map.empty() && session._stream_map.size() > target_in_flight) {
+    auto &&[window_progress, window_errata] = drain_h2_receive_window(session, timeout, context);
+    txn_errata.note(std::move(window_errata));
+    if (!txn_errata.is_ok()) {
+      errata.note(std::move(txn_errata));
+      return false;
+    }
+
+    if (window_progress.bytes_received > 0) {
+      send_phase_bytes_drained += window_progress.bytes_received;
+    }
+    if (window_progress.made_progress()) {
+      no_progress_windows = 0;
+    } else {
+      ++no_progress_windows;
+      if (no_progress_windows >= H2NoProgressTimeoutBudget) {
+        append_h2_stuck_stream_summary(
+            txn_errata,
+            session,
+            std::string{context} + " drain",
+            no_progress_windows);
+        session.close();
+        errata.note(std::move(txn_errata));
+        return false;
+      }
+    }
+    if (stop_after_stream_completion && window_progress.streams_completed > 0) {
+      break;
+    }
+  }
+  return true;
+}
+} // namespace
 
 namespace swoc
 {
@@ -87,13 +281,6 @@ static ssize_t receive_nghttp2_data(
     int flags,
     void *user_data,
     milliseconds timeout);
-
-static ssize_t receive_nghttp2_responses(
-    nghttp2_session *session,
-    uint8_t *buf,
-    size_t length,
-    int flags,
-    void *user_data);
 
 static ssize_t receive_nghttp2_request(
     nghttp2_session *session,
@@ -310,7 +497,26 @@ H2Session::run_transactions(
     swoc::IPEndpoint const *real_target,
     double rate_multiplier)
 {
+  if (!_h2_is_negotiated) {
+    return Session::run_transactions(txn_list, interface, real_target, rate_multiplier);
+  }
+
   Errata errata;
+  size_t requests_submitted = 0;
+  size_t max_in_flight_streams = 0;
+  size_t send_phase_bytes_drained = 0;
+  size_t logged_stream_cap = 0;
+
+  auto log_h2_replay_metrics = [&](milliseconds final_drain_duration) {
+    errata.note(
+        S_DIAG,
+        "HTTP/2 replay metrics: requests-submitted={}, max-in-flight-streams={}, "
+        "send-phase-bytes-drained={}, final-drain-duration={}ms.",
+        requests_submitted,
+        max_in_flight_streams,
+        send_phase_bytes_drained,
+        final_drain_duration.count());
+  };
 
   auto const first_time = ClockType::now();
   for (auto const &txn : txn_list) {
@@ -322,8 +528,16 @@ H2Session::run_transactions(
       if (!txn_errata.is_ok()) {
         txn_errata.note(S_ERROR, R"(Failed to reconnect HTTP/2 key: {})", key);
         // If we don't have a valid connection, there's no point in continuing.
+        errata.note(std::move(txn_errata));
+        log_h2_replay_metrics(0ms);
         break;
       }
+    }
+
+    auto const effective_in_flight_stream_cap = get_h2_in_flight_stream_cap(*this);
+    if (effective_in_flight_stream_cap != logged_stream_cap) {
+      logged_stream_cap = effective_in_flight_stream_cap;
+      errata.note(S_DIAG, "HTTP/2 in-flight stream cap set to {}.", logged_stream_cap);
     }
 
     bool print_once = true;
@@ -338,15 +552,24 @@ H2Session::run_transactions(
         txn_errata.note(S_ERROR, R"(Timed out waiting for dependencies for key: {})", key);
         break;
       }
-      auto const ret = receive_nghttp2_data(this->get_session(), nullptr, 0, 0, this, Poll_Timeout);
-      if (ret < 0) {
+      auto &&[progress, progress_errata] =
+          drain_h2_receive_window(*this, Poll_Timeout, "dependency wait");
+      txn_errata.note(std::move(progress_errata));
+      if (!txn_errata.is_ok()) {
         // There was a problem reading bytes on the socket.
         txn_errata.note(
             S_ERROR,
             "An unexpected error was received reading bytes on a socket while delaying a "
             "transaction for --rate.");
+        errata.note(std::move(txn_errata));
+        log_h2_replay_metrics(0ms);
         return errata;
       }
+    }
+    if (!txn_errata.is_ok()) {
+      errata.note(std::move(txn_errata));
+      log_h2_replay_metrics(0ms);
+      break;
     }
     if (rate_multiplier != 0 || txn._user_specified_delay_duration > 0us) {
       std::chrono::duration<double, std::micro> delay_time = 0ms;
@@ -368,19 +591,17 @@ H2Session::run_transactions(
       txn_errata.sink();
       while (delay_time > 0ms) {
         // Make use of our delay time to read any incoming responses.
-        auto const ret = receive_nghttp2_data(
-            this->get_session(),
-            nullptr,
-            0,
-            0,
-            this,
-            duration_cast<milliseconds>(delay_time));
-        if (ret < 0) {
+        auto &&[progress, progress_errata] =
+            drain_h2_receive_window(*this, duration_cast<milliseconds>(delay_time), "delay window");
+        txn_errata.note(std::move(progress_errata));
+        if (!txn_errata.is_ok()) {
           // There was a problem reading bytes on the socket.
           txn_errata.note(
               S_ERROR,
               "An unexpected error was received reading bytes on a socket while delaying a "
               "transaction for --rate.");
+          errata.note(std::move(txn_errata));
+          log_h2_replay_metrics(0ms);
           return errata;
         }
         current_time = ClockType::now();
@@ -392,17 +613,101 @@ H2Session::run_transactions(
       errata.sink();
       break;
     }
+    if (this->_stream_map.size() >= effective_in_flight_stream_cap) {
+      auto const pre_submit_target_in_flight = effective_in_flight_stream_cap - 1;
+      if (!drain_h2_send_phase_backpressure(
+              *this,
+              txn_errata,
+              errata,
+              Poll_Timeout,
+              "pre-submit backpressure",
+              pre_submit_target_in_flight,
+              false,
+              send_phase_bytes_drained))
+      {
+        log_h2_replay_metrics(0ms);
+        return errata;
+      }
+    }
     txn_errata.note(this->run_transaction(txn));
     if (!txn_errata.is_ok()) {
-      errata.note(S_ERROR, R"(Failed HTTP/2 transaction with key: {})", key);
+      txn_errata.note(S_ERROR, R"(Failed HTTP/2 transaction with key: {})", key);
+      errata.note(std::move(txn_errata));
+      log_h2_replay_metrics(0ms);
+      return errata;
+    }
+
+    ++requests_submitted;
+    max_in_flight_streams = std::max(max_in_flight_streams, this->_stream_map.size());
+    txn_errata.note(
+        S_DIAG,
+        "Submitted HTTP/2 request {} for key {}. In-flight streams: {} (max {}).",
+        requests_submitted,
+        key,
+        this->_stream_map.size(),
+        max_in_flight_streams);
+
+    auto &&[opportunistic_progress, opportunistic_errata] =
+        drain_h2_receive_window(*this, 0ms, "opportunistic send-phase");
+    txn_errata.note(std::move(opportunistic_errata));
+    if (!txn_errata.is_ok()) {
+      errata.note(std::move(txn_errata));
+      log_h2_replay_metrics(0ms);
+      return errata;
+    }
+    if (opportunistic_progress.bytes_received > 0) {
+      send_phase_bytes_drained += opportunistic_progress.bytes_received;
+    }
+
+    if (this->_stream_map.size() >= effective_in_flight_stream_cap) {
+      auto const target_in_flight = std::max<size_t>(1, effective_in_flight_stream_cap / 2);
+      if (!drain_h2_send_phase_backpressure(
+              *this,
+              txn_errata,
+              errata,
+              Poll_Timeout,
+              "send-phase backpressure",
+              target_in_flight,
+              true,
+              send_phase_bytes_drained))
+      {
+        log_h2_replay_metrics(0ms);
+        return errata;
+      }
     }
     if (this->sent_goaway_frame) {
       errata.note(S_DIAG, "Closing HTTP/2 session due to sending a GOAWAY frame.");
       errata.sink();
       break;
     }
+    txn_errata.sink();
   }
-  receive_nghttp2_responses(this->get_session(), nullptr, 0, 0, this);
+
+  auto const final_drain_start = ClockType::now();
+  size_t no_progress_windows = 0;
+  while (!this->_stream_map.empty() && !this->sent_goaway_frame) {
+    auto &&[window_progress, window_errata] =
+        drain_h2_receive_window(*this, Poll_Timeout, "final response drain");
+    errata.note(std::move(window_errata));
+    if (!errata.is_ok()) {
+      log_h2_replay_metrics(duration_cast<milliseconds>(ClockType::now() - final_drain_start));
+      return errata;
+    }
+
+    if (window_progress.made_progress()) {
+      no_progress_windows = 0;
+    } else {
+      ++no_progress_windows;
+      if (no_progress_windows >= H2NoProgressTimeoutBudget) {
+        append_h2_stuck_stream_summary(errata, *this, "final response drain", no_progress_windows);
+        this->close();
+        log_h2_replay_metrics(duration_cast<milliseconds>(ClockType::now() - final_drain_start));
+        return errata;
+      }
+    }
+  }
+
+  log_h2_replay_metrics(duration_cast<milliseconds>(ClockType::now() - final_drain_start));
 
   return errata;
 }
@@ -410,10 +715,19 @@ H2Session::run_transactions(
 Errata
 H2Session::run_transaction(Txn const &txn)
 {
+  if (!_h2_is_negotiated) {
+    return Session::run_transaction(txn);
+  }
+
   Errata errata;
+  auto const previous_last_added_stream = _last_added_stream;
   auto &&[bytes_written, write_errata] = this->write(txn._req);
   errata.note(std::move(write_errata));
-  _last_added_stream->_specified_response = &txn._rsp;
+  if (errata.is_ok() && _last_added_stream != nullptr &&
+      _last_added_stream != previous_last_added_stream)
+  {
+    _last_added_stream->_specified_response = &txn._rsp;
+  }
   return errata;
 }
 
@@ -564,7 +878,9 @@ send_nghttp2_data(
     }
     int amount_sent = 0;
     while (amount_sent < datalen) {
-      auto const n = session_data->write(TextView{(char *)data, (size_t)datalen});
+      auto const remaining_to_send = static_cast<size_t>(datalen - amount_sent);
+      auto const n = session_data->write(
+          TextView{reinterpret_cast<char const *>(data) + amount_sent, remaining_to_send});
       if (n <= 0) {
         break;
       }
@@ -654,41 +970,6 @@ receive_nghttp2_data(
 }
 
 static ssize_t
-receive_nghttp2_responses(
-    nghttp2_session *session,
-    uint8_t * /* buf */,
-    size_t /* length */,
-    int /* flags */,
-    void *user_data)
-{
-  H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
-  int total_recv = 0;
-
-  auto timeout_count = 0;
-  while (!session_data->_stream_map.empty() && !session_data->sent_goaway_frame) {
-    auto const received_bytes =
-        receive_nghttp2_data(session, nullptr, 0, 0, user_data, Poll_Timeout);
-    if (received_bytes < 0) {
-      break;
-    }
-    if (received_bytes == 0) { // timeout
-      ++timeout_count;
-      if (timeout_count > 2) {
-        Errata errata;
-        errata.note(S_INFO, "{} timeouts while waiting for the following streams:", timeout_count);
-        for (auto &&[id, stream_state] : session_data->_stream_map) {
-          errata.note(S_INFO, "    {}: {}", id, stream_state->_key);
-        }
-      }
-    } else { // Not timeout.
-      timeout_count = 0;
-    }
-    total_recv += total_recv;
-  }
-  return (ssize_t)total_recv;
-}
-
-static ssize_t
 receive_nghttp2_request(
     nghttp2_session *session,
     uint8_t * /* buf */,
@@ -756,6 +1037,8 @@ on_frame_send_cb(
   return 0;
 }
 
+static int finalize_stream(H2Session *session_data, int32_t stream_id);
+
 static int
 on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, void *user_data)
 {
@@ -770,6 +1053,7 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
   } break;
   case NGHTTP2_HEADERS: {
     errata.note(S_DIAG, "Received HEADERS frame with stream id {}", frame->hd.stream_id);
+    errata.sink();
   } break;
   case NGHTTP2_PRIORITY:
     break;
@@ -933,27 +1217,22 @@ on_frame_recv_cb(nghttp2_session * /* session */, nghttp2_frame const *frame, vo
     if (flags & NGHTTP2_FLAG_END_STREAM) {
       // We already verified above that this is in our _stream_map.
       session_data->set_stream_has_ended(stream_id, stream_map_iter->second->_key);
+      if (!session_data->get_is_server() &&
+          !stream_map_iter->second->_wait_for_response_after_100_continue)
+      {
+        finalize_stream(session_data, stream_id);
+      }
     }
   }
   return 0;
 }
 
 static int
-on_stream_close_cb(
-    nghttp2_session * /* session */,
-    int32_t stream_id,
-    uint32_t /* error_code */,
-    void *user_data)
+finalize_stream(H2Session *session_data, int32_t stream_id)
 {
   Errata errata;
-  errata.note(S_DIAG, "HTTP/2 stream is closed with id: {}", stream_id);
-  H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
   auto iter = session_data->_stream_map.find(stream_id);
   if (iter == session_data->_stream_map.end()) {
-    errata.note(
-        S_ERROR,
-        "HTTP/2 stream is closed with id {} but could not find it tracked internally",
-        stream_id);
     return 0;
   }
   H2StreamState &stream_state = *iter->second;
@@ -1007,6 +1286,20 @@ on_stream_close_cb(
         elapsed_ms);
   }
   session_data->_stream_map.erase(iter);
+  return 0;
+}
+
+static int
+on_stream_close_cb(
+    nghttp2_session * /* session */,
+    int32_t stream_id,
+    uint32_t /* error_code */,
+    void *user_data)
+{
+  Errata errata;
+  errata.note(S_DIAG, "HTTP/2 stream is closed with id: {}", stream_id);
+  H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
+  finalize_stream(session_data, stream_id);
   return 0;
 }
 
@@ -1175,7 +1468,6 @@ data_read_callback(
     } else {
       num_to_copy = 0;
     }
-    errata.note(S_DIAG, "Could not find a stream with stream id: {}", stream_id);
     if (stream_state->_send_body_offset >= stream_state->_send_body_length) {
       *data_flags |= NGHTTP2_DATA_FLAG_EOF;
       if (stream_state->_last_data_frame && stream_state->_trailer_to_send) {
@@ -1551,6 +1843,7 @@ H2Session::write(HttpHeader const &hdr)
       prev_frame = curr_frame;
     }
   } else {
+    bool submitted_headers_only = false;
     // grab header, send to session
     // pack_headers will convert all the fields in hdr into nghttp2_nv structs
     int hdr_count = 0;
@@ -1608,25 +1901,14 @@ H2Session::write(HttpHeader const &hdr)
             stream_state);
       }
     } else { // Empty body.
-      if (hdr.is_response()) {
-        submit_result = nghttp2_submit_response2(
-            this->_session,
-            stream_state->get_stream_id(),
-            hdrs,
-            hdr_count,
-            nullptr);
-      } else {
-        submit_result = nghttp2_submit_request2(
-            this->_session,
-            nullptr,
-            hdrs,
-            hdr_count,
-            nullptr,
-            stream_state);
-      }
+      submitted_headers_only = true;
+      zret.note(submit_headers_frame(hdr, stream_state, new_stream_state, NGHTTP2_FLAG_END_STREAM));
     }
 
-    if (hdr.is_response()) {
+    if (submitted_headers_only) {
+      submit_result = zret.is_ok() ? 0 : -1;
+      stream_id = stream_state->get_stream_id();
+    } else if (hdr.is_response()) {
       stream_id = stream_state->get_stream_id();
       if (submit_result < 0) {
         zret.note(
@@ -1644,7 +1926,7 @@ H2Session::write(HttpHeader const &hdr)
         record_stream_state(stream_id, new_stream_state);
       }
     }
-    if (zret.is_ok()) {
+    if (zret.is_ok() && !submitted_headers_only) {
       zret.note(
           S_DIAG,
           "Sent the following HTTP/2 {}{} headers for key {} with stream id {}:\n{}",
@@ -1677,18 +1959,36 @@ H2Session::pack_headers(HttpHeader const &hdr, bool is_trailer, nghttp2_nv *&nv_
   if (is_trailer) {
     fields_rules = hdr._trailer_fields_rules;
   }
-  hdr_count = fields_rules->_fields.size();
+  std::vector<std::pair<TextView, TextView>> filtered_fields;
+  filtered_fields.reserve(fields_rules->_fields_sequence.size());
+  for (auto const &[name, value] : fields_rules->_fields_sequence) {
+    if (name.starts_with(":")) {
+      continue;
+    }
+    if (http2_field_is_hop_by_hop(*fields_rules, name, value)) {
+      errata.note(S_DIAG, "Skipping HTTP/2 connection-specific field {}: {}", name, value);
+      continue;
+    }
+    filtered_fields.emplace_back(name, value);
+  }
+
+  hdr_count = filtered_fields.size();
   if (is_trailer && hdr_count == 0) {
     nv_hdr = nullptr;
     // There's nothing left to do for the trailers.
     return errata;
   }
 
-  if (!is_trailer && !hdr._contains_pseudo_headers_in_fields_array) {
+  if (!is_trailer) {
     if (hdr.is_response()) {
-      hdr_count += 1;
+      if (!hdr._status_string.empty()) {
+        hdr_count += 1;
+      }
     } else if (hdr.is_request()) {
-      hdr_count += 4;
+      hdr_count += !hdr._method.empty();
+      hdr_count += !hdr._scheme.empty();
+      hdr_count += !hdr._path.empty();
+      hdr_count += !hdr._authority.empty();
     } else {
       hdr_count = 0;
       errata.note(
@@ -1722,7 +2022,14 @@ H2Session::pack_headers(HttpHeader const &hdr, bool is_trailer, nghttp2_nv *&nv_
       }
     }
   }
-  fields_rules->add_fields_to_ngnva(nv_hdr + offset);
+  for (auto const &[name, value] : filtered_fields) {
+    nv_hdr[offset++] = nghttp2_nv{
+        const_cast<uint8_t *>(reinterpret_cast<uint8_t const *>(name.data())),
+        const_cast<uint8_t *>(reinterpret_cast<uint8_t const *>(value.data())),
+        name.length(),
+        value.length(),
+        NGHTTP2_NV_FLAG_NONE};
+  }
 
   return errata;
 }

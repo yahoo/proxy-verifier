@@ -1,6 +1,18 @@
-``
-``Ready with 5 transactions.
-``
+[DEBUG]: Configured logging at level DEBUG
+    [DEBUG]: Writing TLS secrets to: /home/bneradt/shared/proxy-verifier/tests/autests/_sandbox/http2/server2/tls_secrets.txt
+  [DEBUG]: Finished TLSSession::init
+  [DEBUG]: Finished H2Session::init
+              [INFO]: Contrary to spec, a transaction is specified with both :authority and host header fields: line 44
+              [INFO]: Contrary to spec, a transaction is specified with both :authority and host header fields: line 305
+    [INFO]: Replay file parsing took: 2 milliseconds.
+[INFO]: Ready with 5 transactions.
+  [INFO]: Listening for HTTP/1.x at: 127.0.0.1:61008
+  [INFO]: Listening for HTTPS (HTTP/2 or HTTP/1.x) at: 127.0.0.1:61009
+[DEBUG]: Accepted a TLS connection with an SNI of: test_sni.
+[DEBUG]: Negotiated ALPN from client ALPN list: h2http/1.1: h2
+[DEBUG]: Received SETTINGS frame with stream id 0: HEADER_TABLE_SIZE:4096, ENABLE_PUSH:1, INITIAL_WINDOW_SIZE:65535, MAX_FRAME_SIZE:16384, Unknown: :0, MAX_CONCURRENT_STREAMS:100, MAX_HEADER_LIST_SIZE:65536
+[DEBUG]: Received HEADERS frame with stream id 1
+[DEBUG]: Received an HTTP/2 request for key 1 with stream id 1:
 :method: GET
 :scheme: https
 :authority: example.data.com
@@ -16,7 +28,27 @@ x-test-duplicate-separate: second
 content-length: 0
 uuid: 1
 
-``
+[DEBUG]: Received DATA frame with stream id 1
+[INFO]: Equals Success: Key: "1", Field Name: ":authority", Value: "example.data.com"
+[INFO]: Equals Success: Key: "1", Field Name: ":method", Value: "GET"
+[INFO]: Equals Success: Key: "1", Field Name: ":path", Value: "/a/path?q=3"
+[INFO]: Equals Success: Key: "1", Field Name: ":scheme", Value: "https"
+[INFO]: Equals Success: Key: "1", Field Name: "content-length", Value: "0"
+[INFO]: Equals Success: Key: "1", Field Name: "host", Value: "example.data.com"
+[INFO]: Equals Success: Key: "1", Field Name: "x-test-duplicate-combined", Value: "first, second"
+[INFO]: Equals Success: Key: "1", Field Name: "x-test-duplicate-separate", Value: "first, second"
+[INFO]: Equals Success: Key: "1", URI Part: "scheme", Value: "https"
+[INFO]: Equals Success: Key: "1", URI Part: "host", Value: "example.data.com"
+[INFO]: Presence Success: Key: "1", URI Part: "host", Value: "example.data.com"
+[INFO]: Absence Success: Key: "1", URI Part: "port"
+[INFO]: Equals Success: Key: "1", URI Part: "net-loc", Value: "example.data.com"
+[INFO]: Equals Success: Key: "1", URI Part: "net-loc", Value: "example.data.com"
+[INFO]: Equals Success: Key: "1", URI Part: "path", Value: "/a/path"
+[INFO]: Prefix Success: Key: "1", URI Part: "path", Required Value: "/", Value: "/a/path"
+[INFO]: Presence Success: Key: "1", URI Part: "query", Value: "q=3"
+[INFO]: Contains Success: Key: "1", URI Part: "query", Required Value: "3", Value: "q=3"
+[INFO]: Absence Success: Key: "1", URI Part: "fragment"
+[DEBUG]: Sent the following HTTP/2 response headers for key 1 with stream id 1:
 :status: 200
 cache-control: private
 content-type: application/json;charset=utf-8
@@ -29,7 +61,13 @@ x-test-duplicate-separate: one
 x-test-duplicate-separate: two
 uuid: 1
 
-``
+[DEBUG]: Sent an HTTP/2 body of 16 bytes for key 1 of stream id 1:
+0123456789abcdef
+[DEBUG]: HTTP/2 stream is closed with id: 1
+[DEBUG]: Request with key 1 passed validation.
+[DEBUG]: Received SETTINGS frame with stream id 0: 
+[DEBUG]: Received HEADERS frame with stream id 3
+[DEBUG]: Received an HTTP/2 request for key 2 with stream id 3:
 :method: POST
 :scheme: https
 :authority: example.data.com
@@ -38,16 +76,18 @@ x-request-header: request
 uuid: 2
 x-added-header: 1
 
-``Received an HTTP/2 body of 10 bytes for key 2 with stream id 3:
+[DEBUG]: Received an HTTP/2 body of 10 bytes for key 2 with stream id 3:
 0123456789
-``Equals Success: Key: "2", Field Name: ":authority", Value: "example.data.com"
-``Equals Success: Key: "2", Field Name: ":method", Value: "POST"
-``Equals Success: Key: "2", Field Name: ":scheme", Value: "https"
-``Absence Success: Key: "2", Field Name: "content-length"
-``Presence Success: Key: "2", Field Name: "x-added-header", Value: "1"
-``Absence Success: Key: "2", Field Name: "x-deleted-header"
-``Presence Success: Key: "2", Field Name: "x-request-header", Value: "request"
-``
+[DEBUG]: Received DATA frame with stream id 3
+[DEBUG]: Received DATA frame with stream id 3
+[INFO]: Equals Success: Key: "2", Field Name: ":authority", Value: "example.data.com"
+[INFO]: Equals Success: Key: "2", Field Name: ":method", Value: "POST"
+[INFO]: Equals Success: Key: "2", Field Name: ":scheme", Value: "https"
+[INFO]: Absence Success: Key: "2", Field Name: "content-length"
+[INFO]: Presence Success: Key: "2", Field Name: "x-added-header", Value: "1"
+[INFO]: Absence Success: Key: "2", Field Name: "x-deleted-header"
+[INFO]: Presence Success: Key: "2", Field Name: "x-request-header", Value: "request"
+[DEBUG]: Sent the following HTTP/2 response headers for key 2 with stream id 3:
 :status: 500
 x-equal-header: some_content
 x-response-header: response
@@ -55,7 +95,12 @@ x-deleted-header2: this_will_be_deleted
 x-proxy-directive: Delete=%<x-deleted-header2%> Insert=%<x-added-header: 1%>
 uuid: 2
 
-``
+[DEBUG]: Sent an HTTP/2 body of 32 bytes for key 2 of stream id 3:
+0000000 0000001 0000002 0000003 
+[DEBUG]: HTTP/2 stream is closed with id: 3
+[DEBUG]: Request with key 2 passed validation.
+[DEBUG]: Received HEADERS frame with stream id 5
+[DEBUG]: Received an HTTP/2 request for key 3 with stream id 5:
 :method: GET
 :scheme: https
 :authority: example.data.com
@@ -63,13 +108,22 @@ uuid: 2
 x-request-header: test_request
 uuid: 3
 
-``
+[DEBUG]: Received DATA frame with stream id 5
+[INFO]: Equals Success: Key: "3", Field Name: ":authority", Value: "example.data.com"
+[INFO]: Equals Success: Key: "3", Field Name: ":method", Value: "GET"
+[INFO]: Equals Success: Key: "3", Field Name: ":path", Value: "/b/path"
+[INFO]: Equals Success: Key: "3", Field Name: ":scheme", Value: "https"
+[INFO]: Equals Success: Key: "3", Field Name: "x-request-header", Value: "test_request"
+[DEBUG]: HTTP/2 stream is closed with id: 5
+[DEBUG]: Request with key 3 passed validation.
+    [DEBUG]: Submitting HEADERS frame for key 3 on stream 5.
+    [DEBUG]: Submitted the following HTTP/2 response headers for key 3 on stream 5:
 :status: 200
 x-response-header: response
 uuid: 3
 
-``
-``Received an HTTP/2 request for key 4 with stream id 7:
+[DEBUG]: Received HEADERS frame with stream id 7
+[DEBUG]: Received an HTTP/2 request for key 4 with stream id 7:
 :method: GET
 :scheme: https
 :authority: example.data.com
@@ -77,17 +131,45 @@ uuid: 3
 x-request-header: test_request
 uuid: 4
 
-``
-``Sent the following HTTP/2 response headers for key 4 with stream id 7:
+[DEBUG]: Received DATA frame with stream id 7
+[INFO]: Equals Success: Key: "4", Field Name: ":authority", Value: "example.data.com"
+[INFO]: Equals Success: Key: "4", Field Name: ":method", Value: "GET"
+[INFO]: Equals Success: Key: "4", Field Name: ":path", Value: "/b/path"
+[INFO]: Equals Success: Key: "4", Field Name: ":scheme", Value: "https"
+[INFO]: Equals Success: Key: "4", Field Name: "x-request-header", Value: "test_request"
+[DEBUG]: HTTP/2 stream is closed with id: 7
+[DEBUG]: Request with key 4 passed validation.
+    [DEBUG]: Submitting HEADERS frame for key 4 on stream 7.
+    [DEBUG]: Submitted the following HTTP/2 response headers for key 4 on stream 7:
 :status: 200
 x-response-header: response
 content-length: 0
 uuid: 4
 
-``
-``Received an HTTP/2 request for key 5 with stream id 9:
-``
-``headers``key 5``
+[DEBUG]: Received HEADERS frame with stream id 9
+[DEBUG]: Received an HTTP/2 request for key 5 with stream id 9:
+:method: GET
+:scheme: https
+:authority: example.data.com
+:path: /a/path?q=3
+accept: */*
+accept-language: en-us
+accept-encoding: gzip
+host: example.data.com
+content-length: 0
+uuid: 5
+
+[DEBUG]: Received DATA frame with stream id 9
+[INFO]: Equals Success: Key: "5", Field Name: ":authority", Value: "example.data.com"
+[INFO]: Equals Success: Key: "5", Field Name: ":method", Value: "GET"
+[INFO]: Equals Success: Key: "5", Field Name: ":path", Value: "/a/path?q=3"
+[INFO]: Equals Success: Key: "5", Field Name: ":scheme", Value: "https"
+[INFO]: Equals Success: Key: "5", Field Name: "host", Value: "example.data.com"
+[INFO]: Equals Success: Key: "5", URI Part: "scheme", Value: "https"
+[INFO]: Equals Success: Key: "5", URI Part: "host", Value: "example.data.com"
+[INFO]: Equals Success: Key: "5", URI Part: "net-loc", Value: "example.data.com"
+[INFO]: Equals Success: Key: "5", URI Part: "path", Value: "/a/path"
+[DEBUG]: Sent the following HTTP/2 response headers for key 5 with stream id 9:
 :status: 200
 cache-control: private
 content-type: application/json;charset=utf-8
@@ -100,7 +182,19 @@ Trailer Headers:
 ----------------
 x-test-trailer-1: one
 x-test-trailer-2: two
-``
-``body``key 5``
+
+[DEBUG]: Sent an HTTP/2 body of 16 bytes for key 5 of stream id 9:
 0123456789abcdef
-``
+[DEBUG]: HTTP/2 stream is closed with id: 9
+[DEBUG]: Request with key 5 passed validation.
+[DEBUG]: Received GOAWAY frame with last stream id 0, error code 0
+  [DEBUG]: Poll called on a TLS session closed by the peer.
+[DEBUG]: Checking for proxy protocol header.
+  [DEBUG]: Peeking at the socketdata to check PROXY header
+  [DEBUG]: Attempting to parse PROXY header
+    [DEBUG]: No valid PROXY protocol detected.
+  [DEBUG]: No valid PROXY header found, passing through.
+  [DEBUG]: Finished accept using TLSSession
+  [DEBUG]: Negotiated ALPN: h2, HTTP/2 is negotiated.
+  [DEBUG]: Finished accept using H2Session
+[DEBUG]: Handling SIGINT: shutting down and exiting with a 0 response code because no errors have been seen.

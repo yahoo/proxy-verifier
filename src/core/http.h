@@ -359,7 +359,10 @@ public:
   /** Return whether any verification rules were configured. */
   bool has_rules() const;
 
-  bool verify(swoc::TextView transaction_key, HttpFields const &rules_) const;
+  bool verify(
+      swoc::TextView transaction_key,
+      HttpFields const &rules_,
+      bool ignore_http2_hop_by_hop_fields = false) const;
 
   friend class HttpHeader;
 
@@ -392,9 +395,14 @@ public:
 
   /// Important header fields.
   /// @{
+  static constexpr swoc::TextView FIELD_CONNECTION = "connection";
   static constexpr swoc::TextView FIELD_CONTENT_LENGTH = "content-length";
+  static constexpr swoc::TextView FIELD_KEEP_ALIVE = "keep-alive";
+  static constexpr swoc::TextView FIELD_PROXY_CONNECTION = "proxy-connection";
   static constexpr swoc::TextView FIELD_SET_COOKIE = "set-cookie";
+  static constexpr swoc::TextView FIELD_TE = "te";
   static constexpr swoc::TextView FIELD_TRANSFER_ENCODING = "transfer-encoding";
+  static constexpr swoc::TextView FIELD_UPGRADE = "upgrade";
   /// @}
 
   /// Mark which status codes have no content by default.

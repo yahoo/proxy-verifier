@@ -42,12 +42,31 @@ proxy = r.AddProxyProcess("proxy2", listen_port=client.Variables.https_port,
                           use_http2_to_2=True)
 
 proxy.Streams.stdout = "gold/http2_to_http2_proxy.gold"
-client.Streams.stdout = "gold/http2_to_http2_client.gold"
-server.Streams.stdout = "gold/http2_to_http2_server.gold"
 
+client.Streams.stdout += Testers.ContainsExpression(
+    "Received an HTTP/2 response for key 1 with stream id 1:",
+    "The client should receive the first HTTP/2 response.")
+client.Streams.stdout += Testers.ContainsExpression(
+    "Received an HTTP/2 response for key 4 with stream id 7:",
+    "The client should receive the empty-body HTTP/2 response with Content-Length: 0.")
+client.Streams.stdout += Testers.ContainsExpression(
+    "Received HTTP/2 response trailers for key 5 with stream id 9:",
+    "The client should receive the HTTP/2 response trailers.")
+client.Streams.stdout += Testers.ContainsExpression(
+    "HTTP/2 replay metrics: requests-submitted=5",
+    "The HTTP/2 replay should complete and emit replay metrics.")
 client.Streams.stdout += Testers.ExcludesExpression(
     "Violation:", "There should be no verification errors because there are none added.")
 
+server.Streams.stdout += Testers.ContainsExpression(
+    "Request with key 2 passed validation.",
+    "The server should validate the POST transaction on the HTTP/2 session.")
+server.Streams.stdout += Testers.ContainsExpression(
+    "Submitted the following HTTP/2 response headers for key 4 on stream 7:",
+    "The server should send the empty-body HTTP/2 response.")
+server.Streams.stdout += Testers.ContainsExpression(
+    "Request with key 5 passed validation.",
+    "The server should validate the trailer-bearing HTTP/2 transaction.")
 server.Streams.stdout += Testers.ExcludesExpression(
     "Violation:", "There should be no verification errors because there are none added.")
 
@@ -125,3 +144,37 @@ server.Streams.stdout += Testers.ContainsExpression(
     "Verify that an HTTP/1 response was sent to the client.")
 server.Streams.stdout += Testers.ExcludesExpression(
     "Violation:", "There should be no verification errors because there are none added.")
+
+#
+# Test 5: Verify connection-specific headers are sanitized for HTTP/2 replays.
+#
+r = Test.AddTestRun("Verify HTTP/2 strips connection-specific headers")
+client = r.AddClientProcess("client5", "replay_files/http2_hop_by_hop.yaml")
+server = r.AddServerProcess("server5", "replay_files/http2_hop_by_hop.yaml")
+proxy = r.AddProxyProcess("proxy5", listen_port=client.Variables.https_port,
+                          server_port=server.Variables.https_port, use_ssl=True,
+                          use_http2_to_2=True)
+
+client.Streams.stdout += Testers.ContainsExpression(
+    "Received an HTTP/2 response for key h2-hop-by-hop-1 with stream id 1:",
+    "The first concurrent HTTP/2 response should complete successfully.")
+client.Streams.stdout += Testers.ContainsExpression(
+    "Received an HTTP/2 response for key h2-hop-by-hop-2 with stream id 3:",
+    "The second concurrent HTTP/2 response should complete successfully.")
+client.Streams.stdout += Testers.ExcludesExpression(
+    "HTTP/2 final response drain made no forward progress",
+    "The client should not hit the HTTP/2 stuck-session timeout summary.")
+client.Streams.stdout += Testers.ExcludesExpression(
+    "Violation:", "The client should not report verification failures after sanitizing headers.")
+
+server.Streams.stdout += Testers.ContainsExpression(
+    "Skipping HTTP/2 connection-specific field connection: keep-alive",
+    "The server should strip invalid connection-specific response headers.")
+server.Streams.stdout += Testers.ContainsExpression(
+    "Skipping HTTP/2 connection-specific field upgrade: h2c",
+    "The server should strip invalid upgrade headers from HTTP/2 responses.")
+server.Streams.stdout += Testers.ExcludesExpression(
+    "Received GOAWAY frame with last stream id 0, error code 1",
+    "The client should no longer send a protocol-error GOAWAY for these streams.")
+server.Streams.stdout += Testers.ExcludesExpression(
+    "Violation:", "The server should not report verification failures after sanitizing headers.")
