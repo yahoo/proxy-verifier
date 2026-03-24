@@ -47,6 +47,7 @@ namespace
 static constexpr bool RULE_IS_CASE_INSENSITIVE = true;
 static constexpr bool RULE_IS_INVERTED = true;
 static constexpr size_t MAX_QUEUED_REPLAY_BYTES = 128U * 1024U * 1024U;
+static constexpr auto SHUTDOWN_POLL_INTERVAL = 100ms;
 
 struct ReplayParseThreadCounts
 {
@@ -127,15 +128,21 @@ public:
    * @return True if the file was queued, false if reading has been stopped.
    */
   bool
-  push(swoc::file::path const &path, std::string &&file_content)
+  push(
+      swoc::file::path const &path,
+      std::string &&file_content,
+      volatile std::sig_atomic_t const &shutdown_flag)
   {
     auto const file_size = file_content.size();
     std::unique_lock<std::mutex> lock(m_queue_mutex);
-    m_reader_cv.wait(lock, [this, file_size]() {
-      return m_done_reading_files || m_queue.empty() ||
-             m_queued_bytes + file_size <= m_max_queued_bytes;
-    });
-    if (m_done_reading_files) {
+    // The shutdown signal handler cannot safely notify condition variables, so
+    // wake periodically to observe the shared shutdown flag.
+    while (!shutdown_flag && !m_done_reading_files && !m_queue.empty() &&
+           m_queued_bytes + file_size > m_max_queued_bytes)
+    {
+      m_reader_cv.wait_for(lock, SHUTDOWN_POLL_INTERVAL);
+    }
+    if (shutdown_flag || m_done_reading_files) {
       return false;
     }
     m_queued_bytes += file_size;
@@ -154,13 +161,17 @@ public:
    * @return True if there is content to pull, false otherwise.
    */
   bool
-  pop(swoc::file::path &path, std::string &file_content)
+  pop(swoc::file::path &path,
+      std::string &file_content,
+      volatile std::sig_atomic_t const &shutdown_flag)
   {
     std::unique_lock<std::mutex> lock(m_queue_mutex);
-    m_parser_cv.wait(lock, [this]() { return !m_queue.empty() || m_done_reading_files; });
+    while (!shutdown_flag && m_queue.empty() && !m_done_reading_files) {
+      m_parser_cv.wait_for(lock, SHUTDOWN_POLL_INTERVAL);
+    }
     // Note that we check empty rather than m_done_reading_files because reader
     // threads generally finish before parsing threads.
-    if (m_queue.empty()) {
+    if (shutdown_flag || m_queue.empty()) {
       return false;
     }
     auto file_info = std::move(m_queue.front());
@@ -223,7 +234,7 @@ private:
 /** The thread's logic for parsing file content and placing it in the queue. */
 Errata
 reader_thread(
-    bool &shutdown_flag,
+    volatile std::sig_atomic_t &shutdown_flag,
     ReadFileQueue &queue,
     const std::vector<swoc::file::path> &files,
     std::atomic<size_t> &index)
@@ -242,7 +253,7 @@ reader_thread(
       errata.note(S_ERROR, R"(Error loading "{}": {})", file_path, ec);
       return errata;
     }
-    if (!queue.push(file_path, std::move(content))) {
+    if (!queue.push(file_path, std::move(content), shutdown_flag)) {
       break;
     }
   }
@@ -250,12 +261,15 @@ reader_thread(
 }
 
 Errata
-parser_thread(bool &shutdown_flag, ReadFileQueue &queue, YamlParser::loader_t &loader)
+parser_thread(
+    volatile std::sig_atomic_t &shutdown_flag,
+    ReadFileQueue &queue,
+    YamlParser::loader_t &loader)
 {
   Errata errata;
   swoc::file::path path;
   std::string content;
-  while (!shutdown_flag && queue.pop(path, content)) {
+  while (!shutdown_flag && queue.pop(path, content, shutdown_flag)) {
     errata.note(loader(path, content));
   }
   return errata;
@@ -452,7 +466,7 @@ Errata
 read_and_parse_files(
     std::vector<swoc::file::path> const &files,
     YamlParser::loader_t &loader,
-    bool &shutdown_flag,
+    volatile std::sig_atomic_t &shutdown_flag,
     int n_reader_threads,
     int n_parser_threads)
 {
@@ -2543,7 +2557,7 @@ Errata
 YamlParser::load_replay_files(
     swoc::file::path const &path,
     loader_t loader,
-    bool &shutdown_flag,
+    volatile std::sig_atomic_t &shutdown_flag,
     int n_reader_threads,
     int n_parser_threads)
 {

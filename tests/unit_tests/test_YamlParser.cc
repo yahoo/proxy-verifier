@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -660,7 +661,7 @@ TEST_CASE("Verify load_replay_files parses all files with multiple parser thread
   std::atomic<int> parsed_sessions = 0;
   std::atomic<int> parsed_transactions = 0;
   std::atomic<int> parsed_requests = 0;
-  bool shutdown_flag = false;
+  volatile std::sig_atomic_t shutdown_flag = 0;
 
   auto errata = YamlParser::load_replay_files(
       swoc::file::path{temp_dir.path.string()},
@@ -682,6 +683,78 @@ TEST_CASE("Verify load_replay_files parses all files with multiple parser thread
   CHECK(parsed_sessions.load() == file_count * sessions_per_file);
   CHECK(parsed_transactions.load() == file_count * sessions_per_file * transactions_per_session);
   CHECK(parsed_requests.load() == file_count * sessions_per_file * transactions_per_session);
+}
+
+TEST_CASE(
+    "Verify load_replay_files exits on shutdown while replay file readers are back-pressured",
+    "[yaml]")
+{
+  LocalizerPhaseGuard localizer_phase;
+  TemporaryDirectory temp_dir;
+
+  static constexpr int file_count = 3;
+  static constexpr size_t file_size = 70U * 1024U * 1024U;
+  static constexpr int reader_thread_count = 3;
+  static constexpr int parser_thread_count = 1;
+
+  for (int file_index = 0; file_index < file_count; ++file_index) {
+    auto const file_path = temp_dir.path / ("replay_" + std::to_string(file_index) + ".yaml");
+    std::ofstream file(file_path, std::ios::binary);
+    REQUIRE(file.is_open());
+    file.close();
+
+    std::error_code ec;
+    std::filesystem::resize_file(file_path, file_size, ec);
+    REQUIRE(!ec);
+  }
+
+  std::mutex loader_mutex;
+  std::condition_variable loader_cvar;
+  bool loader_entered = false;
+  bool release_loader = false;
+  volatile std::sig_atomic_t shutdown_flag = 0;
+  bool load_ok = false;
+  std::atomic<int> loader_calls = 0;
+
+  std::thread loading_thread([&]() {
+    auto errata = YamlParser::load_replay_files(
+        swoc::file::path{temp_dir.path.string()},
+        [&](swoc::file::path const &, std::string const &) -> swoc::Errata {
+          if (loader_calls.fetch_add(1) == 0) {
+            {
+              std::lock_guard<std::mutex> lock(loader_mutex);
+              loader_entered = true;
+            }
+            loader_cvar.notify_one();
+
+            std::unique_lock<std::mutex> lock(loader_mutex);
+            loader_cvar.wait(lock, [&]() { return release_loader; });
+          }
+          return {};
+        },
+        shutdown_flag,
+        reader_thread_count,
+        parser_thread_count);
+    load_ok = errata.is_ok();
+  });
+
+  {
+    std::unique_lock<std::mutex> lock(loader_mutex);
+    REQUIRE(loader_cvar.wait_for(lock, 5s, [&]() { return loader_entered; }));
+  }
+
+  std::this_thread::sleep_for(500ms);
+  {
+    std::lock_guard<std::mutex> lock(loader_mutex);
+    shutdown_flag = true;
+    release_loader = true;
+  }
+  loader_cvar.notify_one();
+
+  loading_thread.join();
+
+  CHECK(load_ok);
+  CHECK(loader_calls.load() == 1);
 }
 
 TEST_CASE(

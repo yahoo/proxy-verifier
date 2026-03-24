@@ -8,6 +8,7 @@
 #pragma once
 
 #include <chrono>
+#include <csignal>
 #include <condition_variable>
 #include <functional>
 #include <memory>
@@ -398,7 +399,7 @@ public:
   static swoc::Errata load_replay_files(
       swoc::file::path const &path,
       loader_t loader,
-      bool &shutdown_flag,
+      volatile std::sig_atomic_t &shutdown_flag,
       int n_reader_threads = 0,
       int n_parser_threads = 0);
 

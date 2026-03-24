@@ -14,6 +14,7 @@
 #include "core/YamlParser.h"
 
 #include <chrono>
+#include <csignal>
 #include <list>
 #include <mutex>
 #include <string>
@@ -181,7 +182,7 @@ private:
   Txn m_txn;
 };
 
-bool Shutdown_Flag = false;
+volatile std::sig_atomic_t Shutdown_Flag = 0;
 
 /** Whether replay should ignore verification rules that were never reached. */
 bool Allow_Unprocessed_Verifications = false;
@@ -624,6 +625,18 @@ private:
 
 int Engine::process_exit_code = 0;
 
+/** Handle SIGINT or SIGTERM by requesting client shutdown.
+ *
+ * @param[in] signal The signal being handled.
+ */
+void
+shutdown_signal_handler(int signal)
+{
+  if (signal == SIGINT || signal == SIGTERM) {
+    Shutdown_Flag = 1;
+  }
+}
+
 void
 Run_Session(Ssn const &ssn, TargetSelector &target_selector)
 {
@@ -855,6 +868,9 @@ Engine::parse_replay_files()
     process_exit_code = 1;
     return false;
   }
+  if (Shutdown_Flag) {
+    return false;
+  }
   m_session_count = Session_List.size();
   for (auto ssn : Session_List) {
     m_transaction_count += ssn->_transactions.size();
@@ -952,6 +968,9 @@ bool
 Engine::replay_traffic()
 {
   Errata errata;
+  if (Shutdown_Flag) {
+    return false;
+  }
 
   auto sleep_limit_arg{arguments.get("sleep-limit")};
   microseconds sleep_limit = 500ms;
@@ -1090,9 +1109,12 @@ Engine::replay_traffic()
   auto replay_start_time = ClockType::now();
   unsigned n_ssn = 0;
   unsigned n_txn = 0;
-  for (int i = 0; ((i < repeat_count) || run_continuously); i++) {
+  for (int i = 0; !Shutdown_Flag && ((i < repeat_count) || run_continuously); i++) {
     auto const this_iteration_start_time = ClockType::now();
     for (auto ssn : Session_List) {
+      if (Shutdown_Flag) {
+        break;
+      }
       if (ssn->_user_specified_delay_duration > 0us) {
         sleep_for(ssn->_user_specified_delay_duration);
       } else if (use_sleep_time) {
@@ -1106,6 +1128,9 @@ Engine::replay_traffic()
         if (nexttime > curtime) {
           sleep_for(std::min(sleep_limit, duration_cast<microseconds>(nexttime - curtime)));
         }
+      }
+      if (Shutdown_Flag) {
+        break;
       }
       ClientThreadInfo *thread_info =
           dynamic_cast<ClientThreadInfo *>(Client_Thread_Pool.get_worker());
@@ -1124,9 +1149,14 @@ Engine::replay_traffic()
       n_txn += ssn->_transactions.size();
     }
   }
+  auto const interrupted = Shutdown_Flag;
   // Wait until all threads are done
-  Shutdown_Flag = true;
+  Shutdown_Flag = 1;
   Client_Thread_Pool.join_threads();
+
+  if (interrupted) {
+    return false;
+  }
 
   auto replay_duration = duration_cast<milliseconds>(ClockType::now() - replay_start_time);
   errata.note(
@@ -1193,10 +1223,9 @@ Engine::command_run()
   if (!initialize_client()) {
     return;
   }
-  if (!replay_traffic()) {
-    return;
-  }
-  if (!cleanup_client()) {
+  auto const replay_completed = replay_traffic();
+  cleanup_client();
+  if (!replay_completed) {
     return;
   }
 };
@@ -1205,6 +1234,13 @@ int
 main(int /* argc */, char const *argv[])
 {
   block_sigpipe();
+
+  struct sigaction sigIntHandler;
+  sigIntHandler.sa_handler = shutdown_signal_handler;
+  sigemptyset(&sigIntHandler.sa_mask);
+  sigIntHandler.sa_flags = 0;
+  sigaction(SIGINT, &sigIntHandler, nullptr);
+  sigaction(SIGTERM, &sigIntHandler, nullptr);
 
   Engine engine;
 

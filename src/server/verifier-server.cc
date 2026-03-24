@@ -64,7 +64,8 @@ int Send_Buffer_size = 0;
 std::list<std::unique_ptr<std::thread>> Accept_Threads;
 
 /** Set this to true when it's time for the threads to stop. */
-bool Shutdown_Flag = false;
+volatile std::sig_atomic_t Shutdown_Flag = 0;
+volatile std::sig_atomic_t Shutdown_Signal = 0;
 
 /** Whether shutdown should ignore verification rules that were never reached. */
 bool Allow_Unprocessed_Verifications = false;
@@ -196,6 +197,21 @@ int Engine::process_exit_code = 0;
 void
 shutdown_signal_handler(int signal)
 {
+  if (Shutdown_Signal == 0) {
+    Shutdown_Signal = signal;
+  }
+  Shutdown_Flag = 1;
+}
+
+void
+log_shutdown_signal()
+{
+  auto const signal = Shutdown_Signal;
+  if (signal == 0) {
+    return;
+  }
+  Shutdown_Signal = 0;
+
   Errata errata;
   auto const *signal_name = signal == SIGTERM ? "SIGTERM" : "SIGINT";
   if (Engine::process_exit_code == 0) {
@@ -212,7 +228,6 @@ shutdown_signal_handler(int signal)
         signal_name,
         Engine::process_exit_code);
   }
-  Shutdown_Flag = true;
 }
 
 std::mutex TransactionsMutex;
@@ -1030,46 +1045,48 @@ Engine::command_run()
       process_exit_code = 1;
       return;
     }
-    Session::init(Transactions.size());
+    if (!Shutdown_Flag) {
+      Session::init(Transactions.size());
 
-    size_t max_content_length = 0;
-    for (auto const &[key, txn] : Transactions) {
-      if (txn._rsp._content_data_list.front() == nullptr)
-      { // don't check responses with literal content.
-        max_content_length = std::max<size_t>(max_content_length, txn._rsp._content_length);
+      size_t max_content_length = 0;
+      for (auto const &[key, txn] : Transactions) {
+        if (txn._rsp._content_data_list.front() == nullptr)
+        { // don't check responses with literal content.
+          max_content_length = std::max<size_t>(max_content_length, txn._rsp._content_length);
+        }
       }
-    }
-    HttpHeader::set_max_content_length(max_content_length);
-    for (auto &[key, txn] : Transactions) {
-      if (txn._rsp._content_data_list.front() == nullptr) { // fill in from static content.
-        txn._rsp._content_data_list.front() = txn._rsp._content.data();
+      HttpHeader::set_max_content_length(max_content_length);
+      for (auto &[key, txn] : Transactions) {
+        if (txn._rsp._content_data_list.front() == nullptr) { // fill in from static content.
+          txn._rsp._content_data_list.front() = txn._rsp._content.data();
+        }
       }
-    }
 
-    errata.note(
-        S_INFO,
-        "Ready with {} transaction{}.",
-        Transactions.size(),
-        swoc::bwf::If(Transactions.size() != 1, "s"));
+      errata.note(
+          S_INFO,
+          "Ready with {} transaction{}.",
+          Transactions.size(),
+          swoc::bwf::If(Transactions.size() != 1, "s"));
 
-    for (auto &server_addr : server_addrs) {
-      // Set up listen port.
-      if (server_addr.is_valid()) {
-        errata.note(do_listen(server_addr, !DO_HTTPS, !DO_HTTP3));
+      for (auto &server_addr : server_addrs) {
+        // Set up listen port.
+        if (server_addr.is_valid()) {
+          errata.note(do_listen(server_addr, !DO_HTTPS, !DO_HTTP3));
+        }
+        if (!errata.is_ok()) {
+          process_exit_code = 1;
+          return;
+        }
       }
-      if (!errata.is_ok()) {
-        process_exit_code = 1;
-        return;
+      for (auto &server_addr_https : server_addrs_https) {
+        if (server_addr_https.is_valid()) {
+          errata.note(do_listen(server_addr_https, DO_HTTPS, !DO_HTTP3));
+        }
       }
-    }
-    for (auto &server_addr_https : server_addrs_https) {
-      if (server_addr_https.is_valid()) {
-        errata.note(do_listen(server_addr_https, DO_HTTPS, !DO_HTTP3));
-      }
-    }
-    for (auto &server_addr_http3 : server_addrs_http3) {
-      if (server_addr_http3.is_valid()) {
-        errata.note(do_listen(server_addr_http3, DO_HTTPS, DO_HTTP3));
+      for (auto &server_addr_http3 : server_addrs_http3) {
+        if (server_addr_http3.is_valid()) {
+          errata.note(do_listen(server_addr_http3, DO_HTTPS, DO_HTTP3));
+        }
       }
     }
   } // End of scope for errata so it gets logged.
@@ -1078,6 +1095,7 @@ Engine::command_run()
   while (!Shutdown_Flag) {
     sleep_for(Thread_Sleep_Interval);
   }
+  log_shutdown_signal();
   for_each(
       Accept_Threads.begin(),
       Accept_Threads.end(),
