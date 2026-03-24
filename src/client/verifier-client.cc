@@ -13,6 +13,7 @@
 #include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
 
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <list>
@@ -74,10 +75,8 @@ struct TargetSelector
     if (http_targets.empty()) {
       return nullptr;
     }
-    auto const *http_target = &http_targets[http_target_index];
-    if (++http_target_index >= http_targets.size()) {
-      http_target_index = 0;
-    }
+    auto const index = http_target_index.fetch_add(1, std::memory_order_relaxed);
+    auto const *http_target = &http_targets[index % http_targets.size()];
     return http_target;
   }
 
@@ -88,10 +87,8 @@ struct TargetSelector
     if (https_targets.empty()) {
       return nullptr;
     }
-    auto const *https_target = &https_targets[https_target_index];
-    if (++https_target_index >= https_targets.size()) {
-      https_target_index = 0;
-    }
+    auto const index = https_target_index.fetch_add(1, std::memory_order_relaxed);
+    auto const *https_target = &https_targets[index % https_targets.size()];
     return https_target;
   }
 
@@ -102,10 +99,8 @@ struct TargetSelector
     if (http3_targets.empty()) {
       return nullptr;
     }
-    auto const *http3_target = &http3_targets[http3_target_index];
-    if (++http3_target_index >= http3_targets.size()) {
-      http3_target_index = 0;
-    }
+    auto const index = http3_target_index.fetch_add(1, std::memory_order_relaxed);
+    auto const *http3_target = &http3_targets[index % http3_targets.size()];
     return http3_target;
   }
 
@@ -114,9 +109,9 @@ struct TargetSelector
   std::deque<swoc::IPEndpoint> http3_targets;
 
 private:
-  size_t http_target_index = 0;
-  size_t https_target_index = 0;
-  size_t http3_target_index = 0;
+  std::atomic<size_t> http_target_index = 0;
+  std::atomic<size_t> https_target_index = 0;
+  std::atomic<size_t> http3_target_index = 0;
 };
 
 TargetSelector Target_Selector;
