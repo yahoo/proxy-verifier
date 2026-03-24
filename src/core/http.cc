@@ -1784,10 +1784,16 @@ Session::run_transaction(Txn const &json_txn)
         json_txn.mark_response_verification_performed();
         // Verify the status code and reason string.
         bool found_violation = false;
-        if (json_txn._rsp._status != 0 && rsp_hdr_from_wire._status != json_txn._rsp._status &&
-            (rsp_hdr_from_wire._status != 200 || json_txn._rsp._status != 304) &&
-            (rsp_hdr_from_wire._status != 304 || json_txn._rsp._status != 200))
-        {
+        auto const status_matches_exactly =
+            json_txn._rsp._status == 0 || rsp_hdr_from_wire._status == json_txn._rsp._status;
+        auto const status_matches_304_equivalent =
+            (rsp_hdr_from_wire._status == 200 && json_txn._rsp._status == 304) ||
+            (rsp_hdr_from_wire._status == 304 && json_txn._rsp._status == 200);
+        auto const skip_reason_phrase_check = status_matches_304_equivalent ||
+                                              json_txn._rsp._reason.empty() ||
+                                              rsp_hdr_from_wire._reason.empty();
+
+        if (!status_matches_exactly && !status_matches_304_equivalent) {
           errata.note(
               S_ERROR,
               R"(HTTP/1 Status Violation: expected {} got {}, key: {})",
@@ -1795,8 +1801,11 @@ Session::run_transaction(Txn const &json_txn)
               rsp_hdr_from_wire._status,
               key);
           found_violation = true;
-        } else if (
-            !json_txn._rsp._reason.empty() && rsp_hdr_from_wire._reason != json_txn._rsp._reason) {
+        } else if (!skip_reason_phrase_check && rsp_hdr_from_wire._reason != json_txn._rsp._reason)
+        {
+          // Once we accept the status comparison, the reason phrase is only
+          // actionable when both sides provided one and we are not in the
+          // tolerated 200/304 ATS cache crossover case.
           errata.note(
               S_ERROR,
               R"(HTTP/1 Reason String Violation: expected "{}" got "{}", key: {})",

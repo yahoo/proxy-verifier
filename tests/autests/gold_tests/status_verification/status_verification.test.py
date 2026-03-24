@@ -33,4 +33,7 @@ client.Streams.stdout += Testers.ExcludesExpression(
 client.Streams.stdout += Testers.ContainsExpression(
     'Reason String Violation:.*key: 4',
     'Transaction 4 should have violation as the reason string does not match the expected.')
+client.Streams.stdout += Testers.ExcludesExpression(
+    'Violation.*key: 5',
+    'Transaction 5 should not have a violation for the tolerated 200/304 cache crossover.')
 client.ReturnCode = 1

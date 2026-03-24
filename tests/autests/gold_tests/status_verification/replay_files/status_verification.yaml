@@ -103,3 +103,27 @@ sessions:
           # expected reason string doesn't match the one listed in
           # server-response
           reason: Not Found
+
+      - client-request:
+          version: "1.1"
+          method: "GET"
+          url: "http://example.one:8080/config/settings.yaml?q=3"
+          headers:
+            fields:
+              - [Host, example.one]
+              - [uuid, 5]
+
+        server-response:
+          status: 304
+          reason: Not Modified
+          content:
+            size: 0
+          headers:
+            fields:
+              - [Content-Length, 0]
+              - [uuid, 5]
+        proxy-response:
+          # ATS can legitimately serve a 304-style cached response where the
+          # recorded expectation was 200 OK.
+          status: 200
+          reason: OK
