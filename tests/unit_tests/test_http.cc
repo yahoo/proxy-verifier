@@ -1,7 +1,7 @@
 /** @file
  * Unit tests for HttpReplay.h.
  *
- * Copyright 2020, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -289,4 +289,86 @@ TEST_CASE("Verify only HTTP/1 scalar methods count as request verification rules
   http2_txn._req._method = "GET";
 
   CHECK_FALSE(http2_txn.request_has_verification_rules());
+}
+
+TEST_CASE(
+    "Verify expect: absent transactions do not count as unprocessed request verifications",
+    "[Txn]")
+{
+  Txn negative_txn{false};
+  negative_txn._req.set_is_http1();
+  negative_txn._req.set_is_request();
+  negative_txn._req.set_key("absent-key");
+  negative_txn._request_expectation = Txn::RequestPresenceExpectation::ABSENT;
+  negative_txn._req._method = "GET";
+  negative_txn._req._fields_rules->add_field("uuid", "absent-key");
+
+  std::vector<Txn const *> transactions{&negative_txn};
+  auto errata = check_for_unprocessed_verifications(
+      transactions,
+      UnprocessedVerificationTarget::Request,
+      "before shutdown",
+      "Shutdown occurred");
+
+  CHECK(errata.is_ok());
+  CHECK_FALSE(negative_txn.request_has_verification_rules());
+}
+
+TEST_CASE("Verify expect: present transactions fail if the request never arrives", "[Txn]")
+{
+  Txn positive_txn{false};
+  positive_txn._req.set_is_http1();
+  positive_txn._req.set_is_request();
+  positive_txn._req.set_key("present-key");
+  positive_txn._request_expectation = Txn::RequestPresenceExpectation::PRESENT;
+
+  std::vector<Txn const *> transactions{&positive_txn};
+  auto errata =
+      check_for_missing_expected_requests(transactions, "before shutdown", "Shutdown occurred");
+
+  CHECK_FALSE(errata.is_ok());
+}
+
+TEST_CASE(
+    "Verify expect: present missing requests do not duplicate unprocessed verification failures",
+    "[Txn]")
+{
+  Txn positive_txn{false};
+  positive_txn._req.set_is_http1();
+  positive_txn._req.set_is_request();
+  positive_txn._req.set_key("present-key");
+  positive_txn._request_expectation = Txn::RequestPresenceExpectation::PRESENT;
+  positive_txn._req._method = "GET";
+
+  std::vector<Txn const *> transactions{&positive_txn};
+  auto const missing_request_errata =
+      check_for_missing_expected_requests(transactions, "before shutdown", "Shutdown occurred");
+  auto const unprocessed_errata = check_for_unprocessed_verifications(
+      transactions,
+      UnprocessedVerificationTarget::Request,
+      "before shutdown",
+      "Shutdown occurred");
+
+  CHECK_FALSE(missing_request_errata.is_ok());
+  CHECK(unprocessed_errata.is_ok());
+}
+
+TEST_CASE(
+    "Verify unspecified transactions still fail unprocessed request verification checks",
+    "[Txn]")
+{
+  Txn unspecified_txn{false};
+  unspecified_txn._req.set_is_http1();
+  unspecified_txn._req.set_is_request();
+  unspecified_txn._req.set_key("unspecified-key");
+  unspecified_txn._req._method = "GET";
+
+  std::vector<Txn const *> transactions{&unspecified_txn};
+  auto errata = check_for_unprocessed_verifications(
+      transactions,
+      UnprocessedVerificationTarget::Request,
+      "before shutdown",
+      "Shutdown occurred");
+
+  CHECK_FALSE(errata.is_ok());
 }

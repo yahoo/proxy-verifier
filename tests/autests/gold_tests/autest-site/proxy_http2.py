@@ -262,6 +262,19 @@ class Http2ConnectionManager(object):
             request_id = request_headers.get('uuid', '<unknown>')
             self._close_downstream_connection(request_id)
             return
+        local_response = directive_engine.get_local_response()
+        if local_response is not None:
+            status, reason = local_response
+            request_id = request_headers.get('uuid', '<unknown>')
+            print(f"Serving local response for key {request_id} with status {status}.")
+            request_headers_for_print = list(pseudo_headers.items()) + list(request_headers.items())
+            response_headers = [
+                (':status', str(status)),
+                ('content-length', '0'),
+            ]
+            self.print_info(request_headers_for_print, req_body, response_headers, b'', None,
+                            status, reason)
+            return response_headers, b'', None
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         scheme = pseudo_headers[':scheme']
@@ -337,6 +350,19 @@ class Http2ConnectionManager(object):
             request_id = request_headers.get('uuid', '<unknown>')
             self._close_downstream_connection(request_id)
             return
+        local_response = directive_engine.get_local_response()
+        if local_response is not None:
+            status, reason = local_response
+            request_id = request_headers.get('uuid', '<unknown>')
+            print(f"Serving local response for key {request_id} with status {status}.")
+            request_headers_for_print = list(pseudo_headers.items()) + list(request_headers.items())
+            response_headers = [
+                (':status', str(status)),
+                ('content-length', '0'),
+            ]
+            self.print_info(request_headers_for_print, req_body, response_headers, b'', None,
+                            status, reason)
+            return response_headers, b'', None
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         scheme = pseudo_headers[':scheme']

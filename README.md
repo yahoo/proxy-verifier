@@ -14,6 +14,7 @@ Then copy and paste the output here.
 Table of Contents
 =================
 
+* [Table of Contents](#table-of-contents)
 * [Proxy Verifier](#proxy-verifier)
    * [Traffic Replay Specification](#traffic-replay-specification)
       * [HTTP Specification](#http-specification)
@@ -28,7 +29,9 @@ Table of Contents
       * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
       * [Keep Connection Open](#keep-connection-open)
    * [Traffic Verification Specification](#traffic-verification-specification)
+      * [Request Presence Verification](#request-presence-verification)
       * [Field Verification](#field-verification)
+      * [Request Method Verification](#request-method-verification)
       * [URL Verification](#url-verification)
       * [Status Verification](#status-verification)
       * [Body Verification](#body-verification)
@@ -38,10 +41,14 @@ Table of Contents
       * [Building from Source](#building-from-source)
          * [Prerequisites](#prerequisites)
          * [Build](#build)
+         * [Bootstrapping Dependencies Under CMake](#bootstrapping-dependencies-under-cmake)
          * [Using Prebuilt Libraries](#using-prebuilt-libraries)
+         * [Development Docker Images](#development-docker-images)
+         * [Install](#install)
          * [ASan Instrumentation](#asan-instrumentation)
          * [Debug Build](#debug-build)
-         * [Statically Link](#statically-link)
+         * [Portable Build](#portable-build)
+         * [Native Build](#native-build)
       * [Running the Tests](#running-the-tests)
          * [Unit Tests](#unit-tests)
          * [Gold Tests](#gold-tests)
@@ -54,6 +61,7 @@ Table of Contents
          * [--interface &lt;interface&gt;](#--interface-interface)
          * [--no-proxy](#--no-proxy)
          * [--strict](#--strict)
+         * [--allow-unprocessed-verifications](#--allow-unprocessed-verifications)
          * [--rate &lt;requests/second&gt;](#--rate-requestssecond)
          * [--repeat &lt;number&gt;](#--repeat-number)
          * [--run-continuously](#--run-continuously)
@@ -81,6 +89,7 @@ Table of Contents
    * [License](#license)
 
 <!-- Created by https://github.com/ekalinin/github-markdown-toc -->
+
 
 # Proxy Verifier
 
@@ -1051,6 +1060,72 @@ and no verification will be performed.
 
 The following sections describe how to specify traffic verification in the YAML
 replay file.
+
+### Request Presence Verification
+
+In some situations it is desired to verify whether a particular transaction
+does or does not reach the Verifier server. A common example is a cache hit
+where the proxy under test should reply directly rather than forwarding the
+request upstream. In other cases, it is important to verify that the keyed
+request definitely *does* reach the Verifier server.
+
+For these situations, Proxy Verifier supports a transaction-level expectation
+under `proxy-request` called `expect`:
+
+```YAML
+# Verify the proxy under test replies directly, without proxying this request
+# to the verifier-server, for example because ATS serves it from cache.
+- client-request:
+    method: GET
+    url: /cached/object
+    version: "1.1"
+    headers:
+      fields:
+      - [ Host, example.com ]
+      - [ uuid, cache-hit-1 ]
+
+  proxy-request:
+    expect: absent
+
+  proxy-response:
+    status: 200
+    reason: OK
+```
+
+Note the `proxy-request.expect: absent` node. With this directive, the Verifier
+server will verify that it never receives a request with the `cache-hit-1`
+`uuid`. If the proxy forwards the `cache-hit-1` request to the Verifier server,
+the server immediately reports a verification failure and, later upon exit,
+will exit with a non-zero shell status.
+
+The supported values are:
+
+Value    | Description
+-------- | -----------
+present  | The keyed request must reach the Verifier server. If it never arrives, the server fails at shutdown.
+absent   | The keyed request must not reach the Verifier server.
+
+If `proxy-request.expect` is omitted, then Proxy Verifier performs no explicit
+request-presence verification. In that case, `proxy-request` may still contain
+normal request verification directives, and those rules behave as they did
+before.
+
+When `proxy-request.expect: absent` is specified, no other verification
+directives should be provided. By definition, no request should be received so
+there shouldn't be anything to verify. If other verification directives are
+provided in addition to `absent` (such as expecting a certain header field or
+method), then this is considered a user error and parsing will fail.
+
+When `proxy-request.expect: present` is specified, request arrival is verified
+in addition to any normal `proxy-request` verification directives. This allows
+the user to require both that the keyed request reaches the Verifier server and
+that it matches any configured request verification rules.
+
+For `expect: absent`, `server-response` is optional. If the forbidden request
+does arrive and no `server-response` was configured, the Verifier server sends
+its built-in `404 Not Found` fallback response in addition to failing
+verification. If a specific response is desired in addition to the verification
+error, a `server-response` can be provided.
 
 ### Field Verification
 
@@ -2227,6 +2302,11 @@ unprocessed proxy-request verification. On the verifier-client this is checked
 after replay completes for unprocessed proxy-response verification. This
 catches cases such as the proxy crashing or otherwise failing to forward
 traffic.
+
+This does not apply to `proxy-request.expect: absent`. For that feature,
+"never reached" is the success case and an arriving request fails verification.
+It also does not apply to `proxy-request.expect: present`, because that is an
+explicit requirement that the keyed request reach the Verifier server.
 
 If a test intentionally tolerates that condition, pass
 `--allow-unprocessed-verifications` to the verifier-client or verifier-server

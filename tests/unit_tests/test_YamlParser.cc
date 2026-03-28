@@ -392,6 +392,112 @@ TEST_CASE("Verify server-response validation for on_connect", "[on_connect]")
   }
 }
 
+TEST_CASE("Verify proxy-request expectations parse correctly", "[yaml]")
+{
+  LocalizerPhaseGuard localizer_phase;
+
+  SECTION("Default expectation is unspecified")
+  {
+    auto const proxy_request_node = YAML::Load(R"(
+headers:
+  fields:
+    - [ uuid, key-1 ]
+)");
+    auto const parsed_expectation =
+        YamlParser::parse_request_presence_expectation(proxy_request_node);
+    REQUIRE(parsed_expectation.is_ok());
+    CHECK(parsed_expectation.result() == Txn::RequestPresenceExpectation::UNSPECIFIED);
+  }
+
+  SECTION("Explicit present expectation is parsed")
+  {
+    auto const proxy_request_node = YAML::Load("{ expect: present }");
+    auto const parsed_expectation =
+        YamlParser::parse_request_presence_expectation(proxy_request_node);
+    REQUIRE(parsed_expectation.is_ok());
+    CHECK(parsed_expectation.result() == Txn::RequestPresenceExpectation::PRESENT);
+  }
+
+  SECTION("Explicit absent expectation is parsed")
+  {
+    auto const proxy_request_node = YAML::Load("{ expect: absent }");
+    auto const parsed_expectation =
+        YamlParser::parse_request_presence_expectation(proxy_request_node);
+    REQUIRE(parsed_expectation.is_ok());
+    CHECK(parsed_expectation.result() == Txn::RequestPresenceExpectation::ABSENT);
+  }
+
+  SECTION("Invalid expectation values fail")
+  {
+    auto const proxy_request_node = YAML::Load("{ expect: later }");
+    auto const parsed_expectation =
+        YamlParser::parse_request_presence_expectation(proxy_request_node);
+    CHECK_FALSE(parsed_expectation.is_ok());
+  }
+}
+
+TEST_CASE("Verify expect: absent rejects request verification content", "[yaml]")
+{
+  LocalizerPhaseGuard localizer_phase;
+
+  SECTION("Minimal absent proxy-request is valid")
+  {
+    auto const proxy_request_node = YAML::Load("{ expect: absent }");
+    CHECK(YamlParser::validate_absent_proxy_request(proxy_request_node).is_ok());
+  }
+
+  SECTION("Plain key-bearing fields remain valid")
+  {
+    auto const proxy_request_node = YAML::Load(R"(
+expect: absent
+headers:
+  fields:
+    - [ uuid, cache-hit-1 ]
+)");
+    CHECK(YamlParser::validate_absent_proxy_request(proxy_request_node).is_ok());
+  }
+
+  SECTION("HTTP/1 method is rejected")
+  {
+    auto const proxy_request_node = YAML::Load(R"(
+expect: absent
+method: GET
+)");
+    CHECK_FALSE(YamlParser::validate_absent_proxy_request(proxy_request_node).is_ok());
+  }
+
+  SECTION("Field verification rules are rejected")
+  {
+    auto const proxy_request_node = YAML::Load(R"(
+expect: absent
+headers:
+  fields:
+    - [ uuid, { value: cache-hit-1, as: equal } ]
+)");
+    CHECK_FALSE(YamlParser::validate_absent_proxy_request(proxy_request_node).is_ok());
+  }
+
+  SECTION("Body verification is rejected")
+  {
+    auto const proxy_request_node = YAML::Load(R"(
+expect: absent
+content:
+  verify: { value: body, as: equal }
+)");
+    CHECK_FALSE(YamlParser::validate_absent_proxy_request(proxy_request_node).is_ok());
+  }
+
+  SECTION("URL verification rules are rejected")
+  {
+    auto const proxy_request_node = YAML::Load(R"(
+expect: absent
+url:
+  - [ path, { value: /cached/object, as: equal } ]
+)");
+    CHECK_FALSE(YamlParser::validate_absent_proxy_request(proxy_request_node).is_ok());
+  }
+}
+
 TEST_CASE("Verify verbose protocol sequences parse into a common protocol object", "[protocol]")
 {
   auto const protocol_node = YAML::Load(R"(

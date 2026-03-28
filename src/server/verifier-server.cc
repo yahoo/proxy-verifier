@@ -241,6 +241,7 @@ private:
   swoc::Errata handle_tls_node_directives(
       ParsedProtocolNode const &parsed_protocol,
       YAML::Mark const &mark);
+  swoc::Errata validate_request_expectation() const;
 
 private:
   YAML::Node const *m_ssn_node = nullptr;
@@ -285,18 +286,6 @@ ServerReplayFileHandler::ssn_open(YAML::Node const &node)
 swoc::Errata
 ServerReplayFileHandler::txn_open(YAML::Node const &node)
 {
-  Errata errata;
-  if (!node[YAML_SERVER_RSP_KEY]) {
-    errata.note(
-        S_ERROR,
-        R"(Transaction node at "{}":{} does not have a server response [{}].)",
-        _path,
-        node.Mark().line,
-        YAML_SERVER_RSP_KEY);
-  }
-  if (!errata.is_ok()) {
-    return errata;
-  }
   m_txn._req.set_is_request();
   m_txn._rsp.set_is_response();
   m_txn_node = &node;
@@ -446,6 +435,12 @@ swoc::Errata
 ServerReplayFileHandler::proxy_request(YAML::Node const &node)
 {
   swoc::Errata errata;
+  auto const parsed_expectation = YamlParser::parse_request_presence_expectation(node);
+  errata.note(parsed_expectation.errata());
+  if (!errata.is_ok()) {
+    return errata;
+  }
+  m_txn._request_expectation = parsed_expectation.result();
 
   // Process the protocol stack because that adjusts expectations for how to
   // load the fields (such as whether this is HTTP/2).
@@ -454,11 +449,19 @@ ServerReplayFileHandler::proxy_request(YAML::Node const &node)
     return errata;
   }
 
-  m_txn._req._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
-  errata.note(YamlParser::populate_http_message(node, m_txn._req));
+  if (m_txn.request_expects_absence()) {
+    errata.note(YamlParser::validate_absent_proxy_request(node));
+  }
+
+  HttpHeader proxy_request{
+      m_txn.request_expects_absence() ? !ASSUME_EQUALITY_RULE : Use_Strict_Checking};
+  proxy_request.set_is_request(m_txn._req.get_http_protocol());
+  proxy_request._fields_rules = std::make_shared<HttpFields>(*global_config.txn_rules);
+  errata.note(YamlParser::populate_http_message(node, proxy_request));
   if (!errata.is_ok()) {
     return errata;
   }
+  m_txn._req = std::move(proxy_request);
   auto const key = m_txn._req.get_key();
   if (key != HttpHeader::TRANSACTION_KEY_NOT_SET) {
     m_key = key;
@@ -514,6 +517,15 @@ swoc::Errata
 ServerReplayFileHandler::txn_close()
 {
   swoc::Errata errata;
+  if (!(*m_txn_node)[YAML_SERVER_RSP_KEY] && !m_txn.request_expects_absence()) {
+    errata.note(
+        S_ERROR,
+        R"(Transaction node at "{}":{} does not have a server response [{}].)",
+        _path,
+        m_txn_node->Mark().line,
+        YAML_SERVER_RSP_KEY);
+  }
+  errata.note(validate_request_expectation());
   if (m_key.empty()) {
     errata.note(
         S_ERROR,
@@ -532,6 +544,38 @@ ServerReplayFileHandler::txn_close()
     Transactions.emplace(m_key, std::move(m_txn));
   }
   this->txn_reset();
+  return errata;
+}
+
+swoc::Errata
+ServerReplayFileHandler::validate_request_expectation() const
+{
+  swoc::Errata errata;
+  if (!m_txn.request_expects_absence()) {
+    return errata;
+  }
+
+  if (!m_txn._req._method.empty()) {
+    errata.note(
+        S_ERROR,
+        R"("{}" cannot include "{}" when "{}" is "{}" for transaction at "{}":{}.)",
+        YAML_PROXY_REQ_KEY,
+        YAML_HTTP_METHOD_KEY,
+        YAML_PROXY_EXPECT_KEY,
+        YAML_PROXY_EXPECT_ABSENT,
+        _path,
+        m_txn_node->Mark().line);
+  }
+  if (m_txn._req.has_verification_rules()) {
+    errata.note(
+        S_ERROR,
+        R"("{}" cannot include request verification rules when "{}" is "{}" for transaction at "{}":{}.)",
+        YAML_PROXY_REQ_KEY,
+        YAML_PROXY_EXPECT_KEY,
+        YAML_PROXY_EXPECT_ABSENT,
+        _path,
+        m_txn_node->Mark().line);
+  }
   return errata;
 }
 
@@ -628,7 +672,13 @@ TF_Serve_Connection(std::thread *t)
       }
 
       [[maybe_unused]] auto &[unused_key, specified_transaction] = *specified_transaction_it;
-      specified_transaction.mark_request_verification_performed();
+      specified_transaction.mark_request_received();
+      auto const request_was_forbidden = specified_transaction.request_expects_absence();
+      if (request_was_forbidden) {
+        Engine::process_exit_code = 1;
+      } else {
+        specified_transaction.mark_request_verification_performed();
+      }
 
       thread_errata.note(req_hdr->update_content_length(req_hdr->_method));
       thread_errata.note(req_hdr->update_transfer_encoding());
@@ -681,32 +731,49 @@ TF_Serve_Connection(std::thread *t)
           stream_state.specified_request = &specified_transaction._req;
         }
       }
-      if (req_hdr->verify_request(key, specified_transaction._req)) {
+      if (request_was_forbidden) {
+        thread_errata.note(
+            S_ERROR,
+            R"(Proxy request with key "{}" unexpectedly reached the verifier-server even though "{}" is "{}".)",
+            key,
+            YAML_PROXY_EXPECT_KEY,
+            YAML_PROXY_EXPECT_ABSENT);
+      }
+      if (!request_was_forbidden && req_hdr->verify_request(key, specified_transaction._req)) {
         thread_errata.note(S_ERROR, R"(Request headers did not match expected request headers.)");
         Engine::process_exit_code = 1;
-      } else {
+      } else if (!request_was_forbidden) {
         thread_errata.note(S_DIAG, R"(Request with key {} passed validation.)", key);
+      }
+
+      HttpHeader *response_to_send = &specified_transaction._rsp;
+      std::unique_ptr<HttpHeader> fallback_response;
+      if (request_was_forbidden && response_to_send->_status == 0 &&
+          specified_transaction._connect_action == Txn::ConnectAction::ACCEPT)
+      {
+        fallback_response = std::make_unique<HttpHeader>(
+            get_not_found_response(stream_id, req_hdr->get_http_protocol(), key));
+        response_to_send = fallback_response.get();
       }
       // Responses to HEAD requests may have a non-zero Content-Length
       // but will never have a body. update_content_length adjusts
       // expectations so the body is not written for responses to such
       // requests.
-      specified_transaction._rsp.update_content_length(req_hdr->_method);
+      response_to_send->update_content_length(req_hdr->_method);
       if (is_http3) {
-        specified_transaction._rsp.set_is_http3();
-        specified_transaction._rsp._stream_id = stream_id;
+        response_to_send->set_is_http3();
+        response_to_send->_stream_id = stream_id;
       } else if (is_http2) {
-        specified_transaction._rsp.set_is_http2();
-        specified_transaction._rsp._stream_id = stream_id;
+        response_to_send->set_is_http2();
+        response_to_send->_stream_id = stream_id;
       } else {
-        specified_transaction._rsp.set_is_http1();
+        response_to_send->set_is_http1();
       }
       if (specified_transaction._user_specified_delay_duration > 0us) {
         sleep_for(specified_transaction._user_specified_delay_duration);
       }
       if (specified_transaction._connect_action == Txn::ConnectAction::ACCEPT) {
-        auto &&[bytes_written, write_errata] =
-            thread_info.m_session->write(specified_transaction._rsp);
+        auto &&[bytes_written, write_errata] = thread_info.m_session->write(*response_to_send);
         thread_errata.note(std::move(write_errata));
       } else {
         thread_errata.note(
@@ -1084,12 +1151,19 @@ Engine::command_run()
       [](std::unique_ptr<std::thread> const &thread) { thread->join(); });
   Accept_Threads.clear();
   Server_Thread_Pool.join_threads();
-  if (!Allow_Unprocessed_Verifications) {
-    std::vector<Txn const *> transactions;
-    transactions.reserve(Transactions.size());
-    for (auto const &[key, txn] : Transactions) {
-      transactions.push_back(&txn);
+  std::vector<Txn const *> transactions;
+  transactions.reserve(Transactions.size());
+  for (auto const &[key, txn] : Transactions) {
+    transactions.push_back(&txn);
+  }
+  {
+    auto errata =
+        check_for_missing_expected_requests(transactions, "before shutdown", "Shutdown occurred");
+    if (!errata.is_ok()) {
+      Engine::process_exit_code = 1;
     }
+  }
+  if (!Allow_Unprocessed_Verifications) {
     auto errata = check_for_unprocessed_verifications(
         transactions,
         UnprocessedVerificationTarget::Request,

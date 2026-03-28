@@ -720,6 +720,47 @@ HttpHeader::HttpHeader(bool verify_strictly)
 }
 
 Errata
+check_for_missing_expected_requests(
+    std::vector<Txn const *> const &transactions,
+    TextView per_transaction_context,
+    TextView summary_prefix)
+{
+  Errata errata;
+  size_t missing_count = 0;
+
+  for (auto const *txn : transactions) {
+    if (txn == nullptr || !txn->request_expects_presence() || txn->request_received()) {
+      continue;
+    }
+
+    ++missing_count;
+    errata.note(
+        S_ERROR,
+        R"(Request for transaction key "{}" never reached the verifier-server {} )"
+        R"(even though "{}" was explicitly set to "{}".)",
+        txn->_req.get_key(),
+        per_transaction_context,
+        "expect",
+        "present");
+  }
+
+  if (missing_count == 0) {
+    return errata;
+  }
+
+  errata.note(
+      S_ERROR,
+      R"({} with {} transaction{} whose requests never reached the verifier-server )"
+      R"(even though "{}" was explicitly set to "{}".)",
+      summary_prefix,
+      missing_count,
+      swoc::bwf::If(missing_count != 1, "s"),
+      "expect",
+      "present");
+  return errata;
+}
+
+Errata
 check_for_unprocessed_verifications(
     std::vector<Txn const *> const &transactions,
     UnprocessedVerificationTarget target,
@@ -740,6 +781,9 @@ check_for_unprocessed_verifications(
     case UnprocessedVerificationTarget::Request:
       has_rules = txn->request_has_verification_rules();
       was_processed = txn->request_verification_performed();
+      if (txn->request_expects_presence() && !txn->request_received()) {
+        continue;
+      }
       break;
     case UnprocessedVerificationTarget::Response:
       has_rules = txn->response_has_verification_rules();

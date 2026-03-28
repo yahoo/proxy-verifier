@@ -68,6 +68,7 @@ static const std::string YAML_SSN_KEEP_CONNECTION_OPEN_KEY{"keep-connection-open
 static const std::string YAML_TXN_KEY{"transactions"};
 static const std::string YAML_CLIENT_REQ_KEY{"client-request"};
 static const std::string YAML_PROXY_REQ_KEY{"proxy-request"};
+static const std::string YAML_PROXY_EXPECT_KEY{"expect"};
 static const std::string YAML_SERVER_RSP_KEY{"server-response"};
 static const std::string YAML_PROXY_RSP_KEY{"proxy-response"};
 static const std::string YAML_ALL_MESSAGES_KEY{"all"};
@@ -108,6 +109,8 @@ static const std::string YAML_RULE_VALUE_MAP_KEY{"value"};
 static const std::string YAML_RULE_TYPE_MAP_KEY{"as"};
 static const std::string YAML_RULE_TYPE_MAP_KEY_NOT{"not"};
 static const std::string YAML_RULE_CASE_MAP_KEY{"case"};
+static const std::string YAML_PROXY_EXPECT_PRESENT{"present"};
+static const std::string YAML_PROXY_EXPECT_ABSENT{"absent"};
 
 static constexpr swoc::TextView FIELD_HOST{"host"};
 static constexpr swoc::TextView FIELD_EXPECT{"expect"};
@@ -419,6 +422,25 @@ public:
    * @return Any errata from parsing the node.
    */
   static swoc::Errata parse_global_rules(YAML::Node const &node, HttpFields &fields);
+
+  /** Parse proxy-request for `expect` behavior.
+   *
+   * @param[in] node The proxy-request YAML node.
+   * @return The parsed request presence expectation. If the node has no explicit
+   *   expectation, UNSPECIFIED is returned.
+   */
+  static swoc::Rv<Txn::RequestPresenceExpectation> parse_request_presence_expectation(
+      YAML::Node const &node);
+
+  /** Validate proxy-request expect: absent is sanely configured.
+   *
+   * Effectively, this verifies that a proxy-request.expect: absent node does
+   * not contain other request verification directives.
+   *
+   * @param[in] node The proxy-request YAML node.
+   * @return Any validation errors.
+   */
+  static swoc::Errata validate_absent_proxy_request(YAML::Node const &node);
 
 private:
   /** Indicate that parsing has started.

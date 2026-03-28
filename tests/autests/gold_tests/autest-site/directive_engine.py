@@ -7,6 +7,7 @@ Implement X-Proxy-Directive behavior.
 # SPDX-License-Identifier: Apache-2.0
 #
 
+import http.client
 import re
 
 
@@ -69,6 +70,8 @@ class Directive:
             return SetURLDirective(value)
         if command.lower() == CloseConnectionDirective.get_command_name().lower():
             return CloseConnectionDirective(value)
+        if command.lower() == LocalResponseDirective.get_command_name().lower():
+            return LocalResponseDirective(value)
         return None
 
 
@@ -271,6 +274,49 @@ class CloseConnectionDirective(Directive):
         return True
 
 
+class LocalResponseDirective(Directive):
+    """
+    Implement a directive that serves a response directly from the proxy.
+
+    This is associated with the LocalResponse=%<status[:reason]%>
+    specification. The response body is empty and the proxy does not forward
+    the request upstream.
+    """
+
+    _command_name = "LocalResponse"
+
+    def __init__(self, value):
+        status_text, has_reason, reason_text = value.partition(':')
+        status_text = status_text.strip()
+        if not status_text.isdigit():
+            raise ValueError("LocalResponse directive requires a numeric status: "
+                             f"{value}")
+        self._status = int(status_text)
+        if self._status < 100 or self._status > 599:
+            raise ValueError("LocalResponse directive status must be between 100 and 599: "
+                             f"{value}")
+        if has_reason:
+            self._reason = reason_text.strip()
+        else:
+            self._reason = http.client.responses.get(self._status, '')
+
+    @staticmethod
+    def get_command_name():
+        """
+        Return the command name associated with this Directive.
+        """
+        return LocalResponseDirective._command_name
+
+    def apply_headers(self, headers):
+        return headers
+
+    def apply_url(self):
+        return None
+
+    def get_local_response(self):
+        return self._status, self._reason
+
+
 class DirectiveEngine:
     """
     Implements directive parsing and header manipulation.
@@ -287,6 +333,10 @@ class DirectiveEngine:
     X-Proxy-Directive: SetURL=%<new_URL%>
       This header requests the proxy to replace the forwarded URL with the
       specified value <new_URL>.
+
+    X-Proxy-Directive: LocalResponse=%<status[:reason]%>
+      This header requests the proxy to serve a local response with the given
+      status (and optional reason) instead of forwarding the request.
 
     Multiple directives can be passed in the same X-Proxy-Directive by simply
     appending them in the value of the header. White space may be used as a
@@ -341,8 +391,10 @@ class DirectiveEngine:
         >>> directive = "SetURL=%<http://example.one:8080/config/settings.yaml?q=3#F%>"
         >>> DirectiveEngine._directive_value_parser(directive)
         [('SetURL', 'http://example.one:8080/config/settings.yaml?q=3#F')]
+        >>> DirectiveEngine._directive_value_parser("LocalResponse=%<200%>")
+        [('LocalResponse', '200')]
         """
-        return re.findall(r"(Delete|Insert|SetURL|CloseConnection)=%<(.*?)%>",
+        return re.findall(r"(Delete|Insert|SetURL|CloseConnection|LocalResponse)=%<(.*?)%>",
                           x_proxy_directive_value)
 
     def get_new_url(self):
@@ -449,6 +501,28 @@ class DirectiveEngine:
             if getattr(directive, "should_close_connection", lambda: False)():
                 return True
         return False
+
+    def get_local_response(self):
+        """
+        Return the status and reason for a locally generated response, if any.
+
+        >>> import email.message
+        >>> headers = email.message.Message()
+        >>> headers.add_header('X-Proxy-Directive', 'LocalResponse=%<204%>')
+        >>> DirectiveEngine(headers).get_local_response()
+        (204, 'No Content')
+
+        >>> headers = email.message.Message()
+        >>> headers.add_header('X-Proxy-Directive', "LocalResponse=%<418: I'm a teapot%>")
+        >>> DirectiveEngine(headers).get_local_response()
+        (418, "I'm a teapot")
+        """
+        local_response = None
+        for directive in self._directives:
+            possible_local_response = getattr(directive, "get_local_response", lambda: None)()
+            if possible_local_response is not None:
+                local_response = possible_local_response
+        return local_response
 
 
 if __name__ == '__main__':

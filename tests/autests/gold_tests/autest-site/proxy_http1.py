@@ -109,6 +109,15 @@ class ProxyRequestHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             self.connection.close()
             return
+        local_response = directive_engine.get_local_response()
+        if local_response is not None:
+            status, reason = local_response
+            request_id = req.headers.get('uuid', '<unknown>')
+            print(f"Serving local response for key {request_id} with status {status}.")
+            self.send_response(status, reason)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
 
         u = urllib.parse.urlsplit(req.path)
         scheme, netloc, path = u.scheme, u.netloc, (u.path + '?' + u.query if u.query else u.path)

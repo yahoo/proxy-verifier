@@ -702,6 +702,20 @@ struct Txn
 {
   Txn(bool verify_strictly) : _req{verify_strictly}, _rsp{verify_strictly} { }
 
+  /** The verifier-server request presence arrival verification behavior.
+   *
+   * PRESENT means the request with the specified key must reach the
+   * verifier-server. ABSENT means the request must not reach the
+   * verifier-server. UNSPECIFIED means that the user provided no explicit
+   * request presence verification and thus neither presence nor absence will
+   * be directly enforced.
+   */
+  enum class RequestPresenceExpectation {
+    UNSPECIFIED,
+    PRESENT,
+    ABSENT,
+  };
+
   /** How the server side should terminate or preserve the transport.
    *
    * These actions are applied after the request has been read. ACCEPT keeps
@@ -720,14 +734,32 @@ struct Txn
 
   /// How long the user said to delay for this transaction.
   std::chrono::microseconds _user_specified_delay_duration{0};
+  RequestPresenceExpectation _request_expectation{RequestPresenceExpectation::UNSPECIFIED};
+  /// Whether the verifier-server observed a request for this keyed transaction.
+  std::shared_ptr<std::atomic_bool> _request_received{std::make_shared<std::atomic_bool>(false)};
   ConnectAction _connect_action{ConnectAction::ACCEPT};
   HttpHeader _req;         ///< Request to send.
   HttpHeader _rsp;         ///< Rules for response to expect.
   HttpHeader _rsp_trailer; ///< Rules for response trailer to expect.
 
   bool
+  request_expects_presence() const
+  {
+    return _request_expectation == RequestPresenceExpectation::PRESENT;
+  }
+
+  bool
+  request_expects_absence() const
+  {
+    return _request_expectation == RequestPresenceExpectation::ABSENT;
+  }
+
+  bool
   request_has_verification_rules() const
   {
+    if (request_expects_absence()) {
+      return false;
+    }
     return (_req.is_http1() && !_req._method.empty()) || _req.has_verification_rules(false);
   }
 
@@ -735,6 +767,18 @@ struct Txn
   mark_request_verification_performed() const
   {
     _req.mark_verification_performed();
+  }
+
+  void
+  mark_request_received() const
+  {
+    _request_received->store(true, std::memory_order_relaxed);
+  }
+
+  bool
+  request_received() const
+  {
+    return _request_received->load(std::memory_order_relaxed);
   }
 
   bool
@@ -767,6 +811,29 @@ enum class UnprocessedVerificationTarget {
   Response,
 };
 
+/** Check for transactions with explicit request-presence expectations that
+ * were never satisfied.
+ *
+ * @param[in] transactions Transactions to inspect.
+ * @param[in] per_transaction_context Context appended to each per-transaction
+ *   diagnostic.
+ * @param[in] summary_prefix Prefix for the summary diagnostic.
+ * @return Any expectation failures.
+ */
+swoc::Errata check_for_missing_expected_requests(
+    std::vector<Txn const *> const &transactions,
+    swoc::TextView per_transaction_context,
+    swoc::TextView summary_prefix);
+
+/** Check for request or response verification rules that were never processed.
+ *
+ * @param[in] transactions Transactions to inspect.
+ * @param[in] target Which side of the transaction to inspect.
+ * @param[in] per_transaction_context Context appended to each per-transaction
+ *   diagnostic.
+ * @param[in] summary_prefix Prefix for the summary diagnostic.
+ * @return Any unprocessed verification failures.
+ */
 swoc::Errata check_for_unprocessed_verifications(
     std::vector<Txn const *> const &transactions,
     UnprocessedVerificationTarget target,

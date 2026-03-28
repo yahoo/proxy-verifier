@@ -142,6 +142,19 @@ class HttpRequestHandler:
             self.protocol._quic.close()
             self.transmit()
             return None, None
+        local_response = directive_engine.get_local_response()
+        if local_response is not None:
+            status, reason = local_response
+            request_id = request_headers.get('uuid', '<unknown>')
+            print(f"Serving local response for key {request_id} with status {status}.")
+            response_headers = [
+                (b':status', str(status).encode()),
+                (b'content-length', b'0'),
+            ]
+            request_headers_for_print = list(pseudo_headers.items()) + list(request_headers.items())
+            self.print_info(request_headers_for_print, req_body, response_headers, b'', status,
+                            reason)
+            return response_headers, b''
         request_headers = ProxyRequestHandler.filter_headers(request_headers)
 
         # For all of these, for convenience, we simply talk HTTP (not HTTPS).

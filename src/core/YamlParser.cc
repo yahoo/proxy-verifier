@@ -93,6 +93,51 @@ resolve_replay_parse_thread_counts(size_t file_count, int n_reader_threads, int 
   return counts;
 }
 
+Errata
+validate_absent_proxy_request_fields(YAML::Node const &fields_node)
+{
+  Errata errata;
+  if (!fields_node || !fields_node.IsSequence()) {
+    return errata;
+  }
+
+  for (auto const &field_node : fields_node) {
+    if (!field_node.IsSequence()) {
+      // Let the main parser report the structural issue.
+      continue;
+    }
+
+    auto const field_node_size = field_node.size();
+    if (field_node_size == 3) {
+      errata.note(
+          S_ERROR,
+          R"("{}" cannot include field verification directives when "{}" is "{}" at {}.)",
+          YAML_PROXY_REQ_KEY,
+          YAML_PROXY_EXPECT_KEY,
+          YAML_PROXY_EXPECT_ABSENT,
+          field_node.Mark());
+      continue;
+    }
+
+    if (field_node_size != 2) {
+      continue;
+    }
+
+    auto const value_node = field_node[YAML_RULE_VALUE_INDEX];
+    if (value_node.IsMap()) {
+      errata.note(
+          S_ERROR,
+          R"("{}" cannot include map-style field verification when "{}" is "{}" at {}.)",
+          YAML_PROXY_REQ_KEY,
+          YAML_PROXY_EXPECT_KEY,
+          YAML_PROXY_EXPECT_ABSENT,
+          field_node.Mark());
+    }
+  }
+
+  return errata;
+}
+
 /** RAII for managing the handler's file. */
 struct HandlerOpener
 {
@@ -1193,6 +1238,105 @@ YamlParser::parse_global_rules(YAML::Node const &node, HttpFields &fields)
       errata.note(std::move(result));
     }
   }
+  return errata;
+}
+
+swoc::Rv<Txn::RequestPresenceExpectation>
+YamlParser::parse_request_presence_expectation(YAML::Node const &node)
+{
+  auto const expectation_node = node[YAML_PROXY_EXPECT_KEY];
+  if (!expectation_node) {
+    return Txn::RequestPresenceExpectation::UNSPECIFIED;
+  }
+
+  if (!expectation_node.IsScalar()) {
+    swoc::Rv<Txn::RequestPresenceExpectation> zret;
+    zret.note(
+        S_ERROR,
+        R"("{}" value at {} must be a string.)",
+        YAML_PROXY_EXPECT_KEY,
+        expectation_node.Mark());
+    return zret;
+  }
+
+  auto const expectation_text = Localizer::localize_lower(expectation_node.Scalar());
+  if (expectation_text == YAML_PROXY_EXPECT_PRESENT) {
+    return Txn::RequestPresenceExpectation::PRESENT;
+  }
+  if (expectation_text == YAML_PROXY_EXPECT_ABSENT) {
+    return Txn::RequestPresenceExpectation::ABSENT;
+  }
+
+  swoc::Rv<Txn::RequestPresenceExpectation> zret;
+  zret.note(
+      S_ERROR,
+      R"("{}" value "{}" at {} must be "{}" or "{}".)",
+      YAML_PROXY_EXPECT_KEY,
+      expectation_text,
+      expectation_node.Mark(),
+      YAML_PROXY_EXPECT_PRESENT,
+      YAML_PROXY_EXPECT_ABSENT);
+  return zret;
+}
+
+Errata
+YamlParser::validate_absent_proxy_request(YAML::Node const &node)
+{
+  Errata errata;
+
+  if (node[YAML_HTTP_METHOD_KEY]) {
+    errata.note(
+        S_ERROR,
+        R"("{}" cannot include "{}" when "{}" is "{}" at {}.)",
+        YAML_PROXY_REQ_KEY,
+        YAML_HTTP_METHOD_KEY,
+        YAML_PROXY_EXPECT_KEY,
+        YAML_PROXY_EXPECT_ABSENT,
+        node[YAML_HTTP_METHOD_KEY].Mark());
+  }
+  if (auto const url_node = node[YAML_HTTP_URL_KEY]; url_node && url_node.IsSequence()) {
+    errata.note(
+        S_ERROR,
+        R"("{}" cannot include URL verification rules when "{}" is "{}" at {}.)",
+        YAML_PROXY_REQ_KEY,
+        YAML_PROXY_EXPECT_KEY,
+        YAML_PROXY_EXPECT_ABSENT,
+        url_node.Mark());
+  }
+  if (node[YAML_CONTENT_KEY]) {
+    errata.note(
+        S_ERROR,
+        R"("{}" cannot include "{}" when "{}" is "{}" at {}.)",
+        YAML_PROXY_REQ_KEY,
+        YAML_CONTENT_KEY,
+        YAML_PROXY_EXPECT_KEY,
+        YAML_PROXY_EXPECT_ABSENT,
+        node[YAML_CONTENT_KEY].Mark());
+  }
+  if (node[YAML_TRAILER_KEY]) {
+    errata.note(
+        S_ERROR,
+        R"("{}" cannot include "{}" when "{}" is "{}" at {}.)",
+        YAML_PROXY_REQ_KEY,
+        YAML_TRAILER_KEY,
+        YAML_PROXY_EXPECT_KEY,
+        YAML_PROXY_EXPECT_ABSENT,
+        node[YAML_TRAILER_KEY].Mark());
+  }
+  if (auto const headers_node = node[YAML_HDR_KEY]; headers_node) {
+    if (headers_node[YAML_SET_COOKIE_VERIFICATIONS_KEY]) {
+      errata.note(
+          S_ERROR,
+          R"("{}" cannot include "{}" when "{}" is "{}" at {}.)",
+          YAML_PROXY_REQ_KEY,
+          YAML_SET_COOKIE_VERIFICATIONS_KEY,
+          YAML_PROXY_EXPECT_KEY,
+          YAML_PROXY_EXPECT_ABSENT,
+          headers_node[YAML_SET_COOKIE_VERIFICATIONS_KEY].Mark());
+    }
+    errata.note(validate_absent_proxy_request_fields(headers_node[YAML_FIELDS_KEY]));
+  }
+
   return errata;
 }
 
