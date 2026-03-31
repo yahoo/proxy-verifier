@@ -1980,14 +1980,23 @@ Session::run_transactions(
       }
     }
     if (txn._user_specified_delay_duration > 0us) {
-      sleep_for(txn._user_specified_delay_duration);
+      if (!interruptible_sleep_for(txn._user_specified_delay_duration)) {
+        break;
+      }
     } else if (rate_multiplier != 0) {
       auto const start_offset = txn._start;
       auto const next_time = (rate_multiplier * start_offset) + first_time;
       auto current_time = ClockType::now();
       if (next_time > current_time) {
-        sleep_until(next_time);
+        if (!interruptible_sleep_for(
+                std::chrono::duration_cast<chrono::nanoseconds>(next_time - current_time)))
+        {
+          break;
+        }
       }
+    }
+    if (shutdown_requested()) {
+      break;
     }
     auto const before = ClockType::now();
     txn_errata.note(this->run_transaction(txn));

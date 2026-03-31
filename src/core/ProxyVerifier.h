@@ -1,12 +1,14 @@
 /** @file
  * Common data structures and definitions for Proxy Verifier tools.
  *
- * Copyright 2022, Verizon Media
+ * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #pragma once
 
+#include <chrono>
+#include <csignal>
 #include <condition_variable>
 #include <deque>
 #include <list>
@@ -46,6 +48,28 @@ swoc::Rv<int> block_sigpipe();
  * @param[in] verbose_argument The user-specified verbosity requested.
  */
 swoc::Errata configure_logging(const std::string_view verbose_argument);
+
+/** Register the shutdown flag that shared replay code should observe.
+ *
+ * Each executable provides its own flag because the client and server install
+ * their own signal handlers.
+ *
+ * @param[in] shutdown_flag The executable-local shutdown flag.
+ */
+void register_shutdown_flag(volatile std::sig_atomic_t &shutdown_flag);
+
+/** Whether the current process has received a shutdown signal.
+ *
+ * @return True if shutdown has been requested, false otherwise.
+ */
+bool shutdown_requested();
+
+/** Sleep in short increments so replay shutdown can interrupt long waits.
+ *
+ * @param[in] duration The desired sleep duration.
+ * @return True if the full duration elapsed, false if shutdown was requested.
+ */
+bool interruptible_sleep_for(std::chrono::nanoseconds duration);
 
 namespace swoc
 {

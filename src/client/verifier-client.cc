@@ -177,7 +177,11 @@ private:
   Txn m_txn;
 };
 
+/** Generic flag to stop worker threads during shutdown. */
 volatile std::sig_atomic_t Shutdown_Flag = 0;
+
+/** A flag specifically calling for a shutdown due to a signal (Ctrl+C, etc.). */
+volatile std::sig_atomic_t Shutdown_Signal = 0;
 
 /** Whether replay should ignore verification rules that were never reached. */
 bool Allow_Unprocessed_Verifications = false;
@@ -628,6 +632,9 @@ void
 shutdown_signal_handler(int signal)
 {
   if (signal == SIGINT || signal == SIGTERM) {
+    if (Shutdown_Signal == 0) {
+      Shutdown_Signal = signal;
+    }
     Shutdown_Flag = 1;
   }
 }
@@ -709,7 +716,7 @@ Run_Session(Ssn const &ssn, TargetSelector &target_selector)
       ssn._rate_multiplier));
 
   if (ssn._keep_connection_open > 0us) {
-    sleep_for(ssn._keep_connection_open);
+    interruptible_sleep_for(ssn._keep_connection_open);
   }
 
   if (!errata.is_ok()) {
@@ -858,12 +865,12 @@ Engine::parse_replay_files()
         ClientReplayFileHandler handler;
         return YamlParser::load_replay_file(file, content, handler);
       },
-      Shutdown_Flag));
+      Shutdown_Signal));
   if (!errata.is_ok()) {
     process_exit_code = 1;
     return false;
   }
-  if (Shutdown_Flag) {
+  if (Shutdown_Signal) {
     return false;
   }
   m_session_count = Session_List.size();
@@ -963,7 +970,7 @@ bool
 Engine::replay_traffic()
 {
   Errata errata;
-  if (Shutdown_Flag) {
+  if (Shutdown_Signal) {
     return false;
   }
 
@@ -1104,16 +1111,20 @@ Engine::replay_traffic()
   auto replay_start_time = ClockType::now();
   unsigned n_ssn = 0;
   unsigned n_txn = 0;
-  for (int i = 0; !Shutdown_Flag && ((i < repeat_count) || run_continuously); i++) {
+  for (int i = 0; !Shutdown_Signal && ((i < repeat_count) || run_continuously); i++) {
     auto const this_iteration_start_time = ClockType::now();
     for (auto ssn : Session_List) {
-      if (Shutdown_Flag) {
+      if (Shutdown_Signal) {
         break;
       }
       if (ssn->_user_specified_delay_duration > 0us) {
-        sleep_for(ssn->_user_specified_delay_duration);
+        if (!interruptible_sleep_for(ssn->_user_specified_delay_duration)) {
+          break;
+        }
       } else if (use_sleep_time) {
-        sleep_for(sleep_time);
+        if (!interruptible_sleep_for(sleep_time)) {
+          break;
+        }
         // Transactions will be run with no rate limiting.
       } else if (rate_multiplier != 0) {
         ssn->_rate_multiplier = rate_multiplier;
@@ -1121,15 +1132,22 @@ Engine::replay_traffic()
         auto const start_offset = ssn->_start - recording_start_time;
         auto const nexttime = (rate_multiplier * start_offset) + this_iteration_start_time;
         if (nexttime > curtime) {
-          sleep_for(std::min(sleep_limit, duration_cast<microseconds>(nexttime - curtime)));
+          auto const sleep_duration =
+              std::min(sleep_limit, duration_cast<microseconds>(nexttime - curtime));
+          if (!interruptible_sleep_for(sleep_duration)) {
+            break;
+          }
         }
       }
-      if (Shutdown_Flag) {
+      if (Shutdown_Signal) {
         break;
       }
       ClientThreadInfo *thread_info =
           dynamic_cast<ClientThreadInfo *>(Client_Thread_Pool.get_worker());
       if (nullptr == thread_info) {
+        if (Shutdown_Signal) {
+          break;
+        }
         errata.note(S_ERROR, "Failed to get worker thread");
       } else {
         // Only pointer to worker thread info.
@@ -1144,7 +1162,7 @@ Engine::replay_traffic()
       n_txn += ssn->_transactions.size();
     }
   }
-  auto const interrupted = Shutdown_Flag;
+  auto const interrupted = Shutdown_Signal;
   // Wait until all threads are done
   Shutdown_Flag = 1;
   Client_Thread_Pool.join_threads();
@@ -1229,6 +1247,7 @@ int
 main(int /* argc */, char const *argv[])
 {
   block_sigpipe();
+  register_shutdown_flag(Shutdown_Signal);
 
   struct sigaction sigIntHandler;
   sigIntHandler.sa_handler = shutdown_signal_handler;

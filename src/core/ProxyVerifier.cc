@@ -42,6 +42,12 @@ namespace chrono = std::chrono;
 using chrono::milliseconds;
 
 bool Verbose = false;
+namespace
+{
+constexpr auto Shutdown_Check_Interval = 100ms;
+volatile std::sig_atomic_t Default_Shutdown_Flag = 0;
+volatile std::sig_atomic_t *Current_Shutdown_Flag = &Default_Shutdown_Flag;
+} // namespace
 
 static std::array<swoc::TextView, 5> S_NAMES = {"Success", "DEBUG", "INFO", "WARNING", "ERROR"};
 
@@ -116,6 +122,31 @@ configure_logging(const std::string_view verbose_argument)
     }
   });
   return errata;
+}
+
+bool
+shutdown_requested()
+{
+  return *Current_Shutdown_Flag != 0;
+}
+
+bool
+interruptible_sleep_for(std::chrono::nanoseconds duration)
+{
+  while (duration > 0ns && !shutdown_requested()) {
+    auto const sleep_time = std::min(
+        duration,
+        std::chrono::duration_cast<chrono::nanoseconds>(Shutdown_Check_Interval));
+    std::this_thread::sleep_for(sleep_time);
+    duration -= sleep_time;
+  }
+  return !shutdown_requested();
+}
+
+void
+register_shutdown_flag(volatile std::sig_atomic_t &shutdown_flag)
+{
+  Current_Shutdown_Flag = &shutdown_flag;
 }
 
 namespace swoc
@@ -251,17 +282,26 @@ ThreadPool::get_worker()
   ThreadInfo *thread_info = nullptr;
   {
     std::unique_lock<std::mutex> lock(this->_idleThreadsMutex);
-    if (_allThreads.size() < max_threads) {
-      // Make a new thread and add it to our pool.
-      // This is circuitous, but we do this so that the thread can put a
-      // pointer to it's @c std::thread in it's info. Note the circular
-      // dependency: there's no object until after the constructor is called
-      // but the constructor needs to be called to get the object. Sigh.
-      std::thread *t = &_allThreads.emplace_back();
-      *t = this->make_thread(t);
-      // expect the new thread to enter itself in the pool and signal.
+    bool created_thread = false;
+    while (_idleThreads.empty() && !shutdown_requested()) {
+      if (!created_thread && _allThreads.size() < max_threads) {
+        // Make a new thread and add it to our pool.
+        // This is circuitous, but we do this so that the thread can put a
+        // pointer to it's @c std::thread in it's info. Note the circular
+        // dependency: there's no object until after the constructor is called
+        // but the constructor needs to be called to get the object. Sigh.
+        std::thread *t = &_allThreads.emplace_back();
+        *t = this->make_thread(t);
+        created_thread = true;
+        // expect the new thread to enter itself in the pool and signal.
+      }
+      _idleThreadsCvar.wait_for(lock, Shutdown_Check_Interval, [this] {
+        return !_idleThreads.empty();
+      });
     }
-    _idleThreadsCvar.wait(lock, [this] { return !_idleThreads.empty(); });
+    if (shutdown_requested()) {
+      return nullptr;
+    }
     thread_info = _idleThreads.front();
     _idleThreads.pop_front();
   } // Release the _idleThreadsMutex lock.

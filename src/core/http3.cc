@@ -1932,8 +1932,15 @@ H3Session::run_transactions(
             nghttp3_receive_and_send_data(*this, duration_cast<milliseconds>(delay_time)));
         current_time = ClockType::now();
         delay_time = next_time - current_time;
-        sleep_for(delay_time);
+        if (delay_time > 0us &&
+            !interruptible_sleep_for(std::chrono::duration_cast<chrono::nanoseconds>(delay_time)))
+        {
+          break;
+        }
       }
+    }
+    if (shutdown_requested()) {
+      break;
     }
     txn_errata.note(this->run_transaction(transaction));
     if (!txn_errata.is_ok()) {

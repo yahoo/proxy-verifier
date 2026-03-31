@@ -63,8 +63,10 @@ int Send_Buffer_size = 0;
 /// This must be a list so that iterators / pointers to elements do not go stale.
 std::list<std::unique_ptr<std::thread>> Accept_Threads;
 
-/** Set this to true when it's time for the threads to stop. */
+/** Generic flag to stop worker threads during shutdown. */
 volatile std::sig_atomic_t Shutdown_Flag = 0;
+
+/** A flag specifically calling for a shutdown due to a signal (Ctrl+C, etc.). */
 volatile std::sig_atomic_t Shutdown_Signal = 0;
 
 /** Whether shutdown should ignore verification rules that were never reached. */
@@ -785,7 +787,9 @@ TF_Serve_Connection(std::thread *t)
         response_to_send->set_is_http1();
       }
       if (specified_transaction._user_specified_delay_duration > 0us) {
-        sleep_for(specified_transaction._user_specified_delay_duration);
+        if (!interruptible_sleep_for(specified_transaction._user_specified_delay_duration)) {
+          break;
+        }
       }
       if (specified_transaction._connect_action == Txn::ConnectAction::ACCEPT) {
         auto &&[bytes_written, write_errata] = thread_info.m_session->write(*response_to_send);
@@ -853,6 +857,9 @@ TF_Accept(int socket_fd, bool do_https, bool do_http3)
     ServerThreadInfo *thread_info =
         dynamic_cast<ServerThreadInfo *>(Server_Thread_Pool.get_worker());
     if (nullptr == thread_info) {
+      if (Shutdown_Flag) {
+        break;
+      }
       errata.note(S_ERROR, "Failed to get worker thread");
     } else {
       std::unique_lock<std::mutex> lock(thread_info->_data_ready_mutex);
@@ -1202,6 +1209,7 @@ int
 main(int /* argc */, char const *argv[])
 {
   swoc::Errata errata;
+  register_shutdown_flag(Shutdown_Flag);
   if (block_sigpipe()) {
     errata.note(
         S_WARN,
