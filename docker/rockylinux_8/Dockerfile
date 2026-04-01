@@ -19,6 +19,7 @@ dnf --refresh --nobest install -y \
   autoconf \
   automake \
   ca-certificates \
+  curl \
   diffutils \
   gcc \
   gcc-c++ \

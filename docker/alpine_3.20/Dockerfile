@@ -15,6 +15,7 @@ RUN apk add --no-cache \
   build-base \
   ca-certificates \
   coreutils \
+  curl \
   diffutils \
   git \
   libffi-dev \
