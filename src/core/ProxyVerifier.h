@@ -49,17 +49,31 @@ swoc::Rv<int> block_sigpipe();
  * This is useful for keeping large temporary buffers off pthread stacks on
  * platforms such as musl, while also avoiding per-call heap allocation.
  *
+ * Each unique combination of @a N and @a Tag produces an independent
+ * thread-local buffer. Use distinct tag types when two callers on the same
+ * thread must not alias each other's storage (e.g. reading request headers
+ * vs. serializing an outgoing response).
+ *
  * @tparam N The size of the backing buffer.
+ * @tparam Tag Disambiguation tag so that callers needing independent buffers
+ *   of the same size can each get their own thread-local storage.
  *
  * @return A writer bound to thread-local storage for the current thread.
  */
-template <size_t N>
+template <size_t N, typename Tag = void>
 swoc::FixedBufferWriter
 make_thread_local_buffer_writer()
 {
   thread_local std::array<char, N> storage;
   return swoc::FixedBufferWriter{storage.data(), storage.size()};
 }
+
+/// Tag for the thread-local buffer used by Session::write() to serialize
+/// outgoing headers, kept separate from the read-side buffer so that
+/// writing a response does not clobber in-flight request header views.
+struct WriteBufferTag
+{
+};
 
 /** Configure logging.
  *

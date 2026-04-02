@@ -556,7 +556,10 @@ H2Session::run_transactions(
           drain_h2_receive_window(*this, Poll_Timeout, "dependency wait");
       txn_errata.note(std::move(progress_errata));
       if (!txn_errata.is_ok()) {
-        // There was a problem reading bytes on the socket.
+        if (this->is_closed_cleanly_by_peer()) {
+          txn_errata.sink();
+          break;
+        }
         txn_errata.note(
             S_ERROR,
             "An unexpected error was received reading bytes on a socket while delaying a "
@@ -569,6 +572,11 @@ H2Session::run_transactions(
     if (!txn_errata.is_ok()) {
       errata.note(std::move(txn_errata));
       log_h2_replay_metrics(0ms);
+      break;
+    }
+    if (this->is_closed_cleanly_by_peer()) {
+      errata.note(S_DIAG, "HTTP/2 session closed by peer during dependency wait.");
+      errata.sink();
       break;
     }
     if (rate_multiplier != 0 || txn._user_specified_delay_duration > 0us) {
@@ -590,12 +598,16 @@ H2Session::run_transactions(
       }
       txn_errata.sink();
       while (delay_time > 0ms) {
-        // Make use of our delay time to read any incoming responses.
         auto &&[progress, progress_errata] =
             drain_h2_receive_window(*this, duration_cast<milliseconds>(delay_time), "delay window");
         txn_errata.note(std::move(progress_errata));
         if (!txn_errata.is_ok()) {
-          // There was a problem reading bytes on the socket.
+          if (this->is_closed_cleanly_by_peer()) {
+            // The peer closed the connection during the delay window (e.g.
+            // server inactivity timeout). This is not a client-side error.
+            txn_errata.sink();
+            break;
+          }
           txn_errata.note(
               S_ERROR,
               "An unexpected error was received reading bytes on a socket while delaying a "
@@ -607,6 +619,11 @@ H2Session::run_transactions(
         current_time = ClockType::now();
         delay_time = next_time - current_time;
       }
+    }
+    if (this->is_closed_cleanly_by_peer()) {
+      errata.note(S_DIAG, "HTTP/2 session closed by peer during delay window.");
+      errata.sink();
+      break;
     }
     if (this->close_on_goaway && this->received_goaway_frame) {
       errata.note(S_DIAG, "Closing HTTP/2 session due to receiving a GOAWAY frame.");
@@ -941,10 +958,11 @@ receive_nghttp2_data(
   if (n <= 0) {
     auto const ssl_error = SSL_get_error(session_data->get_ssl(), n);
     if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
-      // SSL just wants more data. Not a problem.
       return 0;
     } else {
-      // Assume there was an issue.
+      if (ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL) {
+        session_data->close_with_reason(TLSSession::classify_ssl_close_reason(ssl_error));
+      }
       errata.note(
           S_ERROR,
           "SSL_read error in receive_nghttp2_data: {}",

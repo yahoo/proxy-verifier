@@ -1347,11 +1347,7 @@ Session::send_proxy_msg(ProxyProtocolMsg const &pp_msg)
 swoc::Rv<ssize_t>
 Session::write(HttpHeader const &hdr)
 {
-  // 1. header.serialize, write it out
-  // 2. transmit the body
-  // Keep the large header buffer off the worker-thread stack without
-  // allocating on every call.
-  auto w = make_thread_local_buffer_writer<MAX_HDR_SIZE>();
+  auto w = make_thread_local_buffer_writer<MAX_HDR_SIZE, WriteBufferTag>();
   swoc::Rv<ssize_t> zret{-1};
 
   zret.errata() = hdr.serialize(w);
@@ -2031,6 +2027,7 @@ Session::set_fd(int fd)
 {
   Errata errata;
   _fd = fd;
+  m_close_reason = CloseReason::UNSPECIFIED;
   return errata;
 }
 
@@ -2231,9 +2228,19 @@ void
 Session::close()
 {
   if (!this->is_closed()) {
+    if (m_close_reason == CloseReason::UNSPECIFIED) {
+      m_close_reason = CloseReason::LOCAL;
+    }
     ::close(_fd);
     _fd = -1;
   }
+}
+
+void
+Session::close_with_reason(CloseReason reason)
+{
+  m_close_reason = reason;
+  close();
 }
 
 Errata

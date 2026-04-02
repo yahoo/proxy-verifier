@@ -1025,8 +1025,34 @@ public:
    */
   virtual swoc::Rv<ssize_t> write_body(HttpHeader const &hdr);
 
+  /** The reason the connection was last closed. */
+  enum class CloseReason {
+    UNSPECIFIED, ///< No close reason has been recorded.
+    LOCAL,       ///< Proxy Verifier closed the connection itself.
+    PEER_CLOSE,  ///< The peer cleanly closed the connection.
+    PEER_ERROR   ///< The connection became unusable because of a peer-side error.
+  };
+
   /** Whether the connection is currently closed. */
   bool is_closed() const;
+
+  /** Close the connection and record why it closed.
+   *
+   * @param[in] reason The reason to retain for later inspection.
+   */
+  void close_with_reason(CloseReason reason);
+
+  /** Retrieve the last recorded reason for closing the connection.
+   *
+   * @return The last recorded close reason.
+   */
+  CloseReason get_close_reason() const;
+
+  /** Whether the peer cleanly closed the connection.
+   *
+   * @return True if the peer cleanly closed the connection, false otherwise.
+   */
+  bool is_closed_cleanly_by_peer() const;
 
   /** Close the connection. */
   virtual void close();
@@ -1079,6 +1105,7 @@ private:
 private:
   int _fd = -1; ///< Socket.
   ssize_t _body_offset = 0;
+  CloseReason m_close_reason = CloseReason::UNSPECIFIED;
 };
 
 inline int
@@ -1091,6 +1118,18 @@ inline bool
 Session::is_closed() const
 {
   return _fd < 0;
+}
+
+inline Session::CloseReason
+Session::get_close_reason() const
+{
+  return m_close_reason;
+}
+
+inline bool
+Session::is_closed_cleanly_by_peer() const
+{
+  return m_close_reason == CloseReason::PEER_CLOSE;
 }
 
 inline void

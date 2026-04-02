@@ -8,6 +8,7 @@
 #include "core/https.h"
 #include "core/ProxyVerifier.h"
 
+#include <cerrno>
 #include <cstring>
 #include <fcntl.h>
 #include <netdb.h>
@@ -27,6 +28,22 @@ using namespace std::literals;
 
 namespace chrono = std::chrono;
 using chrono::milliseconds;
+
+Session::CloseReason
+TLSSession::classify_ssl_close_reason(int ssl_error)
+{
+  if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+    return Session::CloseReason::PEER_CLOSE;
+  }
+  if (ssl_error == SSL_ERROR_SYSCALL) {
+    // OpenSSL reports a peer EOF as SSL_ERROR_SYSCALL with no queued TLS
+    // error and errno cleared.
+    if (ERR_peek_last_error() == 0 && errno == 0) {
+      return Session::CloseReason::PEER_CLOSE;
+    }
+  }
+  return Session::CloseReason::PEER_ERROR;
+}
 
 std::unordered_map<std::string, TLSHandshakeBehavior> TLSSession::_handshake_behavior_per_sni;
 std::mutex TLSSession::_handshake_behavior_mutex;
@@ -316,10 +333,12 @@ TLSSession::poll_for_data_on_ssl_socket(chrono::milliseconds timeout, int ssl_er
   if (ssl_error == SSL_ERROR_ZERO_RETURN || ssl_error == SSL_ERROR_SYSCALL ||
       ssl_error == SSL_ERROR_SSL)
   {
-    // Either of these indicates that the peer has closed the connection for
-    // writing and no more data can be read.
-    zret.note(S_DIAG, "Poll called on a TLS session closed by the peer.");
-    this->close();
+    auto const close_reason = classify_ssl_close_reason(ssl_error);
+    zret.note(
+        S_DIAG,
+        "Poll called on a TLS session that can no longer be read: {}.",
+        swoc::bwf::SSLError{ssl_error});
+    this->close_with_reason(close_reason);
     return zret;
   }
 

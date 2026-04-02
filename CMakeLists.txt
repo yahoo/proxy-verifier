@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 4.2.3)
 
 project(
   ProxyVerifier
-  VERSION 3.1.1
+  VERSION 3.1.2
   LANGUAGES C CXX)
 
 include(CTest)

@@ -191,6 +191,13 @@ public:
       std::chrono::milliseconds timeout,
       int ssl_error);
 
+  /** Classify a terminal SSL read/write state into a session close reason.
+   *
+   * @param[in] ssl_error The value returned by SSL_get_error.
+   * @return The close reason implied by the SSL state.
+   */
+  static Session::CloseReason classify_ssl_close_reason(int ssl_error);
+
   /** @see Session::close */
   void close() override;
   /** @see Session::accept */
