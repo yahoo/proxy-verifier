@@ -544,59 +544,97 @@ static ngtcp2_callbacks server_ngtcp2_callbacks = {
 // End ngtcp2 callbacks.
 // --------------------------------------------
 
-/** Check the ngtcp2 interface whether it wants us to check back in an "expiry" nanoseconds.
+/** Handle expired ngtcp2 timers.
  *
- * @param session The H3Session to check.
- * @param timeout The timeout to check.
- * @param packet_context The packet context to use for the check.
- *
- * @return The nanoseconds to wait before checking back in, or 0 if we should not check back in.
+ * @return @c true if an expiry was handled, @c false otherwise.
  */
-#if 0
-static swoc::Rv<nanoseconds>
-check_and_set_expiry(H3Session &session, milliseconds timeout, PacketIoContext *packet_context)
+static swoc::Rv<bool>
+handle_expiry(H3Session &session, PacketIoContext *packet_context)
 {
-  struct PacketIoContext local_packet_context;
-  swoc::Rv<nanoseconds> zret{0ns};
+  swoc::Rv<bool> zret{false};
+  PacketIoContext local_packet_context;
 
-  if(!packet_context) {
+  if (packet_context == nullptr) {
     packet_context = &local_packet_context;
-  }
-  else {
+  } else {
     packet_context->ts = timestamp();
   }
 
   ngtcp2_conn *qconn = session.quic_socket.qconn;
-  ngtcp2_tstamp expiry = ngtcp2_conn_get_expiry(qconn);
-  if(expiry != UINT64_MAX) {
-    if(expiry <= packet_context->ts) {
-      int rv = ngtcp2_conn_handle_expiry(qconn, packet_context->ts);
-      if(rv) {
-        zret.note(S_ERROR, "ngtcp2_conn_handle_expiry returned error: {}", Ngtcp2Error{rv});
-        ngtcp2_ccerr_set_liberr(&session.quic_socket.last_error, rv, NULL, 0);
-        return zret;
-      }
-      auto &&[ingress_bytes, ingress_errata] = ngtcp2_progress_ingress(session, timeout, packet_context);
-      zret.note(ingress_errata);
-      if(!zret.is_ok()) {
-        return zret;
-      }
-      auto &&[egress_bytes, egress_errata] = ngtcp2_progress_egress(session, packet_context);
-      zret.note(egress_errata);
-      if (!zret.is_ok()) {
-        return zret;
-      }
-      /* ask again, things might have changed */
-      expiry = ngtcp2_conn_get_expiry(qconn);
-    }
-
-    if(expiry > packet_context->ts) {
-      zret = nanoseconds{expiry - packet_context->ts};
-    }
+  if (ngtcp2_conn_get_handshake_completed(qconn) == 0) {
+    return zret;
   }
+
+  ngtcp2_tstamp const expiry = ngtcp2_conn_get_expiry(qconn);
+  if (expiry == 0 || expiry == UINT64_MAX || expiry > packet_context->ts) {
+    return zret;
+  }
+
+  int const rv = ngtcp2_conn_handle_expiry(qconn, packet_context->ts);
+  if (rv != 0) {
+    zret.note(S_ERROR, "ngtcp2_conn_handle_expiry returned error: {}", Ngtcp2Error{rv});
+    ngtcp2_ccerr_set_liberr(&session.quic_socket.last_error, rv, nullptr, 0);
+    return zret;
+  }
+
+  zret = true;
   return zret;
 }
-#endif
+
+/** Calculate the poll timeout, taking ngtcp2's next expiry into account.
+ *
+ * @param[in] session The H3 session whose QUIC timer is checked.
+ * @param[in] timeout The caller's upper-bound timeout.
+ * @param[in,out] packet_context Packet context with the current timestamp.
+ * @param[out] limited_by_expiry Whether the returned timeout is bounded by the QUIC timer.
+ *
+ * @return A timeout suitable for poll().
+ */
+static swoc::Rv<milliseconds>
+expiry_aware_poll_timeout(
+    H3Session &session,
+    milliseconds timeout,
+    PacketIoContext *packet_context,
+    bool &limited_by_expiry)
+{
+  swoc::Rv<milliseconds> zret{timeout};
+
+  limited_by_expiry = false;
+  packet_context->ts = timestamp();
+
+  if (ngtcp2_conn_get_handshake_completed(session.quic_socket.qconn) == 0) {
+    return zret;
+  }
+
+  auto &&[handled_expiry, expiry_errata] = handle_expiry(session, packet_context);
+  zret.note(std::move(expiry_errata));
+  if (!zret.is_ok()) {
+    return zret;
+  }
+  if (handled_expiry) {
+    limited_by_expiry = true;
+    zret = 0ms;
+    return zret;
+  }
+
+  ngtcp2_tstamp const expiry = ngtcp2_conn_get_expiry(session.quic_socket.qconn);
+  if (expiry == 0 || expiry == UINT64_MAX) {
+    return zret;
+  }
+
+  auto const until_expiry = nanoseconds{expiry - packet_context->ts};
+  auto expiry_timeout = duration_cast<milliseconds>(until_expiry);
+  if (expiry_timeout == 0ms && until_expiry > 0ns) {
+    expiry_timeout = 1ms;
+  }
+
+  if (expiry_timeout < timeout) {
+    limited_by_expiry = true;
+    zret = expiry_timeout;
+  }
+
+  return zret;
+}
 
 /** Receive a single QUIC packet.
  *
@@ -689,11 +727,25 @@ receive_packets(
           // Interrupted by a signal. Retry.
           continue;
         } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          if (pkts > 0) {
+            return zret;
+          }
+          bool limited_by_expiry = false;
+          auto &&[poll_timeout, timeout_errata] =
+              expiry_aware_poll_timeout(session, timeout, packet_context, limited_by_expiry);
+          zret.note(std::move(timeout_errata));
+          if (!zret.is_ok()) {
+            return zret;
+          }
+          if (limited_by_expiry && poll_timeout == 0ms) {
+            zret = 0;
+            return zret;
+          }
           if (have_polled) {
             // We only poll once in this loop.
             return zret;
           }
-          auto &&[poll_return, poll_errata] = session.poll_for_data_on_socket(timeout);
+          auto &&[poll_return, poll_errata] = session.poll_for_data_on_socket(poll_timeout);
           have_polled = true;
           zret.note(std::move(poll_errata));
           if (!zret.is_ok()) {
@@ -705,6 +757,19 @@ receive_packets(
           } else if (poll_return > 0) {
             // Simply repeat the read now that poll says something is ready.
           } else if (poll_return == 0) {
+            if (limited_by_expiry) {
+              auto &&[handled_expiry, expiry_errata] = handle_expiry(session, packet_context);
+              zret.note(std::move(expiry_errata));
+              if (!zret.is_ok()) {
+                return zret;
+              }
+              if (handled_expiry) {
+                zret = 0;
+                return zret;
+              }
+              zret = 0;
+              return zret;
+            }
             zret.note(S_ERROR, "Poll timed out waiting to read HTTP/3 content.");
             session.close();
             zret = -1;
@@ -804,6 +869,7 @@ ngtcp2_progress_egress(H3Session &session, PacketIoContext *packet_context)
   ngtcp2_tstamp ts = packet_context->ts;
   ngtcp2_path_storage ps;
   ngtcp2_path_storage_zero(&ps);
+  bool wrote_packet = false;
 
   // TODO: ouch. Looks like this loop has to change too. See Curl_bufq_sipn.
   for (;;) {
@@ -926,7 +992,11 @@ ngtcp2_progress_egress(H3Session &session, PacketIoContext *packet_context)
       }
     }
     zret.result() += nsent;
+    wrote_packet = true;
     Session::increment_total_bytes_written(nsent);
+  }
+  if (wrote_packet) {
+    ngtcp2_conn_update_pkt_tx_time(qs.qconn, ts);
   }
 
   return zret;
@@ -943,6 +1013,14 @@ nghttp3_receive_and_send_data(H3Session &session, milliseconds timeout)
 {
   Errata errata;
   PacketIoContext packet_context;
+
+  auto &&[initial_num_bytes_written, initial_egress_errata] =
+      ngtcp2_progress_egress(session, &packet_context);
+  errata.note(std::move(initial_egress_errata));
+  if (!errata.is_ok() || initial_num_bytes_written < 0) {
+    return errata;
+  }
+
   // This may poll until packets come in to read.
   auto &&[num_bytes_received, ingress_errata] =
       ngtcp2_progress_ingress(session, timeout, &packet_context);
@@ -1120,10 +1198,11 @@ cb_h3_recv_data(
     int64_t stream_id,
     const uint8_t *buf,
     size_t buflen,
-    void * /* conn_user_data */,
+    void *conn_user_data,
     void *stream_user_data)
 {
   Errata errata;
+  auto *h3_session = reinterpret_cast<H3Session *>(conn_user_data);
   auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
   errata.note(
       S_DIAG,
@@ -1134,6 +1213,11 @@ cb_h3_recv_data(
       stream_id,
       TextView(reinterpret_cast<char const *>(buf), buflen));
   stream_state->body_received += std::string(reinterpret_cast<char const *>(buf), buflen);
+
+  auto &qs = h3_session->quic_socket;
+  ngtcp2_conn_extend_max_stream_offset(qs.qconn, stream_id, buflen);
+  ngtcp2_conn_extend_max_offset(qs.qconn, buflen);
+
   return 0;
 }
 
@@ -1500,7 +1584,7 @@ configure_quic_socket_settings(QuicSocket &qs, PacketIoContext *packet_context)
   s->log_printf = nullptr;
 #endif
   s->initial_ts = packet_context->ts;
-  s->handshake_timeout = duration_cast<milliseconds>(QUIC_HANDSHAKE_TIMEOUT).count();
+  s->handshake_timeout = duration_cast<nanoseconds>(QUIC_HANDSHAKE_TIMEOUT).count();
   s->max_window = 100 * H3_STREAM_WINDOW_SIZE;
   s->max_stream_window = H3_STREAM_WINDOW_SIZE;
 
@@ -1510,7 +1594,7 @@ configure_quic_socket_settings(QuicSocket &qs, PacketIoContext *packet_context)
   t->initial_max_stream_data_uni = H3_STREAM_WINDOW_SIZE;
   t->initial_max_streams_bidi = QUIC_MAX_STREAMS;
   t->initial_max_streams_uni = QUIC_MAX_STREAMS;
-  t->max_idle_timeout = duration_cast<milliseconds>(QUIC_IDLE_TIMEOUT).count();
+  t->max_idle_timeout = duration_cast<nanoseconds>(QUIC_IDLE_TIMEOUT).count();
   if (qs.qlogfd != -1) {
     s->qlog_write = QuicSocket::qlog_callback;
   }

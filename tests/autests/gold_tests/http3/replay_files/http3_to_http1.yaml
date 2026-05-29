@@ -76,7 +76,8 @@ sessions:
         - [ Content-Length, { value: 32, as: equal } ]
 
   #
-  # Test 2: Verify we can send some big bodies.
+  # Test 2: Verify we can send bodies larger than HTTP/3's initial flow-control
+  # window.
   #
   - client-request:
       headers:
@@ -90,7 +91,7 @@ sessions:
         - [ X-Request-Header, request2 ]
       content:
         encoding: plain
-        size: 10240
+        size: 300000
 
     proxy-request:
       # HTTP/1 on the server-side.
@@ -107,7 +108,9 @@ sessions:
 
         fields:
         - [ X-Request-Header, { value: request2, as: equal } ]
-        - [ Content-Length, { value: 10240, as: equal } ]
+        - [ Content-Length, { value: 300000, as: equal } ]
+      content:
+        verify: { value: "000927b ", as: suffix }
 
     server-response:
       status: 404
@@ -116,10 +119,10 @@ sessions:
         encoding: esc_json
         fields:
         - [ X-Response-Header, response2 ]
-        - [ Content-Length, 10240 ]
+        - [ Content-Length, 300000 ]
       content:
         encoding: plain
-        size: 10240
+        size: 300000
 
     proxy-response:
       status: 404
@@ -127,7 +130,9 @@ sessions:
         encoding: esc_json
         fields:
         - [ X-Response-Header, { value: response2, as: equal } ]
-        - [ Content-Length, { value: 10240, as: equal } ]
+        - [ Content-Length, { value: 300000, as: equal } ]
+      content:
+        verify: { value: "000927b ", as: suffix }
 
 #
 # Test 2: A few transactions in a second session
