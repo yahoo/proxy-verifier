@@ -1,93 +1,44 @@
-``
-==== REQUEST HEADERS ====
-:method: POST
-:scheme: https
-:path: /a/path
-:authority: example.data.com
-x-request-header: request
-uuid: 1
-X-Added-Header: 1
-
-==== REQUEST BODY ====
-b'0123456789'
-
-==== RESPONSE ====
-200 OK
-
-==== RESPONSE HEADERS ====
-:status: 200
-x-equal-header: some_content
-x-response-header: response
-content-length: 32
-uuid: 1
-x-added-header: 1
-
-==== RESPONSE BODY ====
-b'0000000 0000001 0000002 0000003 '
-
-==== REQUEST HEADERS ====
-:method: GET
-:scheme: https
-:path: /a/new/path
-:authority: example.data.com
-uuid: 2
-x-request-header: request2
-
-==== REQUEST BODY ====
-b'0000000 `` 00004ff '
-
-==== RESPONSE ====
-404 Not Found
-
-==== RESPONSE HEADERS ====
-:status: 404
-x-response-header: response2
-content-length: 10240
-
-==== RESPONSE BODY ====
-b'0000000 `` 00004ff '
-
-==== REQUEST HEADERS ====
-:method: GET
-:scheme: https
-:path: /a/path2
-:authority: example.data.com
-uuid: 3
-x-request-header: request3
-
-==== REQUEST BODY ====
-b'0000000 0000001 0000002 0000003 0000004 0000005 '
-
-==== RESPONSE ====
-200 OK
-
-==== RESPONSE HEADERS ====
-:status: 200
-x-response-header: response3
-content-length: 16
-
-==== RESPONSE BODY ====
-b'0000000 0000001 '
-
-==== REQUEST HEADERS ====
-:method: GET
-:scheme: https
-:path: /a/path3
-:authority: example.data.com
-uuid: 4
-x-request-header: request3
-
-==== REQUEST BODY ====
-b'0000000 0000001 0000002 0000003 0000004 0000005 0000006 0000007 '
-
-==== RESPONSE ====
-200 OK
-
-==== RESPONSE HEADERS ====
-:status: 200
-x-response-header: response4
-content-length: 50
-
-==== RESPONSE BODY ====
-b'0000000 0000001 0000002 0000003 0000004 0000005 00'
-``
+proxy: request key=1 :authority=example.data.com
+proxy: request key=1 :method=POST
+proxy: request key=1 :path=/a/path
+proxy: request key=1 :scheme=https
+proxy: request key=1 uuid=1
+proxy: request key=1 X-Added-Header=1
+proxy: request key=1 x-request-header=request
+proxy: response key=1 status=200 OK
+proxy: response key=1 :status=200
+proxy: response key=1 content-length=32
+proxy: response key=1 uuid=1
+proxy: response key=1 x-added-header=1
+proxy: response key=1 x-equal-header=some_content
+proxy: response key=1 x-response-header=response
+proxy: request key=2 :authority=example.data.com
+proxy: request key=2 :method=GET
+proxy: request key=2 :path=/a/new/path
+proxy: request key=2 :scheme=https
+proxy: request key=2 uuid=2
+proxy: request key=2 x-request-header=request2
+proxy: response key=2 status=404 Not Found
+proxy: response key=2 :status=404
+proxy: response key=2 content-length=300000
+proxy: response key=2 x-response-header=response2
+proxy: request key=3 :authority=example.data.com
+proxy: request key=3 :method=GET
+proxy: request key=3 :path=/a/path2
+proxy: request key=3 :scheme=https
+proxy: request key=3 uuid=3
+proxy: request key=3 x-request-header=request3
+proxy: response key=3 status=200 OK
+proxy: response key=3 :status=200
+proxy: response key=3 content-length=16
+proxy: response key=3 x-response-header=response3
+proxy: request key=4 :authority=example.data.com
+proxy: request key=4 :method=GET
+proxy: request key=4 :path=/a/path3
+proxy: request key=4 :scheme=https
+proxy: request key=4 uuid=4
+proxy: request key=4 x-request-header=request3
+proxy: response key=4 status=200 OK
+proxy: response key=4 :status=200
+proxy: response key=4 content-length=50
+proxy: response key=4 x-response-header=response4

@@ -1,0 +1,23 @@
+client: parsed transactions=4 sessions=2
+client: absence key=1 field=x-deleted-header2
+client: equals key=1 field=content-length value=32
+client: equals key=1 field=x-equal-header value=some_content
+client: equals key=1 field=x-response-header value=response
+client: equals key=2 field=content-length value=300000
+client: equals key=2 field=x-response-header value=response2
+client: equals key=3 field=content-length value=16
+client: equals key=3 field=x-response-header value=response3
+client: equals key=4 field=content-length value=50
+client: equals key=4 field=x-response-header value=response4
+client: suffix key=2 field=body value=000927b\s
+server: absence key=1 field=x-deleted-header
+server: equals key=1 field=content-length value=10
+server: equals key=1 field=x-added-header value=1
+server: equals key=1 field=x-request-header value=request
+server: equals key=2 field=content-length value=300000
+server: equals key=2 field=x-request-header value=request2
+server: equals key=3 field=content-length value=48
+server: equals key=3 field=x-request-header value=request3
+server: equals key=4 field=content-length value=64
+server: equals key=4 field=x-request-header value=request3
+server: suffix key=2 field=body value=000927b\s
