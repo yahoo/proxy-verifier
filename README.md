@@ -1843,6 +1843,20 @@ remaining QUIC and TLS dependencies can either be bootstrapped as part of the
 CMake build or provided from an existing install tree such as `/opt/pv_libs`
 (see [Using Prebuilt Libraries](#using-prebuilt-libraries) below).
 
+For Mac builds, the following brew command can be helpful:
+
+```bash
+brew install \
+  git \
+  cmake \
+  ninja \
+  libtool \
+  automake \
+  libtool \
+  pkg-config \
+  python@3.14
+```
+
 #### Build
 
 For the common external-dependency layout used by the Dockerfiles (HTTP library
