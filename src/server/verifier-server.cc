@@ -893,6 +893,19 @@ do_listen(swoc::IPEndpoint &server_addr, bool do_https, bool do_http3)
           R"(Could not set reuseaddr on socket {}: {}.)",
           socket_fd,
           swoc::bwf::Errno{});
+    } else if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEPORT, &ONE, sizeof(int)) < 0) {
+      // SO_REUSEADDR alone permits binding a port left in TIME_WAIT, but not one
+      // still actively bound by a live listening socket. When the server is run
+      // back-to-back on the same port (e.g. an autest harness recycling ports
+      // across tests, where a prior server instance has not fully exited), the
+      // bind() below can fail with EADDRINUSE and the server exits without ever
+      // listening. SO_REUSEPORT lets the new listener bind alongside the
+      // departing one, eliminating that spurious startup failure.
+      errata.note(
+          S_ERROR,
+          R"(Could not set reuseport on socket {}: {}.)",
+          socket_fd,
+          swoc::bwf::Errno{});
     } else if (
         Send_Buffer_size > 0 &&
         setsockopt(socket_fd, SOL_SOCKET, SO_SNDBUF, &Send_Buffer_size, sizeof(Send_Buffer_size)) <
