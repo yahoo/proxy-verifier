@@ -645,6 +645,14 @@ public:
   bool _content_length_p = false;
   size_t _content_length = 0;
 
+  /** How long to wait after writing the headers before writing the body.
+   *
+   * This is honored by the HTTP/1.x write path only. HTTP/2 messages express
+   * the same behavior via a per-frame @c delay on a @c DATA frame, and HTTP/3
+   * has no support for it.
+   */
+  std::chrono::microseconds _content_delay{0};
+
   /// The parsed headers contain "Connection: close" header.
   bool _contains_connection_close = false;
 

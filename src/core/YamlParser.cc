@@ -1091,10 +1091,52 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
+  // A "delay" in a "content" node is honored by the HTTP/1.x write path only.
+  // A message with an explicit frame sequence is HTTP/2, which expresses the
+  // same behavior with a delay on its DATA frame. Such a delay would otherwise
+  // be silently ignored, so reject it wherever it appears in these messages.
+  bool const has_frame_sequence = static_cast<bool>(node[YAML_FRAMES_KEY]);
+  auto note_delay_conflicts_with_frames = [&errata](YAML::Node const &delay_node) {
+    errata.note(
+        S_ERROR,
+        R"("{}" in a "{}" node at {} cannot be combined with a "{}" node.)"
+        R"( Specify the delay on the "{}" frame instead.)",
+        YAML_TIME_DELAY_KEY,
+        YAML_CONTENT_KEY,
+        delay_node.Mark(),
+        YAML_FRAMES_KEY,
+        H2_FRAME_DATA);
+  };
+  if (has_frame_sequence) {
+    if (auto const content_node{node[YAML_CONTENT_KEY]};
+        content_node && content_node.IsMap() && content_node[YAML_TIME_DELAY_KEY])
+    {
+      note_delay_conflicts_with_frames(content_node[YAML_TIME_DELAY_KEY]);
+    }
+  }
+
   for (size_t i = 0; i < data_frames.size(); ++i) {
     // Do this after parsing fields so it can override transfer encoding.
     if (auto content_node{data_frames.at(i)[YAML_CONTENT_KEY]}; content_node) {
       if (content_node.IsMap()) {
+        if (auto delay_node{content_node[YAML_TIME_DELAY_KEY]}; delay_node) {
+          if (has_frame_sequence) {
+            note_delay_conflicts_with_frames(delay_node);
+          } else if (!delay_node.IsScalar()) {
+            errata.note(
+                S_ERROR,
+                R"("{}" in a "{}" node at {} must be a scalar.)",
+                YAML_TIME_DELAY_KEY,
+                YAML_CONTENT_KEY,
+                delay_node.Mark());
+          } else {
+            auto &&[content_delay, delay_errata] = interpret_delay_string(delay_node.Scalar());
+            errata.note(std::move(delay_errata));
+            if (errata.is_ok()) {
+              message._content_delay = content_delay;
+            }
+          }
+        }
         if (auto xf_node{content_node[YAML_CONTENT_TRANSFER_KEY]}; xf_node) {
           TextView xf{xf_node.Scalar()};
           if (0 == strcasecmp("chunked"_tv, xf)) {

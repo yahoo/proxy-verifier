@@ -94,6 +94,51 @@ process = case.add_process(
 )
 process.stdout.contains('Good', 'The verifier script should report success.')
 
+#
+# Test 5: Run transactions with a content delay, which delays the response body
+# behind the response headers.
+#
+case = suite.case("Verify the handling of the content delay specification.")
+client = case.add_client("client_content_delay", "content-delay.yaml")
+server = case.add_server("server_content_delay", "content-delay.yaml")
+
+# A content delay is an HTTP/1.x feature, so only an HTTP/1 proxy is needed.
+proxy = case.add_proxy("proxy_http_content_delay", listen_port=client.http_port,
+                       server_port=server.http_port)
+
+server.stdout.contains("Ready with 1 transaction.",
+                       "The server should have parsed 1 transaction.")
+
+server.stdout.contains(
+    "Delaying the body for key content-length-request per the content delay specification: 700",
+    "The server should delay the body of the response.")
+
+client.stdout.contains(
+    "1 transaction in 1 session .* in .* milliseconds",
+    "The client should have reported running the transaction with timing data.")
+
+client.stdout.excludes("Violation:",
+                       "There should be no verification errors because there are none added.")
+
+server.stdout.excludes("Violation:",
+                       "There should be no verification errors because there are none added.")
+
+#
+# Test 6: Verify that the timing data indicates that the content delay took
+# place.
+#
+case = suite.case("Verify the content delay replay took an expected amount of time to run.")
+client_output = client.stdout.path
+# The response delays 700 ms before its body. Without the content delay the
+# transaction would finish almost immediately.
+expected_min_delay_ms = "700"
+process = case.add_process(
+    "verify-content-delay",
+    ["python3", verifier_script, client_output, expected_min_delay_ms],
+    copies=[verifier_script],
+)
+process.stdout.contains('Good', 'The verifier script should report success.')
+
 
 def test_uranium_suite(uranium):
     uranium.run(suite)

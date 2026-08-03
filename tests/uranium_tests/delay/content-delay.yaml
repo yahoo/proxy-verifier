@@ -1,0 +1,51 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+    version: '1.0'
+
+# Verify the handling of a "delay" node inside a "content" node, which delays
+# the response body after the response headers have been sent. This is an
+# HTTP/1.x feature, so the session in this file is HTTP/1.1 over TCP.
+
+sessions:
+
+#
+# A response body delayed by 700 ms behind a Content-Length response.
+#
+- transactions:
+
+  - client-request:
+      method: GET
+      url: /pictures/flower.jpeg
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, www.example.com ]
+        - [ uuid, content-length-request ]
+
+    proxy-request:
+      url:
+      - [ path, { value: flower.jpeg, as: contains } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+        - [ Content-Type, image/jpeg ]
+        - [ Content-Length, '3432' ]
+        - [ Connection, keep-alive ]
+      content:
+        size: 3432
+        delay: 700ms
+
+    proxy-response:
+      status: 200
+      headers:
+        fields:
+        - [ Content-Length, { value: '3432', as: equal } ]

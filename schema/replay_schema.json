@@ -96,6 +96,10 @@
             "data": {
               "description": "Content data.",
               "type": "string"
+            },
+            "delay": {
+              "description": "Time to wait after writing the headers and before writing the body, such as '5s', '250ms', or '17000us'. HTTP/1.x only.",
+              "type": "string"
             }
           }
         },
@@ -111,6 +115,10 @@
             "size": {
               "description": "Size of the payload in bytes.",
               "type": "number"
+            },
+            "delay": {
+              "description": "Time to wait after writing the headers and before writing the body, such as '5s', '250ms', or '17000us'. HTTP/1.x only.",
+              "type": "string"
             }
           }
         }
