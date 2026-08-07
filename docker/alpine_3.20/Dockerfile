@@ -3,15 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM docker.io/library/alpine:3.20 AS pv-libs-builder-base
+FROM docker.io/library/alpine:3.20 AS dev-base
 
 ENV PATH="/opt/pv-venv/bin:${PATH}" \
     PV_DEPS_ROOT="/opt/pv_libs"
 
 RUN apk add --no-cache \
   bash \
-  autoconf \
-  automake \
   build-base \
   ca-certificates \
   coreutils \
@@ -19,15 +17,12 @@ RUN apk add --no-cache \
   diffutils \
   git \
   libffi-dev \
-  libtool \
   linux-headers \
   openssl-dev \
-  perl \
   pkgconf \
   python3 \
   python3-dev \
-  py3-pip \
-  sudo
+  py3-pip
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -42,19 +37,30 @@ export PATH="/opt/pv-venv/bin:${PATH}"
 PROFILE
 EOF
 
-# Build the HTTP dependency stack once during image creation.
-FROM pv-libs-builder-base AS dev
+FROM dev-base AS deps-builder
 
-ARG PV_REPO_URL="https://github.com/yahoo/proxy-verifier.git"
-ARG PV_REPO_REF="master"
+RUN apk add --no-cache \
+  autoconf \
+  automake \
+  libtool \
+  perl
+
+COPY tools/build-library-dependencies.sh /tmp/build-library-dependencies.sh
 
 RUN <<'EOF'
 set -eux
 
-git clone --depth 1 --branch "${PV_REPO_REF}" "${PV_REPO_URL}" /tmp/proxy-verifier
-chmod +x /tmp/proxy-verifier/tools/build-library-dependencies.sh
-/tmp/proxy-verifier/tools/build-library-dependencies.sh /opt/pv_libs
-rm -rf /tmp/proxy-verifier
+chmod +x /tmp/build-library-dependencies.sh
+/tmp/build-library-dependencies.sh /opt/pv_libs
+rm -f /tmp/build-library-dependencies.sh
 EOF
+
+FROM dev-base AS dev-external
+
+COPY --from=deps-builder /opt/pv_libs /opt/pv_libs
+
+WORKDIR /workspace
+
+FROM deps-builder AS dev
 
 WORKDIR /workspace

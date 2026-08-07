@@ -1,5 +1,5 @@
 /** @file
- * Common implementation for Proxy Verifier
+ * HTTP/3 over OpenSSL native QUIC.
  *
  * Copyright 2026, Verizon Media
  * SPDX-License-Identifier: Apache-2.0
@@ -10,37 +10,33 @@
 #include "core/verification.h"
 #include "core/ProxyVerifier.h"
 
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstring>
-#include <filesystem>
 #include <fcntl.h>
-#include <ngtcp2/ngtcp2.h>
-#include <ngtcp2/ngtcp2_crypto_ossl.h>
-#include <netdb.h>
+#include <filesystem>
+#include <limits>
+#include <netinet/in.h>
+#include <openssl/bio.h>
+#include <openssl/err.h>
+#include <openssl/quic.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <unistd.h>
+#include <vector>
 
 #include "swoc/bwf_ex.h"
 #include "swoc/bwf_ip.h"
 #include "swoc/bwf_std.h"
 
-/*
- * ngtcp2/nghttp3 does not currently have any code examples. The curl
- * implementation was helpful in forming this code:
- *
- * From curl/lib/quic/:
- *
- *   #ifdef ENABLE_QUIC
- *   #ifdef USE_NGTCP2
- *   #include "vquic/ngtcp2.h" // <------ Use this
- *   #endif
- *   #ifdef USE_QUICHE
- *   #include "vquic/quiche.h"
- *   #endif
- */
+#if OPENSSL_VERSION_NUMBER < 0x30500000L
+#error "HTTP/3 requires OpenSSL 3.5 or newer"
+#endif
 
 using swoc::Errata;
 using swoc::TextView;
-using swoc::bwf::Ngtcp2Error;
-using swoc::bwf::Nghttp3Error;
 using swoc::bwf::Errno;
 using namespace swoc::literals;
 using namespace std::literals;
@@ -50,1020 +46,76 @@ namespace chrono = std::chrono;
 using ClockType = chrono::steady_clock;
 using chrono::duration_cast;
 using chrono::milliseconds;
-using chrono::nanoseconds;
 
-constexpr auto QUIC_MAX_STREAMS = 256 * 1024;
-constexpr auto QUIC_IDLE_TIMEOUT = 60s;
+namespace
+{
 constexpr auto QUIC_HANDSHAKE_TIMEOUT = 10s;
+constexpr auto QUIC_EVENT_FALLBACK_TIMEOUT = 10ms;
+constexpr size_t QUIC_STREAM_BUFFER_SIZE = 64 * 1024;
+constexpr size_t MAX_HTTP3_VECTORS = 16;
+constexpr uint64_t H3_STREAM_CREATION_ERROR = 0x103;
+constexpr bool UNIDIRECTIONAL = true;
+constexpr unsigned char H3_ALPN[] = {2, 'h', '3'};
 
-constexpr auto H3_STREAM_WINDOW_SIZE = 128 * 1024;
-
-TextView H3_ALPN_H3 = "\x2h3";
-constexpr char const *QUIC_CIPHERS = "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_"
-                                     "POLY1305_SHA256:TLS_AES_128_CCM_SHA256";
-
-constexpr char const *QUIC_GROUPS = "P-256:X25519:P-384:P-521";
-
-int *H3Session::process_exit_code = nullptr;
-
-std::random_device QuicSocket::_rd;
-std::mt19937 QuicSocket::_rng(_rd());
-std::uniform_int_distribution<int> QuicSocket::_uni_id(0, std::numeric_limits<uint8_t>::max());
-swoc::file::path QuicSocket::_qlog_dir;
-std::mutex QuicSocket::_qlog_mutex;
-
-namespace swoc
+char const *
+nghttp3_error(int error)
 {
-inline namespace SWOC_VERSION_NS
-{
-BufferWriter &
-bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::Ngtcp2Error const &error)
-{
-  // Hand rolled, might not be totally compliant everywhere, but probably close
-  // enough. The long string will be locally accurate. Clang requires the double
-  // braces.
-  static const std::unordered_map<int, std::string_view> SHORT_NAME = {
-      {-201, "NGTCP2_ERR_INVALID_ARGUMENT: "},
-      {-203, "NGTCP2_ERR_NOBUF: "},
-      {-205, "NGTCP2_ERR_PROTO: "},
-      {-206, "NGTCP2_ERR_INVALID_STATE: "},
-      {-207, "NGTCP2_ERR_ACK_FRAME: "},
-      {-208, "NGTCP2_ERR_STREAM_ID_BLOCKED: "},
-      {-209, "NGTCP2_ERR_STREAM_IN_USE: "},
-      {-210, "NGTCP2_ERR_STREAM_DATA_BLOCKED: "},
-      {-211, "NGTCP2_ERR_FLOW_CONTROL: "},
-      {-212, "NGTCP2_ERR_CONNECTION_ID_LIMIT: "},
-      {-213, "NGTCP2_ERR_STREAM_LIMIT: "},
-      {-214, "NGTCP2_ERR_FINAL_SIZE: "},
-      {-215, "NGTCP2_ERR_CRYPTO: "},
-      {-216, "NGTCP2_ERR_PKT_NUM_EXHAUSTED: "},
-      {-217, "NGTCP2_ERR_REQUIRED_TRANSPORT_PARAM: "},
-      {-218, "NGTCP2_ERR_MALFORMED_TRANSPORT_PARAM: "},
-      {-219, "NGTCP2_ERR_FRAME_ENCODING: "},
-      {-220, "NGTCP2_ERR_TLS_DECRYPT: "},
-      {-221, "NGTCP2_ERR_STREAM_SHUT_WR: "},
-      {-222, "NGTCP2_ERR_STREAM_NOT_FOUND: "},
-      {-226, "NGTCP2_ERR_STREAM_STATE: "},
-      {-229, "NGTCP2_ERR_RECV_VERSION_NEGOTIATION: "},
-      {-230, "NGTCP2_ERR_CLOSING: "},
-      {-231, "NGTCP2_ERR_DRAINING: "},
-      {-234, "NGTCP2_ERR_TRANSPORT_PARAM: "},
-      {-235, "NGTCP2_ERR_DISCARD_PKT: "},
-      {-236, "NGTCP2_ERR_PATH_VALIDATION_FAILED: "},
-      {-237, "NGTCP2_ERR_CONN_ID_BLOCKED: "},
-      {-238, "NGTCP2_ERR_INTERNAL: "},
-      {-239, "NGTCP2_ERR_CRYPTO_BUFFER_EXCEEDED: "},
-      {-240, "NGTCP2_ERR_WRITE_MORE: "},
-      {-241, "NGTCP2_ERR_RETRY: "},
-      {-242, "NGTCP2_ERR_DROP_CONN: "},
-      {-243, "NGTCP2_ERR_AEAD_LIMIT_REACHED: "},
-      {-244, "NGTCP2_ERR_NO_VIABLE_PATH: "},
-      {-500, "NGTCP2_ERR_FATAL: "},
-      {-501, "NGTCP2_ERR_NOMEM: "},
-      {-502, "NGTCP2_ERR_CALLBACK_FAILURE: "},
-  };
-
-  auto short_name = [](int n) -> std::string_view {
-    if (n > -201 || n < -502) {
-      return "Unknown ngtcp2 error: ";
-    }
-    auto spot = SHORT_NAME.find(n);
-    if (spot == SHORT_NAME.end()) {
-      return "Unknown ngtcp2 error: ";
-    }
-    return spot->second;
-  };
-  static const bwf::Format number_fmt{"[{}]"sv}; // numeric value format.
-  if (spec.has_numeric_type()) {                 // if numeric type, print just the numeric
-                                                 // part.
-    w.print(number_fmt, error._e);
-  } else {
-    w.write(short_name(error._e));
-    auto const *error_reason = ngtcp2_strerror(error._e);
-    if (error_reason != nullptr) {
-      w.write(error_reason, std::strlen(error_reason));
-    }
-    if (spec._type != 's' && spec._type != 'S') {
-      w.write(' ');
-      w.print(number_fmt, error._e);
-    }
-  }
-  return w;
+  auto const *message = nghttp3_strerror(error);
+  return message == nullptr ? "unknown nghttp3 error" : message;
 }
 
-BufferWriter &
-bwformat(BufferWriter &w, bwf::Spec const &spec, bwf::Nghttp3Error const &error)
+milliseconds
+quic_event_timeout(SSL *connection, milliseconds maximum)
 {
-  // Hand rolled, might not be totally compliant everywhere, but probably close
-  // enough. The long string will be locally accurate. Clang requires the double
-  // braces.
-  static const std::unordered_map<int, std::string_view> SHORT_NAME = {
-      {-101, "NGHTTP3_ERR_INVALID_ARGUMENT: "},
-      {-102, "NGHTTP3_ERR_NOBUF: "},
-      {-103, "NGHTTP3_ERR_INVALID_STATE: "},
-      {-104, "NGHTTP3_ERR_WOULDBLOCK: "},
-      {-105, "NGHTTP3_ERR_STREAM_IN_USE: "},
-      {-106, "NGHTTP3_ERR_PUSH_ID_BLOCKED: "},
-      {-107, "NGHTTP3_ERR_MALFORMED_HTTP_HEADER: "},
-      {-108, "NGHTTP3_ERR_REMOVE_HTTP_HEADER: "},
-      {-109, "NGHTTP3_ERR_MALFORMED_HTTP_MESSAGING: "},
-      {-111, "NGHTTP3_ERR_QPACK_FATAL: "},
-      {-112, "NGHTTP3_ERR_QPACK_HEADER_TOO_LARGE: "},
-      {-113, "NGHTTP3_ERR_IGNORE_STREAM: "},
-      {-114, "NGHTTP3_ERR_STREAM_NOT_FOUND: "},
-      {-115, "NGHTTP3_ERR_IGNORE_PUSH_PROMISE: "},
-      {-116, "NGHTTP3_ERR_CONN_CLOSING: "},
-      {-402, "NGHTTP3_ERR_QPACK_DECOMPRESSION_FAILED: "},
-      {-403, "NGHTTP3_ERR_QPACK_ENCODER_STREAM_ERROR: "},
-      {-404, "NGHTTP3_ERR_QPACK_DECODER_STREAM_ERROR: "},
-      {-408, "NGHTTP3_ERR_H3_FRAME_UNEXPECTED: "},
-      {-409, "NGHTTP3_ERR_H3_FRAME_ERROR: "},
-      {-665, "NGHTTP3_ERR_H3_MISSING_SETTINGS: "},
-      {-667, "NGHTTP3_ERR_H3_INTERNAL_ERROR: "},
-      {-668, "NGHTTP3_ERR_H3_CLOSED_CRITICAL_STREAM: "},
-      {-669, "NGHTTP3_ERR_H3_GENERAL_PROTOCOL_ERROR: "},
-      {-670, "NGHTTP3_ERR_H3_ID_ERROR: "},
-      {-671, "NGHTTP3_ERR_H3_SETTINGS_ERROR: "},
-      {-672, "NGHTTP3_ERR_H3_STREAM_CREATION_ERROR: "},
-      {-900, "NGHTTP3_ERR_FATAL: "},
-      {-901, "NGHTTP3_ERR_NOMEM: "},
-      {-902, "NGHTTP3_ERR_CALLBACK_FAILURE: "},
-  };
-
-  auto short_name = [](int n) -> std::string_view {
-    if (n > -201 || n < -502) {
-      return "Unknown nghttp3 error: ";
-    }
-    auto spot = SHORT_NAME.find(n);
-    if (spot == SHORT_NAME.end()) {
-      return "Unknown nghttp3 error: ";
-    }
-    return spot->second;
-  };
-  static const bwf::Format number_fmt{"[{}]"sv}; // numeric value format.
-  if (spec.has_numeric_type()) {                 // if numeric type, print just the numeric
-                                                 // part.
-    w.print(number_fmt, error._e);
-  } else {
-    w.write(short_name(error._e));
-    auto const *error_reason = nghttp3_strerror(error._e);
-    if (error_reason != nullptr) {
-      w.write(error_reason, std::strlen(error_reason));
-    }
-    if (spec._type != 's' && spec._type != 'S') {
-      w.write(' ');
-      w.print(number_fmt, error._e);
-    }
+  struct timeval timeout = {};
+  int is_infinite = 1;
+  if (SSL_get_event_timeout(connection, &timeout, &is_infinite) != 1 || is_infinite) {
+    return std::min(maximum, QUIC_EVENT_FALLBACK_TIMEOUT);
   }
-  return w;
-}
-} // namespace SWOC_VERSION_NS
-} // namespace swoc
 
-/** Return a representation of the current time compatible with ngtcp
- * expectations.
- *
- * ngtcp2 expects timestamps from a monotonic clock.
- *
- * @return The current time.
- */
-static ngtcp2_tstamp
-timestamp()
-{
-  auto const current_time = ClockType::now();
-  auto const duration_since_epoch = current_time.time_since_epoch();
-  return duration_cast<nanoseconds>(duration_since_epoch).count();
+  auto const timeout_us = chrono::seconds{timeout.tv_sec} + chrono::microseconds{timeout.tv_usec};
+  auto timeout_ms = chrono::ceil<milliseconds>(timeout_us);
+  return std::min(maximum, timeout_ms);
 }
 
-PacketIoContext::PacketIoContext()
-{
-  ts = timestamp();
-  ngtcp2_path_storage_zero(&ps);
-}
-
-/** Receive data off of the socket.
- *
- * @return -1 on failure, otherwise the number of bytes received.
- */
-static swoc::Rv<int>
-ngtcp2_progress_ingress(H3Session &session, milliseconds timeout, PacketIoContext *packet_context);
-
-/** Send data on the socket.
- *
- * @return -1 on failure, otherwise the number of bytes sent.
- */
-static swoc::Rv<int> ngtcp2_progress_egress(H3Session &session, PacketIoContext *packet_context);
-
-static ngtcp2_conn *
-get_conn(ngtcp2_crypto_conn_ref *conn_ref)
-{
-  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_ref->user_data);
-  return h3_session->quic_socket.qconn;
-}
-
-// --------------------------------------------
-// Begin ngtcp2 callbacks.
-// --------------------------------------------
-static int
-cb_handshake_completed(ngtcp2_conn * /* tconn */, void * /* user_data */)
-{
-  Errata errata;
-  errata.note(S_DIAG, R"(h3 is negotiated.)");
-  return 0;
-}
-
-static int
-cb_recv_stream_data(
-    ngtcp2_conn *tconn,
-    uint32_t flags,
-    int64_t stream_id,
-    uint64_t /* offset */,
-    const uint8_t *buf,
-    size_t buflen,
-    void *conn_data,
-    void * /* stream_user_data */)
-{
-  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int fin = (flags & NGTCP2_STREAM_DATA_FLAG_FIN) ? 1 : 0;
-
-  ssize_t nconsumed =
-      nghttp3_conn_read_stream(h3_session->quic_socket.h3conn, stream_id, buf, buflen, fin);
-  if (nconsumed < 0) {
-    ngtcp2_ccerr_set_application_error(
-        &h3_session->quic_socket.last_error,
-        nghttp3_err_infer_quic_app_error_code((int)nconsumed),
-        NULL,
-        0);
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  }
-
-  /* A comment from the CURL code:
-   *
-   * number of bytes inside buflen which consists of framing overhead
-   * including QPACK HEADERS. In other words, it does not consume payload of
-   * DATA frame. */
-  ngtcp2_conn_extend_max_stream_offset(tconn, stream_id, nconsumed);
-  ngtcp2_conn_extend_max_offset(tconn, nconsumed);
-
-  return 0;
-}
-
-static int
-cb_acked_stream_data_offset(
-    ngtcp2_conn * /* tconn */,
-    int64_t stream_id,
-    uint64_t /* offset */,
-    uint64_t datalen,
-    void *conn_data,
-    void * /* stream_user_data */)
-{
-  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int rv = nghttp3_conn_add_ack_offset(h3_session->quic_socket.h3conn, stream_id, datalen);
-  if (rv != 0) {
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  }
-
-  return 0;
-}
-
-static int
-cb_stream_close(
-    ngtcp2_conn * /* tconn */,
-    uint32_t flags,
-    int64_t stream_id,
-    uint64_t app_error_code,
-    void *conn_data,
-    void * /* stream_user_data */)
-{
-  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-
-  if (!(flags & NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET)) {
-    app_error_code = NGHTTP3_H3_NO_ERROR;
-  }
-
-  int rv = nghttp3_conn_close_stream(h3_session->quic_socket.h3conn, stream_id, app_error_code);
-  if (rv != 0) {
-    ngtcp2_ccerr_set_application_error(
-        &h3_session->quic_socket.last_error,
-        nghttp3_err_infer_quic_app_error_code(rv),
-        NULL,
-        0);
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  }
-
-  return 0;
-}
-
-static void
-cb_rand(uint8_t *dest, size_t destlen, const ngtcp2_rand_ctx * /* rand_ctx */)
-{
-  QuicSocket::randomly_populate_array(dest, destlen);
-}
-
-static int
-cb_get_new_connection_id(
-    ngtcp2_conn * /* tconn */,
-    ngtcp2_cid *cid,
-    uint8_t *token,
-    size_t cidlen,
-    void * /* user_data */)
-{
-  QuicSocket::randomly_populate_array(cid->data, cidlen);
-  cid->datalen = cidlen;
-  QuicSocket::randomly_populate_array(token, NGTCP2_STATELESS_RESET_TOKENLEN);
-  return 0;
-}
-
-static int
-cb_stream_reset(
-    ngtcp2_conn * /* tconn */,
-    int64_t stream_id,
-    uint64_t /* final_size */,
-    uint64_t /* app_error_code */,
-    void *conn_data,
-    void * /* stream_user_data */)
-{
-  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int rv = nghttp3_conn_shutdown_stream_read(h3_session->quic_socket.h3conn, stream_id);
-  if (rv != 0) {
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  }
-
-  return 0;
-}
-
-static int
-cb_stream_stop_sending(
-    ngtcp2_conn * /* tconn */,
-    int64_t stream_id,
-    uint64_t app_error_code,
-    void *conn_data,
-    void * /* stream_user_data */)
-{
-  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int rv =
-      ngtcp2_conn_shutdown_stream_read(h3_session->quic_socket.qconn, 0, stream_id, app_error_code);
-  if (rv && rv != NGTCP2_ERR_STREAM_NOT_FOUND) {
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  }
-
-  return 0;
-}
-
-constexpr int SUCCEEDED = 0;
-constexpr int FAILED = 1;
-
-/// @return SUCCEEDED on success, FAILED on failure.
-static int initialize_nghttp3_connection(H3Session *session);
-
-static int
-cb_recv_rx_key(ngtcp2_conn * /* tconn */, ngtcp2_encryption_level level, void *conn_data)
-{
-  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-
-  if (level != NGTCP2_ENCRYPTION_LEVEL_1RTT) {
-    return 0;
-  }
-
-  if (initialize_nghttp3_connection(h3_session) != SUCCEEDED) {
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  }
-
-  return 0;
-}
-
-static int
-cb_extend_max_local_streams_bidi(
-    ngtcp2_conn * /* tconn */,
-    uint64_t /*max_streams */,
-    void * /*user_data */)
-{
-  return 0;
-}
-
-static int
-cb_extend_max_stream_data(
-    ngtcp2_conn * /* tconn */,
-    int64_t stream_id,
-    uint64_t /* max_data */,
-    void *conn_data,
-    void * /* stream_user_data */)
-{
-  H3Session *h3_session = reinterpret_cast<H3Session *>(conn_data);
-  int rv = nghttp3_conn_unblock_stream(h3_session->quic_socket.h3conn, stream_id);
-  if (rv != 0) {
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  }
-
-  return 0;
-}
-
-static ngtcp2_callbacks client_ngtcp2_callbacks = {
-    ngtcp2_crypto_client_initial_cb,
-    nullptr, /* recv_client_initial */
-    ngtcp2_crypto_recv_crypto_data_cb,
-    cb_handshake_completed,
-    nullptr, /* recv_version_negotiation */
-    ngtcp2_crypto_encrypt_cb,
-    ngtcp2_crypto_decrypt_cb,
-    ngtcp2_crypto_hp_mask_cb,
-    cb_recv_stream_data,
-    cb_acked_stream_data_offset,
-    nullptr, /* stream_open */
-    cb_stream_close,
-    nullptr, /* recv_stateless_reset */
-    ngtcp2_crypto_recv_retry_cb,
-    cb_extend_max_local_streams_bidi,
-    nullptr, /* extend_max_local_streams_uni */
-    cb_rand,
-    cb_get_new_connection_id,
-    nullptr,                     /* remove_connection_id */
-    ngtcp2_crypto_update_key_cb, /* update_key */
-    nullptr,                     /* path_validation */
-    nullptr,                     /* select_preferred_addr */
-    cb_stream_reset,
-    nullptr, /* extend_max_remote_streams_bidi */
-    nullptr, /* extend_max_remote_streams_uni */
-    cb_extend_max_stream_data,
-    nullptr, /* dcid_status */
-    nullptr, /* handshake_confirmed */
-    nullptr, /* recv_new_token */
-    ngtcp2_crypto_delete_crypto_aead_ctx_cb,
-    ngtcp2_crypto_delete_crypto_cipher_ctx_cb,
-    nullptr, /* recv_datagram */
-    nullptr, /* ack_datagram */
-    nullptr, /* lost_datagram */
-    ngtcp2_crypto_get_path_challenge_data_cb,
-    cb_stream_stop_sending,
-    ngtcp2_crypto_version_negotiation_cb,
-    cb_recv_rx_key,
-    nullptr, /* recv_tx_key */
-    nullptr, /* early_data_rejected */
-    nullptr, /* begin_path_validation */
-};
-
-// TODO: fill this out when we add server-side code.
-#if 0
-static ngtcp2_callbacks server_ngtcp2_callbacks = {
-  nullptr, /* client_initial */
-  ngtcp2_crypto_recv_client_initial_cb, /* recv_client_initial */
-  ngtcp2_crypto_recv_crypto_data_cb,
-  cb_handshake_completed,
-  nullptr, /* recv_version_negotiation */
-  ngtcp2_crypto_encrypt_cb,
-  ngtcp2_crypto_decrypt_cb,
-  ngtcp2_crypto_hp_mask_cb,
-  cb_recv_stream_data,
-  cb_acked_stream_data_offset,
-  nullptr, /* stream_open */
-  cb_stream_close,
-  nullptr, /* recv_stateless_reset */
-  ngtcp2_crypto_recv_retry_cb,
-  cb_extend_max_local_streams_bidi,
-  nullptr, /* extend_max_local_streams_uni */
-  cb_rand,
-  cb_get_new_connection_id,
-  nullptr, /* remove_connection_id */
-  ngtcp2_crypto_update_key_cb, /* update_key */
-  nullptr, /* path_validation */
-  nullptr, /* select_preferred_addr */
-  cb_stream_reset,
-  nullptr, /* extend_max_remote_streams_bidi */
-  nullptr, /* extend_max_remote_streams_uni */
-  cb_extend_max_stream_data,
-  nullptr, /* dcid_status */
-  nullptr, /* handshake_confirmed */
-  nullptr, /* recv_new_token */
-  ngtcp2_crypto_delete_crypto_aead_ctx_cb,
-  ngtcp2_crypto_delete_crypto_cipher_ctx_cb,
-  nullptr /* recv_datagram */
-};
-#endif
-
-// --------------------------------------------
-// End ngtcp2 callbacks.
-// --------------------------------------------
-
-/** Handle expired ngtcp2 timers.
- *
- * @return @c true if an expiry was handled, @c false otherwise.
- */
-static swoc::Rv<bool>
-handle_expiry(H3Session &session, PacketIoContext *packet_context)
-{
-  swoc::Rv<bool> zret{false};
-  PacketIoContext local_packet_context;
-
-  if (packet_context == nullptr) {
-    packet_context = &local_packet_context;
-  } else {
-    packet_context->ts = timestamp();
-  }
-
-  ngtcp2_conn *qconn = session.quic_socket.qconn;
-  if (ngtcp2_conn_get_handshake_completed(qconn) == 0) {
-    return zret;
-  }
-
-  ngtcp2_tstamp const expiry = ngtcp2_conn_get_expiry(qconn);
-  if (expiry == 0 || expiry == UINT64_MAX || expiry > packet_context->ts) {
-    return zret;
-  }
-
-  int const rv = ngtcp2_conn_handle_expiry(qconn, packet_context->ts);
-  if (rv != 0) {
-    zret.note(S_ERROR, "ngtcp2_conn_handle_expiry returned error: {}", Ngtcp2Error{rv});
-    ngtcp2_ccerr_set_liberr(&session.quic_socket.last_error, rv, nullptr, 0);
-    return zret;
-  }
-
-  zret = true;
-  return zret;
-}
-
-/** Calculate the poll timeout, taking ngtcp2's next expiry into account.
- *
- * @param[in] session The H3 session whose QUIC timer is checked.
- * @param[in] timeout The caller's upper-bound timeout.
- * @param[in,out] packet_context Packet context with the current timestamp.
- * @param[out] limited_by_expiry Whether the returned timeout is bounded by the QUIC timer.
- *
- * @return A timeout suitable for poll().
- */
-static swoc::Rv<milliseconds>
-expiry_aware_poll_timeout(
-    H3Session &session,
-    milliseconds timeout,
-    PacketIoContext *packet_context,
-    bool &limited_by_expiry)
-{
-  swoc::Rv<milliseconds> zret{timeout};
-
-  limited_by_expiry = false;
-  packet_context->ts = timestamp();
-
-  if (ngtcp2_conn_get_handshake_completed(session.quic_socket.qconn) == 0) {
-    return zret;
-  }
-
-  auto &&[handled_expiry, expiry_errata] = handle_expiry(session, packet_context);
-  zret.note(std::move(expiry_errata));
-  if (!zret.is_ok()) {
-    return zret;
-  }
-  if (handled_expiry) {
-    limited_by_expiry = true;
-    zret = 0ms;
-    return zret;
-  }
-
-  ngtcp2_tstamp const expiry = ngtcp2_conn_get_expiry(session.quic_socket.qconn);
-  if (expiry == 0 || expiry == UINT64_MAX) {
-    return zret;
-  }
-
-  auto const until_expiry = nanoseconds{expiry - packet_context->ts};
-  auto expiry_timeout = duration_cast<milliseconds>(until_expiry);
-  if (expiry_timeout == 0ms && until_expiry > 0ns) {
-    expiry_timeout = 1ms;
-  }
-
-  if (expiry_timeout < timeout) {
-    limited_by_expiry = true;
-    zret = expiry_timeout;
-  }
-
-  return zret;
-}
-
-/** Receive a single QUIC packet.
- *
- * @return 0 on success, -1 on error.
- */
-static swoc::Rv<int>
-receive_packet(
-    QuicSocket &qs,
-    const unsigned char *pkt,
-    size_t pktlen,
-    struct sockaddr_storage *remote_addr,
-    socklen_t remote_addrlen,
-    int ecn,
-    PacketIoContext *packet_context)
-{
-  ngtcp2_pkt_info pi;
-  ngtcp2_path path;
-  swoc::Rv<int> zret{0};
-
-  ++packet_context->pkt_count;
-  ngtcp2_addr_init(&path.local, qs.local_addr, qs.local_addr.size());
-  ngtcp2_addr_init(&path.remote, (struct sockaddr *)remote_addr, remote_addrlen);
-  pi.ecn = (uint32_t)ecn;
-
-  int const rv = ngtcp2_conn_read_pkt(qs.qconn, &path, &pi, pkt, pktlen, packet_context->ts);
-  if (rv != 0) {
-    zret = -1;
-    if (!qs.last_error.error_code) {
-      if (rv == NGTCP2_ERR_CRYPTO) {
-        ngtcp2_ccerr_set_tls_alert(&qs.last_error, ngtcp2_conn_get_tls_alert(qs.qconn), NULL, 0);
-      } else {
-        ngtcp2_ccerr_set_liberr(&qs.last_error, rv, NULL, 0);
-      }
-    }
-
-    if (rv == NGTCP2_ERR_CRYPTO) {
-      zret.note(
-          S_ERROR,
-          "receive_packet: ngtcp2_conn_read_pkt() had an error return "
-          "(likely a certificate verification problem): {}",
-          Ngtcp2Error{rv});
-      return zret;
-    }
-    zret.note(
-        S_ERROR,
-        "receive_packet: ngtcp2_conn_read_pkt() had a non-Crypto error return: {}",
-        Ngtcp2Error{rv});
-    return zret;
-  }
-
-  return zret;
-}
-
-static swoc::Rv<int>
-receive_packets(
-    H3Session &session,
-    milliseconds timeout,
-    size_t max_pkts,
-    PacketIoContext *packet_context)
-{
-  uint8_t buf[64 * 1024];
-  int bufsize = (int)sizeof(buf);
-  struct sockaddr_storage remote_addr;
-  socklen_t remote_addrlen = sizeof(remote_addr);
-  size_t pkts;
-  ssize_t nread;
-  swoc::Rv<int> zret{-1};
-
-  assert(max_pkts > 0);
-  bool have_polled = false;
-  for (pkts = 0; pkts < max_pkts;) {
-    while (true) {
-      if (session.is_closed()) {
-        return zret;
-      }
-      nread = ::recvfrom(
-          session.get_fd(),
-          (char *)buf,
-          bufsize,
-          0,
-          (struct sockaddr *)&remote_addr,
-          &remote_addrlen);
-      if (nread > 0) {
-        // Success. We read data off the socekt.
-        Session::increment_total_bytes_read(nread);
-        break;
-      }
-      if (nread == -1) {
-        if (errno == EINTR) {
-          // Interrupted by a signal. Retry.
-          continue;
-        } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-          if (pkts > 0) {
-            return zret;
-          }
-          bool limited_by_expiry = false;
-          auto &&[poll_timeout, timeout_errata] =
-              expiry_aware_poll_timeout(session, timeout, packet_context, limited_by_expiry);
-          zret.note(std::move(timeout_errata));
-          if (!zret.is_ok()) {
-            return zret;
-          }
-          if (limited_by_expiry && poll_timeout == 0ms) {
-            zret = 0;
-            return zret;
-          }
-          if (have_polled) {
-            // We only poll once in this loop.
-            return zret;
-          }
-          auto &&[poll_return, poll_errata] = session.poll_for_data_on_socket(poll_timeout);
-          have_polled = true;
-          zret.note(std::move(poll_errata));
-          if (!zret.is_ok()) {
-            zret.note(std::move(poll_errata));
-            zret.note(S_ERROR, "Failed to poll for HTTP/3 data.");
-            session.close();
-            zret = -1;
-            return zret;
-          } else if (poll_return > 0) {
-            // Simply repeat the read now that poll says something is ready.
-          } else if (poll_return == 0) {
-            if (limited_by_expiry) {
-              auto &&[handled_expiry, expiry_errata] = handle_expiry(session, packet_context);
-              zret.note(std::move(expiry_errata));
-              if (!zret.is_ok()) {
-                return zret;
-              }
-              if (handled_expiry) {
-                zret = 0;
-                return zret;
-              }
-              zret = 0;
-              return zret;
-            }
-            zret.note(S_ERROR, "Poll timed out waiting to read HTTP/3 content.");
-            session.close();
-            zret = -1;
-            return zret;
-          } else if (poll_return < 0) {
-            // Connection was closed. Nothing to do.
-            zret.note(S_DIAG, "The peer closed the HTTP/3 connection while reading during poll.");
-            zret = 0;
-            return zret;
-          }
-          continue;
-          return zret;
-        } else if (errno == ECONNREFUSED) {
-          zret.note(S_ERROR, "Connection to peer refused.");
-          zret = -1;
-          return zret;
-        } else {
-          zret.note(S_ERROR, "receive_from_packets: unexpected recvfrom() errno: {}", Errno{});
-          session.close();
-          zret = -1;
-          return zret;
-        }
-      }
-    }
-
-    ++pkts;
-    zret.result() += (size_t)nread;
-    auto receive_result = receive_packet(
-        session.quic_socket,
-        buf,
-        (size_t)nread,
-        &remote_addr,
-        remote_addrlen,
-        0,
-        packet_context);
-    if (!receive_result.is_ok()) {
-      zret.note(std::move(receive_result));
-      return zret;
-    }
-  }
-
-  zret.note(S_DIAG, "recvfrom of {} packets with {} bytes", pkts, zret.result());
-  return zret;
-}
-
-static swoc::Rv<int>
-ngtcp2_progress_ingress(H3Session &session, milliseconds timeout, PacketIoContext *packet_context)
-{
-  swoc::Rv<int> zret{-1};
-  constexpr size_t pkts_chunk = 128;
-  constexpr size_t pkts_max = 10 * pkts_chunk;
-
-  PacketIoContext local_packet_context;
-  if (packet_context == nullptr) {
-    packet_context = &local_packet_context;
-  } else {
-    packet_context->ts = timestamp();
-  }
-
-  for (size_t i = 0; i < pkts_max; i += pkts_chunk) {
-    packet_context->pkt_count = 0;
-    auto &&[received_bytes, receive_errata] =
-        receive_packets(session, timeout, pkts_chunk, packet_context);
-    zret.note(std::move(receive_errata));
-    if (!zret.is_ok()) {
-      break;
-    }
-    zret.result() += received_bytes;
-    if (packet_context->pkt_count < pkts_chunk) /* got less than we could */
-      break;
-    /* give egress a chance before we receive more */
-    auto &&[flushed_bytes, flushed_errata] = ngtcp2_progress_egress(session, packet_context);
-    zret.note(std::move(flushed_errata));
-    if (!zret.is_ok()) {
-      break;
-    }
-    zret.result() += flushed_bytes;
-  }
-  return zret;
-}
-
-static swoc::Rv<int>
-ngtcp2_progress_egress(H3Session &session, PacketIoContext *packet_context)
+swoc::Rv<int>
+poll_for_quic(H3Session &session, milliseconds timeout, int ssl_error = SSL_ERROR_WANT_READ)
 {
   swoc::Rv<int> zret{0};
-  auto &qs = session.quic_socket;
-
-  assert(qs.local_addr.is_valid());
-
-  PacketIoContext local_packet_context;
-  if (packet_context == nullptr) {
-    packet_context = &local_packet_context;
-  } else {
-    packet_context->ts = timestamp();
-    ngtcp2_path_storage_zero(&packet_context->ps);
-  }
-  ngtcp2_tstamp ts = packet_context->ts;
-  ngtcp2_path_storage ps;
-  ngtcp2_path_storage_zero(&ps);
-  bool wrote_packet = false;
-
-  // TODO: ouch. Looks like this loop has to change too. See Curl_bufq_sipn.
-  for (;;) {
-    ssize_t veccnt = 0;
-    int64_t stream_id = -1;
-    int fin = 0;
-    nghttp3_vec vec[16];
-
-    if (qs.h3conn && ngtcp2_conn_get_max_data_left(qs.qconn)) {
-      veccnt = nghttp3_conn_writev_stream(
-          qs.h3conn,
-          &stream_id,
-          &fin,
-          vec,
-          sizeof(vec) / sizeof(vec[0]));
-      if (veccnt < 0) {
-        ngtcp2_ccerr_set_application_error(
-            &qs.last_error,
-            nghttp3_err_infer_quic_app_error_code((int)veccnt),
-            NULL,
-            0);
-
-        zret.note(
-            S_ERROR,
-            "nghttp3_conn_writev_stream returned error: {}",
-            Nghttp3Error{(int)veccnt});
-        zret = -1;
-        return zret;
-      }
-    }
-
-    uint32_t flags = NGTCP2_WRITE_STREAM_FLAG_MORE | (fin ? NGTCP2_WRITE_STREAM_FLAG_FIN : 0);
-    uint8_t out[NGTCP2_MAX_PMTUD_UDP_PAYLOAD_SIZE];
-    ssize_t ndatalen = 0;
-    ssize_t outlen = ngtcp2_conn_writev_stream(
-        qs.qconn,
-        &ps.path,
-        nullptr,
-        out,
-        sizeof(out),
-        &ndatalen,
-        flags,
-        stream_id,
-        (const ngtcp2_vec *)vec,
-        veccnt,
-        ts);
-    if (outlen == 0) {
-      // Nothing more to write.
-      break;
-    }
-    if (outlen < 0) {
-      switch (outlen) {
-      case NGTCP2_ERR_STREAM_DATA_BLOCKED: {
-        assert(ndatalen == -1);
-        nghttp3_conn_block_stream(qs.h3conn, stream_id);
-        continue;
-      }
-      case NGTCP2_ERR_STREAM_SHUT_WR: {
-        assert(ndatalen == -1);
-        nghttp3_conn_shutdown_stream_write(qs.h3conn, stream_id);
-        continue;
-      }
-      case NGTCP2_ERR_WRITE_MORE: {
-        assert(ndatalen >= 0);
-        int const rv = nghttp3_conn_add_write_offset(qs.h3conn, stream_id, ndatalen);
-        if (rv != 0) {
-          zret.note(S_ERROR, "nghttp3_conn_add_write_offset returned error: {}", Nghttp3Error{rv});
-          zret = -1;
-          return zret;
-        }
-        continue;
-      }
-      default: {
-        assert(ndatalen == -1);
-        ngtcp2_ccerr_set_liberr(&qs.last_error, (int)outlen, NULL, 0);
-        zret.note(
-            S_ERROR,
-            "ngtcp2_conn_writev_stream returned error: {}",
-            Ngtcp2Error{(int)outlen});
-        zret = -1;
-        return zret;
-      }
-      }
-    } else if (ndatalen >= 0) {
-      int const rv = nghttp3_conn_add_write_offset(qs.h3conn, stream_id, ndatalen);
-      if (rv != 0) {
-        zret.note(S_ERROR, "nghttp3_conn_add_write_offset returned error: {}", Nghttp3Error{rv});
-        zret = -1;
-        return zret;
-      }
-    }
-
-    ssize_t nsent = 0;
-    while ((nsent = ::send(session.get_fd(), (const char *)out, outlen, 0)) == -1) {
-      if (errno == EINTR) {
-        continue;
-      } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        auto &&[poll_return, poll_errata] = session.poll_for_data_on_socket(Poll_Timeout, POLLOUT);
-        zret.note(std::move(poll_errata));
-        if (poll_return > 0) {
-          // The socket is available again for writing. Simply repeat the write.
-          continue;
-        } else if (!zret.is_ok()) {
-          zret.note(S_ERROR, "Error polling on a socket to write: {}", swoc::bwf::Errno{});
-          zret = -1;
-          return zret;
-        } else if (poll_return == 0) {
-          zret.note(S_ERROR, "Timed out waiting to write to a socket.");
-          zret = -1;
-          return zret;
-        } else if (poll_return < 0) {
-          zret.note(S_DIAG, "write failed during poll: session is closed");
-          zret = 0;
-          return zret;
-        }
-      } else {
-        zret.note(S_ERROR, "send() failed: {}", swoc::bwf::Errno{});
-        zret = -1;
-        return zret;
-      }
-    }
-    zret.result() += nsent;
-    wrote_packet = true;
-    Session::increment_total_bytes_written(nsent);
-  }
-  if (wrote_packet) {
-    ngtcp2_conn_update_pkt_tx_time(qs.qconn, ts);
+  short events = POLLIN;
+  if (ssl_error == SSL_ERROR_WANT_WRITE || SSL_net_write_desired(session.quic_socket.connection)) {
+    events |= POLLOUT;
   }
 
+  auto &&[poll_result, poll_errata] = session.poll_for_data_on_socket(
+      quic_event_timeout(session.quic_socket.connection, timeout),
+      events);
+  zret = poll_result;
+  zret.note(std::move(poll_errata));
   return zret;
 }
 
-/** Listen on the Session's socket for incoming data and then respond with any
- * resulting packets.
- *
- * Listening on the socket will poll() until data comes in or a timeout is
- * experienced. Writing any packets will not delay if there is nothing to write.
- */
-static Errata
-nghttp3_receive_and_send_data(H3Session &session, milliseconds timeout)
-{
-  Errata errata;
-  PacketIoContext packet_context;
-
-  auto &&[initial_num_bytes_written, initial_egress_errata] =
-      ngtcp2_progress_egress(session, &packet_context);
-  errata.note(std::move(initial_egress_errata));
-  if (!errata.is_ok() || initial_num_bytes_written < 0) {
-    return errata;
-  }
-
-  // This may poll until packets come in to read.
-  auto &&[num_bytes_received, ingress_errata] =
-      ngtcp2_progress_ingress(session, timeout, &packet_context);
-  errata.note(std::move(ingress_errata));
-  if (!errata.is_ok() || num_bytes_received < 0) {
-    return errata;
-  }
-
-  // Write packets that came in from ngtcp2_process_ingress, if there are any.
-  auto &&[num_bytes_written, egress_errata] = ngtcp2_progress_egress(session, &packet_context);
-  errata.note(std::move(egress_errata));
-  if (!errata.is_ok() || num_bytes_written < 0) {
-    return errata;
-  }
-  return errata;
-}
-
-static void
+void
 finalize_h3_stream(int64_t stream_id, H3StreamState &stream_state)
 {
   Errata errata;
 
   if (stream_state.will_receive_request()) {
-    if (stream_state.specified_request && stream_state.specified_request->_content_rule) {
-      if (!stream_state.specified_request->_content_rule
-               ->test(stream_state.key, "body", swoc::TextView(stream_state.body_received)))
-      {
-        errata.note(S_DIAG, R"(Body content did not match expected value.)");
-      }
+    if (stream_state.specified_request && stream_state.specified_request->_content_rule &&
+        !stream_state.specified_request->_content_rule
+             ->test(stream_state.key, "body", TextView(stream_state.body_received)))
+    {
+      errata.note(S_DIAG, R"(Body content did not match expected value.)");
     }
-  } else {
-    if (stream_state.specified_response && stream_state.specified_response->_content_rule) {
-      if (!stream_state.specified_response->_content_rule
-               ->test(stream_state.key, "body", swoc::TextView(stream_state.body_received)))
-      {
-        errata.note(S_DIAG, R"(Body content did not match expected value.)");
-      }
-    }
+  } else if (
+      stream_state.specified_response && stream_state.specified_response->_content_rule &&
+      !stream_state.specified_response->_content_rule
+           ->test(stream_state.key, "body", TextView(stream_state.body_received)))
+  {
+    errata.note(S_DIAG, R"(Body content did not match expected value.)");
   }
 
-  auto const &message_start = stream_state.stream_start;
-  auto const message_end = ClockType::now();
-  auto const elapsed_ms = duration_cast<milliseconds>(message_end - message_start);
+  auto const elapsed_ms = duration_cast<milliseconds>(ClockType::now() - stream_state.stream_start);
   if (elapsed_ms > Transaction_Delay_Cutoff) {
     errata.note(
         S_ERROR,
@@ -1074,61 +126,49 @@ finalize_h3_stream(int64_t stream_id, H3StreamState &stream_state)
   }
 }
 
-// --------------------------------------------
-// Begin nghttp3 callbacks.
-// --------------------------------------------
-
-/** Called to populate data frames of a request or response.
- *
- * @return The number of objects populated in vec.
- */
-static ssize_t
+ssize_t
 cb_h3_readfunction(
-    nghttp3_conn * /* conn */,
+    nghttp3_conn *,
     int64_t stream_id,
     nghttp3_vec *vec,
-    size_t /* veccnt */,
+    size_t,
     uint32_t *pflags,
-    void * /* conn_data */,
+    void *,
     void *stream_user_data)
 {
   Errata errata;
-  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
+  auto *stream_state = static_cast<H3StreamState *>(stream_user_data);
 
   if (stream_state->wait_for_continue) {
     errata.note(S_DIAG, R"(Not sending HTTP/3 body for "Expect: 100" request.)");
     *pflags = NGHTTP3_DATA_FLAG_EOF;
     return 0;
   }
-  vec[0].base = (uint8_t *)stream_state->body_to_send.data();
 
-  auto const body_size = stream_state->body_to_send.size();
-  vec[0].len = body_size;
-  stream_state->num_data_bytes_written += body_size;
-
+  vec[0].base = reinterpret_cast<uint8_t *>(const_cast<char *>(stream_state->body_to_send.data()));
+  vec[0].len = stream_state->body_to_send.size();
+  stream_state->num_data_bytes_written += vec[0].len;
   *pflags = NGHTTP3_DATA_FLAG_EOF;
   errata.note(
       S_DIAG,
       "Sent an HTTP/3 body of {} bytes for key {} of stream id {}:\n{}",
-      body_size,
+      vec[0].len,
       stream_state->key,
       stream_id,
-      TextView{stream_state->body_to_send.data(), body_size});
-
+      TextView{stream_state->body_to_send.data(), vec[0].len});
   return 1;
 }
 
-/* this amount of data has now been acked on this stream */
-static int
+int
 cb_h3_acked_stream_data(
-    nghttp3_conn * /* conn */,
+    nghttp3_conn *,
     int64_t stream_id,
     uint64_t datalen,
-    void * /* conn_user_data */,
+    void *,
     void *stream_user_data)
 {
   Errata errata;
-  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
+  auto *stream_state = static_cast<H3StreamState *>(stream_user_data);
   auto const outstanding_bytes = stream_state->num_data_bytes_written;
   errata.note(
       S_DIAG,
@@ -1138,72 +178,45 @@ cb_h3_acked_stream_data(
       outstanding_bytes);
 
   if (datalen >= outstanding_bytes) {
-    if (datalen > outstanding_bytes) {
-      errata.note(
-          S_DIAG,
-          "HTTP/3 stream with id {} and key {} acked more bytes ({}) than remain "
-          "outstanding ({}). Treating the body as fully acknowledged.",
-          stream_id,
-          stream_state->key,
-          datalen,
-          outstanding_bytes);
-    }
     stream_state->num_data_bytes_written = 0;
   } else {
     stream_state->num_data_bytes_written -= datalen;
   }
-
-  if (stream_state->num_data_bytes_written == 0) {
-    errata.note(
-        S_DIAG,
-        "HTTP/3 stream with id {} and key {} has no outstanding body bytes",
-        stream_id,
-        stream_state->key);
-  }
   return 0;
 }
 
-static int
+int
 cb_h3_stream_close(
-    nghttp3_conn * /* conn */,
+    nghttp3_conn *,
     int64_t stream_id,
-    uint64_t /* app_error_code */,
+    uint64_t,
     void *conn_user_data,
     void *stream_user_data)
 {
-  Errata errata;
-
-  auto *session = reinterpret_cast<H3Session *>(conn_user_data);
+  auto *session = static_cast<H3Session *>(conn_user_data);
   auto iter = session->stream_map.find(stream_id);
   if (iter == session->stream_map.end()) {
-    if (session->clear_completed_response_stream(stream_id)) {
-      return 0;
-    }
+    session->clear_completed_response_stream(stream_id);
     return 0;
   }
-  auto &stream_state = *reinterpret_cast<H3StreamState *>(stream_user_data);
+
+  auto &stream_state = *static_cast<H3StreamState *>(stream_user_data);
   finalize_h3_stream(stream_id, stream_state);
-
-  session->stream_map.erase(stream_id);
-
-  /* make sure that ngh3_stream_recv is called again to complete the transfer
-   * even if there are no more packets to be received from the server. */
-  errata.note(nghttp3_receive_and_send_data(*session, Poll_Timeout));
+  session->stream_map.erase(iter);
   return 0;
 }
 
-static int
+int
 cb_h3_recv_data(
-    nghttp3_conn * /* conn */,
+    nghttp3_conn *,
     int64_t stream_id,
-    const uint8_t *buf,
+    uint8_t const *buf,
     size_t buflen,
-    void *conn_user_data,
+    void *,
     void *stream_user_data)
 {
   Errata errata;
-  auto *h3_session = reinterpret_cast<H3Session *>(conn_user_data);
-  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
+  auto *stream_state = static_cast<H3StreamState *>(stream_user_data);
   errata.note(
       S_DIAG,
       "Received an HTTP/3 body of {} bytes for transaction with key {}, "
@@ -1212,47 +225,33 @@ cb_h3_recv_data(
       stream_state->key,
       stream_id,
       TextView(reinterpret_cast<char const *>(buf), buflen));
-  stream_state->body_received += std::string(reinterpret_cast<char const *>(buf), buflen);
-
-  auto &qs = h3_session->quic_socket;
-  ngtcp2_conn_extend_max_stream_offset(qs.qconn, stream_id, buflen);
-  ngtcp2_conn_extend_max_offset(qs.qconn, buflen);
-
+  stream_state->body_received.append(reinterpret_cast<char const *>(buf), buflen);
   return 0;
 }
 
-static int
-cb_h3_deferred_consume(
-    nghttp3_conn * /* conn */,
-    int64_t stream_id,
-    size_t consumed,
-    void *conn_user_data,
-    void * /* stream_user_data */)
+int
+cb_h3_deferred_consume(nghttp3_conn *, int64_t, size_t, void *, void *)
 {
-  auto *h3_session = reinterpret_cast<H3Session *>(conn_user_data);
-  auto &qs = h3_session->quic_socket;
-
-  ngtcp2_conn_extend_max_stream_offset(qs.qconn, stream_id, consumed);
-  ngtcp2_conn_extend_max_offset(qs.qconn, consumed);
+  // OpenSSL manages QUIC flow-control credit internally.
   return 0;
 }
 
-static int
+int
 cb_h3_recv_header(
-    nghttp3_conn * /* conn */,
-    int64_t /* stream_id */,
-    int32_t /* token */,
+    nghttp3_conn *,
+    int64_t,
+    int32_t,
     nghttp3_rcbuf *name,
     nghttp3_rcbuf *value,
-    uint8_t /* flags */,
-    void * /* conn_user_data */,
+    uint8_t,
+    void *,
     void *stream_user_data)
 {
-  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
+  auto *stream_state = static_cast<H3StreamState *>(stream_user_data);
   stream_state->have_received_headers = true;
 
-  TextView name_view = stream_state->register_rcbuf(name);
-  TextView value_view = stream_state->register_rcbuf(value);
+  TextView const name_view = stream_state->register_rcbuf(name);
+  TextView const value_view = stream_state->register_rcbuf(value);
 
   if (stream_state->will_receive_request()) {
     auto &request_headers = stream_state->request_from_client;
@@ -1266,35 +265,31 @@ cb_h3_recv_header(
       request_headers->_path = value_view;
     }
     request_headers->_fields_rules->add_field(name_view, value_view);
-  } else { // stream_state receives a response.
+  } else {
     auto &response_headers = stream_state->response_from_server;
     if (name_view == ":status") {
       response_headers->_status = swoc::svtou(value_view);
       response_headers->_status_string = std::string(value_view);
-    }
-    response_headers->_fields_rules->add_field(name_view, value_view);
-    // See if we are expecting a 100 response.
-    if (stream_state->wait_for_continue) {
-      if (name_view == ":status" && value_view == "100") {
-        // We got our 100 Continue. No need to wait for it anymore.
+      if (stream_state->wait_for_continue && value_view == "100") {
         stream_state->wait_for_continue = false;
       }
     }
+    response_headers->_fields_rules->add_field(name_view, value_view);
   }
   return 0;
 }
 
-static int
+int
 cb_h3_end_headers(
-    nghttp3_conn * /* conn */,
+    nghttp3_conn *,
     int64_t stream_id,
-    int /* fin */,
+    int,
     void *conn_user_data,
     void *stream_user_data)
 {
   Errata errata;
-  auto *session_data = reinterpret_cast<H3Session *>(conn_user_data);
-  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
+  auto *session = static_cast<H3Session *>(conn_user_data);
+  auto *stream_state = static_cast<H3StreamState *>(stream_user_data);
   if (stream_state->will_receive_request()) {
     auto &request_from_client = *stream_state->request_from_client;
     request_from_client.derive_key();
@@ -1311,8 +306,7 @@ cb_h3_end_headers(
             request_from_client._fields_rules->_fields.find(HttpHeader::FIELD_CONTENT_LENGTH)};
         spot != request_from_client._fields_rules->_fields.end())
     {
-      size_t expected_size = swoc::svtou(spot->second);
-      stream_state->body_received.reserve(expected_size);
+      stream_state->body_received.reserve(swoc::svtou(spot->second));
     }
     errata.note(
         S_DIAG,
@@ -1320,13 +314,10 @@ cb_h3_end_headers(
         stream_state->key,
         stream_id,
         request_from_client);
-  } else { // stream_state receives a response
+  } else {
     auto &response_from_wire = *stream_state->response_from_server;
     response_from_wire.derive_key();
     if (stream_state->key.empty()) {
-      // A response for which we didn't process the request, presumably. A
-      // server push? Maybe? In theory we can support that but currently we
-      // do not. Emit a warning for now.
       stream_state->key = response_from_wire.get_key();
       errata.note(
           S_ERROR,
@@ -1334,20 +325,13 @@ cb_h3_end_headers(
           "response: {}.",
           stream_state->key);
     } else {
-      // Make sure the key is set and give preference to the associated
-      // request over the content of the response. There shouldn't be a
-      // difference, but if there is, the user has the YAML file with the
-      // request's key in front of them, and identifying that transaction
-      // is more helpful than so some abberant response's key from the
-      // wire. If they are looking into issues, debug logging will show
-      // the fields of both the request and response.
       response_from_wire.set_key(stream_state->key);
     }
+
     if (auto spot{response_from_wire._fields_rules->_fields.find(HttpHeader::FIELD_CONTENT_LENGTH)};
         spot != response_from_wire._fields_rules->_fields.end())
     {
-      size_t expected_size = swoc::svtou(spot->second);
-      stream_state->body_received.reserve(expected_size);
+      stream_state->body_received.reserve(swoc::svtou(spot->second));
     }
     errata.note(
         S_DIAG,
@@ -1355,26 +339,27 @@ cb_h3_end_headers(
         stream_state->key,
         stream_id,
         response_from_wire);
-    auto const &key = stream_state->key;
-    auto const &specified_response = stream_state->specified_response;
-    if (specified_response) {
+
+    auto const *specified_response = stream_state->specified_response;
+    if (specified_response != nullptr) {
       specified_response->mark_verification_performed();
-    }
-    if (response_from_wire.verify_headers(key, *specified_response->_fields_rules)) {
-      errata.note(S_ERROR, R"(HTTP/3 response headers did not match expected response headers.)");
-      session_data->set_non_zero_exit_status();
-    }
-    if (specified_response->_status != 0 &&
-        response_from_wire._status != specified_response->_status &&
-        (response_from_wire._status != 200 || specified_response->_status != 304) &&
-        (response_from_wire._status != 304 || specified_response->_status != 200))
-    {
-      errata.note(
-          S_ERROR,
-          R"(HTTP/3 Status Violation: expected {} got {}, key: {}.)",
-          specified_response->_status,
-          response_from_wire._status,
-          key);
+      if (response_from_wire.verify_headers(stream_state->key, *specified_response->_fields_rules))
+      {
+        errata.note(S_ERROR, R"(HTTP/3 response headers did not match expected response headers.)");
+        session->set_non_zero_exit_status();
+      }
+      if (specified_response->_status != 0 &&
+          response_from_wire._status != specified_response->_status &&
+          (response_from_wire._status != 200 || specified_response->_status != 304) &&
+          (response_from_wire._status != 304 || specified_response->_status != 200))
+      {
+        errata.note(
+            S_ERROR,
+            R"(HTTP/3 Status Violation: expected {} got {}, key: {}.)",
+            specified_response->_status,
+            response_from_wire._status,
+            stream_state->key);
+      }
     }
   }
 
@@ -1384,28 +369,21 @@ cb_h3_end_headers(
   return 0;
 }
 
-static int
-cb_h3_end_stream(
-    nghttp3_conn * /* conn */,
-    int64_t stream_id,
-    void *conn_user_data,
-    void *stream_user_data)
+int
+cb_h3_end_stream(nghttp3_conn *, int64_t stream_id, void *conn_user_data, void *stream_user_data)
 {
   Errata errata;
-  auto *session_data = reinterpret_cast<H3Session *>(conn_user_data);
-  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
+  auto *session = static_cast<H3Session *>(conn_user_data);
+  auto *stream_state = static_cast<H3StreamState *>(stream_user_data);
   std::string key;
   if (stream_state->will_receive_request()) {
     auto &request_from_client = *stream_state->request_from_client;
     request_from_client.derive_key();
     key = request_from_client.get_key();
-  } else { // stream_state receives a response
+  } else {
     auto &response_from_wire = *stream_state->response_from_server;
     response_from_wire.derive_key();
     if (stream_state->key.empty()) {
-      // A response for which we didn't process the request, presumably. A
-      // server push? Maybe? In theory we can support that but currently we
-      // do not. Emit a warning for now.
       stream_state->key = response_from_wire.get_key();
       errata.note(
           S_ERROR,
@@ -1413,646 +391,453 @@ cb_h3_end_stream(
           "response: {}.",
           stream_state->key);
     } else {
-      // Make sure the key is set and give preference to the associated
-      // request over the content of the response. There shouldn't be a
-      // difference, but if there is, the user has the YAML file with the
-      // request's key in front of them, and identifying that transaction
-      // is more helpful than so some abberant response's key from the
-      // wire. If they are looking into issues, debug logging will show
-      // the fields of both the request and response.
       response_from_wire.set_key(stream_state->key);
     }
     key = stream_state->key;
   }
-  session_data->set_stream_has_ended(stream_id, key);
+
+  session->set_stream_has_ended(stream_id, key);
   if (stream_state->will_receive_response()) {
     finalize_h3_stream(stream_id, *stream_state);
-    session_data->stream_map.erase(stream_id);
-    session_data->mark_completed_response_stream(stream_id);
+    session->stream_map.erase(stream_id);
+    session->mark_completed_response_stream(stream_id);
   }
   return 0;
 }
 
-static int
+int
 cb_h3_send_stop_sending(
-    nghttp3_conn * /* conn */,
-    int64_t /* stream_id */,
-    uint64_t /* app_error_code */,
-    void * /* conn_user_data */,
-    void * /* stream_user_data */)
+    nghttp3_conn *,
+    int64_t stream_id,
+    uint64_t app_error_code,
+    void *conn_user_data,
+    void *)
 {
-  // The nghttp3 API is telling us to tell the QUIC stack to send a
-  // STOP_SENDING frame here. That is currently not implemented.
-  Errata errata;
-  errata.note(
-      S_ERROR,
-      "Got a STOP_SENDING request from nghttp3. Proxy Verifier does not implement this.");
+  auto *session = static_cast<H3Session *>(conn_user_data);
+  auto *stream = session->quic_socket.find_stream(stream_id);
+  if (stream == nullptr) {
+    return 0;
+  }
+
+  SSL_STREAM_RESET_ARGS args{.quic_error_code = app_error_code};
+  if (SSL_stream_reset(stream, &args, sizeof(args)) != 1) {
+    Errata errata;
+    errata.note(S_ERROR, "Failed to reset HTTP/3 stream {}: {}", stream_id, swoc::bwf::SSLError{});
+    return NGHTTP3_ERR_CALLBACK_FAILURE;
+  }
   return 0;
 }
 
-static int
+int
 cb_h3_reset_stream(
-    nghttp3_conn * /* conn */,
+    nghttp3_conn *,
     int64_t stream_id,
     uint64_t app_error_code,
     void *conn_user_data,
     void *stream_user_data)
 {
-  auto *h3_session = reinterpret_cast<H3Session *>(conn_user_data);
-  auto &qs = h3_session->quic_socket;
-  auto *stream_state = reinterpret_cast<H3StreamState *>(stream_user_data);
-  Errata errata;
+  auto *session = static_cast<H3Session *>(conn_user_data);
+  auto *stream_state = static_cast<H3StreamState *>(stream_user_data);
+  auto *stream = session->quic_socket.find_stream(stream_id);
+  if (stream == nullptr) {
+    return 0;
+  }
 
-  int rv = ngtcp2_conn_shutdown_stream_write(qs.qconn, 0, stream_id, app_error_code);
+  SSL_STREAM_RESET_ARGS args{.quic_error_code = app_error_code};
+  auto const result = SSL_stream_reset(stream, &args, sizeof(args));
+  Errata errata;
   errata.note(
       S_DIAG,
-      "Received an HTTP/3 reset stream for key {} with stream id {}, app error code {} rv {}",
-      stream_state->key,
+      "Received an HTTP/3 reset stream for key {} with stream id {}, app error code {} "
+      "result {}",
+      stream_state == nullptr ? "" : stream_state->key,
       stream_id,
       app_error_code,
-      rv);
-  if (rv && rv != NGTCP2_ERR_STREAM_NOT_FOUND) {
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  }
-
-  return 0;
+      result);
+  return result == 1 ? 0 : NGHTTP3_ERR_CALLBACK_FAILURE;
 }
 
-static nghttp3_callbacks nghttp3_client_callbacks = {
-    cb_h3_acked_stream_data,
-    cb_h3_stream_close,
-    cb_h3_recv_data,
-    cb_h3_deferred_consume,
-    nullptr, /* begin_headers */
-    cb_h3_recv_header,
-    cb_h3_end_headers,
-    nullptr, /* begin_trailers */
-    cb_h3_recv_header,
-    nullptr, /* end_trailers */
-    cb_h3_send_stop_sending,
-    cb_h3_end_stream,
-    cb_h3_reset_stream,
-    nullptr, /* shutdown */
-    nullptr, /* rcv_settings */
-    nullptr, /* recv_origin */
-    nullptr, /* end_origin */
-    nullptr, /* rand */
-    nullptr, /* recv_settings2 */
-};
-// -----------------------------------------------------
-// End nghttp3 callbacks.
-// When comparing with curl:
-//  * H3Session session corresponds with Curl_cfilter cf.
-//  * h3settings corresponds with h3conn.
-// -----------------------------------------------------
+nghttp3_callbacks const NGHTTP3_CLIENT_CALLBACKS = [] {
+  nghttp3_callbacks callbacks{};
+  callbacks.acked_stream_data = cb_h3_acked_stream_data;
+  callbacks.stream_close = cb_h3_stream_close;
+  callbacks.recv_data = cb_h3_recv_data;
+  callbacks.deferred_consume = cb_h3_deferred_consume;
+  callbacks.recv_header = cb_h3_recv_header;
+  callbacks.end_headers = cb_h3_end_headers;
+  callbacks.recv_trailer = cb_h3_recv_header;
+  callbacks.stop_sending = cb_h3_send_stop_sending;
+  callbacks.end_stream = cb_h3_end_stream;
+  callbacks.reset_stream = cb_h3_reset_stream;
+  return callbacks;
+}();
 
-static int
-initialize_nghttp3_connection(H3Session *session)
+swoc::Rv<bool>
+progress_http3_egress(H3Session &session)
 {
-  Errata errata;
-  auto &qs = session->quic_socket;
-  int64_t ctrl_stream_id = 0;
-  int64_t qpack_enc_stream_id = 0;
-  int64_t qpack_dec_stream_id = 0;
+  swoc::Rv<bool> zret{false};
+  auto &quic_socket = session.quic_socket;
 
-  if (qs.h3conn != nullptr) {
-    return SUCCEEDED;
+  std::vector<int64_t> pending_concludes{
+      quic_socket.streams_pending_conclude.begin(),
+      quic_socket.streams_pending_conclude.end()};
+  for (auto const stream_id : pending_concludes) {
+    auto *stream = quic_socket.find_stream(stream_id);
+    if (stream == nullptr) {
+      quic_socket.streams_pending_conclude.erase(stream_id);
+      continue;
+    }
+    auto const conclude_result = SSL_stream_conclude(stream, 0);
+    if (conclude_result == 1) {
+      quic_socket.streams_pending_conclude.erase(stream_id);
+      quic_socket.streams_concluded.insert(stream_id);
+      zret = true;
+      continue;
+    }
+    auto const ssl_error = SSL_get_error(stream, conclude_result);
+    if (ssl_error != SSL_ERROR_WANT_READ && ssl_error != SSL_ERROR_WANT_WRITE) {
+      zret.note(
+          S_ERROR,
+          "Failed to conclude HTTP/3 stream {}: {}",
+          stream_id,
+          swoc::bwf::SSLError{});
+      return zret;
+    }
   }
 
-  auto const max_streams = ngtcp2_conn_get_streams_uni_left(qs.qconn);
-  if (max_streams < 3) {
-    errata.note(S_ERROR, "Too few max streams: {}", max_streams);
-    return 1;
+  for (;;) {
+    std::array<nghttp3_vec, MAX_HTTP3_VECTORS> vectors;
+    int64_t stream_id = -1;
+    int fin = 0;
+    auto const vector_count = nghttp3_conn_writev_stream(
+        quic_socket.h3conn,
+        &stream_id,
+        &fin,
+        vectors.data(),
+        vectors.size());
+    if (vector_count < 0) {
+      zret.note(
+          S_ERROR,
+          "nghttp3_conn_writev_stream failed: {} ({})",
+          nghttp3_error(vector_count),
+          vector_count);
+      return zret;
+    }
+    if (stream_id == -1) {
+      return zret;
+    }
+
+    auto *stream = quic_socket.find_stream(stream_id);
+    if (stream == nullptr) {
+      zret.note(S_ERROR, "nghttp3 selected unknown QUIC stream {} for writing.", stream_id);
+      return zret;
+    }
+
+    nghttp3_ssize vector_index = 0;
+    while (vector_index < vector_count && vectors[static_cast<size_t>(vector_index)].len == 0) {
+      ++vector_index;
+    }
+
+    bool can_conclude = fin != 0;
+    size_t accepted = 0;
+    if (vector_index < vector_count) {
+      auto const &vector = vectors[static_cast<size_t>(vector_index)];
+      size_t written = 0;
+      auto const result = SSL_write_ex(stream, vector.base, vector.len, &written);
+      if (result != 1) {
+        auto const ssl_error = SSL_get_error(stream, result);
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+          return zret;
+        }
+        zret.note(
+            S_ERROR,
+            "Failed writing HTTP/3 stream {}: SSL error {}, {}",
+            stream_id,
+            ssl_error,
+            swoc::bwf::SSLError{});
+        return zret;
+      }
+      if (written == 0) {
+        return zret;
+      }
+
+      accepted = written;
+      Session::increment_total_bytes_written(written);
+      auto const write_result =
+          nghttp3_conn_add_write_offset(quic_socket.h3conn, stream_id, written);
+      // OpenSSL copies accepted stream bytes into its QUIC send buffers. It
+      // does not expose per-stream acknowledgement callbacks, so accepted
+      // bytes can immediately be released by nghttp3.
+      auto const ack_result = nghttp3_conn_add_ack_offset(quic_socket.h3conn, stream_id, written);
+      if (write_result != 0 || ack_result != 0) {
+        zret.note(
+            S_ERROR,
+            "Failed to update nghttp3 offsets for stream {}: write {}, ack {}.",
+            stream_id,
+            write_result,
+            ack_result);
+        return zret;
+      }
+      zret = true;
+
+      can_conclude = can_conclude && written == vector.len;
+      for (++vector_index; vector_index < vector_count; ++vector_index) {
+        if (vectors[static_cast<size_t>(vector_index)].len != 0) {
+          can_conclude = false;
+          break;
+        }
+      }
+      if (!can_conclude) {
+        continue;
+      }
+    }
+
+    if (can_conclude &&
+        quic_socket.streams_concluded.find(stream_id) == quic_socket.streams_concluded.end())
+    {
+      auto const conclude_result = SSL_stream_conclude(stream, 0);
+      if (conclude_result == 1) {
+        quic_socket.streams_concluded.insert(stream_id);
+        zret = true;
+      } else {
+        auto const ssl_error = SSL_get_error(stream, conclude_result);
+        if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+          quic_socket.streams_pending_conclude.insert(stream_id);
+          return zret;
+        }
+        zret.note(
+            S_ERROR,
+            "Failed to conclude HTTP/3 stream {} after accepting {} bytes: {}",
+            stream_id,
+            accepted,
+            swoc::bwf::SSLError{});
+        return zret;
+      }
+    }
   }
-
-  nghttp3_settings_default(&qs.h3settings);
-
-  int rc = nghttp3_conn_client_new(
-      &qs.h3conn,
-      &nghttp3_client_callbacks,
-      &qs.h3settings,
-      nghttp3_mem_default(),
-      session);
-  if (rc != 0) {
-    errata.note(S_ERROR, "nghttp3_conn_client_new failed: {}", Ngtcp2Error{rc});
-    return FAILED;
-  }
-
-  rc = ngtcp2_conn_open_uni_stream(qs.qconn, &ctrl_stream_id, nullptr);
-  if (rc != 0) {
-    errata.note(S_ERROR, "ngtcp2_conn_open_uni_stream failed: {}", Ngtcp2Error{rc});
-    return FAILED;
-  }
-
-  rc = nghttp3_conn_bind_control_stream(qs.h3conn, ctrl_stream_id);
-  if (rc != 0) {
-    errata.note(S_ERROR, "nghttp3_conn_bind_control_stream failed: {}", Ngtcp2Error{rc});
-    return FAILED;
-  }
-
-  rc = ngtcp2_conn_open_uni_stream(qs.qconn, &qpack_enc_stream_id, nullptr);
-  if (rc != 0) {
-    errata.note(S_ERROR, "ngtcp2_conn_open_uni_stream failed: {}", Ngtcp2Error{rc});
-    return FAILED;
-  }
-
-  rc = ngtcp2_conn_open_uni_stream(qs.qconn, &qpack_dec_stream_id, nullptr);
-  if (rc != 0) {
-    errata.note(S_ERROR, "ngtcp2_conn_open_uni_stream failed: {}", Ngtcp2Error{rc});
-    return FAILED;
-  }
-
-  rc = nghttp3_conn_bind_qpack_streams(qs.h3conn, qpack_enc_stream_id, qpack_dec_stream_id);
-  if (rc != 0) {
-    errata.note(S_ERROR, "nghttp3_conn_bind_qpack_streams failed: {}", Ngtcp2Error{rc});
-    return FAILED;
-  }
-
-  return SUCCEEDED;
 }
 
-static void
-configure_quic_socket_settings(QuicSocket &qs, PacketIoContext *packet_context)
+swoc::Rv<bool>
+progress_http3_ingress(H3Session &session)
 {
-  ngtcp2_settings *s = &qs.settings;
-  ngtcp2_transport_params *t = &qs.transport_params;
-  ngtcp2_settings_default(s);
-  ngtcp2_transport_params_default(t);
-#ifdef DEBUG_NGTCP2
-  s->log_printf = quic_printf;
-#else
-  s->log_printf = nullptr;
-#endif
-  s->initial_ts = packet_context->ts;
-  s->handshake_timeout = duration_cast<nanoseconds>(QUIC_HANDSHAKE_TIMEOUT).count();
-  s->max_window = 100 * H3_STREAM_WINDOW_SIZE;
-  s->max_stream_window = H3_STREAM_WINDOW_SIZE;
+  swoc::Rv<bool> zret{false};
+  auto &quic_socket = session.quic_socket;
+  while (auto *stream = SSL_accept_stream(quic_socket.connection, SSL_ACCEPT_STREAM_NO_BLOCK)) {
+    quic_socket.add_stream(stream);
+    zret = true;
+  }
 
-  t->initial_max_data = 10 * H3_STREAM_WINDOW_SIZE;
-  t->initial_max_stream_data_bidi_local = H3_STREAM_WINDOW_SIZE;
-  t->initial_max_stream_data_bidi_remote = H3_STREAM_WINDOW_SIZE;
-  t->initial_max_stream_data_uni = H3_STREAM_WINDOW_SIZE;
-  t->initial_max_streams_bidi = QUIC_MAX_STREAMS;
-  t->initial_max_streams_uni = QUIC_MAX_STREAMS;
-  t->max_idle_timeout = duration_cast<nanoseconds>(QUIC_IDLE_TIMEOUT).count();
-  if (qs.qlogfd != -1) {
-    s->qlog_write = QuicSocket::qlog_callback;
+  std::array<uint8_t, QUIC_STREAM_BUFFER_SIZE> buffer;
+  for (auto const &[stream_id, stream] : quic_socket.streams) {
+    if ((SSL_get_stream_type(stream) & SSL_STREAM_TYPE_READ) == 0 ||
+        quic_socket.streams_with_fin.find(stream_id) != quic_socket.streams_with_fin.end())
+    {
+      continue;
+    }
+
+    for (;;) {
+      size_t bytes_read = 0;
+      auto const result = SSL_read_ex(stream, buffer.data(), buffer.size(), &bytes_read);
+      if (result == 1) {
+        Session::increment_total_bytes_read(bytes_read);
+        auto const consumed =
+            nghttp3_conn_read_stream(quic_socket.h3conn, stream_id, buffer.data(), bytes_read, 0);
+        if (consumed < 0) {
+          zret.note(
+              S_ERROR,
+              "nghttp3_conn_read_stream failed for stream {}: {} ({})",
+              stream_id,
+              nghttp3_error(consumed),
+              consumed);
+          return zret;
+        }
+        zret = true;
+        continue;
+      }
+
+      auto const ssl_error = SSL_get_error(stream, result);
+      if (ssl_error == SSL_ERROR_WANT_READ || ssl_error == SSL_ERROR_WANT_WRITE) {
+        break;
+      }
+      if (ssl_error == SSL_ERROR_ZERO_RETURN) {
+        auto const consumed =
+            nghttp3_conn_read_stream(quic_socket.h3conn, stream_id, nullptr, 0, 1);
+        if (consumed < 0) {
+          zret.note(
+              S_ERROR,
+              "nghttp3 failed to process FIN on stream {}: {} ({})",
+              stream_id,
+              nghttp3_error(consumed),
+              consumed);
+          return zret;
+        }
+        quic_socket.streams_with_fin.insert(stream_id);
+        zret = true;
+        break;
+      }
+
+      zret.note(
+          S_ERROR,
+          "Failed reading HTTP/3 stream {}: SSL error {}, {}",
+          stream_id,
+          ssl_error,
+          swoc::bwf::SSLError{});
+      return zret;
+    }
+  }
+  return zret;
+}
+
+swoc::Rv<bool>
+progress_http3(H3Session &session, milliseconds timeout)
+{
+  swoc::Rv<bool> zret{false};
+  auto const deadline = ClockType::now() + timeout;
+
+  for (;;) {
+    auto &&[egress_progress, egress_errata] = progress_http3_egress(session);
+    zret.note(std::move(egress_errata));
+    if (!zret.is_ok()) {
+      return zret;
+    }
+
+    if (SSL_handle_events(session.quic_socket.connection) != 1) {
+      zret.note(S_ERROR, "SSL_handle_events failed: {}", swoc::bwf::SSLError{});
+      return zret;
+    }
+
+    auto &&[ingress_progress, ingress_errata] = progress_http3_ingress(session);
+    zret.note(std::move(ingress_errata));
+    if (!zret.is_ok()) {
+      return zret;
+    }
+
+    auto &&[final_egress_progress, final_egress_errata] = progress_http3_egress(session);
+    zret.note(std::move(final_egress_errata));
+    if (!zret.is_ok()) {
+      return zret;
+    }
+
+    if (egress_progress || ingress_progress || final_egress_progress) {
+      zret = true;
+      return zret;
+    }
+    if (timeout <= 0ms || ClockType::now() >= deadline) {
+      return zret;
+    }
+
+    auto const remaining = duration_cast<milliseconds>(deadline - ClockType::now());
+    auto &&[poll_result, poll_errata] = poll_for_quic(session, remaining);
+    zret.note(std::move(poll_errata));
+    if (!zret.is_ok() || poll_result < 0) {
+      zret.note(S_ERROR, "Failed polling the OpenSSL QUIC socket.");
+      return zret;
+    }
   }
 }
 
-QuicSocket::QuicSocket()
-{
-  // Zero out all of our data so that if it gets uses uninitialized by mistake
-  // at least it will fail early and consistently.
-  memset(&dcid, 0, sizeof(dcid));
-  memset(&scid, 0, sizeof(scid));
-  memset(&settings, 0, sizeof(settings));
-  memset(&transport_params, 0, sizeof(transport_params));
-  memset(&h3settings, 0, sizeof(h3settings));
-  memset(&conn_ref, 0, sizeof(conn_ref));
-  memset(&last_error, 0, sizeof(last_error));
-}
+} // namespace
+
+swoc::file::path QuicSocket::m_qlog_dir;
+SSL_CTX *H3Session::m_h3_client_context = nullptr;
+SSL_CTX *H3Session::m_h3_server_context = nullptr;
+int *H3Session::m_process_exit_code = nullptr;
 
 QuicSocket::~QuicSocket()
 {
-  if (qlogfd != -1) {
-    ::close(qlogfd);
-  }
-  qlogfd = -1;
-  if (ssl != nullptr) {
-    SSL_set_app_data(ssl, nullptr);
-    SSL_free(ssl);
-  }
-  ssl = nullptr;
-  if (ossl_ctx != nullptr) {
-    ngtcp2_crypto_ossl_ctx_del(ossl_ctx);
-  }
-  ossl_ctx = nullptr;
-  ngtcp2_conn_del(qconn);
-  nghttp3_conn_del(h3conn);
+  reset();
 }
 
-Errata
-QuicSocket::open_qlog_file()
-{
-  Errata errata;
-  qlogfd = -1;
-  if (_qlog_dir.empty()) {
-    return errata;
-  }
-
-  if (scid.datalen == 0) {
-    errata.note(S_ERROR, "QUIC logging is configured, but scid was not set for this connection.");
-    return errata;
-  }
-  swoc::file::path qlog_path{_qlog_dir};
-  std::string qlog_filename;
-  for (auto i = 0u; i < scid.datalen; ++i) {
-    // Two hex digits to represent each byte followed by a NULL-terminator.
-    char hex[3];
-    snprintf(hex, sizeof(hex), "%02x", scid.data[i]);
-    qlog_filename += std::string{hex, strlen(hex)};
-  }
-  qlog_filename += std::string{".qlog"};
-  qlog_path /= std::string_view{qlog_filename};
-
-  qlogfd = ::open(qlog_path.c_str(), O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-
-  if (qlogfd < 0) {
-    errata.note(S_ERROR, "Failed to open QUIC log at {}: {}", qlog_path, Errno{});
-    return errata;
-  }
-  errata.note(S_DIAG, "Writing QUIC log to: {}", qlog_path);
-  return errata;
-}
-
-// static
 void
-QuicSocket::qlog_callback(void *user_data, uint32_t flags, const void *data, size_t datalen)
+QuicSocket::reset()
 {
-  Errata errata;
-  H3Session *h3_session = reinterpret_cast<H3Session *>(user_data);
-  QuicSocket &qs = h3_session->quic_socket;
-  if (qs.qlogfd == -1) {
-    // Likely a previous write has failed and the log was closed.
-    return;
+  if (h3conn != nullptr) {
+    nghttp3_conn_del(h3conn);
+    h3conn = nullptr;
   }
-  std::scoped_lock _{_qlog_mutex};
-  ssize_t rc = ::write(qs.qlogfd, data, datalen);
-  if (rc == -1) {
-    errata.note(S_ERROR, "Failed to write to QUIC log file: {}", Errno{});
-    ::close(qs.qlogfd);
-    qs.qlogfd = -1;
+  for (auto &[stream_id, stream] : streams) {
+    static_cast<void>(stream_id);
+    SSL_free(stream);
   }
+  streams.clear();
+  streams_with_fin.clear();
+  streams_concluded.clear();
+  streams_pending_conclude.clear();
 
-  if (flags & NGTCP2_QLOG_WRITE_FLAG_FIN) {
-    ::close(qs.qlogfd);
-    qs.qlogfd = -1;
+  if (connection != nullptr) {
+    SSL_SHUTDOWN_EX_ARGS args{.quic_error_code = 0, .quic_reason = "Proxy Verifier shutdown"};
+    SSL_shutdown_ex(
+        connection,
+        SSL_SHUTDOWN_FLAG_RAPID | SSL_SHUTDOWN_FLAG_NO_BLOCK,
+        &args,
+        sizeof(args));
+    SSL_free(connection);
+    connection = nullptr;
   }
 }
 
-// static
+swoc::Rv<SSL *>
+QuicSocket::open_stream(bool unidirectional)
+{
+  swoc::Rv<SSL *> zret{nullptr};
+  auto const flags = SSL_STREAM_FLAG_NO_BLOCK | (unidirectional ? SSL_STREAM_FLAG_UNI : 0);
+  auto *stream = SSL_new_stream(connection, flags);
+  if (stream == nullptr) {
+    zret.note(S_ERROR, "Failed to create an OpenSSL QUIC stream: {}", swoc::bwf::SSLError{});
+    return zret;
+  }
+  add_stream(stream);
+  zret = stream;
+  return zret;
+}
+
 void
-QuicSocket::randomly_populate_array(uint8_t *array, size_t array_len)
+QuicSocket::add_stream(SSL *stream)
 {
-  for (auto i = 0u; i < array_len; ++i) {
-    array[i] = _uni_id(_rng);
-  }
+  SSL_set_blocking_mode(stream, 0);
+  SSL_set_event_handling_mode(stream, SSL_VALUE_EVENT_HANDLING_MODE_EXPLICIT);
+  SSL_set_mode(stream, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_ENABLE_PARTIAL_WRITE);
+  auto const stream_id = SSL_get_stream_id(stream);
+  streams.emplace(static_cast<int64_t>(stream_id), stream);
 }
 
-// static
+SSL *
+QuicSocket::find_stream(int64_t stream_id) const
+{
+  auto const spot = streams.find(stream_id);
+  return spot == streams.end() ? nullptr : spot->second;
+}
+
 Errata
 QuicSocket::configure_qlog_dir(TextView qlog_dir)
 {
   Errata errata;
+  m_qlog_dir = qlog_dir;
   if (qlog_dir.empty()) {
-    errata.note(S_DIAG, "qlog is not enabled.");
     return errata;
   }
-  _qlog_dir = qlog_dir;
+
   std::error_code ec;
-  auto stat{swoc::file::status(qlog_dir, ec)};
+  auto stat = swoc::file::status(m_qlog_dir, ec);
   if (ec.value() == ENOENT) {
     std::filesystem::create_directories(qlog_dir, ec);
-    if (ec.value() != 0) {
+    if (ec) {
       errata.note(S_ERROR, R"(Could not create qlog directory path "{}": {})", qlog_dir, ec);
       return errata;
     }
-  } else if (ec.value() != 0) {
+  } else if (ec) {
     errata.note(S_ERROR, R"(Invalid qlog directory path "{}": {}.)", qlog_dir, ec);
     return errata;
   }
-  stat = swoc::file::status(qlog_dir, ec);
+  stat = swoc::file::status(m_qlog_dir, ec);
   if (!swoc::file::is_dir(stat)) {
     errata.note(S_ERROR, R"(Specified qlog path is not a directory: "{}")", qlog_dir);
     return errata;
   }
-  errata.note(S_DIAG, "QUIC log files will be written to {}", qlog_dir);
-  return errata;
-}
-
-// static
-void
-H3Session::set_non_zero_exit_status()
-{
-  *H3Session::process_exit_code = 1;
-}
-
-Errata
-H3Session::configure_udp_socket(swoc::TextView interface, swoc::IPEndpoint const *target)
-{
-  Errata errata;
-  int const socket_fd = ::socket(target->family(), SOCK_DGRAM, 0);
-  if (0 > socket_fd) {
-    errata.note(S_ERROR, R"(Failed to open a UDP socket - {})", Errno{});
-    return errata;
-  }
-  static constexpr int ONE = 1;
-  struct linger l;
-  l.l_onoff = 0;
-  l.l_linger = 0;
-  setsockopt(socket_fd, SOL_SOCKET, SO_LINGER, (char *)&l, sizeof(l));
-  if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ONE, sizeof(int)) < 0) {
-    errata.note(S_ERROR, R"(Could not set reuseaddr on socket {} - {}.)", socket_fd, Errno{});
-    return errata;
-  }
-  errata.note(this->set_fd(socket_fd));
-  if (!errata.is_ok()) {
-    return errata;
-  }
-
-  if (!interface.empty()) {
-    InterfaceNameToEndpoint interface_to_endpoint{interface, target->family()};
-    auto &&[device_endpoint, device_errata] = interface_to_endpoint.find_ip_endpoint();
-    errata.note(std::move(device_errata));
-    if (!errata.is_ok()) {
-      return errata;
-    }
-    if (::bind(socket_fd, device_endpoint, device_endpoint.size()) == -1) {
-      errata.note(S_ERROR, "Failed to bind on interface {}: {}", interface, swoc::bwf::Errno{});
-      return errata;
-    }
-  }
-
-  if (-1 == ::connect(socket_fd, &target->sa, target->size())) {
-    errata.note(S_ERROR, R"(Failed to connect socket {}: - {})", *target, Errno{});
-    return errata;
-  }
-  if (0 != ::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK)) {
-    errata.note(
-        S_ERROR,
-        R"(Failed to make the client socket non-blocking {}: - {})",
-        *target,
-        Errno{});
-    return errata;
-  }
-  this->_endpoint = target;
-  return errata;
-}
-
-Errata
-H3Session::do_connect(
-    swoc::TextView interface,
-    swoc::IPEndpoint const *target,
-    ProxyProtocolMsg * /*pp_msg*/)
-{
-  Errata errata = configure_udp_socket(interface, target);
-  if (!errata.is_ok()) {
-    return errata;
-  }
-
-  // A generic UDP socket has been configured and connected. Now finish the
-  // connection phase by configuring a QUIC and HTTP/3 connection over this
-  // socket.
-  errata.note(this->connect());
-  return errata;
-}
-
-swoc::Rv<int>
-H3Session::poll_for_headers(milliseconds timeout)
-{
-  assert(0);
-  if (this->get_a_stream_has_ended()) {
-    return 1;
-  }
-  swoc::Rv<int> zret{-1};
-  auto &&[poll_result, poll_errata] = Session::poll_for_data_on_socket(timeout);
-  zret.note(std::move(poll_errata));
-  if (!zret.is_ok()) {
-    return zret;
-  } else if (poll_result == 0) {
-    return 0;
-  } else if (poll_result < 0) {
-    // Connection closed.
-    close();
-    return -1;
-  }
-  zret.note(nghttp3_receive_and_send_data(*this, Poll_Timeout));
-  if (!zret.is_ok()) {
-    zret.note(
-        S_ERROR,
-        "Calling nghttp3_receive_and_send_data in H3Session::poll_for_headers failed.");
-    close();
-    return zret;
-  }
-  if (is_closed()) {
-    return -1;
-  } else if (this->get_a_stream_has_ended()) {
-    return 1;
-  } else {
-    // The caller will retry.
-    return 0;
-  }
-}
-
-bool
-H3Session::get_a_stream_has_ended() const
-{
-  return !_ended_streams.empty();
-}
-
-void
-H3Session::record_stream_state(int64_t stream_id, std::shared_ptr<H3StreamState> stream_state)
-{
-  stream_map[stream_id] = stream_state;
-  _last_added_stream = stream_state;
-}
-
-void
-H3Session::mark_completed_response_stream(int64_t stream_id)
-{
-  _completed_response_streams.emplace(stream_id);
-}
-
-bool
-H3Session::clear_completed_response_stream(int64_t stream_id)
-{
-  return _completed_response_streams.erase(stream_id) > 0;
-}
-
-void
-H3Session::set_stream_has_ended(int64_t stream_id, std::string_view key)
-{
-  _ended_streams.push_back(stream_id);
-  if (!key.empty()) {
-    _finished_streams.emplace(key);
-  }
-}
-
-swoc::Rv<std::shared_ptr<HttpHeader>>
-H3Session::read_and_parse_request(swoc::FixedBufferWriter & /* buffer */)
-{
-  swoc::Rv<std::shared_ptr<HttpHeader>> zret{nullptr};
-
-  // This function should only be called after poll_for_headers() says there is
-  // a finished stream.
-  assert(!_ended_streams.empty());
-  auto const stream_id = _ended_streams.front();
-  _ended_streams.pop_front();
-  auto stream_map_iter = stream_map.find(stream_id);
-  if (stream_map_iter == stream_map.end()) {
-    zret.note(
-        S_ERROR,
-        "Requested request headers for stream id {}, but none are available.",
-        stream_id);
-    return zret;
-  }
-  auto &stream_state = stream_map_iter->second;
-  zret = stream_state->request_from_client;
-  return zret;
-}
-
-swoc::Rv<size_t>
-H3Session::drain_body(
-    HttpHeader const & /* hdr */,
-    size_t /* expected_content_size */,
-    TextView /* initial */,
-    std::shared_ptr<RuleCheck> /* rule_check */)
-{
-  // For HTTP/3, we process entire streams once they are ended. Therefore there
-  // is never body to drain.
-  return {0};
-}
-
-// Complete the TLS handshake (server-side).
-Errata
-H3Session::accept()
-{
-  swoc::Errata errata;
-  //
-  // TODO: This is all just stubbed out. Copied over from HTTP/2, so most of it
-  // is wrong. Flesh this out when we implement server-side HTTP/3
-  //
-
-  // Check that the HTTP/3 protocol was negotiated.
-  unsigned char const *alpn = nullptr;
-  unsigned int alpnlen = 0;
-#ifdef OPENSSL_NO_NEXTPROTONEG
-  SSL_get0_next_proto_negotiated(this->_ssl, &alpn, &alpnlen);
-#endif /* !OPENSSL_NO_NEXTPROTONEG */
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-  if (alpn == nullptr) {
-    SSL_get0_alpn_selected(this->_ssl, &alpn, &alpnlen);
-  }
-#endif /* OPENSSL_VERSION_NUMBER >= 0x10002000L */
-
-  if (alpn != nullptr && alpnlen == 2 && memcmp("h3", alpn, 2) == 0) {
-    errata.note(
-        S_DIAG,
-        R"(Negotiated ALPN: {}, HTTP/3 is negotiated.)",
-        TextView{(char *)alpn, alpnlen});
-  } else {
-    errata.note(
-        S_ERROR,
-        R"(Negotiated ALPN: {}, HTTP/3 failed to negotiate.)",
-        (alpn == nullptr) ? "none" : TextView{(char *)alpn, alpnlen});
-    return errata;
-  }
-
-  this->server_session_init();
-  errata.note(S_DIAG, "Finished accept using H3Session");
-  return errata;
-}
-
-// Complete the TLS handshake (client-side).
-Errata
-H3Session::connect()
-{
-  swoc::Errata errata;
-
-  PacketIoContext packet_context;
-  errata.note(this->client_session_init(&packet_context));
-  if (!errata.is_ok()) {
-    errata.note(S_ERROR, "TLS initialization failed.");
-    return errata;
-  }
-
-  return errata;
-}
-
-Errata
-H3Session::run_transactions(
-    std::list<Txn> const &transactions,
-    swoc::TextView interface,
-    swoc::IPEndpoint const *target,
-    double rate_multiplier)
-{
-  Errata errata;
-
-  auto const first_time = ClockType::now();
-  for (auto const &transaction : transactions) {
-    Errata txn_errata;
-    auto const key{transaction._req.get_key()};
-    if (this->is_closed()) {
-      txn_errata.note(this->do_connect(interface, target));
-      if (!txn_errata.is_ok()) {
-        txn_errata.note(S_ERROR, R"(Failed to reconnect HTTP/3 key: {}.)", key);
-        // If we don't have a valid connection, there's no point in continuing.
-        break;
-      }
-    }
-    while (this->request_has_outstanding_stream_dependencies(transaction._req)) {
-      txn_errata.note(nghttp3_receive_and_send_data(*this, Poll_Timeout));
-      if (!txn_errata.is_ok()) {
-        errata.note(S_ERROR, R"(Failed HTTP/3 transaction with key: {}.)", key);
-        return errata;
-      }
-    }
-    if (rate_multiplier != 0 || transaction._user_specified_delay_duration > 0us) {
-      std::chrono::duration<double, std::micro> delay_time = 0ms;
-      auto current_time = ClockType::now();
-      auto next_time = current_time + delay_time;
-      if (transaction._user_specified_delay_duration > 0us) {
-        delay_time = transaction._user_specified_delay_duration;
-        next_time = current_time + delay_time;
-      } else {
-        auto const start_offset = transaction._start;
-        next_time = (rate_multiplier * start_offset) + first_time;
-        delay_time = next_time - current_time;
-      }
-      while (delay_time > 0us) {
-        // Make use of our delay time to read any incoming responses.
-        txn_errata.note(
-            nghttp3_receive_and_send_data(*this, duration_cast<milliseconds>(delay_time)));
-        current_time = ClockType::now();
-        delay_time = next_time - current_time;
-        if (delay_time > 0us &&
-            !interruptible_sleep_for(std::chrono::duration_cast<chrono::nanoseconds>(delay_time)))
-        {
-          break;
-        }
-      }
-    }
-    if (shutdown_requested()) {
-      break;
-    }
-    txn_errata.note(this->run_transaction(transaction));
-    if (!txn_errata.is_ok()) {
-      errata.note(S_ERROR, R"(Failed HTTP/3 transaction with key: {}.)", key);
-    }
-  }
-  errata.note(receive_responses());
-  return errata;
-}
-
-bool
-H3Session::request_has_outstanding_stream_dependencies(HttpHeader const &request) const
-{
-  for (auto const &stream_dependency : request._keys_to_await) {
-    if (this->_finished_streams.find(stream_dependency) == this->_finished_streams.end()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-Errata
-H3Session::run_transaction(Txn const &transaction)
-{
-  Errata errata;
-  auto &&[bytes_written, write_errata] = this->write(transaction._req);
-  errata.note(std::move(write_errata));
-  _last_added_stream->specified_response = &transaction._rsp;
+  errata.note(
+      S_INFO,
+      "OpenSSL native QUIC does not expose qlog events; no qlog files will be written to {}.",
+      qlog_dir);
   return errata;
 }
 
@@ -2060,8 +845,8 @@ TextView
 H3StreamState::register_rcbuf(nghttp3_rcbuf *rcbuf)
 {
   nghttp3_rcbuf_incref(rcbuf);
-  _rcbufs_to_free.push_back(rcbuf);
-  auto buf = nghttp3_rcbuf_get_buf(rcbuf);
+  m_rcbufs_to_free.push_back(rcbuf);
+  auto const buf = nghttp3_rcbuf_get_buf(rcbuf);
   return TextView(reinterpret_cast<char *>(buf.base), buf.len);
 }
 
@@ -2069,7 +854,7 @@ H3StreamState::H3StreamState(bool is_client)
   : stream_start{ClockType::now()}
   , request_from_client{std::make_shared<HttpHeader>()}
   , response_from_server{std::make_shared<HttpHeader>()}
-  , _will_receive_request{!is_client}
+  , m_will_receive_request{!is_client}
 {
   request_from_client->set_is_request(HTTP_PROTOCOL_TYPE::HTTP_3);
   response_from_server->set_is_response(HTTP_PROTOCOL_TYPE::HTTP_3);
@@ -2077,7 +862,7 @@ H3StreamState::H3StreamState(bool is_client)
 
 H3StreamState::~H3StreamState()
 {
-  for (auto rcbuf : _rcbufs_to_free) {
+  for (auto *rcbuf : m_rcbufs_to_free) {
     nghttp3_rcbuf_decref(rcbuf);
   }
 }
@@ -2085,71 +870,49 @@ H3StreamState::~H3StreamState()
 bool
 H3StreamState::will_receive_request() const
 {
-  return _will_receive_request;
+  return m_will_receive_request;
 }
 
 bool
 H3StreamState::will_receive_response() const
 {
-  return !_will_receive_request;
+  return !m_will_receive_request;
 }
 
 void
 H3StreamState::set_stream_id(int64_t stream_id)
 {
-  _stream_id = stream_id;
+  m_stream_id = stream_id;
 }
 
 int64_t
 H3StreamState::get_stream_id() const
 {
-  return _stream_id;
+  return m_stream_id;
 }
 
-H3Session::H3Session() { }
+H3Session::H3Session() = default;
 
 H3Session::H3Session(TextView const &client_sni, int client_verify_mode)
-  : _client_sni{client_sni}
-  , _client_verify_mode{client_verify_mode}
+  : m_client_sni{client_sni}
+  , m_client_verify_mode{client_verify_mode}
 {
 }
 
 H3Session::~H3Session()
 {
-  _last_added_stream.reset();
-  char buffer[NGTCP2_MAX_PMTUD_UDP_PAYLOAD_SIZE] = {0};
-  ngtcp2_tstamp ts = 0;
-  ngtcp2_ssize rc = 0;
-  ngtcp2_ccerr error_code;
-  memset(&error_code, 0, sizeof(error_code));
-
-  ts = timestamp();
-  // Create the CONNECTION_CLOSE content in buffer.
-  rc = ngtcp2_conn_write_connection_close(
-      quic_socket.qconn,
-      nullptr, /* path */
-      nullptr, /* pkt_info */
-      (uint8_t *)buffer,
-      sizeof(buffer),
-      &quic_socket.last_error,
-      ts);
-  if (rc > 0) {
-    // Send the CONNECTION_CLOSE.
-    ssize_t num_sent = 0;
-    while (((num_sent = ::send(get_fd(), buffer, rc, 0)) == -1) && errno == EINTR)
-      ;
-    Session::_num_total_bytes_written += num_sent;
-  }
+  m_last_added_stream.reset();
+  quic_socket.reset();
 }
 
-swoc::Rv<ssize_t> H3Session::read(swoc::MemSpan<char> /* span */)
+swoc::Rv<ssize_t> H3Session::read(swoc::MemSpan<char>)
 {
   swoc::Rv<ssize_t> zret{0};
   zret.note(S_ERROR, "HTTP/3 read() called for the unsupported MemSpan overload.");
   return zret;
 }
 
-swoc::Rv<ssize_t> H3Session::write(TextView /* data */)
+swoc::Rv<ssize_t> H3Session::write(TextView)
 {
   swoc::Rv<ssize_t> zret{0};
   zret.note(S_ERROR, "HTTP/3 write() called for the unsupported TextView overload.");
@@ -2157,34 +920,31 @@ swoc::Rv<ssize_t> H3Session::write(TextView /* data */)
 }
 
 nghttp3_nv
-H3Session::tv_to_nv(char const *name, TextView v)
+H3Session::tv_to_nv(char const *name, TextView value)
 {
-  nghttp3_nv res;
-
-  res.name = (unsigned char *)name;
-  res.namelen = strlen(name);
-  res.value = (unsigned char *)v.data();
-  res.valuelen = v.length();
-  res.flags = NGHTTP3_NV_FLAG_NONE;
-
-  return res;
+  return nghttp3_nv{
+      reinterpret_cast<uint8_t *>(const_cast<char *>(name)),
+      reinterpret_cast<uint8_t *>(const_cast<char *>(value.data())),
+      std::strlen(name),
+      value.length(),
+      NGHTTP3_NV_FLAG_NONE};
 }
 
 Errata
 H3Session::pack_headers(HttpHeader const &hdr, nghttp3_nv *&nv_hdr, int &hdr_count)
 {
   Errata errata;
-
-  hdr_count = hdr._fields_rules->_fields.size();
-
-  nv_hdr = reinterpret_cast<nghttp3_nv *>(malloc(sizeof(nghttp3_nv) * hdr_count));
+  hdr_count = static_cast<int>(hdr._fields_rules->_fields.size());
+  nv_hdr = static_cast<nghttp3_nv *>(std::malloc(sizeof(nghttp3_nv) * hdr_count));
+  if (nv_hdr == nullptr) {
+    errata.note(S_ERROR, "Failed to allocate {} HTTP/3 header fields.", hdr_count);
+    return errata;
+  }
 
   int offset = 0;
   if (hdr.is_response()) {
     nv_hdr[offset++] = tv_to_nv(":status", hdr._status_string);
-  } else { // Is a request.
-    // TODO: add error checking and refactor and tolerance for non-required
-    // pseudo-headers
+  } else {
     nv_hdr[offset++] = tv_to_nv(":method", hdr._method);
     nv_hdr[offset++] = tv_to_nv(":scheme", hdr._scheme);
     nv_hdr[offset++] = tv_to_nv(":path", hdr._path);
@@ -2198,42 +958,37 @@ swoc::Rv<ssize_t>
 H3Session::write(HttpHeader const &hdr)
 {
   swoc::Rv<ssize_t> zret{0};
-
   auto const key = hdr.get_key();
   H3StreamState *stream_state = nullptr;
-  std::shared_ptr<H3StreamState> new_stream_state{nullptr};
+  std::shared_ptr<H3StreamState> new_stream_state;
   int64_t stream_id = 0;
+
   if (hdr.is_response()) {
     stream_id = hdr._stream_id;
-    auto stream_map_iter = stream_map.find(stream_id);
-    if (stream_map_iter == stream_map.end()) {
+    auto const spot = stream_map.find(stream_id);
+    if (spot == stream_map.end()) {
       zret.note(S_ERROR, "Could not find registered stream for stream id: {}", stream_id);
       return zret;
     }
-    stream_state = stream_map_iter->second.get();
-  } else { // Is a request.
-    // Only servers write responses while clients write requests.
-    bool const is_client = hdr.is_request();
-    new_stream_state = std::make_shared<H3StreamState>(is_client);
-    stream_state = new_stream_state.get();
-
-    auto const rc = ngtcp2_conn_open_bidi_stream(quic_socket.qconn, &stream_id, nullptr);
-    if (rc != 0) {
-      zret.note(
-          S_ERROR,
-          "Failed ngtcp2_conn_open_bidi_stream for key {}, error code: {}",
-          key,
-          Ngtcp2Error{rc});
+    stream_state = spot->second.get();
+  } else {
+    auto &&[stream, stream_errata] = quic_socket.open_stream(!UNIDIRECTIONAL);
+    zret.note(std::move(stream_errata));
+    if (!zret.is_ok() || stream == nullptr) {
+      zret.note(S_ERROR, "Failed to create an HTTP/3 request stream for key {}.", key);
       return zret;
     }
+    stream_id = static_cast<int64_t>(SSL_get_stream_id(stream));
+    new_stream_state = std::make_shared<H3StreamState>(hdr.is_request());
+    stream_state = new_stream_state.get();
     stream_state->set_stream_id(stream_id);
     record_stream_state(stream_id, new_stream_state);
   }
   stream_state->key = key;
 
-  int num_headers;
-  nghttp3_nv *nva = nullptr;
-  zret.note(pack_headers(hdr, nva, num_headers));
+  int num_headers = 0;
+  nghttp3_nv *headers = nullptr;
+  zret.note(pack_headers(hdr, headers, num_headers));
   if (!zret.is_ok()) {
     zret.note(S_ERROR, "Failed to pack headers for key: {}", key);
     return zret;
@@ -2246,151 +1001,129 @@ H3Session::write(HttpHeader const &hdr)
     if (hdr._content_data_list.front()) {
       content = TextView{hdr._content_data_list.front(), hdr._content_length};
     } else {
-      // If hdr._content_data is null, then there was no explicit description
-      // of the body data via the data node. Instead we'll use our generated
-      // HttpHeader::_content.
       content = TextView{HttpHeader::_content.data(), hdr._content_length};
     }
-    nghttp3_data_reader data_reader;
-    data_reader.read_data = cb_h3_readfunction;
-    stream_state->body_to_send = TextView{content.data(), content.size()};
+    nghttp3_data_reader data_reader{.read_data = cb_h3_readfunction};
+    stream_state->body_to_send = content;
     stream_state->wait_for_continue = hdr.is_request_with_expect_100_continue();
     if (hdr.is_response()) {
       submit_result = nghttp3_conn_submit_response(
           quic_socket.h3conn,
           stream_id,
-          nva,
+          headers,
           num_headers,
           &data_reader);
     } else {
       submit_result = nghttp3_conn_submit_request(
           quic_socket.h3conn,
           stream_id,
-          nva,
+          headers,
           num_headers,
           &data_reader,
           stream_state);
     }
-  } else { // Empty body.
-    if (hdr.is_response()) {
-      submit_result =
-          nghttp3_conn_submit_response(quic_socket.h3conn, stream_id, nva, num_headers, nullptr);
-    } else {
-      submit_result = nghttp3_conn_submit_request(
-          quic_socket.h3conn,
-          stream_id,
-          nva,
-          num_headers,
-          nullptr,
-          stream_state);
-    }
+  } else if (hdr.is_response()) {
+    submit_result =
+        nghttp3_conn_submit_response(quic_socket.h3conn, stream_id, headers, num_headers, nullptr);
+  } else {
+    submit_result = nghttp3_conn_submit_request(
+        quic_socket.h3conn,
+        stream_id,
+        headers,
+        num_headers,
+        nullptr,
+        stream_state);
   }
+
   if (submit_result == 0) {
     zret.note(
         S_DIAG,
         "Sent the following HTTP/3 {}{} headers for key {} with stream id {}:\n{}",
         swoc::bwf::If(hdr.is_request(), "request"),
         swoc::bwf::If(hdr.is_response(), "response"),
-        hdr.get_key(),
+        key,
         stream_id,
         hdr);
   } else {
     zret.note(
         S_ERROR,
-        "Submitting an HTTP/3 {}{} for key {} with stream id {} failed: {}",
+        "Submitting an HTTP/3 {}{} for key {} with stream id {} failed: {} ({})",
         swoc::bwf::If(hdr.is_request(), "request"),
         swoc::bwf::If(hdr.is_response(), "response"),
-        hdr.get_key(),
+        key,
         stream_id,
+        nghttp3_error(submit_result),
         submit_result);
   }
-  if (zret.is_ok()) {
-    // Make sure the logging of the headers are emitted before the body.
-    zret.errata().sink();
-  }
+  std::free(headers);
 
-  PacketIoContext packet_context;
-  if (ngtcp2_progress_egress(*this, &packet_context) < 0) {
-    zret.note(S_ERROR, "Failure calling ngtcp2_flush_egress while writing headers.");
+  if (zret.is_ok()) {
+    zret.errata().sink();
+    auto &&[progressed, progress_errata] = progress_http3(*this, 0ms);
+    static_cast<void>(progressed);
+    zret.note(std::move(progress_errata));
   }
-  free(nva);
   return zret;
 }
 
-SSL_CTX *H3Session::_h3_client_context = nullptr;
-SSL_CTX *H3Session::_h3_server_context = nullptr;
-
-// static
 Errata
-H3Session::init(int *process_exit_code, TextView qlog_dir)
+H3Session::configure_udp_socket(TextView interface, swoc::IPEndpoint const *target)
 {
   Errata errata;
-  H3Session::process_exit_code = process_exit_code;
-  if (ngtcp2_crypto_ossl_init() != 0) {
-    errata.note(S_ERROR, "ngtcp2_crypto_ossl_init failed.");
-    return errata;
+  quic_socket.reset();
+  if (!is_closed()) {
+    close();
   }
-  errata.note(QuicSocket::configure_qlog_dir(qlog_dir));
-  errata.note(H3Session::client_ssl_ctx_init(_h3_client_context));
-  errata.note(H3Session::server_ssl_ctx_init(_h3_server_context));
-  errata.note(S_DIAG, "Finished H3Session::init");
-  return errata;
-}
 
-// static
-void
-H3Session::terminate()
-{
-  H3Session::terminate(_h3_server_context);
-  H3Session::terminate(_h3_server_context);
-}
-
-// static
-void
-H3Session::terminate(SSL_CTX *&context)
-{
-  SSL_CTX_free(context);
-  context = nullptr;
-}
-
-// static
-Errata
-H3Session::client_ssl_ctx_init(SSL_CTX *&client_context)
-{
-  Errata errata;
-  client_context = SSL_CTX_new(TLS_method());
-
-  SSL_CTX_set_default_verify_paths(client_context);
-
-  if (SSL_CTX_set_ciphersuites(client_context, QUIC_CIPHERS) != 1) {
-    errata.note(S_ERROR, "SSL_CTX_set_ciphersuites failed: {}", swoc::bwf::SSLError{});
+  int const socket_fd = ::socket(target->family(), SOCK_DGRAM, 0);
+  if (socket_fd < 0) {
+    errata.note(S_ERROR, R"(Failed to open a UDP socket - {})", Errno{});
     return errata;
   }
 
-  if (SSL_CTX_set1_groups_list(client_context, QUIC_GROUPS) != 1) {
-    errata.note(S_ERROR, "SSL_CTX_set1_groups_list failed: {}", swoc::bwf::SSLError{});
+  static constexpr int ENABLE_OPTION = 1;
+  struct linger linger_option = {.l_onoff = 0, .l_linger = 0};
+  setsockopt(socket_fd, SOL_SOCKET, SO_LINGER, &linger_option, sizeof(linger_option));
+  if (setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &ENABLE_OPTION, sizeof(ENABLE_OPTION)) < 0) {
+    errata.note(S_ERROR, R"(Could not set reuseaddr on socket {} - {}.)", socket_fd, Errno{});
+    ::close(socket_fd);
     return errata;
   }
-
-  if (TLSSession::tls_secrets_are_being_logged()) {
-    SSL_CTX_set_keylog_callback(client_context, TLSSession::keylog_callback);
+  if (!interface.empty()) {
+    InterfaceNameToEndpoint interface_to_endpoint{interface, target->family()};
+    auto &&[device_endpoint, device_errata] = interface_to_endpoint.find_ip_endpoint();
+    errata.note(std::move(device_errata));
+    if (!errata.is_ok()) {
+      ::close(socket_fd);
+      return errata;
+    }
+    if (::bind(socket_fd, device_endpoint, device_endpoint.size()) == -1) {
+      errata.note(S_ERROR, "Failed to bind on interface {}: {}", interface, Errno{});
+      ::close(socket_fd);
+      return errata;
+    }
   }
 
-  return errata;
-}
-
-// static
-Errata
-H3Session::server_ssl_ctx_init(SSL_CTX *& /* server_context */)
-{
-  Errata errata;
-#if 0
-  // Add this in once we implement server-side HTTP/3.
-  if (TLSSession::tls_secrets_are_being_logged()) {
-    SSL_CTX_set_keylog_callback(client_context, TLSSession::keylog_callback);
+  if (::connect(socket_fd, &target->sa, target->size()) == -1) {
+    errata.note(S_ERROR, R"(Failed to connect socket {}: - {})", *target, Errno{});
+    ::close(socket_fd);
+    return errata;
   }
-#endif
-
+  if (::fcntl(socket_fd, F_SETFL, fcntl(socket_fd, F_GETFL, 0) | O_NONBLOCK) != 0) {
+    errata.note(
+        S_ERROR,
+        R"(Failed to make the client socket non-blocking {}: - {})",
+        *target,
+        Errno{});
+    ::close(socket_fd);
+    return errata;
+  }
+  errata.note(set_fd(socket_fd));
+  if (!errata.is_ok()) {
+    ::close(socket_fd);
+    return errata;
+  }
+  m_endpoint = target;
   return errata;
 }
 
@@ -2398,61 +1131,398 @@ Errata
 H3Session::client_ssl_session_init(SSL_CTX *client_context)
 {
   Errata errata;
-  const uint8_t *alpn = nullptr;
-  size_t alpnlen = 0;
-
-  assert(quic_socket.ssl == nullptr);
-  quic_socket.ssl = SSL_new(client_context);
-  if (quic_socket.ssl == nullptr) {
+  assert(quic_socket.connection == nullptr);
+  quic_socket.connection = SSL_new(client_context);
+  if (quic_socket.connection == nullptr) {
     errata.note(S_ERROR, "SSL_new failed: {}", swoc::bwf::SSLError{});
     return errata;
   }
-  if (ngtcp2_crypto_ossl_ctx_new(&quic_socket.ossl_ctx, nullptr) != 0) {
-    errata.note(S_ERROR, "ngtcp2_crypto_ossl_ctx_new failed.");
-    return errata;
-  }
-  ngtcp2_crypto_ossl_ctx_set_ssl(quic_socket.ossl_ctx, quic_socket.ssl);
-  quic_socket.conn_ref.get_conn = get_conn;
-  quic_socket.conn_ref.user_data = this;
 
-  if (SSL_set_app_data(quic_socket.ssl, &this->quic_socket.conn_ref) == 0) {
-    errata.note(S_ERROR, "SSL_set_app_data failed: {}", swoc::bwf::SSLError{});
-  }
-  if (ngtcp2_crypto_ossl_configure_client_session(quic_socket.ssl) != 0) {
+  auto *connection = quic_socket.connection;
+  if (SSL_set_blocking_mode(connection, 0) != 1 ||
+      SSL_set_event_handling_mode(connection, SSL_VALUE_EVENT_HANDLING_MODE_EXPLICIT) != 1 ||
+      SSL_set_default_stream_mode(connection, SSL_DEFAULT_STREAM_MODE_NONE) != 1 ||
+      SSL_set_incoming_stream_policy(
+          connection,
+          SSL_INCOMING_STREAM_POLICY_ACCEPT,
+          H3_STREAM_CREATION_ERROR) != 1)
+  {
     errata.note(
         S_ERROR,
-        "ngtcp2_crypto_ossl_configure_client_session failed: {}",
+        "Failed to configure OpenSSL QUIC stream handling: {}",
         swoc::bwf::SSLError{});
+    return errata;
   }
-  SSL_set_connect_state(quic_socket.ssl);
+  SSL_set_mode(connection, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER | SSL_MODE_ENABLE_PARTIAL_WRITE);
 
-  alpn = reinterpret_cast<uint8_t const *>(H3_ALPN_H3.data());
-  alpnlen = H3_ALPN_H3.size();
-  if (alpn) {
-    if (SSL_set_alpn_protos(quic_socket.ssl, alpn, (int)alpnlen) != 0) {
-      errata.note(S_ERROR, "SSL_set_alpn_protos failed: {}", swoc::bwf::SSLError{});
-    }
+  auto *bio = BIO_new(BIO_s_datagram());
+  if (bio == nullptr || BIO_set_fd(bio, get_fd(), BIO_NOCLOSE) != 1) {
+    BIO_free(bio);
+    errata.note(
+        S_ERROR,
+        "Failed to configure the OpenSSL QUIC datagram BIO: {}",
+        swoc::bwf::SSLError{});
+    return errata;
   }
+  SSL_set_bio(connection, bio, bio);
 
-  if (!_client_sni.empty()) {
-    errata.note(S_DIAG, R"(Setting client-side H3 SNI to: "{}")", _client_sni);
-    if (SSL_set_tlsext_host_name(quic_socket.ssl, _client_sni.c_str()) == 0) {
+  auto *peer_address = BIO_ADDR_new();
+  if (peer_address == nullptr) {
+    errata.note(S_ERROR, "BIO_ADDR_new failed: {}", swoc::bwf::SSLError{});
+    return errata;
+  }
+  int address_result = 0;
+  if (m_endpoint->family() == AF_INET) {
+    auto const *address = reinterpret_cast<sockaddr_in const *>(&m_endpoint->sa);
+    address_result = BIO_ADDR_rawmake(
+        peer_address,
+        AF_INET,
+        &address->sin_addr,
+        sizeof(address->sin_addr),
+        address->sin_port);
+  } else if (m_endpoint->family() == AF_INET6) {
+    auto const *address = reinterpret_cast<sockaddr_in6 const *>(&m_endpoint->sa);
+    address_result = BIO_ADDR_rawmake(
+        peer_address,
+        AF_INET6,
+        &address->sin6_addr,
+        sizeof(address->sin6_addr),
+        address->sin6_port);
+  }
+  if (address_result != 1 || SSL_set1_initial_peer_addr(connection, peer_address) != 1) {
+    BIO_ADDR_free(peer_address);
+    errata.note(S_ERROR, "Failed to set the OpenSSL QUIC peer address: {}", swoc::bwf::SSLError{});
+    return errata;
+  }
+  BIO_ADDR_free(peer_address);
+
+  if (SSL_set_alpn_protos(connection, H3_ALPN, sizeof(H3_ALPN)) != 0) {
+    errata.note(S_ERROR, "SSL_set_alpn_protos failed: {}", swoc::bwf::SSLError{});
+    return errata;
+  }
+  if (!m_client_sni.empty()) {
+    errata.note(S_DIAG, R"(Setting client-side H3 SNI to: "{}")", m_client_sni);
+    if (SSL_set_tlsext_host_name(connection, m_client_sni.c_str()) != 1) {
       errata
-          .note(S_ERROR, "Failed to set client SNI to {}: {}", _client_sni, swoc::bwf::SSLError{});
+          .note(S_ERROR, "Failed to set client SNI to {}: {}", m_client_sni, swoc::bwf::SSLError{});
+      return errata;
     }
   }
-
-  if (_client_verify_mode != SSL_VERIFY_NONE) {
+  if (m_client_verify_mode != SSL_VERIFY_NONE) {
     errata.note(
         S_DIAG,
         R"(Setting client H3 verification mode against the proxy to: {}.)",
-        _client_verify_mode);
-    SSL_set_verify(
-        quic_socket.ssl,
-        _client_verify_mode,
-        nullptr /* No verify_callback is passed */);
+        m_client_verify_mode);
+    SSL_set_verify(connection, m_client_verify_mode, nullptr);
+  }
+  return errata;
+}
+
+Errata
+H3Session::initialize_http3_connection()
+{
+  Errata errata;
+  if (quic_socket.h3conn != nullptr) {
+    return errata;
   }
 
+  nghttp3_settings settings;
+  nghttp3_settings_default(&settings);
+  auto const result = nghttp3_conn_client_new(
+      &quic_socket.h3conn,
+      &NGHTTP3_CLIENT_CALLBACKS,
+      &settings,
+      nghttp3_mem_default(),
+      this);
+  if (result != 0) {
+    errata.note(S_ERROR, "nghttp3_conn_client_new failed: {} ({})", nghttp3_error(result), result);
+    return errata;
+  }
+
+  auto &&[control_stream, control_errata] = quic_socket.open_stream(UNIDIRECTIONAL);
+  errata.note(std::move(control_errata));
+  auto &&[encoder_stream, encoder_errata] = quic_socket.open_stream(UNIDIRECTIONAL);
+  errata.note(std::move(encoder_errata));
+  auto &&[decoder_stream, decoder_errata] = quic_socket.open_stream(UNIDIRECTIONAL);
+  errata.note(std::move(decoder_errata));
+  if (!errata.is_ok()) {
+    return errata;
+  }
+
+  auto const control_id = static_cast<int64_t>(SSL_get_stream_id(control_stream));
+  auto const encoder_id = static_cast<int64_t>(SSL_get_stream_id(encoder_stream));
+  auto const decoder_id = static_cast<int64_t>(SSL_get_stream_id(decoder_stream));
+  if (auto const bind_result = nghttp3_conn_bind_control_stream(quic_socket.h3conn, control_id);
+      bind_result != 0)
+  {
+    errata.note(
+        S_ERROR,
+        "nghttp3_conn_bind_control_stream failed: {} ({})",
+        nghttp3_error(bind_result),
+        bind_result);
+    return errata;
+  }
+  if (auto const bind_result =
+          nghttp3_conn_bind_qpack_streams(quic_socket.h3conn, encoder_id, decoder_id);
+      bind_result != 0)
+  {
+    errata.note(
+        S_ERROR,
+        "nghttp3_conn_bind_qpack_streams failed: {} ({})",
+        nghttp3_error(bind_result),
+        bind_result);
+  }
+  return errata;
+}
+
+Errata
+H3Session::connect()
+{
+  Errata errata = client_ssl_session_init(m_h3_client_context);
+  if (!errata.is_ok()) {
+    errata.note(S_ERROR, "TLS initialization failed.");
+    return errata;
+  }
+
+  auto *connection = quic_socket.connection;
+  auto const deadline = ClockType::now() + QUIC_HANDSHAKE_TIMEOUT;
+  for (;;) {
+    auto const result = SSL_connect(connection);
+    if (result == 1) {
+      break;
+    }
+    auto const ssl_error = SSL_get_error(connection, result);
+    if (ssl_error != SSL_ERROR_WANT_READ && ssl_error != SSL_ERROR_WANT_WRITE) {
+      errata.note(
+          S_ERROR,
+          "OpenSSL QUIC handshake failed with SSL error {}: {}",
+          ssl_error,
+          swoc::bwf::SSLError{});
+      return errata;
+    }
+    if (ClockType::now() >= deadline) {
+      errata.note(S_ERROR, "OpenSSL QUIC handshake timed out after {}.", QUIC_HANDSHAKE_TIMEOUT);
+      return errata;
+    }
+    if (SSL_handle_events(connection) != 1) {
+      errata.note(
+          S_ERROR,
+          "SSL_handle_events failed during QUIC handshake: {}",
+          swoc::bwf::SSLError{});
+      return errata;
+    }
+    auto const remaining = duration_cast<milliseconds>(deadline - ClockType::now());
+    auto &&[poll_result, poll_errata] = poll_for_quic(*this, remaining, ssl_error);
+    errata.note(std::move(poll_errata));
+    if (!errata.is_ok() || poll_result < 0) {
+      errata.note(S_ERROR, "Failed polling during the OpenSSL QUIC handshake.");
+      return errata;
+    }
+  }
+
+  unsigned char const *alpn = nullptr;
+  unsigned int alpn_length = 0;
+  SSL_get0_alpn_selected(connection, &alpn, &alpn_length);
+  if (alpn == nullptr || alpn_length != 2 || std::memcmp(alpn, "h3", 2) != 0) {
+    errata.note(
+        S_ERROR,
+        "Negotiated ALPN: {}, HTTP/3 failed to negotiate.",
+        alpn == nullptr ? TextView{"none"} :
+                          TextView{reinterpret_cast<char const *>(alpn), alpn_length});
+    return errata;
+  }
+  errata.note(S_DIAG, "Negotiated ALPN: h3, HTTP/3 is negotiated.");
+  errata.note(initialize_http3_connection());
+  if (errata.is_ok()) {
+    auto &&[progressed, progress_errata] = progress_http3(*this, 0ms);
+    static_cast<void>(progressed);
+    errata.note(std::move(progress_errata));
+  }
+  return errata;
+}
+
+Errata
+H3Session::do_connect(TextView interface, swoc::IPEndpoint const *target, ProxyProtocolMsg *)
+{
+  Errata errata = configure_udp_socket(interface, target);
+  if (errata.is_ok()) {
+    errata.note(connect());
+  }
+  return errata;
+}
+
+swoc::Rv<int>
+H3Session::poll_for_headers(milliseconds timeout)
+{
+  if (get_a_stream_has_ended()) {
+    return 1;
+  }
+  swoc::Rv<int> zret{-1};
+  auto &&[progressed, progress_errata] = progress_http3(*this, timeout);
+  static_cast<void>(progressed);
+  zret.note(std::move(progress_errata));
+  if (!zret.is_ok()) {
+    return zret;
+  }
+  zret = get_a_stream_has_ended() ? 1 : 0;
+  return zret;
+}
+
+bool
+H3Session::get_a_stream_has_ended() const
+{
+  return !m_ended_streams.empty();
+}
+
+void
+H3Session::record_stream_state(int64_t stream_id, std::shared_ptr<H3StreamState> stream_state)
+{
+  stream_map.emplace(stream_id, stream_state);
+  m_last_added_stream = std::move(stream_state);
+}
+
+void
+H3Session::mark_completed_response_stream(int64_t stream_id)
+{
+  m_completed_response_streams.insert(stream_id);
+}
+
+bool
+H3Session::clear_completed_response_stream(int64_t stream_id)
+{
+  return m_completed_response_streams.erase(stream_id) != 0;
+}
+
+void
+H3Session::set_stream_has_ended(int64_t stream_id, std::string_view key)
+{
+  m_ended_streams.push_back(stream_id);
+  if (!key.empty()) {
+    m_finished_streams.emplace(key);
+  }
+}
+
+swoc::Rv<std::shared_ptr<HttpHeader>>
+H3Session::read_and_parse_request(swoc::FixedBufferWriter &)
+{
+  swoc::Rv<std::shared_ptr<HttpHeader>> zret{nullptr};
+  if (m_ended_streams.empty()) {
+    zret.note(S_ERROR, "No completed HTTP/3 request stream is available.");
+    return zret;
+  }
+
+  auto const stream_id = m_ended_streams.front();
+  m_ended_streams.pop_front();
+  auto const spot = stream_map.find(stream_id);
+  if (spot == stream_map.end()) {
+    zret.note(S_ERROR, "Requested headers for stream id {}, but none are available.", stream_id);
+    return zret;
+  }
+  zret = spot->second->request_from_client;
+  return zret;
+}
+
+swoc::Rv<size_t>
+H3Session::drain_body(HttpHeader const &, size_t, TextView, std::shared_ptr<RuleCheck>)
+{
+  return {0};
+}
+
+Errata
+H3Session::accept()
+{
+  Errata errata;
+  errata.note(S_ERROR, "Server-side HTTP/3 is not implemented by Proxy Verifier.");
+  return errata;
+}
+
+bool
+H3Session::request_has_outstanding_stream_dependencies(HttpHeader const &request) const
+{
+  for (auto const &stream_dependency : request._keys_to_await) {
+    if (m_finished_streams.find(stream_dependency) == m_finished_streams.end()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+Errata
+H3Session::run_transactions(
+    std::list<Txn> const &transactions,
+    TextView interface,
+    swoc::IPEndpoint const *target,
+    double rate_multiplier)
+{
+  Errata errata;
+  auto const first_time = ClockType::now();
+  for (auto const &transaction : transactions) {
+    Errata txn_errata;
+    auto const key = transaction._req.get_key();
+    if (is_closed()) {
+      txn_errata.note(do_connect(interface, target));
+      if (!txn_errata.is_ok()) {
+        txn_errata.note(S_ERROR, R"(Failed to reconnect HTTP/3 key: {}.)", key);
+        break;
+      }
+    }
+
+    while (request_has_outstanding_stream_dependencies(transaction._req)) {
+      auto &&[progressed, progress_errata] = progress_http3(*this, Poll_Timeout);
+      txn_errata.note(std::move(progress_errata));
+      if (!txn_errata.is_ok() || !progressed) {
+        errata.note(S_ERROR, R"(Failed HTTP/3 transaction with key: {}.)", key);
+        return errata;
+      }
+    }
+
+    if (rate_multiplier != 0 || transaction._user_specified_delay_duration > 0us) {
+      chrono::duration<double, std::micro> delay_time = 0ms;
+      auto current_time = ClockType::now();
+      auto next_time = current_time;
+      if (transaction._user_specified_delay_duration > 0us) {
+        delay_time = transaction._user_specified_delay_duration;
+        next_time += duration_cast<ClockType::duration>(delay_time);
+      } else {
+        next_time =
+            duration_cast<ClockType::duration>(rate_multiplier * transaction._start) + first_time;
+        delay_time = next_time - current_time;
+      }
+      while (delay_time > 0us) {
+        auto &&[progressed, progress_errata] =
+            progress_http3(*this, duration_cast<milliseconds>(delay_time));
+        static_cast<void>(progressed);
+        txn_errata.note(std::move(progress_errata));
+        current_time = ClockType::now();
+        delay_time = next_time - current_time;
+        if (delay_time > 0us &&
+            !interruptible_sleep_for(duration_cast<chrono::nanoseconds>(delay_time))) {
+          break;
+        }
+      }
+    }
+    if (shutdown_requested()) {
+      break;
+    }
+    txn_errata.note(run_transaction(transaction));
+    if (!txn_errata.is_ok()) {
+      errata.note(S_ERROR, R"(Failed HTTP/3 transaction with key: {}.)", key);
+    }
+  }
+  errata.note(receive_responses());
+  return errata;
+}
+
+Errata
+H3Session::run_transaction(Txn const &transaction)
+{
+  Errata errata;
+  auto &&[bytes_written, write_errata] = write(transaction._req);
+  static_cast<void>(bytes_written);
+  errata.note(std::move(write_errata));
+  if (m_last_added_stream != nullptr) {
+    m_last_added_stream->specified_response = &transaction._rsp;
+  }
   return errata;
 }
 
@@ -2465,102 +1535,76 @@ H3Session::receive_responses()
       errata.note(S_ERROR, "The connection was closed while awaiting HTTP/3 responses.");
       break;
     }
-    errata.note(nghttp3_receive_and_send_data(*this, Poll_Timeout));
+    auto &&[progressed, progress_errata] = progress_http3(*this, Poll_Timeout);
+    errata.note(std::move(progress_errata));
     if (!errata.is_ok()) {
       errata.note(S_ERROR, "Encountered a problem while receiving responses.");
       break;
     }
-  }
-  return errata;
-}
-
-Errata
-H3Session::client_session_init(PacketIoContext *packet_context)
-{
-  Errata errata;
-  quic_socket.version = NGTCP2_PROTO_VER_MAX;
-
-  errata.note(client_ssl_session_init(_h3_client_context));
-  if (!errata.is_ok()) {
-    errata.note(S_ERROR, "Failure initializing client-side SSL object.");
-    return errata;
-  }
-
-  quic_socket.dcid.datalen = NGTCP2_MAX_CIDLEN;
-  QuicSocket::randomly_populate_array(quic_socket.dcid.data, quic_socket.dcid.datalen);
-
-  quic_socket.scid.datalen = NGTCP2_MAX_CIDLEN;
-  QuicSocket::randomly_populate_array(quic_socket.scid.data, quic_socket.scid.datalen);
-
-  errata.note(quic_socket.open_qlog_file());
-
-  configure_quic_socket_settings(quic_socket, packet_context);
-
-  if (!quic_socket.local_addr.is_valid()) {
-    struct sockaddr_storage socket_address;
-    socklen_t socket_address_len = sizeof(socket_address);
-    auto const rv =
-        getsockname(this->get_fd(), (struct sockaddr *)&socket_address, &socket_address_len);
-    if (rv == -1) {
-      errata.note(S_ERROR, "getsockname failed: {}", Errno{});
-      return errata;
-    }
-    quic_socket.local_addr.assign(reinterpret_cast<struct sockaddr *>(&socket_address));
-  }
-
-  ngtcp2_path path;
-  memset(&path, 0, sizeof(path));
-  ngtcp2_addr_init(&path.local, quic_socket.local_addr, quic_socket.local_addr.size());
-  ngtcp2_addr_init(&path.remote, &this->_endpoint->sa, this->_endpoint->size());
-
-  auto const rc = ngtcp2_conn_client_new(
-      &quic_socket.qconn,
-      &quic_socket.dcid,
-      &quic_socket.scid,
-      &path,
-      NGTCP2_PROTO_VER_V1,
-      &client_ngtcp2_callbacks,
-      &quic_socket.settings,
-      &quic_socket.transport_params,
-      nullptr,
-      this /* The user_data in the ngtcp2 callbacks. */);
-  if (rc != 0) {
-    errata.note(S_ERROR, "ngtcp2_conn_client_new failed.");
-    return errata;
-  }
-
-  ngtcp2_conn_set_tls_native_handle(quic_socket.qconn, quic_socket.ossl_ctx);
-  ngtcp2_ccerr_default(&quic_socket.last_error);
-
-  // Commence handshake.
-  if (ngtcp2_progress_egress(*this, packet_context) < 0) {
-    errata.note(S_ERROR, "Error writing bytes during QUIC TLS handshake.");
-    return errata;
-  }
-
-  // TODO: have to read multiple packets????
-
-  // Now that we sent our first packet, exchange packets until the handshake is
-  // complete.
-  bool handshake_completed = ngtcp2_conn_get_handshake_completed(quic_socket.qconn);
-  while (!handshake_completed) {
-    errata.note(nghttp3_receive_and_send_data(*this, Poll_Timeout));
-    if (!errata.is_ok()) {
-      errata.note(S_ERROR, "Encountered a problem while completing the handshake.");
+    if (!progressed) {
+      errata.note(S_ERROR, "Timed out while awaiting HTTP/3 responses.");
       break;
     }
-    handshake_completed = ngtcp2_conn_get_handshake_completed(quic_socket.qconn);
-  }
-  if (!handshake_completed) {
-    errata.note(S_ERROR, "Could not complete the QUIC handshake.");
   }
   return errata;
 }
 
 Errata
-H3Session::server_session_init()
+H3Session::init(int *process_exit_code, TextView qlog_dir)
 {
   Errata errata;
-  // TODO: stubbed out. Flesh this out when we implement server-side HTTP/3.
+  m_process_exit_code = process_exit_code;
+  errata.note(QuicSocket::configure_qlog_dir(qlog_dir));
+  errata.note(client_ssl_ctx_init(m_h3_client_context));
+  errata.note(server_ssl_ctx_init(m_h3_server_context));
+  errata.note(S_DIAG, "Finished H3Session::init");
   return errata;
+}
+
+void
+H3Session::terminate()
+{
+  terminate(m_h3_client_context);
+  terminate(m_h3_server_context);
+}
+
+void
+H3Session::terminate(SSL_CTX *&context)
+{
+  SSL_CTX_free(context);
+  context = nullptr;
+}
+
+Errata
+H3Session::client_ssl_ctx_init(SSL_CTX *&client_context)
+{
+  Errata errata;
+  client_context = SSL_CTX_new(OSSL_QUIC_client_method());
+  if (client_context == nullptr) {
+    errata.note(
+        S_ERROR,
+        "Failed to create the OpenSSL QUIC client context: {}",
+        swoc::bwf::SSLError{});
+    return errata;
+  }
+  SSL_CTX_set_default_verify_paths(client_context);
+  if (TLSSession::tls_secrets_are_being_logged()) {
+    SSL_CTX_set_keylog_callback(client_context, TLSSession::keylog_callback);
+  }
+  return errata;
+}
+
+Errata
+H3Session::server_ssl_ctx_init(SSL_CTX *&server_context)
+{
+  server_context = nullptr;
+  return {};
+}
+
+void
+H3Session::set_non_zero_exit_status()
+{
+  if (m_process_exit_code != nullptr) {
+    *m_process_exit_code = 1;
+  }
 }

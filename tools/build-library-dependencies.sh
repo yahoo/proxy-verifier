@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Build QUIC/HTTP3 library dependencies.
+# Build HTTP and QUIC library dependencies.
 #
 # Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
@@ -15,7 +15,7 @@ usage() {
   cat <<'EOF'
 Usage: tools/build-library-dependencies.sh [--portable] <install-dir>
 
-Build QUIC/HTTP3 library dependencies into <install-dir>.
+Build OpenSSL 3.5, nghttp2, and nghttp3 into <install-dir>.
 
 Use --portable to add conservative Linux amd64 baseline flags suitable for
 portable release builds.
@@ -24,9 +24,8 @@ EOF
 
 set -euo pipefail
 
-OPENSSL_TAG=openssl-3.5.5
+OPENSSL_TAG=openssl-3.5.7
 NGHTTP3_TAG=v1.15.0
-NGTCP2_TAG=v1.21.0
 NGHTTP2_TAG=v1.68.0
 
 os=$(uname)
@@ -81,10 +80,12 @@ then
   portable_cpu_flags="-march=x86-64 -mtune=generic"
 fi
 
-for tool in git make pkg-config autoreconf autoconf automake
+for tool in git make perl pkg-config autoreconf autoconf automake
 do
   command -v "${tool}" >/dev/null 2>&1 || fail "Missing required tool: ${tool}"
 done
+perl -MTime::Piece -e 1 >/dev/null 2>&1 || fail \
+  "Missing required Perl module: Time::Piece"
 
 if [ "${os}" = "Linux" ]
 then
@@ -150,7 +151,7 @@ append_env_flags CFLAGS "${portable_cpu_flags}"
 append_env_flags CXXFLAGS "${portable_cpu_flags}"
 
 mkdir -p "${install_dir}"
-repo_dir=$(mktemp -d /var/tmp/http3_dependency_repos_XXXXXX)
+repo_dir=$(mktemp -d /var/tmp/http_dependency_repos_XXXXXX)
 cleanup() {
   rm -rf "${repo_dir}"
 }
@@ -180,7 +181,7 @@ install_with_permissions() {
 
 cd "${repo_dir}"
 
-# 1. OpenSSL with built-in QUIC support.
+# OpenSSL with built-in QUIC support.
 clone_tagged_repo https://github.com/openssl/openssl.git openssl "${OPENSSL_TAG}"
 cd openssl
 ./config enable-tls1_3 --prefix="${install_dir}/openssl" --libdir=lib
@@ -188,7 +189,7 @@ make -j "${num_threads}"
 ${SUDO} make install_sw
 chmod_with_permissions "${install_dir}/openssl"
 
-# 2. nghttp3
+# nghttp3 provides HTTP/3 framing and QPACK.
 cd "${repo_dir}"
 clone_tagged_repo https://github.com/ngtcp2/nghttp3.git nghttp3 "${NGHTTP3_TAG}"
 cd nghttp3
@@ -198,29 +199,12 @@ autoreconf -if
 make -j "${num_threads}"
 install_with_permissions "${install_dir}/nghttp3"
 
-# 3. ngtcp2
-cd "${repo_dir}"
-clone_tagged_repo https://github.com/ngtcp2/ngtcp2.git ngtcp2 "${NGTCP2_TAG}"
-cd ngtcp2
-git submodule update --init
-autoreconf -if
-PKG_CONFIG_PATH="${install_dir}/openssl/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig" \
-LDFLAGS="-Wl,-rpath,${install_dir}/openssl/lib" \
-./configure \
-  --prefix="${install_dir}/ngtcp2" \
-  --enable-lib-only
-make -j "${num_threads}"
-install_with_permissions "${install_dir}/ngtcp2"
-
-# 4. nghttp2
+# nghttp2 provides HTTP/2 framing and HPACK.
 cd "${repo_dir}"
 clone_tagged_repo https://github.com/nghttp2/nghttp2.git nghttp2 "${NGHTTP2_TAG}"
 cd nghttp2
 git submodule update --init
 autoreconf -if
-PKG_CONFIG_PATH="${install_dir}/openssl/lib/pkgconfig:${install_dir}/ngtcp2/lib/pkgconfig:${install_dir}/nghttp3/lib/pkgconfig" \
-./configure \
-  --prefix="${install_dir}/nghttp2" \
-  --enable-lib-only
+./configure --prefix="${install_dir}/nghttp2" --enable-lib-only
 make -j "${num_threads}"
 install_with_permissions "${install_dir}/nghttp2"

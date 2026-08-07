@@ -75,17 +75,17 @@ set(PV_DEPS_ROOT
     ""
     CACHE
       PATH
-      "Common dependency root containing openssl/nghttp2/ngtcp2/nghttp3 subdirectories."
+      "Optional dependency root containing openssl/nghttp2/nghttp3 subdirectories."
 )
 set(PV_OPENSSL_ROOT
     ""
-    CACHE PATH "Explicit OpenSSL root.")
+    CACHE PATH "Explicit OpenSSL 3.5 or newer root.")
 set(PV_NGHTTP2_ROOT
     ""
     CACHE PATH "Explicit nghttp2 root.")
 set(PV_NGTCP2_ROOT
     ""
-    CACHE PATH "Explicit ngtcp2 root.")
+    CACHE PATH "Deprecated compatibility variable; ngtcp2 is no longer used.")
 set(PV_NGHTTP3_ROOT
     ""
     CACHE PATH "Explicit nghttp3 root.")
