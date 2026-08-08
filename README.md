@@ -1948,6 +1948,10 @@ Build the images from the repository root. The dependency stage copies the
 checked-out `tools/build-library-dependencies.sh` into the image, so Docker
 invalidates the layer whenever its dependency pins or build logic change.
 
+See [`tools/CI-IMAGES.md`](tools/CI-IMAGES.md) for instructions to build,
+verify, and publish the amd64 and arm64 Ubuntu CI images and their combined
+multi-platform tag.
+
 Here's an example of building the smaller rockylinux:9 external-dependency
 image:
 
