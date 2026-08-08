@@ -85,14 +85,14 @@ jobs:
             --input-exclude "tests/unit_tests/catch.hpp" \
             --input-exclude "tests/autests/gold_tests/autest-site/default_url_file" \
             --input-exclude-std GIT HIDDEN_DIR HIDDEN_FILE -- \
-            "${GITHUB_WORKSPACE}" | tee RAT.txt
+            "${GITHUB_WORKSPACE}" | tee "${RUNNER_TEMP}/RAT.txt"
 
       - name: Upload RAT report
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: rat-report
-          path: RAT.txt
+          path: ${{ runner.temp }}/RAT.txt
           if-no-files-found: ignore
 
   unit-tests:
