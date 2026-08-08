@@ -145,12 +145,17 @@ jobs:
         if: failure()
         run: |
           mkdir -p artifacts
-          cp -a /tmp/proxy-verifier-autest artifacts/ 2>/dev/null || true
+          if [[ -d /tmp/proxy-verifier-autest ]]; then
+            cd /tmp/proxy-verifier-autest
+            find . -type f -path '*/_output/*' -print0 | \
+              tar --null --files-from=- --create --gzip \
+                --file="${GITHUB_WORKSPACE}/artifacts/autest-logs.tar.gz"
+          fi
 
       - name: Upload AuTest logs
         if: failure()
         uses: actions/upload-artifact@v6
         with:
           name: autest-logs
-          path: artifacts
+          path: artifacts/autest-logs.tar.gz
           if-no-files-found: ignore
