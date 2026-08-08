@@ -139,7 +139,7 @@ jobs:
         run: cmake --build --preset dev-external --parallel
 
       - name: Run AuTests
-        run: ./build/dev-external/autest.sh --clean=none -j"$(nproc)"
+        run: ./build/dev-external/autest.sh -v --clean=none -j"$(nproc)"
 
       - name: Collect AuTest sandbox
         if: failure()

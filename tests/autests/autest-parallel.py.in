@@ -288,6 +288,7 @@ def run_worker(
     sandbox_base: Path,
     extra_args: List[str],
     port_offset_step: int,
+    verbose: bool,
     collect_timings: bool,
 ) -> TestResult:
     start_time = time.time()
@@ -297,6 +298,10 @@ def run_worker(
 
     env = os.environ.copy()
     env["AUTEST_PORT_OFFSET"] = str(worker_id * port_offset_step)
+
+    if verbose:
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"[{timestamp}] Worker:{worker_id:2d} Starting {len(tests)} tests", flush=True)
 
     try:
         if collect_timings:
@@ -312,19 +317,53 @@ def run_worker(
                 else:
                     result.failed += 1
                     result.failed_tests.append(test_name)
+                if verbose:
+                    timestamp = time.strftime("%H:%M:%S")
+                    print(f"[{timestamp}] Worker:{worker_id:2d} {status:4s} {duration:6.1f}s {test_name}", flush=True)
             result.output = "\n".join(output_chunks)
             result.return_code = 0 if result.failed == 0 else 1
         else:
-            proc = subprocess.run(
-                build_autest_command(test_dir, sandbox, extra_args, tests),
-                cwd=SOURCE_AUTEST_DIR,
-                capture_output=True,
-                text=True,
-                env=env,
-                timeout=3600,
-            )
-            result.output = proc.stdout + proc.stderr
-            result.return_code = proc.returncode
+            cmd = build_autest_command(test_dir, sandbox, extra_args, tests)
+            if verbose:
+                proc = subprocess.Popen(
+                    cmd,
+                    cwd=SOURCE_AUTEST_DIR,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    env=env,
+                )
+                output_lines = []
+                try:
+                    if proc.stdout is not None:
+                        for line in proc.stdout:
+                            output_lines.append(line)
+                            clean = strip_ansi(line).strip()
+                            if clean.startswith("Running Test") or "Passed" in clean or "Failed" in clean:
+                                timestamp = time.strftime("%H:%M:%S")
+                                print(f"[{timestamp}] Worker:{worker_id:2d} {clean}", flush=True)
+                    proc.wait(timeout=60)
+                finally:
+                    if proc.poll() is None:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait()
+                result.output = "".join(output_lines)
+                result.return_code = proc.returncode
+            else:
+                proc = subprocess.run(
+                    cmd,
+                    cwd=SOURCE_AUTEST_DIR,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=3600,
+                )
+                result.output = proc.stdout + proc.stderr
+                result.return_code = proc.returncode
             parsed = parse_autest_output(result.output)
             result.passed = parsed["passed"]
             result.failed = parsed["failed"]
@@ -456,6 +495,7 @@ def main() -> None:
     parser.add_argument("-f", "--filters", nargs="+", action="extend", dest="filters", help="Filter tests by name or glob")
     parser.add_argument("-D", "--directory", default="gold_tests", help="AuTest test directory")
     parser.add_argument("--port-offset-step", type=int, default=1000, help="Port offset between workers")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Stream test progress")
     parser.add_argument("--collect-timings", action="store_true", help="Run tests one at a time per worker")
     parser.add_argument("--timings-file", type=Path, default=None, help="Timing data JSON file")
     parser.add_argument("--no-timing", action="store_true", help="Disable timing-based load balancing")
@@ -547,6 +587,7 @@ def main() -> None:
                         sandbox_base,
                         extra_args,
                         args.port_offset_step,
+                        args.verbose,
                         args.collect_timings,
                     )
                     futures[future] = worker_id
