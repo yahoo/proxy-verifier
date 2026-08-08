@@ -141,21 +141,20 @@ jobs:
       - name: Run AuTests
         run: ./build/dev-external/autest.sh --clean=none -j"$(nproc)"
 
-      - name: Collect AuTest logs
+      - name: Collect AuTest sandbox
         if: failure()
         run: |
           mkdir -p artifacts
           if [[ -d /tmp/proxy-verifier-autest ]]; then
-            cd /tmp/proxy-verifier-autest
-            find . -type f -path '*/_output/*' -print0 | \
-              tar --null --files-from=- --create --gzip \
-                --file="${GITHUB_WORKSPACE}/artifacts/autest-logs.tar.gz"
+            tar --create --gzip \
+              --file="${GITHUB_WORKSPACE}/artifacts/autest-sandbox.tar.gz" \
+              --directory=/tmp proxy-verifier-autest
           fi
 
-      - name: Upload AuTest logs
+      - name: Upload AuTest sandbox
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: autest-logs
-          path: artifacts/autest-logs.tar.gz
+          name: autest-sandbox
+          path: artifacts/autest-sandbox.tar.gz
           if-no-files-found: ignore
