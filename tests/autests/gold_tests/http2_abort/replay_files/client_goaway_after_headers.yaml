@@ -1,6 +1,6 @@
 # @file
 #
-# Copyright 2023, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -11,6 +11,8 @@ sessions:
     stack: http2
     tls:
       sni: test_sni
+  # Let the proxy process GOAWAY before AuTest tears down background processes.
+  keep-connection-open: 2s
   transactions:
   - client-request:
       frames:
