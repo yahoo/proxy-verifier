@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM docker.io/library/ubuntu:24.04 AS pv-libs-builder-base
+FROM docker.io/library/ubuntu:24.04 AS dev-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -17,8 +17,6 @@ set -eux
 
 apt-get update
 apt-get install -y --no-install-recommends \
-  autoconf \
-  automake \
   ca-certificates \
   curl \
   diffutils \
@@ -28,11 +26,7 @@ apt-get install -y --no-install-recommends \
   libc6-dev \
   libffi-dev \
   libssl-dev \
-  libtool \
-  make \
-  perl \
   pkg-config \
-  sudo \
   python3-dev \
   python3-pip \
   python3-venv
@@ -47,19 +41,37 @@ PROFILE
 rm -rf /var/lib/apt/lists/*
 EOF
 
-# Build the HTTP dependency stack once during image creation.
-FROM pv-libs-builder-base AS dev
-
-ARG PV_REPO_URL="https://github.com/yahoo/proxy-verifier.git"
-ARG PV_REPO_REF="master"
+FROM dev-base AS deps-builder
 
 RUN <<'EOF'
 set -eux
 
-git clone --depth 1 --branch "${PV_REPO_REF}" "${PV_REPO_URL}" /tmp/proxy-verifier
-chmod +x /tmp/proxy-verifier/tools/build-library-dependencies.sh
-/tmp/proxy-verifier/tools/build-library-dependencies.sh /opt/pv_libs
-rm -rf /tmp/proxy-verifier
+apt-get update
+apt-get install -y --no-install-recommends \
+  autoconf \
+  automake \
+  libtool \
+  make \
+  perl
+rm -rf /var/lib/apt/lists/*
 EOF
+
+COPY tools/build-library-dependencies.sh /tmp/build-library-dependencies.sh
+
+RUN <<'EOF'
+set -eux
+
+chmod +x /tmp/build-library-dependencies.sh
+/tmp/build-library-dependencies.sh /opt/pv_libs
+rm -f /tmp/build-library-dependencies.sh
+EOF
+
+FROM dev-base AS dev-external
+
+COPY --from=deps-builder /opt/pv_libs /opt/pv_libs
+
+WORKDIR /workspace
+
+FROM deps-builder AS dev
 
 WORKDIR /workspace

@@ -1836,12 +1836,16 @@ presets. The build requires:
 * autoconf
 * automake
 * libtool
+* Perl with the `Time::Piece` module
 * pkg-config
 
-CMake fetches pinned `libswoc` and `yaml-cpp` sources during configure. The
-remaining QUIC and TLS dependencies can either be bootstrapped as part of the
-CMake build or provided from an existing install tree such as `/opt/pv_libs`
-(see [Using Prebuilt Libraries](#using-prebuilt-libraries) below).
+CMake fetches pinned `libswoc` and `yaml-cpp` sources during configure. HTTP/3
+uses OpenSSL 3.5 or newer for the native QUIC transport and nghttp3 for HTTP/3
+framing and QPACK. HTTP/2 uses nghttp2. These dependencies can be bootstrapped
+as part of the CMake build, discovered through the system package manager, or
+provided from an install tree such as `/opt/pv_libs` (see
+[Using Prebuilt Libraries](#using-prebuilt-libraries) below).
+ngtcp2 is not required because OpenSSL provides the QUIC transport.
 
 For Mac builds, the following brew command can be helpful:
 
@@ -1850,9 +1854,11 @@ brew install \
   git \
   cmake \
   ninja \
-  libtool \
   automake \
   libtool \
+  nghttp2 \
+  nghttp3 \
+  openssl@3 \
   pkg-config \
   python@3.14
 ```
@@ -1872,8 +1878,8 @@ This places the build-tree binaries under `build/dev-external/bin`.
 
 #### Bootstrapping Dependencies Under CMake
 
-If you want CMake to fetch and build OpenSSL, nghttp3, ngtcp2, and nghttp2 as
-part of the build, use the `dev-bootstrap` preset:
+If you want CMake to fetch and build OpenSSL 3.5, nghttp3, and nghttp2 as part
+of the build, use the `dev-bootstrap` preset:
 
 ```
 cmake --preset dev-bootstrap
@@ -1884,18 +1890,23 @@ This populates the dependency prefix under `build/dev-bootstrap/pv-deps/`.
 
 #### Using Prebuilt Libraries
 
-If you prefer to manage the external QUIC/TLS libraries separately, use the
+If you prefer to manage the external HTTP and QUIC libraries separately, use the
 [build-library-dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build-library-dependencies.sh)
 script:
 
 ```bash
 http3_libs_dir=${HOME}/src/http3_libs
 
-# The following takes a while as it builds openssl and various ng* libraries.
+# The following builds OpenSSL 3.5, nghttp2, and nghttp3.
 bash ./tools/build-library-dependencies.sh ${http3_libs_dir}
 cmake --preset dev-external -DPV_DEPS_ROOT=${http3_libs_dir}
 cmake --build --preset dev-external --parallel
 ```
+
+The external build uses the `openssl`, `nghttp2`, and `nghttp3` subdirectories
+under `PV_DEPS_ROOT` when present. A missing subdirectory is resolved from the
+system instead. The corresponding `PV_OPENSSL_ROOT`, `PV_NGHTTP2_ROOT`, and
+`PV_NGHTTP3_ROOT` variables can override individual dependencies.
 
 The checked-in `dev-external` preset assumes `/opt/pv_libs`, which matches the
 provided Dockerfiles under `docker/alpine_3.20`, `docker/rockylinux_8`,
@@ -1904,7 +1915,7 @@ provided Dockerfiles under `docker/alpine_3.20`, `docker/rockylinux_8`,
 ```bash
 http3_libs_dir=/opt/pv_libs
 
-# The following takes a while as it builds openssl and various ng* libraries.
+# The following builds OpenSSL 3.5, nghttp2, and nghttp3.
 bash ./tools/build-library-dependencies.sh ${http3_libs_dir}
 cmake --preset dev-external
 cmake --build --preset dev-external --parallel
@@ -1918,29 +1929,33 @@ for development workflows, not deployment images. For deployment, using the
 statically linked binaries associated with the GitHub releases is the easiest
 path for most people.
 
-Each image build has two stages:
+Each Dockerfile provides these targets:
 
-* `pv-libs-builder-base` installs the shared toolchain and creates the
-  `/opt/pv-venv` virtual environment with `cmake`, `ninja`, and `uv`.
-* `dev` compiles OpenSSL, nghttp3, ngtcp2, and nghttp2 into `/opt/pv_libs` and
-  is also the final development image.
+* `dev-base` installs the Proxy Verifier build and AuTest toolchain and creates
+  the `/opt/pv-venv` virtual environment with `cmake`, `ninja`, and `uv`.
+* `deps-builder` adds the Autotools and Perl tooling needed to compile OpenSSL
+  3.5, nghttp3, and nghttp2 into `/opt/pv_libs`.
+* `dev-external` copies `/opt/pv_libs` from `deps-builder` onto `dev-base`. This
+  smaller target supports the external-dependency presets without retaining
+  the dependency-build-only tooling.
+* `dev` extends `deps-builder` and is the default final image. It retains the
+  full toolchain for CMake bootstrap builds and the Alpine portable workflow.
 
 Tooling for the dev image lives in the `/opt/pv-venv` virtual environment and
 is added to the `PATH` by the Dockerfile `ENV` configuration.
 
-The Dockerfiles are self-contained, so you can build them from within each
-image directory. By default the builder stage clones
-`https://github.com/yahoo/proxy-verifier.git` at `master` to run
-`tools/build-library-dependencies.sh`; override that with `--build-arg
-PV_REPO_URL=... --build-arg PV_REPO_REF=...` if you need a different fork or
-branch.
+Build the images from the repository root. The dependency stage copies the
+checked-out `tools/build-library-dependencies.sh` into the image, so Docker
+invalidates the layer whenever its dependency pins or build logic change.
 
-Here's an example of building the rockylinux:9 based image:
+Here's an example of building the smaller rockylinux:9 external-dependency
+image:
 
 ```bash
-cd docker/rockylinux_9
-docker build -t pv-dev:rocky9 .
-docker run --rm -it -v "$(git rev-parse --show-toplevel)":/workspace pv-dev:rocky9
+docker build -f docker/rockylinux_9/Dockerfile --target dev-external \
+  -t pv-dev:rocky9-external .
+docker run --rm -it -v "$(git rev-parse --show-toplevel)":/workspace \
+  pv-dev:rocky9-external
 
 # Now, within the container.
 cd /workspace
@@ -1949,6 +1964,9 @@ cmake --build --preset dev-external --parallel
 ctest --preset dev-external
 ./build/dev-external/autest.sh --sandbox /tmp/pv-autest --clean=none
 ```
+
+Omit `--target dev-external` and use a `pv-dev:rocky9` tag to build the default
+full `dev` image instead.
 
 #### Install
 
@@ -2401,10 +2419,10 @@ to be replayed in serial.
 
 #### --qlog-dir \<directory\>
 
-Proxy Verifier supports logging of replayed QUIC traffic information conformant
-to the qlog format. If the `--qlog-dir` option is provided, then qlog files for all
-replayed QUIC traffic will be written into the specified directory.  qlog
-diagnostic logging is disabled by default.
+The `--qlog-dir` option remains accepted and Proxy Verifier creates the
+specified directory. OpenSSL's native QUIC API does not currently expose qlog
+events, however, so the OpenSSL 3.5 implementation reports a diagnostic and
+does not write qlog files. qlog diagnostic logging remains disabled by default.
 
 #### --tls-secrets-log-file \<secrets_log_file_name\>
 

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-FROM docker.io/rockylinux/rockylinux:9 AS pv-libs-builder-base
+FROM docker.io/rockylinux/rockylinux:9 AS dev-base
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -16,10 +16,8 @@ set -eux
 dnf install -y dnf-plugins-core
 dnf config-manager --set-enabled crb
 dnf install -y \
-  autoconf \
-  automake \
   ca-certificates \
-  curl \
+  curl-minimal \
   diffutils \
   gcc \
   gcc-c++ \
@@ -27,13 +25,9 @@ dnf install -y \
   glibc-static \
   libffi-devel \
   libstdc++-static \
-  libtool \
-  make \
   openssl-devel \
-  perl \
   procps-ng \
   pkgconf-pkg-config \
-  sudo \
   python3.11 \
   python3.11-devel \
   python3.11-pip
@@ -51,19 +45,38 @@ dnf clean all
 rm -rf /var/cache/dnf
 EOF
 
-# Build the HTTP dependency stack once during image creation.
-FROM pv-libs-builder-base AS dev
-
-ARG PV_REPO_URL="https://github.com/yahoo/proxy-verifier.git"
-ARG PV_REPO_REF="master"
+FROM dev-base AS deps-builder
 
 RUN <<'EOF'
 set -eux
 
-git clone --depth 1 --branch "${PV_REPO_REF}" "${PV_REPO_URL}" /tmp/proxy-verifier
-chmod +x /tmp/proxy-verifier/tools/build-library-dependencies.sh
-/tmp/proxy-verifier/tools/build-library-dependencies.sh /opt/pv_libs
-rm -rf /tmp/proxy-verifier
+dnf install -y \
+  autoconf \
+  automake \
+  libtool \
+  make \
+  perl
+
+dnf clean all
+rm -rf /var/cache/dnf
 EOF
+
+COPY tools/build-library-dependencies.sh /tmp/build-library-dependencies.sh
+
+RUN <<'EOF'
+set -eux
+
+chmod +x /tmp/build-library-dependencies.sh
+/tmp/build-library-dependencies.sh /opt/pv_libs
+rm -f /tmp/build-library-dependencies.sh
+EOF
+
+FROM dev-base AS dev-external
+
+COPY --from=deps-builder /opt/pv_libs /opt/pv_libs
+
+WORKDIR /workspace
+
+FROM deps-builder AS dev
 
 WORKDIR /workspace
