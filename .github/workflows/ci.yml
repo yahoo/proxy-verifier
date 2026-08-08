@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:24.04
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:24.04
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
     env:
       RAT_VERSION: 0.17
       RAT_SHA256: 401939ebe5a52c6ed524029897bf914eaaba503d36c069ebcdbd8847a9e7cf93
@@ -100,7 +100,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
-      image: ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:24.04
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
-      image: ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:24.04
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
