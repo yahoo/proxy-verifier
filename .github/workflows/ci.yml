@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:24.04
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container:
-      image: ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:24.04
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
     env:
       RAT_VERSION: 0.17
       RAT_SHA256: 401939ebe5a52c6ed524029897bf914eaaba503d36c069ebcdbd8847a9e7cf93
@@ -85,14 +85,14 @@ jobs:
             --input-exclude "tests/unit_tests/catch.hpp" \
             --input-exclude "tests/autests/gold_tests/autest-site/default_url_file" \
             --input-exclude-std GIT HIDDEN_DIR HIDDEN_FILE -- \
-            "${GITHUB_WORKSPACE}" | tee RAT.txt
+            "${GITHUB_WORKSPACE}" | tee "${RUNNER_TEMP}/RAT.txt"
 
       - name: Upload RAT report
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: rat-report
-          path: RAT.txt
+          path: ${{ runner.temp }}/RAT.txt
           if-no-files-found: ignore
 
   unit-tests:
@@ -100,7 +100,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
-      image: ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:24.04
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
-      image: ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:24.04
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -139,18 +139,22 @@ jobs:
         run: cmake --build --preset dev-external --parallel
 
       - name: Run AuTests
-        run: ./build/dev-external/autest.sh --clean=none -j"$(nproc)"
+        run: ./build/dev-external/autest.sh -v --clean=none -j"$(nproc)"
 
-      - name: Collect AuTest logs
+      - name: Collect AuTest sandbox
         if: failure()
         run: |
           mkdir -p artifacts
-          cp -a /tmp/proxy-verifier-autest artifacts/ 2>/dev/null || true
+          if [[ -d /tmp/proxy-verifier-autest ]]; then
+            tar --create --gzip \
+              --file="${GITHUB_WORKSPACE}/artifacts/autest-sandbox.tar.gz" \
+              --directory=/tmp proxy-verifier-autest
+          fi
 
-      - name: Upload AuTest logs
+      - name: Upload AuTest sandbox
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: autest-logs
-          path: artifacts
+          name: autest-sandbox
+          path: artifacts/autest-sandbox.tar.gz
           if-no-files-found: ignore
