@@ -3,7 +3,7 @@ Verify correct handling of duplicate fields in a message.
 '''
 # @file
 #
-# Copyright 2026, Verizon Media
+# Copyright 2020-2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 

@@ -3,7 +3,7 @@ Implement the PROXY protocol utility class and the socket wrapper class.
 '''
 # @file
 #
-# Copyright 2026, Verizon Media
+# Copyright 2023-2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 

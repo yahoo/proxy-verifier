@@ -3,7 +3,7 @@ Verify basic PROXY protocol functionality.
 '''
 # @file
 #
-# Copyright 2026, Verizon Media
+# Copyright 2023-2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 

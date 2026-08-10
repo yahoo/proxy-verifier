@@ -18,6 +18,8 @@ fail()
 commit=${1:-}
 copyright_owners='(Verizon Media|Yahoo)'
 copyright_range='(Copyright [[:digit:]]{4}-)[[:digit:]]{4}'
+copyright_single='(Copyright [[:digit:]]{4})'
+copyright_pattern="Copyright ([[:digit:]]{4})(-([[:digit:]]{4}))?, ${copyright_owners}"
 tools_dir=$(dirname "$0")
 git_root=$(dirname "${tools_dir}")
 cd "${git_root}" || fail "Could not enter the git worktree: ${git_root}"
@@ -64,14 +66,24 @@ git log --format='CopyrightYear:%cd' --date=format:%Y --name-only \
   while IFS="$(printf '\t')" read -r last_commit_year tracked_file; do
     [ -f "${tracked_file}" ] || continue
     # Do not alter copyrights embedded in vendored sources.
-    grep -Eq "Copyright [[:digit:]]{4}(-[[:digit:]]{4})?, ${copyright_owners}" \
-      "${tracked_file}" || continue
+    copyright=$(grep -Em1 "${copyright_pattern}" "${tracked_file}") || continue
+    [[ "${copyright}" =~ ${copyright_pattern} ]] || continue
+    first_year=${BASH_REMATCH[1]}
+    last_header_year=${BASH_REMATCH[3]}
 
     backup_suffix=".copyright-update.$$"
-    # A range retains its starting year; only its ending year changes.
-    sed -E -i"${backup_suffix}" \
-      -e "s/${copyright_range}(, ${copyright_owners})/\\1${last_commit_year}\\2/g" \
-      -e "s/Copyright [[:digit:]]{4}(, ${copyright_owners})/Copyright ${last_commit_year}\\1/g" \
-      "${tracked_file}"
+    if [ -n "${last_header_year}" ]; then
+      [ "${last_header_year}" != "${last_commit_year}" ] || continue
+      # A range retains its starting year; only its ending year changes.
+      sed -E -i"${backup_suffix}" \
+        -e "s/${copyright_range}(, ${copyright_owners})/\\1${last_commit_year}\\2/g" \
+        "${tracked_file}"
+    else
+      [ "${first_year}" != "${last_commit_year}" ] || continue
+      # Preserve the first year by extending a single year into a range.
+      sed -E -i"${backup_suffix}" \
+        -e "s/${copyright_single}(, ${copyright_owners})/\\1-${last_commit_year}\\2/g" \
+        "${tracked_file}"
+    fi
     rm -f -- "${tracked_file}${backup_suffix}"
   done
