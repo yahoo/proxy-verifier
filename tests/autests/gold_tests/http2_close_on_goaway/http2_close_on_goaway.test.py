@@ -3,7 +3,7 @@ GOAWAY frame tests.
 '''
 # @file
 #
-# Copyright 2024, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 Test.Summary = '''

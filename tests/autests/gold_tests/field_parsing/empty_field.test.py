@@ -3,7 +3,7 @@ Verify correct handling of malformed replay files.
 '''
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 

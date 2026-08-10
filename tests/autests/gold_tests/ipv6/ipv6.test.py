@@ -3,7 +3,7 @@ Verify basic IPv6 support.
 '''
 # @file
 #
-# Copyright 2021, Verizon Media
+# Copyright 2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
