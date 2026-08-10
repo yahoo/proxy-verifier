@@ -5,22 +5,26 @@
   SPDX-License-Identifier: Apache-2.0
 -->
 
-# Proxy Verifier CI Image
+# Proxy Verifier Build Images
 
-Proxy Verifier CI uses Ubuntu 26.04. The image installs Ubuntu's OpenSSL,
-nghttp2, and nghttp3 development packages, along with the system GCC and Clang
-compilers, CMake, Ninja, `uv`, formatting tools, and a checksum-verified Apache
-RAT JAR. CI therefore builds against the same system libraries and unversioned
-compiler packages available to developers; it does not maintain a separate
-dependency tree under `/opt`.
+Proxy Verifier provides Alpine 3.24, Fedora 44, and Ubuntu 26.04 build images.
+GitHub Actions uses only Ubuntu 26.04. Alpine is the portable Linux release
+environment, and Fedora is an additional development environment. Each image
+installs its distribution's OpenSSL, nghttp2, and nghttp3 development packages,
+along with compilers, CMake, Ninja, `uv`, formatting tools, and a
+checksum-verified Apache RAT JAR. The Ubuntu image includes both GCC and Clang
+for the CI test jobs.
 
-This image is for development and CI workflows, not deployment. Use the
-statically linked binaries attached to Proxy Verifier releases for deployment.
+These images are for development, release builds, and CI workflows, not
+deployment. Use the statically linked binaries attached to Proxy Verifier
+releases for deployment.
 
-## Image Tag
+## Image Tags
 
-| Distribution | Dockerfile | Multi-platform CI tag |
+| Distribution | Dockerfile | Multi-platform image tag |
 | --- | --- | --- |
+| Alpine 3.24 | `docker/alpine_3.24/Dockerfile` | `ci.trafficserver.apache.org:5000/proxy-verifier/alpine:3.24` |
+| Fedora 44 | `docker/fedora_44/Dockerfile` | `ci.trafficserver.apache.org:5000/proxy-verifier/fedora:44` |
 | Ubuntu 26.04 | `docker/ubuntu_26.04/Dockerfile` | `ci.trafficserver.apache.org:5000/proxy-verifier/ubuntu:26.04` |
 
 The architecture-specific inputs append `-amd64` or `-arm64` to the tag. For
@@ -102,7 +106,7 @@ docker push "${image}:${version}-${suffix}"
 docker manifest inspect --insecure "${image}:${version}-${suffix}"
 ```
 
-Repeat this process for AMD64 and ARM64.
+Repeat this process for AMD64 and ARM64 for each image in the table.
 
 ## Publish A Multi-platform Tag
 
@@ -126,13 +130,18 @@ partial local manifest, so remove it before correcting the architecture tags
 and retrying. The final inspection must list both `linux/amd64` and
 `linux/arm64`.
 
-The GitHub Actions workflow pulls the multi-platform Ubuntu tag without
-choosing an architecture explicitly.
+Repeat the manifest steps for Alpine, Fedora, and Ubuntu. The GitHub Actions
+workflow pulls only the multi-platform Ubuntu tag without choosing an
+architecture explicitly.
 
 ## Rebuilding Images
 
-Rebuild and republish both architectures whenever
-`docker/ubuntu_26.04/Dockerfile` changes.
+Rebuild and republish both architectures whenever one of these Dockerfiles
+changes:
+
+* `docker/alpine_3.24/Dockerfile`
+* `docker/fedora_44/Dockerfile`
+* `docker/ubuntu_26.04/Dockerfile`
 
 Images should also be rebuilt periodically so `--pull` incorporates security
 and bug-fix updates from each distribution. Recreate and verify the
