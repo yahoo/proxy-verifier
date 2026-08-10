@@ -7,10 +7,13 @@
 
 # Proxy Verifier CI Images
 
-The Ubuntu CI image provides the Proxy Verifier build and AuTest toolchain plus
-prebuilt OpenSSL, nghttp2, and nghttp3 libraries under `/opt/pv_libs`. CI can
-therefore use the `dev-external` CMake preset without rebuilding those
-dependencies for every pull request.
+The Ubuntu CI image provides GCC 14, Clang 20, the Proxy Verifier build and
+AuTest toolchain, the formatting and license-audit system packages, and a
+checksum-verified Apache RAT JAR. It also provides prebuilt OpenSSL, nghttp2,
+and nghttp3 libraries under `/opt/pv_libs`. CI can therefore use the
+`dev-external` CMake preset without rebuilding those dependencies or installing
+system packages for every pull request. Python dependencies remain managed by
+the repository's locked `uv` environments and are not baked into the image.
 
 These images are for development and CI workflows, not deployment. Use the
 statically linked binaries attached to Proxy Verifier releases for deployment.
@@ -92,7 +95,14 @@ docker run --rm --platform linux/amd64 \
     cmake --version
     ninja --version
     uv --version
-    /opt/pv_libs/openssl/bin/openssl version
+    gcc-14 --version
+    g++-14 --version
+    clang-20 --version
+    clang++-20 --version
+    java -version
+    test -r "${RAT_JAR}"
+    java -jar "${RAT_JAR}" --help >/dev/null
+    LD_LIBRARY_PATH=/opt/pv_libs/openssl/lib /opt/pv_libs/openssl/bin/openssl version
     find /opt/pv_libs -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort
   '
 ```
@@ -144,7 +154,14 @@ docker run --rm --platform linux/arm64 \
     cmake --version
     ninja --version
     uv --version
-    /opt/pv_libs/openssl/bin/openssl version
+    gcc-14 --version
+    g++-14 --version
+    clang-20 --version
+    clang++-20 --version
+    java -version
+    test -r "${RAT_JAR}"
+    java -jar "${RAT_JAR}" --help >/dev/null
+    LD_LIBRARY_PATH=/opt/pv_libs/openssl/lib /opt/pv_libs/openssl/bin/openssl version
     find /opt/pv_libs -mindepth 1 -maxdepth 1 -type d -printf "%f\n" | sort
   '
 ```
