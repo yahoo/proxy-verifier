@@ -1877,7 +1877,8 @@ images. Each installs OpenSSL, nghttp2, and nghttp3 from its distribution along
 with the Proxy Verifier build, formatting, license-audit, and AuTest toolchains.
 GitHub Actions uses only the Ubuntu 26.04 image. Alpine 3.24 is used to build
 the portable Linux release binaries, while Fedora 44 provides an additional
-current-distribution development environment.
+current-distribution development environment. Users who prefer Alpine or
+Fedora can build those Dockerfiles for their local build environment.
 
 For deployment, using the statically linked binaries associated with the GitHub
 releases is the easiest path for most people.
@@ -1885,9 +1886,10 @@ releases is the easiest path for most people.
 Tooling for the dev image lives in the `/opt/pv-venv` virtual environment and
 is added to the `PATH` by the Dockerfile `ENV` configuration.
 
-See [`tools/CI-IMAGES.md`](tools/CI-IMAGES.md) for instructions to build,
-verify, and publish the amd64 and arm64 images and their combined multi-platform
-tags. Build the images from the repository root. For example:
+See [`tools/CI-IMAGES.md`](tools/CI-IMAGES.md) for details about automated
+Ubuntu image publication to GitHub Container Registry and instructions to
+build and verify Alpine and Fedora images locally. Build the images from the
+repository root. For example:
 
 ```bash
 docker build -f docker/ubuntu_26.04/Dockerfile -t pv-dev:ubuntu26.04 .

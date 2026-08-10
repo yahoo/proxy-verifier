@@ -7,6 +7,9 @@
 
 FROM docker.io/library/ubuntu:26.04 AS dev
 
+LABEL org.opencontainers.image.source="https://github.com/yahoo/proxy-verifier" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
