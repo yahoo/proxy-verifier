@@ -1813,10 +1813,10 @@ using it is to simply download the proxy-verifier `tar.gz` for the desired
 release, untar it on the desired box, and copy the `verifier-client` and
 `verifier-server` binaries to a convenient location from which to run them.
 
-On Linux, these release binaries are built as statically linked musl
-executables. They do not depend on glibc or `libnss_*` shared libraries at
-runtime, although hostname resolution still consults normal system files such
-as `/etc/hosts` and `/etc/resolv.conf`.
+On Linux, these release binaries are built as statically linked executables.
+They do not depend on shared OpenSSL, nghttp2, or nghttp3 libraries at runtime,
+although hostname resolution still consults normal system files such as
+`/etc/hosts` and `/etc/resolv.conf`.
 
 ### Building from Source
 
@@ -1869,26 +1869,25 @@ cmake --build --preset dev --parallel
 
 This places the build-tree binaries under `build/dev/bin`.
 
-#### Development Docker Images
+#### Development Docker Image
 
-The Dockerfiles under `docker/alpine_3.24`, `docker/fedora_44`, and
-`docker/ubuntu_26.04` are for development workflows, not deployment images.
-Each image installs OpenSSL, nghttp2, and nghttp3 from its distribution along
+The Dockerfile under `docker/ubuntu_26.04` is for development workflows, not a
+deployment image. It installs OpenSSL, nghttp2, and nghttp3 from Ubuntu along
 with the Proxy Verifier build, formatting, license-audit, and AuTest toolchains.
-For deployment, using the statically linked binaries associated with the
-GitHub releases is the easiest path for most people.
+For deployment, using the statically linked binaries associated with the GitHub
+releases is the easiest path for most people.
 
 Tooling for the dev image lives in the `/opt/pv-venv` virtual environment and
 is added to the `PATH` by the Dockerfile `ENV` configuration.
 
 See [`tools/CI-IMAGES.md`](tools/CI-IMAGES.md) for instructions to build,
-verify, and publish the amd64 and arm64 CI images and their combined
-multi-platform tags. Build the images from the repository root. For example:
+verify, and publish the amd64 and arm64 CI image and its combined multi-platform
+tag. Build the image from the repository root. For example:
 
 ```bash
-docker build -f docker/alpine_3.24/Dockerfile -t pv-dev:alpine3.24 .
+docker build -f docker/ubuntu_26.04/Dockerfile -t pv-dev:ubuntu26.04 .
 docker run --rm -it -v "$(git rev-parse --show-toplevel)":/workspace \
-  pv-dev:alpine3.24
+  pv-dev:ubuntu26.04
 
 # Now, within the container.
 cd /workspace
@@ -1954,17 +1953,14 @@ artifacts in each of the Proxy Verifier release are stripped for this reason.
 This makes debugging issues much harder, of course, since symbols are removed
 from the binaries. Omit `--strip` if size is less of an issue for you.
 
-On Linux, build portable release artifacts in the `docker/alpine_3.24` image so
-the resulting binaries are static musl executables without a glibc or
-`libnss_*` runtime dependency. DNS still consults `/etc/hosts` and
-`/etc/resolv.conf`. On macOS it links Proxy Verifier and its third-party
+On Linux, build portable release artifacts in the `docker/ubuntu_26.04` image.
+On macOS, the portable build links Proxy Verifier and its third-party
 dependencies via static archives while leaving the system libraries dynamic.
 After the install step, the staged release binaries land under
 `/tmp/proxy-verifier-v<version>/<platform>`.
 
 For Linux portable release artifacts on x86_64, the portable build pins
-`-march=x86-64 -mtune=generic` for Proxy Verifier. Alpine supplies its system
-libraries for the distribution's generic architecture baseline.
+`-march=x86-64 -mtune=generic` for Proxy Verifier.
 
 The portable presets explicitly use `-O2 -DNDEBUG` rather than the toolchain's
 default `Release` optimization level so the staged binaries stay conservative

@@ -30,9 +30,11 @@ apt-get install -y --no-install-recommends \
   git \
   libc6-dev \
   libffi-dev \
+  libjitterentropy3-dev \
   libnghttp2-dev \
   libnghttp3-dev \
   libssl-dev \
+  libzstd-dev \
   lbzip2 \
   pkg-config \
   procps \
