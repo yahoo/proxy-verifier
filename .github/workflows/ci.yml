@@ -54,6 +54,16 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Trust the container workspace
+        run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Verify copyright years
+        run: |
+          bash tools/copyright-update.sh
+          git diff --exit-code
 
       - name: Run Apache RAT
         run: |
