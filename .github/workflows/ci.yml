@@ -39,11 +39,6 @@ jobs:
       - name: Trust the container workspace
         run: git config --global --add safe.directory "${GITHUB_WORKSPACE}"
 
-      - name: Install formatter dependencies
-        run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends lbzip2
-
       - name: Format
         run: bash -e tools/format.sh
 
@@ -56,26 +51,9 @@ jobs:
     timeout-minutes: 30
     container:
       image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
-    env:
-      RAT_VERSION: 0.17
-      RAT_SHA256: 401939ebe5a52c6ed524029897bf914eaaba503d36c069ebcdbd8847a9e7cf93
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-
-      - name: Install Java
-        run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends default-jre-headless
-
-      - name: Download Apache RAT
-        run: |
-          rat_jar="${RUNNER_TEMP}/apache-rat-${RAT_VERSION}.jar"
-          curl --fail --location --silent --show-error \
-            --output "${rat_jar}" \
-            "https://repo.maven.apache.org/maven2/org/apache/rat/apache-rat/${RAT_VERSION}/apache-rat-${RAT_VERSION}.jar"
-          echo "${RAT_SHA256}  ${rat_jar}" | sha256sum --check
-          echo "RAT_JAR=${rat_jar}" >> "${GITHUB_ENV}"
 
       - name: Run Apache RAT
         run: |
@@ -101,6 +79,9 @@ jobs:
     timeout-minutes: 60
     container:
       image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
+    env:
+      CC: clang-20
+      CXX: clang++-20
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -128,6 +109,9 @@ jobs:
     timeout-minutes: 60
     container:
       image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
+    env:
+      CC: gcc-14
+      CXX: g++-14
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
