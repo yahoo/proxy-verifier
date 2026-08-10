@@ -22,7 +22,7 @@ then
 else
   num_threads=$(sysctl -n hw.logicalcpu)
 fi
-./build/dev-external/autest.sh --clean=none -j${num_threads}
+./build/dev/autest.sh --clean=none -j${num_threads}
 ```
 
 The `--clean=none` option is used to prevent the sandbox from being cleaned up
@@ -46,12 +46,12 @@ to run, excluding their `.test.py` extension. For example, to run the
 `tests/autests/gold_tests/http2/http2.test.py` tests, you would:
 
 ```bash
-./build/dev-external/autest.sh -f https http2
+./build/dev/autest.sh -f https http2
 ```
 
 The `-f` and `-j` options can be combined when you want a smaller parallel
 smoke test:
 
 ```bash
-./build/dev-external/autest.sh -j4 -f http https
+./build/dev/autest.sh -j4 -f http https
 ```

@@ -28,10 +28,4 @@ if(PV_STATIC_BUILD AND NOT APPLE)
                                  -Wl,--no-whole-archive dl)
 endif()
 
-if(PV_EXTERNAL_RPATH_DIRS)
-  list(JOIN PV_EXTERNAL_RPATH_DIRS ";" _pv_unit_test_rpath)
-  set_target_properties(proxy-verifier-tests
-                        PROPERTIES BUILD_RPATH "${_pv_unit_test_rpath}")
-endif()
-
 add_test(NAME proxy-verifier-unit-tests COMMAND proxy-verifier-tests)

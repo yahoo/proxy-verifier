@@ -1831,21 +1831,18 @@ presets. The build requires:
 
 * CMake 4.2.3 or newer
 * Ninja
+* a C and C++ compiler
 * git
-* make
-* autoconf
-* automake
-* libtool
-* Perl with the `Time::Piece` module
 * pkg-config
+* OpenSSL 3.5 or newer development files
+* nghttp2 1.60 or newer development files
+* nghttp3 0.8 or newer development files
 
 CMake fetches pinned `libswoc` and `yaml-cpp` sources during configure. HTTP/3
 uses OpenSSL 3.5 or newer for the native QUIC transport and nghttp3 for HTTP/3
-framing and QPACK. HTTP/2 uses nghttp2. These dependencies can be bootstrapped
-as part of the CMake build, discovered through the system package manager, or
-provided from an install tree such as `/opt/pv_libs` (see
-[Using Prebuilt Libraries](#using-prebuilt-libraries) below).
-ngtcp2 is not required because OpenSSL provides the QUIC transport.
+framing and QPACK. HTTP/2 uses nghttp2. Install these libraries through the
+system package manager before configuring Proxy Verifier. ngtcp2 is not
+required because OpenSSL provides the QUIC transport.
 
 For Mac builds, the following brew command can be helpful:
 
@@ -1854,8 +1851,6 @@ brew install \
   git \
   cmake \
   ninja \
-  automake \
-  libtool \
   nghttp2 \
   nghttp3 \
   openssl@3 \
@@ -1865,121 +1860,56 @@ brew install \
 
 #### Build
 
-For the common external-dependency layout used by the Dockerfiles (HTTP library
-dependencies are installed in `/opt/pv_libs`), configure and build with the
-`dev-external` preset:
+Configure and build with the `dev` preset:
 
 ```
-cmake --preset dev-external
-cmake --build --preset dev-external --parallel
+cmake --preset dev
+cmake --build --preset dev --parallel
 ```
 
-This places the build-tree binaries under `build/dev-external/bin`.
-
-#### Bootstrapping Dependencies Under CMake
-
-If you want CMake to fetch and build OpenSSL 3.5, nghttp3, and nghttp2 as part
-of the build, use the `dev-bootstrap` preset:
-
-```
-cmake --preset dev-bootstrap
-cmake --build --preset dev-bootstrap --parallel
-```
-
-This populates the dependency prefix under `build/dev-bootstrap/pv-deps/`.
-
-#### Using Prebuilt Libraries
-
-If you prefer to manage the external HTTP and QUIC libraries separately, use the
-[build-library-dependencies.sh](https://github.com/yahoo/proxy-verifier/blob/master/tools/build-library-dependencies.sh)
-script:
-
-```bash
-http3_libs_dir=${HOME}/src/http3_libs
-
-# The following builds OpenSSL 3.5, nghttp2, and nghttp3.
-bash ./tools/build-library-dependencies.sh ${http3_libs_dir}
-cmake --preset dev-external -DPV_DEPS_ROOT=${http3_libs_dir}
-cmake --build --preset dev-external --parallel
-```
-
-The external build uses the `openssl`, `nghttp2`, and `nghttp3` subdirectories
-under `PV_DEPS_ROOT` when present. A missing subdirectory is resolved from the
-system instead. The corresponding `PV_OPENSSL_ROOT`, `PV_NGHTTP2_ROOT`, and
-`PV_NGHTTP3_ROOT` variables can override individual dependencies.
-
-The checked-in `dev-external` preset assumes `/opt/pv_libs`, which matches the
-provided Dockerfiles under `docker/alpine_3.20`, `docker/rockylinux_8`,
-`docker/rockylinux_9`, etc. Thus:
-
-```bash
-http3_libs_dir=/opt/pv_libs
-
-# The following builds OpenSSL 3.5, nghttp2, and nghttp3.
-bash ./tools/build-library-dependencies.sh ${http3_libs_dir}
-cmake --preset dev-external
-cmake --build --preset dev-external --parallel
-```
+This places the build-tree binaries under `build/dev/bin`.
 
 #### Development Docker Images
 
-The Dockerfiles under `docker/alpine_3.20`, `docker/rockylinux_8`,
-`docker/rockylinux_9`, `docker/rockylinux_10`, and `docker/ubuntu_24.04` are
-for development workflows, not deployment images. For deployment, using the
-statically linked binaries associated with the GitHub releases is the easiest
-path for most people.
+The Dockerfiles under `docker/alpine_3.24`, `docker/fedora_44`, and
+`docker/ubuntu_26.04` are build and development environments, not deployment
+images. Each installs OpenSSL, nghttp2, and nghttp3 from its distribution along
+with the Proxy Verifier build, formatting, license-audit, and AuTest toolchains.
+GitHub Actions uses only the Ubuntu 26.04 image. Alpine 3.24 is used to build
+the portable Linux release binaries, while Fedora 44 provides an additional
+current-distribution development environment.
 
-Each Dockerfile provides these targets:
-
-* `dev-base` installs the Proxy Verifier build and AuTest toolchain and creates
-  the `/opt/pv-venv` virtual environment with `cmake`, `ninja`, and `uv`.
-* `deps-builder` adds the Autotools and Perl tooling needed to compile OpenSSL
-  3.5, nghttp3, and nghttp2 into `/opt/pv_libs`.
-* `dev-external` copies `/opt/pv_libs` from `deps-builder` onto `dev-base`. This
-  smaller target supports the external-dependency presets without retaining
-  the dependency-build-only tooling.
-* `dev` extends `deps-builder` and is the default final image. It retains the
-  full toolchain for CMake bootstrap builds and the Alpine portable workflow.
+For deployment, using the statically linked binaries associated with the GitHub
+releases is the easiest path for most people.
 
 Tooling for the dev image lives in the `/opt/pv-venv` virtual environment and
 is added to the `PATH` by the Dockerfile `ENV` configuration.
 
-Build the images from the repository root. The dependency stage copies the
-checked-out `tools/build-library-dependencies.sh` into the image, so Docker
-invalidates the layer whenever its dependency pins or build logic change.
-
 See [`tools/CI-IMAGES.md`](tools/CI-IMAGES.md) for instructions to build,
-verify, and publish the amd64 and arm64 Ubuntu CI images and their combined
-multi-platform tag.
-
-Here's an example of building the smaller rockylinux:9 external-dependency
-image:
+verify, and publish the amd64 and arm64 images and their combined multi-platform
+tags. Build the images from the repository root. For example:
 
 ```bash
-docker build -f docker/rockylinux_9/Dockerfile --target dev-external \
-  -t pv-dev:rocky9-external .
+docker build -f docker/ubuntu_26.04/Dockerfile -t pv-dev:ubuntu26.04 .
 docker run --rm -it -v "$(git rev-parse --show-toplevel)":/workspace \
-  pv-dev:rocky9-external
+  pv-dev:ubuntu26.04
 
 # Now, within the container.
 cd /workspace
-cmake --preset dev-external
-cmake --build --preset dev-external --parallel
-ctest --preset dev-external
-./build/dev-external/autest.sh --sandbox /tmp/pv-autest --clean=none
+cmake --preset dev
+cmake --build --preset dev --parallel
+ctest --preset dev
+./build/dev/autest.sh --sandbox /tmp/pv-autest --clean=none
 ```
-
-Omit `--target dev-external` and use a `pv-dev:rocky9` tag to build the default
-full `dev` image instead.
 
 #### Install
 
 The install root is fully configurable through standard CMake install
-variables. For normal local installs, the development presets default to
-`/usr/local`. To install the `dev-external` build there:
+variables. The development preset defaults to `/usr/local`. To install the
+`dev` build there:
 
 ```
-cmake --install build/dev-external
+cmake --install build/dev
 ```
 
 This places `verifier-client` and `verifier-server` under `/usr/local/bin` by
@@ -1987,74 +1917,58 @@ default.
 
 #### ASan Instrumentation
 
-Use `dev-external-asan` with a prebuilt `/opt/pv_libs` tree, or
-`dev-bootstrap-asan` when CMake should also build the QUIC/TLS stack:
+Use the `dev-asan` preset for AddressSanitizer instrumentation:
 
 ```
-cmake --preset dev-external-asan
-cmake --build --preset dev-external-asan --parallel
-
-cmake --preset dev-bootstrap-asan
-cmake --build --preset dev-bootstrap-asan --parallel
+cmake --preset dev-asan
+cmake --build --preset dev-asan --parallel
 ```
 
 #### Debug Build
 
-The development presets, `dev-external` and `dev-bootstrap`, inherit from a
-shared `dev-base` preset and default to `CMAKE_BUILD_TYPE=Debug`. Use the
-`external` flavor to utilize pre-built library dependencies in `/opt/pv_libs`
-(see `tools/build-library-dependencies`) or use the `bootstrap` flavor to have
-cmake build all dependencies.
+The `dev` and `dev-asan` presets default to `CMAKE_BUILD_TYPE=Debug`.
 
 #### Portable Build
 
-Portable artifacts inherit from a shared `portable-base` preset. This is the
-target used to build the release binaries in the artifacts of a release. Use
-`portable-external` when the QUIC/TLS dependencies already live in
-`/opt/pv_libs` and `portable-bootstrap` when CMake should build those
-dependencies as part of the portable build. These presets automatically map the
-current platform to a release directory name such as `linux-amd64`,
-`linux-arm64`, or `darwin-arm64`, and they set `BUILD_PORTABLE=ON`.
+The `portable` preset is used to build release artifacts. It statically links
+third-party dependencies from system development packages and automatically
+maps the current platform to a release directory name such as `linux-amd64`,
+`linux-arm64`, or `darwin-arm64`.
 
 For release builds, it is recommended that you use
-`tools/build-portable-binaries`, which uses the `portable-bootstrap` preset
-underneath:
+`tools/build-portable-binaries`:
 
 ```bash
 ./tools/build-portable-binaries
 ```
 
-It also accepts `portable-external` if you want to use a prebuilt
-`/opt/pv_libs` dependency directory. In that case, first build the dependency
-tree with `tools/build-library-dependencies.sh --portable /opt/pv_libs` so the
-bundled QUIC/TLS libraries use the same conservative Linux amd64 baseline, and
-then run:
+The equivalent manual commands are:
 
 ```
-cmake --preset portable-external
-cmake --build --preset portable-external --parallel
-cmake --install build/portable-external --strip
+cmake --preset portable
+cmake --build --preset portable --parallel
+cmake --install build/portable --strip
 ```
 
-Run `cmake --install build/<portable-preset> --strip` to stage stripped
-binaries under `/tmp/proxy-verifier-v<version>/<platform>`.
+The install step stages stripped binaries under
+`/tmp/proxy-verifier-v<version>/<platform>`.
 
 `--strip` is used to shrink the binaries for optimal distribution. The binary
 artifacts in each of the Proxy Verifier release are stripped for this reason.
 This makes debugging issues much harder, of course, since symbols are removed
 from the binaries. Omit `--strip` if size is less of an issue for you.
 
-On Linux, build portable release artifacts in the `docker/alpine_3.20` image so
+On Linux, build portable release artifacts in the `docker/alpine_3.24` image so
 the resulting binaries are static musl executables without a glibc or
 `libnss_*` runtime dependency. DNS still consults `/etc/hosts` and
-`/etc/resolv.conf`. On macOS it links Proxy Verifier and its third-party
-dependencies via static archives while leaving the system libraries dynamic.
-After the install step, the staged release binaries land under
+`/etc/resolv.conf`. On macOS, the portable build links Proxy Verifier and its
+third-party dependencies via static archives while leaving the system libraries
+dynamic. After the install step, the staged release binaries land under
 `/tmp/proxy-verifier-v<version>/<platform>`.
 
-For Linux portable release artifacts on x86_64, the portable build also pins
-`-march=x86-64 -mtune=generic` for Proxy Verifier and its bootstrapped QUIC/TLS
-dependencies so the release binaries stay runnable on older amd64 systems.
+For Linux portable release artifacts on x86_64, the portable build pins
+`-march=x86-64 -mtune=generic` for Proxy Verifier. Alpine supplies its system
+libraries for the distribution's generic architecture baseline.
 
 The portable presets explicitly use `-O2 -DNDEBUG` rather than the toolchain's
 default `Release` optimization level so the staged binaries stay conservative
@@ -2071,14 +1985,11 @@ CLI version string and release staging directory stay in sync.
 
 #### Native Build
 
-Native artifacts inherit from a shared `native-base` preset. Use
-`native-external` when the QUIC/TLS dependencies already live in `/opt/pv_libs`
-and `native-bootstrap` when CMake should build those dependencies as part of
-the build:
+Use the `native` preset for a host-tuned dynamic build:
 
 ```
-cmake --preset native-external
-cmake --build --preset native-external --parallel
+cmake --preset native
+cmake --build --preset native --parallel
 ```
 
 These builds are intended for running optimally on the build machine rather than
@@ -2093,19 +2004,19 @@ for redistribution. They keep dynamic linking and use `-O3 -DNDEBUG
 Build the test executable with CMake, then run it through CTest:
 
 ```
-cmake --preset dev-external
-cmake --build --preset dev-external --parallel
-ctest --preset dev-external
+cmake --preset dev
+cmake --build --preset dev --parallel
+ctest --preset dev
 ```
 
 #### Gold Tests
 Proxy Verifier ships with a set of automated end to end tests written using the
 [AuTest](https://bitbucket.org/autestsuite/reusable-gold-testing-system/src/master/)
 framework. After configuring a preset, CMake generates an `autest.sh` wrapper
-in that build directory. To run the tests for `dev-external`, use:
+in that build directory. To run the tests for `dev`, use:
 
 ```
-./build/dev-external/autest.sh
+./build/dev/autest.sh
 ```
 
 That wrapper defaults `VERIFIER_BIN` to its sibling `bin/` directory, so each
@@ -2120,7 +2031,7 @@ in a space-separated list). For instance, the following invocation runs
 just the http and https tests:
 
 ```
-./build/dev-external/autest.sh -f http https
+./build/dev/autest.sh -f http https
 ```
 
 The build-generated wrapper also accepts `-j` or `--jobs` for parallel runs.
@@ -2128,11 +2039,11 @@ That path uses worker-specific sandboxes and port offsets so the top-level
 AuTests do not stomp on each other:
 
 ```
-./build/dev-external/autest.sh -j8 -f http https
+./build/dev/autest.sh -j8 -f http https
 ```
 
 AuTest supports a variety of other options. Run
-`./build/dev-external/autest.sh --help` to get a
+`./build/dev/autest.sh --help` to get a
 quick description of the various command-line options. See the [AuTest
 Documentation](https://autestsuite.bitbucket.io) for further details about the
 framework.

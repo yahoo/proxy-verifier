@@ -15,42 +15,34 @@ fail()
 usage()
 {
   cat <<'EOF'
-Usage: tools/build-portable-binaries [portable-external|portable-bootstrap]
+Usage: tools/build-portable-binaries
 
-Builds the selected portable preset, installs it with --strip, and prints the
-resulting verifier-client and verifier-server paths.
+Builds the portable preset, installs it with --strip, and prints the resulting
+verifier-client and verifier-server paths.
 EOF
 }
 
 set -euo pipefail
 
-preset="${1:-portable-bootstrap}"
-[ $# -le 1 ] || {
-  usage
-  fail "Provide at most one preset argument."
-}
-
-case "${preset}" in
-  portable-external|portable-bootstrap)
-    ;;
-  -h|--help)
+if [ $# -gt 0 ]
+then
+  if [ $# -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }
+  then
     usage
     exit 0
-    ;;
-  *)
-    usage
-    fail "Unsupported portable preset: ${preset}"
-    ;;
-esac
+  fi
+  usage
+  fail "This command does not accept preset arguments."
+fi
 
 repo_root="$(cd "$(dirname -- "$0")/.." && pwd)"
-build_dir="${repo_root}/build/${preset}"
+build_dir="${repo_root}/build/portable"
 cache_file="${build_dir}/CMakeCache.txt"
 
 cd "${repo_root}"
 
-cmake --preset "${preset}"
-cmake --build --preset "${preset}" --parallel
+cmake --preset portable
+cmake --build --preset portable --parallel
 cmake --install "${build_dir}" --strip
 
 [ -r "${cache_file}" ] || fail "Missing CMake cache after install: ${cache_file}"
