@@ -22,20 +22,20 @@ existing project style and preserve current CLI and YAML behavior.
 
 ## Build And Test
 
-The common developer build uses the checked-in `dev-external` CMake preset,
-which expects prebuilt QUIC / TLS dependencies under `/opt/pv_libs` unless
-`PV_DEPS_ROOT` is overridden.
+The common developer build uses the checked-in `dev` CMake preset. OpenSSL 3.5
+or newer, nghttp2, and nghttp3 must be installed through the system package
+manager before configuring the build.
 
 ```bash
-cmake --preset dev-external
-cmake --build --preset dev-external --parallel
-ctest --preset dev-external
+cmake --preset dev
+cmake --build --preset dev --parallel
+ctest --preset dev
 ```
 
 For end-to-end coverage, use the generated AuTest wrapper from the build tree:
 
 ```bash
-./build/dev-external/autest.sh
+./build/dev/autest.sh
 ```
 
 When a change is localized, prefer running the relevant AuTest subset with

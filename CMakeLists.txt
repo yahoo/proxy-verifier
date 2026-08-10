@@ -31,10 +31,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
-option(
-  PV_BOOTSTRAP_DEPS
-  "Fetch and build external QUIC/TLS dependencies as part of the CMake build."
-  OFF)
 option(PV_STATIC_BUILD
        "Link the verifier binaries with static third-party dependencies." OFF)
 option(PV_ENABLE_ASAN
@@ -71,24 +67,6 @@ function(_pv_add_portable_compile_options language flags)
   endforeach()
 endfunction()
 
-set(PV_DEPS_ROOT
-    ""
-    CACHE
-      PATH
-      "Optional dependency root containing openssl/nghttp2/nghttp3 subdirectories."
-)
-set(PV_OPENSSL_ROOT
-    ""
-    CACHE PATH "Explicit OpenSSL 3.5 or newer root.")
-set(PV_NGHTTP2_ROOT
-    ""
-    CACHE PATH "Explicit nghttp2 root.")
-set(PV_NGTCP2_ROOT
-    ""
-    CACHE PATH "Deprecated compatibility variable; ngtcp2 is no longer used.")
-set(PV_NGHTTP3_ROOT
-    ""
-    CACHE PATH "Explicit nghttp3 root.")
 set(PV_RELEASE_TARGET
     ""
     CACHE STRING
@@ -173,15 +151,7 @@ include(PVFetchDependencies)
 pv_fetch_dependencies()
 
 include(HttpDependencies)
-pv_define_http_dependencies(
-  OUT_LIBRARIES
-  PV_EXTERNAL_DEPENDENCY_TARGETS
-  OUT_RPATH_DIRS
-  PV_EXTERNAL_RPATH_DIRS
-  OUT_BOOTSTRAP_TARGETS
-  PV_BOOTSTRAP_TARGETS
-  OUT_BOOTSTRAP_PREFIX
-  PV_BOOTSTRAP_PREFIX)
+pv_find_http_dependencies(PV_HTTP_DEPENDENCY_TARGETS)
 
 add_subdirectory(src)
 add_subdirectory(tests/autests)

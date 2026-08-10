@@ -27,11 +27,21 @@ defaults:
 
 jobs:
   format:
-    name: Formatting
+    name: Formatting (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Alpine 3.24
+            image: ci.trafficserver.apache.org/proxy-verifier/alpine:3.24
+          - name: Fedora 44
+            image: ci.trafficserver.apache.org/proxy-verifier/fedora:44
+          - name: Ubuntu 26.04
+            image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:26.04
     container:
-      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
+      image: ${{ matrix.image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -46,11 +56,24 @@ jobs:
         run: git diff --exit-code
 
   rat:
-    name: License audit (RAT)
+    name: License audit (RAT, ${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: alpine-3.24
+            name: Alpine 3.24
+            image: ci.trafficserver.apache.org/proxy-verifier/alpine:3.24
+          - id: fedora-44
+            name: Fedora 44
+            image: ci.trafficserver.apache.org/proxy-verifier/fedora:44
+          - id: ubuntu-26.04
+            name: Ubuntu 26.04
+            image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:26.04
     container:
-      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
+      image: ${{ matrix.image }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -79,61 +102,87 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: rat-report
+          name: rat-report-${{ matrix.id }}
           path: ${{ runner.temp }}/RAT.txt
           if-no-files-found: ignore
 
   unit-tests:
-    name: Unit tests
+    name: Unit tests (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: alpine-3.24
+            name: Alpine 3.24
+            image: ci.trafficserver.apache.org/proxy-verifier/alpine:3.24
+          - id: fedora-44
+            name: Fedora 44
+            image: ci.trafficserver.apache.org/proxy-verifier/fedora:44
+          - id: ubuntu-26.04
+            name: Ubuntu 26.04
+            image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:26.04
     container:
-      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
+      image: ${{ matrix.image }}
     env:
-      CC: clang-20
-      CXX: clang++-20
+      CC: gcc
+      CXX: g++
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
       - name: Configure
-        run: cmake --preset dev-external
+        run: cmake --preset dev
 
       - name: Build
-        run: cmake --build --preset dev-external --parallel
+        run: cmake --build --preset dev --parallel
 
       - name: Run unit tests
-        run: ctest --preset dev-external
+        run: ctest --preset dev
 
       - name: Upload unit-test logs
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: unit-test-logs
-          path: build/dev-external/Testing
+          name: unit-test-logs-${{ matrix.id }}
+          path: build/dev/Testing
           if-no-files-found: ignore
 
   autests:
-    name: AuTests
+    name: AuTests (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: alpine-3.24
+            name: Alpine 3.24
+            image: ci.trafficserver.apache.org/proxy-verifier/alpine:3.24
+          - id: fedora-44
+            name: Fedora 44
+            image: ci.trafficserver.apache.org/proxy-verifier/fedora:44
+          - id: ubuntu-26.04
+            name: Ubuntu 26.04
+            image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:26.04
     container:
-      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:24.04
+      image: ${{ matrix.image }}
     env:
-      CC: gcc-14
-      CXX: g++-14
+      CC: gcc
+      CXX: g++
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
       - name: Configure
-        run: cmake --preset dev-external
+        run: cmake --preset dev
 
       - name: Build
-        run: cmake --build --preset dev-external --parallel
+        run: cmake --build --preset dev --parallel
 
       - name: Run AuTests
-        run: ./build/dev-external/autest.sh -v --clean=none -j"$(nproc)"
+        run: ./build/dev/autest.sh -v --clean=none -j"$(nproc)"
 
       - name: Collect AuTest sandbox
         if: failure()
@@ -149,6 +198,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: autest-sandbox
+          name: autest-sandbox-${{ matrix.id }}
           path: artifacts/autest-sandbox.tar.gz
           if-no-files-found: ignore

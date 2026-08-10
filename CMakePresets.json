@@ -26,23 +26,6 @@
       }
     },
     {
-      "name": "dev-external-base",
-      "hidden": true,
-      "inherits": "dev-base",
-      "cacheVariables": {
-        "PV_BOOTSTRAP_DEPS": "OFF",
-        "PV_DEPS_ROOT": "/opt/pv_libs"
-      }
-    },
-    {
-      "name": "dev-bootstrap-base",
-      "hidden": true,
-      "inherits": "dev-base",
-      "cacheVariables": {
-        "PV_BOOTSTRAP_DEPS": "ON"
-      }
-    },
-    {
       "name": "portable-base",
       "hidden": true,
       "inherits": "base",
@@ -57,23 +40,6 @@
       }
     },
     {
-      "name": "portable-external-base",
-      "hidden": true,
-      "inherits": "portable-base",
-      "cacheVariables": {
-        "PV_BOOTSTRAP_DEPS": "OFF",
-        "PV_DEPS_ROOT": "/opt/pv_libs"
-      }
-    },
-    {
-      "name": "portable-bootstrap-base",
-      "hidden": true,
-      "inherits": "portable-base",
-      "cacheVariables": {
-        "PV_BOOTSTRAP_DEPS": "ON"
-      }
-    },
-    {
       "name": "native-base",
       "hidden": true,
       "inherits": "base",
@@ -81,153 +47,72 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG -march=native -mtune=native",
         "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG -march=native -mtune=native",
-        "CMAKE_INSTALL_PREFIX": "/usr/local",
-        "PV_STATIC_BUILD": "OFF"
+        "CMAKE_INSTALL_PREFIX": "/usr/local"
       }
     },
     {
-      "name": "native-external-base",
-      "hidden": true,
-      "inherits": "native-base",
-      "cacheVariables": {
-        "PV_BOOTSTRAP_DEPS": "OFF",
-        "PV_DEPS_ROOT": "/opt/pv_libs"
-      }
+      "name": "dev",
+      "inherits": "dev-base"
     },
     {
-      "name": "native-bootstrap-base",
-      "hidden": true,
-      "inherits": "native-base",
-      "cacheVariables": {
-        "PV_BOOTSTRAP_DEPS": "ON"
-      }
-    },
-    {
-      "name": "dev-bootstrap",
-      "inherits": "dev-bootstrap-base"
-    },
-    {
-      "name": "dev-bootstrap-asan",
-      "inherits": "dev-bootstrap",
+      "name": "dev-asan",
+      "inherits": "dev",
       "cacheVariables": {
         "PV_ENABLE_ASAN": "ON"
       }
     },
     {
-      "name": "dev-external",
-      "inherits": "dev-external-base"
+      "name": "portable",
+      "inherits": "portable-base"
     },
     {
-      "name": "dev-external-asan",
-      "inherits": "dev-external",
-      "cacheVariables": {
-        "PV_ENABLE_ASAN": "ON"
-      }
-    },
-    {
-      "name": "portable-external",
-      "inherits": "portable-external-base"
-    },
-    {
-      "name": "portable-bootstrap",
-      "inherits": "portable-bootstrap-base"
-    },
-    {
-      "name": "native-external",
-      "inherits": "native-external-base"
-    },
-    {
-      "name": "native-bootstrap",
-      "inherits": "native-bootstrap-base"
+      "name": "native",
+      "inherits": "native-base"
     }
   ],
   "buildPresets": [
     {
-      "name": "dev-bootstrap",
-      "configurePreset": "dev-bootstrap"
+      "name": "dev",
+      "configurePreset": "dev"
     },
     {
-      "name": "dev-bootstrap-asan",
-      "configurePreset": "dev-bootstrap-asan"
+      "name": "dev-asan",
+      "configurePreset": "dev-asan"
     },
     {
-      "name": "dev-external",
-      "configurePreset": "dev-external"
+      "name": "portable",
+      "configurePreset": "portable"
     },
     {
-      "name": "dev-external-asan",
-      "configurePreset": "dev-external-asan"
-    },
-    {
-      "name": "portable-external",
-      "configurePreset": "portable-external"
-    },
-    {
-      "name": "portable-bootstrap",
-      "configurePreset": "portable-bootstrap"
-    },
-    {
-      "name": "native-external",
-      "configurePreset": "native-external"
-    },
-    {
-      "name": "native-bootstrap",
-      "configurePreset": "native-bootstrap"
+      "name": "native",
+      "configurePreset": "native"
     }
   ],
   "testPresets": [
     {
-      "name": "dev-bootstrap",
-      "configurePreset": "dev-bootstrap",
+      "name": "dev",
+      "configurePreset": "dev",
       "output": {
         "outputOnFailure": true
       }
     },
     {
-      "name": "dev-bootstrap-asan",
-      "configurePreset": "dev-bootstrap-asan",
+      "name": "dev-asan",
+      "configurePreset": "dev-asan",
       "output": {
         "outputOnFailure": true
       }
     },
     {
-      "name": "dev-external",
-      "configurePreset": "dev-external",
+      "name": "portable",
+      "configurePreset": "portable",
       "output": {
         "outputOnFailure": true
       }
     },
     {
-      "name": "dev-external-asan",
-      "configurePreset": "dev-external-asan",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "portable-external",
-      "configurePreset": "portable-external",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "portable-bootstrap",
-      "configurePreset": "portable-bootstrap",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "native-external",
-      "configurePreset": "native-external",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "native-bootstrap",
-      "configurePreset": "native-bootstrap",
+      "name": "native",
+      "configurePreset": "native",
       "output": {
         "outputOnFailure": true
       }

@@ -22,13 +22,14 @@ find_package(Threads REQUIRED)
 
 add_library(verifier-core STATIC ${PV_CORE_SOURCES})
 
+set_target_properties(verifier-core PROPERTIES NO_SYSTEM_FROM_IMPORTED TRUE)
 target_compile_options(verifier-core PRIVATE ${PV_COMMON_WARNING_FLAGS})
 target_compile_definitions(verifier-core
                            PUBLIC PROXY_VERIFIER_VERSION=\"${PROJECT_VERSION}\")
 target_include_directories(verifier-core PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(
   verifier-core PUBLIC Threads::Threads libswoc-static yaml-cpp::yaml-cpp
-                       ${PV_EXTERNAL_DEPENDENCY_TARGETS})
+                       ${PV_HTTP_DEPENDENCY_TARGETS})
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_link_libraries(verifier-core PUBLIC stdc++fs)
@@ -61,16 +62,6 @@ if(PV_STATIC_BUILD AND NOT APPLE)
                                                 -Wl,--no-whole-archive dl)
   target_link_libraries(verifier-server PRIVATE -Wl,--whole-archive pthread
                                                 -Wl,--no-whole-archive dl)
-endif()
-
-if(PV_EXTERNAL_RPATH_DIRS)
-  list(JOIN PV_EXTERNAL_RPATH_DIRS ";" _pv_joined_rpath)
-  set_target_properties(verifier-client verifier-server
-                        PROPERTIES BUILD_RPATH "${_pv_joined_rpath}")
-  if(NOT PV_STATIC_BUILD)
-    set_target_properties(verifier-client verifier-server
-                          PROPERTIES INSTALL_RPATH "${_pv_joined_rpath}")
-  endif()
 endif()
 
 install(TARGETS verifier-client verifier-server
