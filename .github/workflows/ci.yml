@@ -83,12 +83,15 @@ jobs:
       - name: Verify formatting
         run: git diff --exit-code
 
-  ubuntu:
-    name: Build and tests (Ubuntu 26.04)
+  unit-tests:
+    name: Unit tests (Ubuntu 26.04, Clang)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
       image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:26.04
+    env:
+      CC: clang
+      CXX: clang++
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -97,15 +100,10 @@ jobs:
         run: cmake --preset dev
 
       - name: Build
-        id: build
         run: cmake --build --preset dev --parallel
 
       - name: Run unit tests
         run: ctest --preset dev
-
-      - name: Run AuTests
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: ./build/dev/autest.sh -v --clean=none -j"$(nproc)"
 
       - name: Upload unit-test logs
         if: failure()
@@ -114,6 +112,28 @@ jobs:
           name: unit-test-logs
           path: build/dev/Testing
           if-no-files-found: ignore
+
+  autests:
+    name: AuTests (Ubuntu 26.04, GCC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:26.04
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Configure
+        run: cmake --preset dev
+
+      - name: Build
+        run: cmake --build --preset dev --parallel
+
+      - name: Run AuTests
+        run: ./build/dev/autest.sh -v --clean=none -j"$(nproc)"
 
       - name: Collect AuTest sandbox
         if: failure()

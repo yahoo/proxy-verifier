@@ -8,10 +8,11 @@
 # Proxy Verifier CI Image
 
 Proxy Verifier CI uses Ubuntu 26.04. The image installs Ubuntu's OpenSSL,
-nghttp2, and nghttp3 development packages, along with the system compiler,
-CMake, Ninja, `uv`, formatting tools, and a checksum-verified Apache RAT JAR.
-CI therefore builds against the same system libraries available to developers;
-it does not maintain a separate dependency tree under `/opt`.
+nghttp2, and nghttp3 development packages, along with the system GCC and Clang
+compilers, CMake, Ninja, `uv`, formatting tools, and a checksum-verified Apache
+RAT JAR. CI therefore builds against the same system libraries and unversioned
+compiler packages available to developers; it does not maintain a separate
+dependency tree under `/opt`.
 
 This image is for development and CI workflows, not deployment. Use the
 statically linked binaries attached to Proxy Verifier releases for deployment.
