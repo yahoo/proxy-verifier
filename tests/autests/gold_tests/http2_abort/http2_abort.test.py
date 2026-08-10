@@ -3,7 +3,7 @@ Abort HTTP/2 connection.
 '''
 # @file
 #
-# Copyright 2023, Verizon Media
+# Copyright 2023-2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 

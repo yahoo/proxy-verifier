@@ -3,7 +3,7 @@ Implement socket manipulation helper functions.
 '''
 # @file
 #
-# Copyright 2020, Verizon Media
+# Copyright 2020-2026, Verizon Media
 # SPDX-License-Identifier: Apache-2.0
 #
 
