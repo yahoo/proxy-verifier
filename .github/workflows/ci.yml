@@ -52,7 +52,7 @@ jobs:
             --input-exclude "**/*.lock" \
             --input-exclude "**/*.md" "**/*.json" "**/*.yaml" "**/*.gold" "**/*.pem" \
             --input-exclude "tests/unit_tests/catch.hpp" \
-            --input-exclude "tests/autests/gold_tests/autest-site/default_url_file" \
+            --input-exclude "tests/tools/uranium/default_url_file" \
             --input-exclude-std GIT HIDDEN_DIR HIDDEN_FILE -- \
             "${GITHUB_WORKSPACE}" | tee "${RUNNER_TEMP}/RAT.txt"
 
@@ -113,8 +113,8 @@ jobs:
           path: build/dev/Testing
           if-no-files-found: ignore
 
-  autests:
-    name: AuTests (Ubuntu 26.04, GCC)
+  urtests:
+    name: Uranium tests (Ubuntu 26.04, GCC)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
@@ -127,28 +127,28 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Configure
-        run: cmake --preset dev
+        run: cmake --preset dev -DURTEST_SANDBOX=/tmp/proxy-verifier-urtest
 
       - name: Build
         run: cmake --build --preset dev --parallel
 
-      - name: Run AuTests
-        run: ./build/dev/autest.sh -v --clean=none -j"$(nproc)"
+      - name: Run Uranium tests
+        run: ./build/dev/urtest.sh -v -n "$(nproc)"
 
-      - name: Collect AuTest sandbox
+      - name: Collect Uranium sandbox
         if: failure()
         run: |
           mkdir -p artifacts
-          if [[ -d /tmp/proxy-verifier-autest ]]; then
+          if [[ -d /tmp/proxy-verifier-urtest ]]; then
             tar --create --gzip \
-              --file="${GITHUB_WORKSPACE}/artifacts/autest-sandbox.tar.gz" \
-              --directory=/tmp proxy-verifier-autest
+              --file="${GITHUB_WORKSPACE}/artifacts/urtest-sandbox.tar.gz" \
+              --directory=/tmp proxy-verifier-urtest
           fi
 
-      - name: Upload AuTest sandbox
+      - name: Upload Uranium sandbox
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: autest-sandbox
-          path: artifacts/autest-sandbox.tar.gz
+          name: urtest-sandbox
+          path: artifacts/urtest-sandbox.tar.gz
           if-no-files-found: ignore

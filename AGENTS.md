@@ -16,9 +16,9 @@ existing project style and preserve current CLI and YAML behavior.
   as compatibility-sensitive.
 - Update `README.md` when behavior, flags, workflows, or replay-file semantics
   change.
-- For new features and bug fixes, always consider whether unit tests and AuTests
-  should be added or updated. See .agents/skills/write-autests/SKILL.md for how to
-  write AuTests.
+- For new features and bug fixes, always consider whether unit tests and
+  Uranium tests should be added or updated. See
+  `.agents/skills/writing-urtests/SKILL.md` for how to write Uranium tests.
 
 ## Build And Test
 
@@ -32,14 +32,14 @@ cmake --build --preset dev --parallel
 ctest --preset dev
 ```
 
-For end-to-end coverage, use the generated AuTest wrapper from the build tree:
+For end-to-end coverage, use the generated Uranium wrapper from the build tree:
 
 ```bash
-./build/dev/autest.sh
+./build/dev/urtest.sh
 ```
 
-When a change is localized, prefer running the relevant AuTest subset with
-`-f ...` instead of the full suite.
+When a change is localized, prefer running the relevant Uranium subset with
+`-k ...` instead of the full suite.
 
 ## Formatting And File Structure
 
@@ -55,10 +55,10 @@ When a change is localized, prefer running the relevant AuTest subset with
   it.
 - Almost all new files should contain the Apache license preface with this year
   referenced as the copyright, except of course files that cannot contain such
-  comments, such as `.json` files and autest `.gold` files.
-- Replay YAML files, including AuTest replay files under `tests/autests`, also
-  need the same commented file prologue (`# @file`, copyright, SPDX). Do not
-  add new replay YAMLs without that header.
+  comments, such as `.json` and `.gold` files.
+- Replay YAML files, including Uranium replay files under
+  `tests/uranium_tests`, also need the same commented file prologue (`# @file`,
+  copyright, SPDX). Do not add new replay YAMLs without that header.
 
 ## C++ Style
 
@@ -130,7 +130,7 @@ do_something(!IGNORE_CASE);
   naming with descriptive behavior-oriented titles.
 - Table-driven tests and designated initializers are already used and are good
   patterns to continue when they improve clarity.
-- End-to-end behavior belongs in AuTests under `tests/autests/gold_tests`.
+- End-to-end behavior belongs in Uranium tests under `tests/uranium_tests`.
 - For parser, protocol, replay, CLI, or compatibility fixes, prefer adding a
   regression test alongside the code change.
 
@@ -142,4 +142,4 @@ Before finishing a change, sanity-check:
 - Does it preserve existing YAML schema and replay semantics?
 - Does it keep current diagnostics and docs accurate enough?
 - Should `README.md` change?
-- Should a unit test or AuTest be added?
+- Should a unit test or Uranium test be added?

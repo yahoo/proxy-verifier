@@ -1,0 +1,35 @@
+#!/bin/bash
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+
+set -u
+
+source_root="@CMAKE_SOURCE_DIR@"
+project_directory="@PV_URTEST_PROJECT_DIRECTORY@"
+verifier_bin="@CMAKE_BINARY_DIR@/bin"
+sandbox="@URTEST_SANDBOX@"
+
+export PYTHONPATH="${source_root}/tests${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONDONTWRITEBYTECODE=1
+
+pytest_arguments=("$@")
+if [[ -n "${SHARDCNT:-}" ]]; then
+  if [[ -z "${SHARD:-}" ]]; then
+    echo "urtest.sh: SHARD is required when SHARDCNT is set" >&2
+    exit 2
+  fi
+  pytest_arguments+=(--urtest-shard-index "${SHARD}" --urtest-shard-count "${SHARDCNT}")
+fi
+
+exec uv --project "${project_directory}" run --extra fast-diff pytest \
+  --import-mode=importlib \
+  -p tools.uranium.plugin \
+  "${source_root}/tests/tools/uranium/tests" \
+  "${source_root}/tests/uranium_tests" \
+  --verifier-bin "${verifier_bin}" \
+  --sandbox "${sandbox}" \
+  -o "cache_dir=${project_directory}/.pytest_cache" \
+  @URTEST_OPTIONS@ \
+  "${pytest_arguments[@]}"

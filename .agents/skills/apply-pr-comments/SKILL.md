@@ -11,5 +11,5 @@ should drive code changes and which should be answered without changes.
 - Do not post replies on GitHub. Propose suggested replies in your report.
 - Apply code changes for valid review feedback.
 - Build using `../build-pv/SKILL.md`.
-- Run relevant tests via `../run-unit-tests/SKILL.md` and `../run-autests/SKILL.md` when applicable.
+- Run relevant tests via `../run-unit-tests/SKILL.md` and `../run-urtests/SKILL.md` when applicable.
 - Do not commit or push. Leave changes unstaged for manual review.
