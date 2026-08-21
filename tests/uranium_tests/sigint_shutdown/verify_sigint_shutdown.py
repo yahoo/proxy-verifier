@@ -67,7 +67,7 @@ def wait_for_exit(process: subprocess.Popen[str], log_path: Path) -> float:
     return time.monotonic() - start
 
 
-def run_server_check(verifier_server: Path) -> None:
+def run_server_check(verifier_server: Path, io_uring_mode: str) -> None:
     replay = textwrap.dedent("""\
         meta:
           version: '1.0'
@@ -103,6 +103,8 @@ def run_server_check(verifier_server: Path) -> None:
                     [
                         str(verifier_server),
                         "run",
+                        "--io-uring",
+                        io_uring_mode,
                         "--listen-http",
                         f"127.0.0.1:{port}",
                         str(replay_path),
@@ -149,7 +151,7 @@ def run_server_check(verifier_server: Path) -> None:
         print(f"OK: server exited promptly in {exit_duration:.3f}s")
 
 
-def run_client_check(verifier_client: Path) -> None:
+def run_client_check(verifier_client: Path, io_uring_mode: str) -> None:
     replay = textwrap.dedent("""\
         meta:
           version: '1.0'
@@ -180,6 +182,8 @@ def run_client_check(verifier_client: Path) -> None:
                     [
                         str(verifier_client),
                         "run",
+                        "--io-uring",
+                        io_uring_mode,
                         "--connect-http",
                         f"127.0.0.1:{unused_port}",
                         str(replay_path),
@@ -211,18 +215,19 @@ def main() -> int:
     parser.add_argument("--mode", choices=("server", "client"), required=True)
     parser.add_argument("--verifier-server")
     parser.add_argument("--verifier-client")
+    parser.add_argument("--io-uring", choices=("auto", "off", "required"), default="auto")
     args = parser.parse_args()
 
     if args.mode == "server":
         if args.verifier_server is None:
             fail("--verifier-server is required in server mode")
         verifier_server = Path(args.verifier_server)
-        run_server_check(verifier_server)
+        run_server_check(verifier_server, args.io_uring)
     else:
         if args.verifier_client is None:
             fail("--verifier-client is required in client mode")
         verifier_client = Path(args.verifier_client)
-        run_client_check(verifier_client)
+        run_client_check(verifier_client, args.io_uring)
     return 0
 
 

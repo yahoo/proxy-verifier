@@ -30,6 +30,7 @@ dnf install -y \
   libffi-devel \
   libnghttp2-devel \
   libnghttp3-devel \
+  liburing-devel \
   openssl-devel \
   pkgconf-pkg-config \
   procps-ng \

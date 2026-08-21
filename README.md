@@ -68,6 +68,7 @@ Table of Contents
          * [--tls-secrets-log-file &lt;secrets_log_file_name&gt;](#--tls-secrets-log-file-secrets_log_file_name)
          * [--send-buffer-size &lt;size&gt;](#--send-buffer-size-size)
          * [--poll-timeout &lt;timeout_ms&gt;](#--poll-timeout-timeout_ms)
+         * [--io-uring &lt;mode&gt;](#--io-uring-mode)
    * [Tools](#tools)
       * [Replay Gen <a href="tools/replay-gen.py">replay-gen.py</a>](tools/replay-gen.py)
          * [-n,--number &lt;NUMBER&gt;](#-n--number-number)
@@ -1832,12 +1833,18 @@ presets. The build requires:
 * OpenSSL 3.5 or newer development files
 * nghttp2 1.60 or newer development files
 * nghttp3 0.8 or newer development files
+* liburing 2.0 or newer development files on Linux (optional)
 
 CMake fetches pinned `libswoc` and `yaml-cpp` sources during configure. HTTP/3
 uses OpenSSL 3.5 or newer for the native QUIC transport and nghttp3 for HTTP/3
 framing and QPACK. HTTP/2 uses nghttp2. Install these libraries through the
 system package manager before configuring Proxy Verifier. ngtcp2 is not
-required because OpenSSL provides the QUIC transport.
+required because OpenSSL provides the QUIC transport. On Linux, CMake enables
+io_uring socket readiness support when liburing is installed. Builds without
+liburing, non-Linux builds, and kernels that cannot initialize io_uring retain
+the existing `poll(2)` behavior. Dynamic Linux builds that enable io_uring
+support require the liburing shared library at runtime; portable Linux release
+binaries link it statically.
 
 For Mac builds, the following brew command can be helpful:
 
@@ -1868,9 +1875,9 @@ This places the build-tree binaries under `build/dev/bin`.
 
 The Dockerfiles under `docker/alpine_3.24`, `docker/fedora_44`, and
 `docker/ubuntu_26.04` are build and development environments, not deployment
-images. Each installs OpenSSL, nghttp2, and nghttp3 from its distribution along
-with the Proxy Verifier build, formatting, license-audit, and Uranium/pytest
-toolchains.
+images. Each installs OpenSSL, nghttp2, nghttp3, and liburing from its
+distribution along with the Proxy Verifier build, formatting, license-audit,
+and Uranium/pytest toolchains.
 GitHub Actions uses only the Ubuntu 26.04 image. Alpine 3.24 is used to build
 the portable Linux release binaries, while Fedora 44 provides an additional
 current-distribution development environment. Users who prefer Alpine or
@@ -2354,6 +2361,31 @@ When Proxy Verifier performs read and write operations, it does so using
 non-blocking sockets with a timeout. By default, this timeout is set to 5
 seconds (5,000 milliseconds). This optional argument provides a way to specify a
 different timeout in milliseconds for these operations.
+
+#### --io-uring \<mode\>
+
+On Linux builds with liburing, Proxy Verifier uses one process-wide io_uring
+to multiplex socket readiness waits. This avoids creating an io_uring for each
+connection thread. The HTTP, TLS, and replay state machines remain unchanged,
+and Proxy Verifier transparently uses `poll(2)` when io_uring is unavailable.
+
+The mode can be one of:
+
+* `auto` uses io_uring when both the build and running kernel support it, then
+  falls back to `poll(2)` if initialization is unavailable. This is the
+  default.
+* `off` always uses `poll(2)`. This is useful as the control side of a
+  production performance comparison using the same binary.
+* `required` exits with an error unless io_uring initializes successfully and
+  does not fall back if the backend later fails. Use this for an io_uring
+  production canary so kernel security policy or a container seccomp profile
+  cannot silently turn the test into a `poll(2)` run.
+
+Regardless of the selected mode, zero or negative timeouts use a direct
+`poll(2)` call because they do not benefit from asynchronous dispatch.
+
+Set the CMake option `PV_ENABLE_IO_URING=OFF` to omit io_uring support even if
+liburing is installed.
 
 ## Tools
 This section describes how to use some of the scripts under the [tools](tools) directory.

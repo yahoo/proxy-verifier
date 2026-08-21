@@ -23,6 +23,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     group.addoption("--verifier-bin",
                     help="Directory containing verifier-client and verifier-server")
     group.addoption("--sandbox", help="Directory for isolated Uranium test process trees")
+    group.addoption("--verifier-io-uring", choices=("auto", "off", "required"), default="auto",
+                    help="Socket I/O mode passed to verifier processes")
     group.addoption("--urtest-shard-index", type=int, help="Zero-based CI shard to collect")
     group.addoption("--urtest-shard-count", type=int, help="Total number of CI shards")
 
@@ -100,8 +102,9 @@ def uranium(pytestconfig: pytest.Config, request: pytest.FixtureRequest) -> Iter
     if missing:
         raise pytest.UsageError("Uranium tests require " + " and ".join(missing))
     worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    io_uring_mode = pytestconfig.getoption("verifier_io_uring")
     runtime = Uranium(repository_root, Path(verifier_bin),
-                      Path(sandbox) / worker, request.node.nodeid)
+                      Path(sandbox) / worker, request.node.nodeid, io_uring_mode)
     setattr(request.node, "_uranium_runtime", runtime)
     with runtime.execution_lock():
         yield runtime

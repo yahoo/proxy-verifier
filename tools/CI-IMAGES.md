@@ -11,10 +11,10 @@ Proxy Verifier provides Dockerfiles for Alpine 3.24, Fedora 44, and Ubuntu
 26.04 build environments. GitHub Actions uses only Ubuntu 26.04. The Alpine
 and Fedora Dockerfiles are available for users who prefer those distributions
 for their local build environment. Alpine is also the portable Linux release
-environment. Each Dockerfile installs its distribution's OpenSSL, nghttp2, and
-nghttp3 development packages, along with compilers, CMake, Ninja, `uv`,
-formatting tools, and a checksum-verified Apache RAT JAR. The Ubuntu image
-includes both GCC and Clang for the CI test jobs.
+environment. Each Dockerfile installs its distribution's OpenSSL, nghttp2,
+nghttp3, and liburing development packages, along with compilers, CMake, Ninja,
+`uv`, formatting tools, and a checksum-verified Apache RAT JAR. The Ubuntu
+image includes both GCC and Clang for the CI test jobs.
 
 These images are for development, release builds, and CI workflows, not
 deployment. Use the statically linked binaries attached to Proxy Verifier
@@ -81,7 +81,7 @@ docker run --rm --platform "${platform}" \
     java -version
     test -r "${RAT_JAR}"
     java -jar "${RAT_JAR}" --help >/dev/null
-    pkg-config --modversion openssl libnghttp2 libnghttp3
+    pkg-config --modversion openssl libnghttp2 libnghttp3 liburing
   '
 ```
 

@@ -97,7 +97,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Configure
-        run: cmake --preset dev
+        run: cmake --preset dev -DPV_ENABLE_IO_URING=OFF
 
       - name: Build
         run: cmake --build --preset dev --parallel
@@ -110,6 +110,38 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: unit-test-logs
+          path: build/dev/Testing
+          if-no-files-found: ignore
+
+  unit-tests-io-uring:
+    name: Unit tests (io_uring, Ubuntu 26.04, Clang)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:26.04
+      options: --security-opt seccomp=unconfined
+    env:
+      CC: clang
+      CXX: clang++
+      PV_TEST_REQUIRE_IO_URING: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Configure
+        run: cmake --preset dev -DPV_ENABLE_IO_URING=ON
+
+      - name: Build
+        run: cmake --build --preset dev --parallel
+
+      - name: Run unit tests
+        run: ctest --preset dev
+
+      - name: Upload unit-test logs
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-test-io-uring-logs
           path: build/dev/Testing
           if-no-files-found: ignore
 
@@ -127,7 +159,10 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Configure
-        run: cmake --preset dev -DURTEST_SANDBOX=/tmp/proxy-verifier-urtest
+        run: >-
+          cmake --preset dev
+          -DPV_ENABLE_IO_URING=OFF
+          -DURTEST_SANDBOX=/tmp/proxy-verifier-urtest
 
       - name: Build
         run: cmake --build --preset dev --parallel
@@ -151,4 +186,48 @@ jobs:
         with:
           name: urtest-sandbox
           path: artifacts/urtest-sandbox.tar.gz
+          if-no-files-found: ignore
+
+  urtests-io-uring:
+    name: Uranium tests (io_uring, Ubuntu 26.04, GCC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: ci.trafficserver.apache.org/proxy-verifier/ubuntu:26.04
+      options: --security-opt seccomp=unconfined
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Configure
+        run: >-
+          cmake --preset dev
+          -DPV_ENABLE_IO_URING=ON
+          -DURTEST_SANDBOX=/tmp/proxy-verifier-urtest-io-uring
+
+      - name: Build
+        run: cmake --build --preset dev --parallel
+
+      - name: Run Uranium tests
+        run: ./build/dev/urtest.sh -v -n "$(nproc)" --verifier-io-uring required
+
+      - name: Collect Uranium sandbox
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          if [[ -d /tmp/proxy-verifier-urtest-io-uring ]]; then
+            tar --create --gzip \
+              --file="${GITHUB_WORKSPACE}/artifacts/urtest-io-uring-sandbox.tar.gz" \
+              --directory=/tmp proxy-verifier-urtest-io-uring
+          fi
+
+      - name: Upload Uranium sandbox
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: urtest-io-uring-sandbox
+          path: artifacts/urtest-io-uring-sandbox.tar.gz
           if-no-files-found: ignore

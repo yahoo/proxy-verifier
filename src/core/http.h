@@ -883,8 +883,9 @@ struct Ssn
 };
 
 /** A session reader.
- * This is essentially a wrapper around a socket to support use of @c poll on
- * the socket. The goal is to enable a read operation that waits for data but
+ * This is essentially a wrapper around a socket with timed readiness waits.
+ * Linux builds use io_uring when it is available and otherwise fall back to
+ * @c poll. The goal is to enable a read operation that waits for data but
  * returns as soon as any data is available.
  */
 class Session

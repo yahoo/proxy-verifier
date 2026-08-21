@@ -40,12 +40,13 @@ def _tcp_open(port: int, address: str = "127.0.0.1") -> bool:
 class Uranium:
     """Own paths, ports, processes, and sandboxes for one pytest item."""
 
-    def __init__(self, repository_root: Path, verifier_bin: Path, sandbox_root: Path,
-                 nodeid: str) -> None:
+    def __init__(self, repository_root: Path, verifier_bin: Path, sandbox_root: Path, nodeid: str,
+                 io_uring_mode: str) -> None:
         self.repository_root = repository_root.resolve()
         self.verifier_bin = verifier_bin.resolve()
         self.sandbox_root = sandbox_root.resolve()
         self.nodeid = nodeid
+        self.io_uring_mode = io_uring_mode
         required = [self.verifier_bin / "verifier-client", self.verifier_bin / "verifier-server"]
         if missing := [str(path) for path in required if not path.is_file()]:
             raise RuntimeConfigError("Missing required test programs: " + ", ".join(missing))
@@ -179,7 +180,9 @@ class Uranium:
 
     def _client_command(self, spec: ProcessSpec, directory: Path) -> list[str | Path]:
         options = spec.options
-        command: list[str | Path] = [self.verifier_bin / "verifier-client", "run"]
+        command: list[str | Path] = [
+            self.verifier_bin / "verifier-client", "run", "--io-uring", self.io_uring_mode
+        ]
         if replay_path := options.get("replay_path"):
             command.append(self._resolve_path(spec.case.suite, replay_path))
         use_ipv6 = bool(options.get("use_ipv6", False))
@@ -206,7 +209,9 @@ class Uranium:
 
     def _server_command(self, spec: ProcessSpec, directory: Path) -> list[str | Path]:
         options = spec.options
-        command: list[str | Path] = [self.verifier_bin / "verifier-server", "run"]
+        command: list[str | Path] = [
+            self.verifier_bin / "verifier-server", "run", "--io-uring", self.io_uring_mode
+        ]
         use_ipv6 = bool(options.get("use_ipv6", False))
         for protocol, argument in (("http", "--listen-http"), ("https", "--listen-https")):
             ports = self._configured_ports(spec, protocol)
@@ -357,6 +362,7 @@ class Uranium:
         text = str(value)
         text = text.replace("{verifier-client}", str(self.verifier_bin / "verifier-client"))
         text = text.replace("{verifier-server}", str(self.verifier_bin / "verifier-server"))
+        text = text.replace("{verifier-io-uring}", self.io_uring_mode)
         patterns = [
             (r"\{uranium-port:(\d+):(http|https|http3):(\d+)\}", self._replace_port),
             (r"\{uranium-output:(\d+):(stdout|stderr)\}", self._replace_output),

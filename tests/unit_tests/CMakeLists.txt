@@ -9,6 +9,7 @@ set(PV_UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/test_chunk_parsing.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_http.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_https.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_socket_io.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/test_verification.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/unit_test_main.cc")
 
