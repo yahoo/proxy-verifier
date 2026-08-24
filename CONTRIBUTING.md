@@ -20,7 +20,7 @@ When your code is ready to be submitted, read github's article about how to [sub
 
 1. Run `tools/pr-prep.sh` to format the source code and update copyright years
    according to the repository's standards.
-1. Verify that all AuTests pass (see the [README](https://github.com/yahoo/proxy-verifier/blob/master/README.md) for instructions on how to run the AuTests).
+1. Verify that all Uranium tests pass (see the [README](https://github.com/yahoo/proxy-verifier/blob/master/README.md) for instructions).
 1. Verify that all unit tests pass (see the [README](https://github.com/yahoo/proxy-verifier/blob/master/README.md) for instructions on how to run the unit tests).
 
 We only seek to accept code that you are authorized to contribute to the project. We have added a pull request template on our projects so that your contributions are made with the following confirmation: 

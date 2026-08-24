@@ -154,5 +154,15 @@ include(HttpDependencies)
 pv_find_http_dependencies(PV_HTTP_DEPENDENCY_TARGETS)
 
 add_subdirectory(src)
-add_subdirectory(tests/autests)
+string(SHA256 _pv_source_hash "${CMAKE_SOURCE_DIR}")
+string(SUBSTRING "${_pv_source_hash}" 0 8 _pv_source_hash)
+set(URTEST_SANDBOX
+    "/tmp/proxy-verifier-urtest-${_pv_source_hash}"
+    CACHE PATH "Location for Uranium test output")
+set(URTEST_OPTIONS
+    ""
+    CACHE STRING
+          "Additional pytest options supplied by the Uranium test target")
+
+add_subdirectory(tests)
 add_subdirectory(tests/unit_tests)

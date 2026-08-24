@@ -41,8 +41,6 @@ Table of Contents
       * [Building from Source](#building-from-source)
          * [Prerequisites](#prerequisites)
          * [Build](#build)
-         * [Bootstrapping Dependencies Under CMake](#bootstrapping-dependencies-under-cmake)
-         * [Using Prebuilt Libraries](#using-prebuilt-libraries)
          * [Development Docker Images](#development-docker-images)
          * [Install](#install)
          * [ASan Instrumentation](#asan-instrumentation)
@@ -51,7 +49,7 @@ Table of Contents
          * [Native Build](#native-build)
       * [Running the Tests](#running-the-tests)
          * [Unit Tests](#unit-tests)
-         * [Gold Tests](#gold-tests)
+         * [Uranium Tests](#uranium-tests)
    * [Usage](#usage)
       * [Required Arguments](#required-arguments)
       * [Optional Arguments](#optional-arguments)
@@ -111,9 +109,7 @@ needs:
   in manual or automated end to end tests to verify correct behavior of the
   details of generally a small number of transactions. [Transaction
   Box](https://github.com/SolidWallOfCode/txn_box) is an example of a tool that
-  relies entirely on Proxy Verifier for its automated end to end tests (see its
-  [autest](https://github.com/SolidWallOfCode/txn_box/tree/master/test/autest)
-  directory).
+  relies entirely on Proxy Verifier for its automated end to end tests.
 * **Production simulation testing**: In this context, Proxy Verifier is used in
   an isolated lab environment configured as much like a production environment
   as possible. The Verifier client and server are provided replay files as
@@ -145,9 +141,8 @@ configure the proxy under test to direct these requests not to the actual
 production servers but to the Proxy Verifier server or servers.  The way this
 is achieved will depend upon the proxy. One way to accomplish this is to
 configure the production environment with a test DNS server such as
-[MicroDNS](https://bitbucket.org/autestsuite/microdns/src/master/) configured
-to resolve all host names to the Proxy Verifier server or servers in the
-production simulation environment.
+MicroDNS configured to resolve all host names to the Proxy Verifier server or
+servers in the production simulation environment.
 
 ## Traffic Replay Specification
 
@@ -1874,7 +1869,8 @@ This places the build-tree binaries under `build/dev/bin`.
 The Dockerfiles under `docker/alpine_3.24`, `docker/fedora_44`, and
 `docker/ubuntu_26.04` are build and development environments, not deployment
 images. Each installs OpenSSL, nghttp2, and nghttp3 from its distribution along
-with the Proxy Verifier build, formatting, license-audit, and AuTest toolchains.
+with the Proxy Verifier build, formatting, license-audit, and Uranium/pytest
+toolchains.
 GitHub Actions uses only the Ubuntu 26.04 image. Alpine 3.24 is used to build
 the portable Linux release binaries, while Fedora 44 provides an additional
 current-distribution development environment. Users who prefer Alpine or
@@ -1901,7 +1897,7 @@ cd /workspace
 cmake --preset dev
 cmake --build --preset dev --parallel
 ctest --preset dev
-./build/dev/autest.sh --sandbox /tmp/pv-autest --clean=none
+./build/dev/urtest.sh --sandbox /tmp/pv-urtest -n "$(nproc)"
 ```
 
 #### Install
@@ -2011,67 +2007,60 @@ cmake --build --preset dev --parallel
 ctest --preset dev
 ```
 
-#### Gold Tests
-Proxy Verifier ships with a set of automated end to end tests written using the
-[AuTest](https://bitbucket.org/autestsuite/reusable-gold-testing-system/src/master/)
-framework. After configuring a preset, CMake generates an `autest.sh` wrapper
-in that build directory. To run the tests for `dev`, use:
+#### Uranium Tests
+
+Proxy Verifier's end-to-end tests use the pytest-based Uranium framework.
+Tests live under `tests/uranium_tests` as ordinary `test_*.py` modules; replay
+YAML, JSON, and gold files in those directories are test data. After
+configuring a preset, CMake generates an `urtest.sh` wrapper in that build
+directory. To run the tests for `dev`, use:
 
 ```
-./build/dev/autest.sh
+./build/dev/urtest.sh
 ```
 
-That wrapper defaults `VERIFIER_BIN` to its sibling `bin/` directory, so each
-build tree uses its own `verifier-client` and `verifier-server` binaries. If
-you bypass the wrapper and invoke AuTest directly, binary lookup still follows
-this order: explicit `--verifier-bin`, then `VERIFIER_BIN`, then
-`/usr/local/bin`.
+That wrapper selects the `verifier-client` and `verifier-server` binaries from
+its build tree and creates an isolated sandbox for each test case. Passed-case
+sandboxes are removed, while failed-case sandboxes are retained for diagnosis.
+It also enables `cdifflib` to accelerate unified-diff diagnostics for failed
+gold-file comparisons; the framework falls back to Python's standard-library
+matcher if the optional extension is unavailable.
 
-When doing development for which a particular AuTest is relevant, the `-f`
-option can be used to run just a particular test (or set of tests, specified
-in a space-separated list). For instance, the following invocation runs
-just the http and https tests:
-
-```
-./build/dev/autest.sh -f http https
-```
-
-The build-generated wrapper also accepts `-j` or `--jobs` for parallel runs.
-That path uses worker-specific sandboxes and port offsets so the top-level
-AuTests do not stomp on each other:
+Use pytest's `-k` option to run a matching subset. For example, this runs the
+HTTP and HTTPS tests:
 
 ```
-./build/dev/autest.sh -j8 -f http https
+./build/dev/urtest.sh -k 'http or https'
 ```
 
-AuTest supports a variety of other options. Run
-`./build/dev/autest.sh --help` to get a
-quick description of the various command-line options. See the [AuTest
-Documentation](https://autestsuite.bitbucket.io) for further details about the
-framework.
-
-**A note for macOS**: The Python virtual environment for these gold tests
-requires the [cryptograpy](https://github.com/pyca/cryptography) package as a
-dependency of the [pyOpenSSL](https://www.pyopenssl.org/en/stable/) package.
-The build-generated `autest.sh` wrapper installs the test environment with
-`uv sync --locked`, but the installation of the
-`cryptography` package will require compiling certain c files against OpenSSL.
-macOS has its own SSL libraries which brew's version of OpenSSL does not
-replace, for understandable reasons. The building of `cryptography` will
-fail against the system's SSL libraries. To point the build to brew's OpenSSL
-libraries, the `autest.sh` script exports the following variables before
-running `uv sync --locked`:
+Use pytest-xdist's `-n` option for parallel runs. Worker processes use separate
+sandboxes and a shared port allocator:
 
 ```
-export LDFLAGS="-L/usr/local/opt/openssl/lib"
-export CPPFLAGS="-I/usr/local/opt/openssl/include"
-export PKG_CONFIG_PATH="/usr/local/opt/openssl/lib/pkgconfig"
+./build/dev/urtest.sh -n 8 -k 'http or https'
 ```
 
-Thus if you stick with using the `autest.sh` script you do not need to worry
-about this. But if you install the test environment by hand rather than through the
-`autest.sh` script on macOS, then keep this in mind and export those variables
-before running `uv sync --locked`.
+Register process-output expectations with the explicit stream API. Regex
+expectations require an explanation so failures report the intended behavior:
+
+```python
+server.stdout.contains("Ready with 3 transactions",
+                       "The server should parse all three transactions.")
+server.stdout.excludes("Violation:",
+                       "The server should not report verification errors.")
+server.stdout.matches_gold("gold/server.gold")
+client.expect_return_codes(0, 1)
+```
+
+The `stdout`, `stderr`, and `return_codes` properties are read-only; assignment
+and augmented assignment are not expectation-registration APIs. Use
+`server.stdout.reset()` when earlier stream expectations must be discarded
+explicitly.
+
+The wrapper accepts normal pytest options; run `./build/dev/urtest.sh --help`
+for the complete list. Use `--sandbox PATH` to select the sandbox root. CI
+sharding is also supported with the zero-based `SHARD` and `SHARDCNT`
+environment variables.
 
 ## Usage
 
