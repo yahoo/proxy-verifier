@@ -443,9 +443,8 @@ time_response_arrival(std::chrono::microseconds content_delay)
   auto const start_time = std::chrono::steady_clock::now();
 
   swoc::Rv<ssize_t> write_result{0};
-  std::thread writer{[&session, &response, &write_result]() {
-    write_result = session.write(response);
-  }};
+  std::thread writer{
+      [&session, &response, &write_result]() { write_result = session.write(response); }};
 
   std::string received;
   ResponseArrival arrival{};
@@ -458,8 +457,7 @@ time_response_arrival(std::chrono::microseconds content_delay)
     received.append(buffer, n);
 
     if (arrival.headers == std::chrono::steady_clock::duration::zero()) {
-      if (auto const header_end = received.find(HEADER_TERMINATOR);
-          header_end != std::string::npos)
+      if (auto const header_end = received.find(HEADER_TERMINATOR); header_end != std::string::npos)
       {
         arrival.headers = std::chrono::steady_clock::now() - start_time;
         expected_total = header_end + HEADER_TERMINATOR.size() + CONTENT_DELAY_BODY_SIZE;
