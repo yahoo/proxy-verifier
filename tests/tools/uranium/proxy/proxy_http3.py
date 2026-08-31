@@ -245,7 +245,26 @@ class HttpRequestHandler:
                 self.request_headers = event.headers
             if event.stream_ended:
                 self.client_request_done_event.set()
+            elif self._requests_early_response(event.headers):
+                # Respond without waiting for the rest of the request. This is
+                # how a peer that answers ahead of a delayed request body is
+                # simulated.
+                self.client_request_done_event.set()
         self.transmit()
+
+    def _requests_early_response(self, request_headers) -> bool:
+        """
+        Return whether the request headers carry an EarlyResponse directive.
+
+        Args:
+            request_headers: The received request headers, pseudo-headers included.
+        """
+        _, regular_headers = self.split_headers(request_headers)
+        if DirectiveEngine(regular_headers).get_early_response() is None:
+            return False
+        request_id = regular_headers.get('uuid', '<unknown>')
+        print(f"Serving early response for key {request_id} before the request body.")
+        return True
 
     async def send_response(self) -> None:
 

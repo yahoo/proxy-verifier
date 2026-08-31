@@ -419,8 +419,14 @@ cb_h3_end_stream(nghttp3_conn *, int64_t stream_id, void *conn_user_data, void *
   session->set_stream_has_ended(stream_id, key);
   if (stream_state->will_receive_response()) {
     finalize_h3_stream(stream_id, *stream_state);
-    session->stream_map.erase(stream_id);
-    session->mark_completed_response_stream(stream_id);
+    std::shared_ptr<H3StreamState> retained_state;
+    if (auto const spot = session->stream_map.find(stream_id); spot != session->stream_map.end()) {
+      retained_state = std::move(spot->second);
+      session->stream_map.erase(spot);
+    }
+    // Our half of the stream may still have a body to send, and nghttp3 will
+    // call back into this state with its raw pointer while it does.
+    session->mark_completed_response_stream(stream_id, std::move(retained_state));
   }
   return 0;
 }
@@ -921,7 +927,7 @@ H3Session::H3Session(TextView const &client_sni, int client_verify_mode)
 
 H3Session::~H3Session()
 {
-  m_last_added_stream.reset();
+  m_completed_response_streams.clear();
   quic_socket.reset();
 }
 
@@ -1074,6 +1080,9 @@ H3Session::write(HttpHeader const &hdr)
     stream_id = static_cast<int64_t>(SSL_get_stream_id(stream));
     new_stream_state = std::make_shared<H3StreamState>(hdr.is_request());
     stream_state = new_stream_state.get();
+    // See the comment on this member: this has to happen before any of the
+    // request is written.
+    stream_state->specified_response = m_specified_response_for_next_request;
     stream_state->set_stream_id(stream_id);
     record_stream_state(stream_id, new_stream_state);
   }
@@ -1485,14 +1494,15 @@ H3Session::get_a_stream_has_ended() const
 void
 H3Session::record_stream_state(int64_t stream_id, std::shared_ptr<H3StreamState> stream_state)
 {
-  stream_map.emplace(stream_id, stream_state);
-  m_last_added_stream = std::move(stream_state);
+  stream_map.emplace(stream_id, std::move(stream_state));
 }
 
 void
-H3Session::mark_completed_response_stream(int64_t stream_id)
+H3Session::mark_completed_response_stream(
+    int64_t stream_id,
+    std::shared_ptr<H3StreamState> stream_state)
 {
-  m_completed_response_streams.insert(stream_id);
+  m_completed_response_streams.insert_or_assign(stream_id, std::move(stream_state));
 }
 
 bool
@@ -1625,12 +1635,15 @@ Errata
 H3Session::run_transaction(Txn const &transaction)
 {
   Errata errata;
+  // Register the expected response before the request is written. write()
+  // services incoming packets while it waits out a content delay, so a response
+  // which arrives ahead of the delayed request body has to find the expected
+  // response already attached to its stream.
+  m_specified_response_for_next_request = &transaction._rsp;
   auto &&[bytes_written, write_errata] = write(transaction._req);
+  m_specified_response_for_next_request = nullptr;
   static_cast<void>(bytes_written);
   errata.note(std::move(write_errata));
-  if (m_last_added_stream != nullptr) {
-    m_last_added_stream->specified_response = &transaction._rsp;
-  }
   return errata;
 }
 

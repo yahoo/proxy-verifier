@@ -210,6 +210,16 @@ public:
   /// A mapping from stream_id to H2StreamState.
   std::unordered_map<int32_t, std::shared_ptr<H2StreamState>> _stream_map;
 
+  /** Stream states retired from @a _stream_map which nghttp2 has not closed yet.
+   *
+   * nghttp2 keeps a raw pointer to the stream state as its stream user data and
+   * hands it back to the data source read callback. A stream is dropped from
+   * @a _stream_map as soon as the peer ends its half of it, which can happen
+   * while our own body is still queued behind a content delay or flow control,
+   * so ownership is parked here until nghttp2 reports the stream closed.
+   */
+  std::unordered_map<int32_t, std::shared_ptr<H2StreamState>> _retired_stream_map;
+
 protected:
   static swoc::Errata client_init(SSL_CTX *&client_context);
   static swoc::Errata server_init(SSL_CTX *&server_context);
@@ -275,7 +285,15 @@ private:
   bool _h2_is_negotiated = false;
 
   std::deque<int32_t> _ended_streams;
-  std::shared_ptr<H2StreamState> _last_added_stream;
+
+  /** The expected response to attach to the next request stream @c write creates.
+   *
+   * @c write services incoming frames while it holds a content delay, so the
+   * expected response has to be on the stream before the request headers go out
+   * rather than after @c write returns. Otherwise a response which arrives
+   * ahead of the delayed request body is not verified against.
+   */
+  HttpHeader const *_specified_response_for_next_request = nullptr;
 
 #ifndef OPENSSL_NO_NEXTPROTONEG
   static unsigned char next_proto_list[256];

@@ -72,6 +72,8 @@ class Directive:
             return CloseConnectionDirective(value)
         if command.lower() == LocalResponseDirective.get_command_name().lower():
             return LocalResponseDirective(value)
+        if command.lower() == EarlyResponseDirective.get_command_name().lower():
+            return EarlyResponseDirective(value)
         return None
 
 
@@ -317,6 +319,36 @@ class LocalResponseDirective(Directive):
         return self._status, self._reason
 
 
+class EarlyResponseDirective(LocalResponseDirective):
+    """
+    Implement a directive that serves a local response before the request body.
+
+    This is associated with the EarlyResponse=%<status[:reason]%> specification.
+    It behaves like LocalResponse except that the proxy replies as soon as the
+    request headers arrive rather than waiting for the request to be complete.
+    This is how a peer which responds ahead of a delayed request body is
+    simulated.
+
+    >>> d = EarlyResponseDirective('413')
+    >>> d.get_local_response()
+    (413, 'Request Entity Too Large')
+    >>> d.get_early_response()
+    (413, 'Request Entity Too Large')
+    """
+
+    _command_name = "EarlyResponse"
+
+    @staticmethod
+    def get_command_name():
+        """
+        Return the command name associated with this Directive.
+        """
+        return EarlyResponseDirective._command_name
+
+    def get_early_response(self):
+        return self._status, self._reason
+
+
 class DirectiveEngine:
     """
     Implements directive parsing and header manipulation.
@@ -337,6 +369,10 @@ class DirectiveEngine:
     X-Proxy-Directive: LocalResponse=%<status[:reason]%>
       This header requests the proxy to serve a local response with the given
       status (and optional reason) instead of forwarding the request.
+
+    X-Proxy-Directive: EarlyResponse=%<status[:reason]%>
+      Like LocalResponse, except that the response is served as soon as the
+      request headers arrive rather than after the entire request is received.
 
     Multiple directives can be passed in the same X-Proxy-Directive by simply
     appending them in the value of the header. White space may be used as a
@@ -393,9 +429,12 @@ class DirectiveEngine:
         [('SetURL', 'http://example.one:8080/config/settings.yaml?q=3#F')]
         >>> DirectiveEngine._directive_value_parser("LocalResponse=%<200%>")
         [('LocalResponse', '200')]
+        >>> DirectiveEngine._directive_value_parser("EarlyResponse=%<413%>")
+        [('EarlyResponse', '413')]
         """
-        return re.findall(r"(Delete|Insert|SetURL|CloseConnection|LocalResponse)=%<(.*?)%>",
-                          x_proxy_directive_value)
+        return re.findall(
+            r"(Delete|Insert|SetURL|CloseConnection|LocalResponse|EarlyResponse)=%<(.*?)%>",
+            x_proxy_directive_value)
 
     def get_new_url(self):
         """
@@ -523,6 +562,28 @@ class DirectiveEngine:
             if possible_local_response is not None:
                 local_response = possible_local_response
         return local_response
+
+    def get_early_response(self):
+        """
+        Return the status and reason for a response to serve before the request body.
+
+        >>> import email.message
+        >>> headers = email.message.Message()
+        >>> headers.add_header('X-Proxy-Directive', 'EarlyResponse=%<413%>')
+        >>> DirectiveEngine(headers).get_early_response()
+        (413, 'Request Entity Too Large')
+
+        >>> headers = email.message.Message()
+        >>> headers.add_header('X-Proxy-Directive', 'LocalResponse=%<204%>')
+        >>> DirectiveEngine(headers).get_early_response() is None
+        True
+        """
+        early_response = None
+        for directive in self._directives:
+            possible_early_response = getattr(directive, "get_early_response", lambda: None)()
+            if possible_early_response is not None:
+                early_response = possible_early_response
+        return early_response
 
 
 if __name__ == '__main__':

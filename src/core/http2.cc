@@ -346,7 +346,6 @@ void
 H2Session::record_stream_state(int32_t stream_id, std::shared_ptr<H2StreamState> stream_state)
 {
   _stream_map[stream_id] = stream_state;
-  _last_added_stream = stream_state;
 }
 
 bool
@@ -737,14 +736,14 @@ H2Session::run_transaction(Txn const &txn)
   }
 
   Errata errata;
-  auto const previous_last_added_stream = _last_added_stream;
+  // Register the expected response before the request is written. write()
+  // services incoming frames while it waits out a content delay, so a response
+  // which arrives ahead of the delayed request body has to find the expected
+  // response already attached to its stream.
+  _specified_response_for_next_request = &txn._rsp;
   auto &&[bytes_written, write_errata] = this->write(txn._req);
+  _specified_response_for_next_request = nullptr;
   errata.note(std::move(write_errata));
-  if (errata.is_ok() && _last_added_stream != nullptr &&
-      _last_added_stream != previous_last_added_stream)
-  {
-    _last_added_stream->_specified_response = &txn._rsp;
-  }
   return errata;
 }
 
@@ -1303,6 +1302,10 @@ finalize_stream(H2Session *session_data, int32_t stream_id)
         stream_state._key,
         elapsed_ms);
   }
+  // The peer is done with the stream, but our own half of it may still have a
+  // body to send: nghttp2 keeps a raw pointer to this state and will call back
+  // into it. Park the ownership until nghttp2 closes the stream.
+  session_data->_retired_stream_map.insert_or_assign(stream_id, std::move(iter->second));
   session_data->_stream_map.erase(iter);
   return 0;
 }
@@ -1318,6 +1321,9 @@ on_stream_close_cb(
   errata.note(S_DIAG, "HTTP/2 stream is closed with id: {}", stream_id);
   H2Session *session_data = reinterpret_cast<H2Session *>(user_data);
   finalize_stream(session_data, stream_id);
+  // nghttp2 will not call back with this stream's user data again, so the state
+  // parked by finalize_stream can go.
+  session_data->_retired_stream_map.erase(stream_id);
   return 0;
 }
 
@@ -1867,6 +1873,9 @@ H2Session::write(HttpHeader const &hdr)
   } else {
     new_stream_state = std::make_shared<H2StreamState>();
     stream_state = new_stream_state.get();
+    // See the comment on this member: this has to happen before any of the
+    // request is written.
+    stream_state->_specified_response = _specified_response_for_next_request;
   }
 
   if (hdr.is_request()) {

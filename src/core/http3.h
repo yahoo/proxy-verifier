@@ -242,9 +242,18 @@ public:
 
   /** Remember a response finalized before its close callback.
    *
+   * nghttp3 keeps a raw pointer to the stream state as its stream user data and
+   * hands it back to the data reader. The stream is dropped from @a stream_map
+   * as soon as the peer ends its half of it, which can happen while our own
+   * body is still queued behind a content delay or flow control, so ownership
+   * is parked here until nghttp3 reports the stream closed.
+   *
    * @param[in] stream_id The stream identifier.
+   * @param[in] stream_state The state to retain until the close callback.
    */
-  void mark_completed_response_stream(int64_t stream_id);
+  void mark_completed_response_stream(
+      int64_t stream_id,
+      std::shared_ptr<H3StreamState> stream_state);
 
   /** Remove a remembered finalized response stream.
    *
@@ -299,9 +308,19 @@ private:
 private:
   std::deque<int64_t> m_ended_streams;
   swoc::IPEndpoint const *m_endpoint = nullptr;
-  std::shared_ptr<H3StreamState> m_last_added_stream;
   std::unordered_set<std::string> m_finished_streams;
-  std::unordered_set<int64_t> m_completed_response_streams;
+
+  /// Streams finalized on their end-stream callback, held until they are closed.
+  std::unordered_map<int64_t, std::shared_ptr<H3StreamState>> m_completed_response_streams;
+
+  /** The expected response to attach to the next request stream @c write creates.
+   *
+   * @c write services incoming packets while it holds a content delay, so the
+   * expected response has to be on the stream before the request headers go out
+   * rather than after @c write returns. Otherwise a response which arrives
+   * ahead of the delayed request body is not verified against.
+   */
+  HttpHeader const *m_specified_response_for_next_request = nullptr;
 
   static SSL_CTX *m_h3_client_context;
   static SSL_CTX *m_h3_server_context;

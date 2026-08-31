@@ -231,6 +231,59 @@ process = case.add_process(
 )
 process.stdout.contains('Good', 'The verifier script should report success.')
 
+#
+# Test 11: A peer which responds after the request headers but before the
+# delayed request body. The response has to be verified against even though it
+# arrives while the client is still holding the body back.
+#
+case = suite.case("Verify an HTTP/2 response received before the delayed request body.")
+client = case.add_client("client_early_response_http2", "content-delay-early-response-http2.yaml")
+
+proxy = case.add_proxy("proxy_http2_early_response", listen_port=client.https_port, server_port=1,
+                       use_ssl=True, use_http2_to_1=True)
+
+proxy.stdout.contains("Serving early response for key http2-early-response before the request body",
+                      "The proxy should respond before the request body arrives.")
+
+client.stdout.contains("Received an HTTP/2 response for key http2-early-response",
+                       "The client should receive the early response.")
+
+client.stdout.contains("Sent an HTTP/2 body of 399 bytes for key http2-early-response",
+                       "The client should still send the delayed request body.")
+
+client.stdout.excludes("were never processed",
+                       "The early response should be verified rather than skipped.")
+
+client.stdout.excludes("Violation:", "The early response matches what the replay file expects.")
+
+client.expect_return_codes(0)
+
+#
+# Test 12: The HTTP/3 version of the early response case.
+#
+case = suite.case("Verify an HTTP/3 response received before the delayed request body.")
+client = case.add_client("client_early_response_http3", "content-delay-early-response-http3.yaml",
+                         other_args=http3_args)
+
+proxy = case.add_proxy("proxy_http3_early_response", listen_port=client.http3_port, server_port=1,
+                       use_ssl=True, use_http3_to_1=True)
+
+proxy.stdout.contains("Serving early response for key http3-early-response before the request body",
+                      "The proxy should respond before the request body arrives.")
+
+client.stdout.contains("Received an HTTP/3 response for key http3-early-response",
+                       "The client should receive the early response.")
+
+client.stdout.contains("Sent an HTTP/3 body of 399 bytes for key http3-early-response",
+                       "The client should still send the delayed request body.")
+
+client.stdout.excludes("were never processed",
+                       "The early response should be verified rather than skipped.")
+
+client.stdout.excludes("Violation:", "The early response matches what the replay file expects.")
+
+client.expect_return_codes(0)
+
 
 def test_uranium_suite(uranium):
     uranium.run(suite)

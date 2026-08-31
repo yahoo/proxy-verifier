@@ -996,8 +996,10 @@ that the proxy's timeouts fire at the point they should.
 The value uses the same unit-suffixed duration format described in [Session and
 Transaction Delay Specification](#session-and-transaction-delay-specification).
 
-This works for HTTP/1.x, HTTP/2, and HTTP/3, and for both request and response
-bodies. For HTTP/2 and HTTP/3 the headers are put on the wire in their `HEADERS`
+This works for HTTP/1.x, HTTP/2, and HTTP/3. For HTTP/1.x and HTTP/2 it applies
+to both request and response bodies. Proxy Verifier does not implement
+server-side HTTP/3, so over HTTP/3 only a request body can carry a content
+delay. For HTTP/2 and HTTP/3 the headers are put on the wire in their `HEADERS`
 frame, the body is withheld from the protocol library for the duration of the
 delay, and the stream is then resumed so the body follows in its own `DATA`
 frame.
