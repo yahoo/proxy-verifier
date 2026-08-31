@@ -1,0 +1,62 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+    version: '1.0'
+
+# Verify the handling of a "delay" node inside a "content" node for HTTP/3. The
+# headers are sent, the delay is inserted, and the body then follows.
+#
+# The test proxy only bridges HTTP/3 on the client side to HTTP/1 on the server
+# side, so this file exercises the Verifier client's request body. Delayed
+# response bodies over HTTP/1 are covered by content-delay.yaml.
+
+sessions:
+
+- protocol:
+    stack: http3
+    tls:
+      sni: test_sni
+
+  transactions:
+
+  #
+  # A request body delayed by 700 ms behind the request headers.
+  #
+  - client-request:
+      headers:
+        fields:
+        - [ :method, POST ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ Content-Type, image/jpeg ]
+        - [ uuid, http3-delayed-request-body ]
+      content:
+        size: 399
+        delay: 700ms
+
+    proxy-request:
+      url:
+      - [ path, { value: flower.jpeg, as: contains } ]
+
+      headers:
+        fields:
+        - [ Content-Length, { value: '399', as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+        - [ Content-Type, image/jpeg ]
+        - [ Content-Length, '32' ]
+      content:
+        size: 32
+
+    proxy-response:
+      status: 200

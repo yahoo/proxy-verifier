@@ -1475,6 +1475,20 @@ data_read_callback(
     stream_state = iter->second.get();
   }
   TextView body_sent = "";
+  if (stream_state->_content_delay > 0us) {
+    // The HEADERS frame has to reach the wire before the content delay starts,
+    // so hand nghttp2 nothing for now. This flushes what has been serialized so
+    // far and leaves the stream deferred. H2Session::write waits out the delay
+    // and then resumes the stream, at which point this callback is called again
+    // with the delay cleared.
+    errata.note(
+        S_DIAG,
+        "Deferring the HTTP/2 DATA frame for key {} of stream id {} per the content delay "
+        "specification.",
+        stream_state->_key,
+        stream_id);
+    return NGHTTP2_ERR_DEFERRED;
+  }
   if (!stream_state->_wait_for_continue) {
     num_to_copy =
         std::min(length, stream_state->_send_body_length - stream_state->_send_body_offset);
@@ -1561,6 +1575,61 @@ H2Session::frame_delay(HttpHeader const &hdr, H2Frame curr_frame)
     }
   }
 
+  return errata;
+}
+
+Errata
+H2Session::content_delay(H2StreamState &stream_state)
+{
+  Errata errata;
+
+  auto const content_delay = stream_state._content_delay;
+  errata.note(
+      S_DIAG,
+      "Delaying the body for key {} of stream id {} per the content delay specification: {}.",
+      stream_state._key,
+      stream_state.get_stream_id(),
+      duration_cast<milliseconds>(content_delay));
+  // Make sure the diagnostic for the delay is emitted before the body.
+  errata.sink();
+
+  std::chrono::duration<double, std::micro> delay_time = content_delay;
+  auto const next_time = ClockType::now() + delay_time;
+  while (delay_time > 0ms) {
+    // Make use of our delay time to process any incoming frames.
+    auto &&[progress, progress_errata] =
+        drain_h2_receive_window(*this, duration_cast<milliseconds>(delay_time), "content delay");
+    errata.note(std::move(progress_errata));
+    if (!errata.is_ok()) {
+      // A peer which gives up during the delay is the expected outcome for some
+      // replay files, so make the connection between the two explicit rather
+      // than reporting a bare read failure.
+      errata.sink();
+      errata.note(
+          S_DIAG,
+          "The peer closed the connection or stopped responding during the content delay of {} for "
+          "key {}.",
+          duration_cast<milliseconds>(content_delay),
+          stream_state._key);
+      break;
+    }
+    delay_time = next_time - ClockType::now();
+  }
+
+  // Let the body flow again regardless of how the delay ended. If the peer is
+  // gone the write simply fails and is reported by the caller.
+  stream_state._content_delay = 0us;
+  if (auto const rv = nghttp2_session_resume_data(this->_session, stream_state.get_stream_id());
+      rv != 0)
+  {
+    errata.note(
+        S_ERROR,
+        "Failed to resume the HTTP/2 DATA frame for key {} on stream {} after the content delay: "
+        "{}",
+        stream_state._key,
+        stream_state.get_stream_id(),
+        nghttp2_strerror(rv));
+  }
   return errata;
 }
 
@@ -1779,6 +1848,13 @@ H2Session::write(HttpHeader const &hdr)
   int32_t submit_result = 0;
   H2StreamState *stream_state = nullptr;
   std::shared_ptr<H2StreamState> new_stream_state{nullptr};
+  /** A reference held for the duration of this write.
+   *
+   * Processing incoming frames, which happens during a content delay, can
+   * retire a stream from the stream map. Holding a reference keeps
+   * @a stream_state valid until this write is finished with it.
+   */
+  std::shared_ptr<H2StreamState> stream_state_reference{nullptr};
   if (hdr.is_response()) {
     stream_id = hdr._stream_id;
     auto stream_map_iter = _stream_map.find(stream_id);
@@ -1786,7 +1862,8 @@ H2Session::write(HttpHeader const &hdr)
       zret.note(S_ERROR, "Could not find registered stream for stream id: {}", stream_id);
       return zret;
     }
-    stream_state = stream_map_iter->second.get();
+    stream_state_reference = stream_map_iter->second;
+    stream_state = stream_state_reference.get();
   } else {
     new_stream_state = std::make_shared<H2StreamState>();
     stream_state = new_stream_state.get();
@@ -1896,6 +1973,9 @@ H2Session::write(HttpHeader const &hdr)
       stream_state->_send_body_length = content.size();
       stream_state->_send_body_offset = 0;
       stream_state->_last_data_frame = true;
+      // A request awaiting a 100 Continue has no body to write at this point,
+      // so there is nothing to hold back. This matches the HTTP/1 write path.
+      stream_state->_content_delay = stream_state->_wait_for_continue ? 0us : hdr._content_delay;
       if (hdr.is_response()) {
         // Pack the trailer headers.
         pack_headers(
@@ -1959,6 +2039,17 @@ H2Session::write(HttpHeader const &hdr)
 
     // Kick off the send logic to put the data on the wire
     zret.result() = send_nghttp2_data(_session, nullptr, 0, 0, this);
+
+    if (zret.is_ok() && stream_state->_content_delay > 0us) {
+      // The headers are on the wire and the DATA frame was withheld from
+      // nghttp2. Wait out the content delay and then let the body follow.
+      zret.note(content_delay(*stream_state));
+      if (zret.is_ok()) {
+        // Make sure the logging of the delay is emitted before the body.
+        zret.errata().sink();
+      }
+      zret.result() += send_nghttp2_data(_session, nullptr, 0, 0, this);
+    }
   }
 
   return zret;

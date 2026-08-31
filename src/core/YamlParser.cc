@@ -1091,10 +1091,10 @@ YamlParser::populate_http_message(YAML::Node const &node, HttpHeader &message)
     }
   }
 
-  // A "delay" in a "content" node is honored by the HTTP/1.x write path only.
-  // A message with an explicit frame sequence is HTTP/2, which expresses the
-  // same behavior with a delay on its DATA frame. Such a delay would otherwise
-  // be silently ignored, so reject it wherever it appears in these messages.
+  // A "delay" in a "content" node delays the body behind the headers. A message
+  // with an explicit frame sequence expresses the same behavior with a delay on
+  // its DATA frame. Such a delay would otherwise be silently ignored, so reject
+  // it wherever it appears in these messages.
   bool const has_frame_sequence = static_cast<bool>(node[YAML_FRAMES_KEY]);
   auto note_delay_conflicts_with_frames = [&errata](YAML::Node const &delay_node) {
     errata.note(

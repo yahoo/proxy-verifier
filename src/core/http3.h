@@ -135,6 +135,17 @@ public:
   bool wait_for_continue = false;    ///< Whether the request waits for a 100 response.
   size_t num_data_bytes_written = 0; ///< Unacknowledged DATA payload bytes.
 
+  /** How long to wait after the HEADERS frame is on the wire before the DATA
+   * frame is sent.
+   *
+   * This is the @c content @c delay of the message being written. It is zero
+   * for messages which do not specify one. While it is non-zero the nghttp3
+   * data reader reports that it would block so that only the HEADERS frame is
+   * flushed. H3Session::write zeroes it and resumes the stream once the delay
+   * has elapsed.
+   */
+  std::chrono::microseconds content_delay{0};
+
 private:
   bool m_will_receive_request = false;
   int64_t m_stream_id = 0;
@@ -269,6 +280,20 @@ private:
   swoc::Errata client_ssl_session_init(SSL_CTX *client_context);
   swoc::Errata initialize_http3_connection();
   swoc::Errata receive_responses();
+
+  /** Wait out the @c content @c delay of a message whose body is withheld.
+   *
+   * The connection is serviced for the duration of the wait so that incoming
+   * packets, including a peer closing the connection, are processed rather than
+   * stalled behind the delay.
+   *
+   * @param[in,out] stream_state The stream whose body is withheld. Its
+   * @c content_delay is zeroed and the stream resumed before returning.
+   *
+   * @return Any errata from servicing the connection during the delay.
+   */
+  swoc::Errata content_delay(H3StreamState &stream_state);
+
   bool request_has_outstanding_stream_dependencies(HttpHeader const &request) const;
 
 private:

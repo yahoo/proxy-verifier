@@ -57,6 +57,13 @@ constexpr uint64_t H3_STREAM_CREATION_ERROR = 0x103;
 constexpr bool UNIDIRECTIONAL = true;
 constexpr unsigned char H3_ALPN[] = {2, 'h', '3'};
 
+/** The longest single wait taken while serving a @c content @c delay.
+ *
+ * Bounding the wait keeps the QUIC connection's timers serviced and shutdown
+ * requests honored while the body is being held back.
+ */
+constexpr auto Content_Delay_Service_Interval = 20ms;
+
 char const *
 nghttp3_error(int error)
 {
@@ -143,6 +150,19 @@ cb_h3_readfunction(
     errata.note(S_DIAG, R"(Not sending HTTP/3 body for "Expect: 100" request.)");
     *pflags = NGHTTP3_DATA_FLAG_EOF;
     return 0;
+  }
+  if (stream_state->content_delay > 0us) {
+    // The HEADERS frame has to reach the wire before the content delay starts,
+    // so report that the body is not available yet. H3Session::write waits out
+    // the delay and then resumes the stream, at which point this callback is
+    // called again with the delay cleared.
+    errata.note(
+        S_DIAG,
+        "Withholding the HTTP/3 body for key {} of stream id {} per the content delay "
+        "specification.",
+        stream_state->key,
+        stream_id);
+    return NGHTTP3_ERR_WOULDBLOCK;
   }
 
   vec[0].base = reinterpret_cast<uint8_t *>(const_cast<char *>(stream_state->body_to_send.data()));
@@ -954,6 +974,71 @@ H3Session::pack_headers(HttpHeader const &hdr, nghttp3_nv *&nv_hdr, int &hdr_cou
   return errata;
 }
 
+Errata
+H3Session::content_delay(H3StreamState &stream_state)
+{
+  Errata errata;
+
+  auto const content_delay = stream_state.content_delay;
+  auto const stream_id = stream_state.get_stream_id();
+  errata.note(
+      S_DIAG,
+      "Delaying the body for key {} of stream id {} per the content delay specification: {}.",
+      stream_state.key,
+      stream_id,
+      duration_cast<milliseconds>(content_delay));
+  // Make sure the diagnostic for the delay is emitted before the body.
+  errata.sink();
+
+  auto const deadline = ClockType::now() + content_delay;
+  for (auto remaining = content_delay; remaining > 0us;
+       remaining = duration_cast<chrono::microseconds>(deadline - ClockType::now()))
+  {
+    // Service the connection in bounded slices so its timers keep running and
+    // shutdown requests stay responsive. The body itself stays withheld: the
+    // data reader reports NGHTTP3_ERR_WOULDBLOCK while content_delay is set.
+    auto const slice =
+        std::min(duration_cast<milliseconds>(remaining), Content_Delay_Service_Interval);
+    auto &&[progressed, progress_errata] = progress_http3(*this, slice);
+    static_cast<void>(progressed);
+    errata.note(std::move(progress_errata));
+    if (!errata.is_ok()) {
+      // A peer which gives up during the delay is the expected outcome for some
+      // replay files, so make the connection between the two explicit rather
+      // than reporting a bare I/O failure.
+      errata.sink();
+      errata.note(
+          S_DIAG,
+          "The peer closed the connection or stopped responding during the content delay of {} "
+          "for key {}.",
+          duration_cast<milliseconds>(content_delay),
+          stream_state.key);
+      break;
+    }
+    if (shutdown_requested()) {
+      errata.note(
+          S_DIAG,
+          "Shutdown was requested during the content delay for key {}.",
+          stream_state.key);
+      break;
+    }
+  }
+
+  // Let the body flow again regardless of how the delay ended. If the peer is
+  // gone the write simply fails and is reported by the caller.
+  stream_state.content_delay = 0us;
+  if (auto const rv = nghttp3_conn_resume_stream(quic_socket.h3conn, stream_id); rv != 0) {
+    errata.note(
+        S_ERROR,
+        "Failed to resume the HTTP/3 body for key {} on stream {} after the content delay: {} ({})",
+        stream_state.key,
+        stream_id,
+        nghttp3_error(rv),
+        rv);
+  }
+  return errata;
+}
+
 swoc::Rv<ssize_t>
 H3Session::write(HttpHeader const &hdr)
 {
@@ -961,6 +1046,13 @@ H3Session::write(HttpHeader const &hdr)
   auto const key = hdr.get_key();
   H3StreamState *stream_state = nullptr;
   std::shared_ptr<H3StreamState> new_stream_state;
+  /** A reference held for the duration of this write.
+   *
+   * Servicing the connection, which happens during a content delay, can retire
+   * a stream from the stream map. Holding a reference keeps @a stream_state
+   * valid until this write is finished with it.
+   */
+  std::shared_ptr<H3StreamState> stream_state_reference;
   int64_t stream_id = 0;
 
   if (hdr.is_response()) {
@@ -970,7 +1062,8 @@ H3Session::write(HttpHeader const &hdr)
       zret.note(S_ERROR, "Could not find registered stream for stream id: {}", stream_id);
       return zret;
     }
-    stream_state = spot->second.get();
+    stream_state_reference = spot->second;
+    stream_state = stream_state_reference.get();
   } else {
     auto &&[stream, stream_errata] = quic_socket.open_stream(!UNIDIRECTIONAL);
     zret.note(std::move(stream_errata));
@@ -1006,6 +1099,9 @@ H3Session::write(HttpHeader const &hdr)
     nghttp3_data_reader data_reader{.read_data = cb_h3_readfunction};
     stream_state->body_to_send = content;
     stream_state->wait_for_continue = hdr.is_request_with_expect_100_continue();
+    // A request awaiting a 100 Continue has no body to write at this point, so
+    // there is nothing to hold back. This matches the HTTP/1 write path.
+    stream_state->content_delay = stream_state->wait_for_continue ? 0us : hdr._content_delay;
     if (hdr.is_response()) {
       submit_result = nghttp3_conn_submit_response(
           quic_socket.h3conn,
@@ -1059,6 +1155,18 @@ H3Session::write(HttpHeader const &hdr)
 
   if (zret.is_ok()) {
     zret.errata().sink();
+    auto &&[progressed, progress_errata] = progress_http3(*this, 0ms);
+    static_cast<void>(progressed);
+    zret.note(std::move(progress_errata));
+  }
+  if (zret.is_ok() && stream_state->content_delay > 0us) {
+    // The headers are on the wire and the body was withheld from nghttp3. Wait
+    // out the content delay and then let the body follow.
+    zret.note(content_delay(*stream_state));
+    if (zret.is_ok()) {
+      // Make sure the logging of the delay is emitted before the body.
+      zret.errata().sink();
+    }
     auto &&[progressed, progress_errata] = progress_http3(*this, 0ms);
     static_cast<void>(progressed);
     zret.note(std::move(progress_errata));

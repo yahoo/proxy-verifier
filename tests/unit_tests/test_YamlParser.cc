@@ -411,6 +411,21 @@ content:
     CHECK(response._content_delay == 700ms);
   }
 
+  SECTION("A content delay on a request is parsed")
+  {
+    auto const node = YAML::Load(R"(
+method: POST
+url: /a/path
+content:
+  size: 10
+  delay: 250ms
+)");
+    HttpHeader request{true};
+    request.set_is_request();
+    CHECK(YamlParser::populate_http_message(node, request).is_ok());
+    CHECK(request._content_delay == 250ms);
+  }
+
   SECTION("A malformed content delay fails parsing")
   {
     auto const node = YAML::Load(R"(

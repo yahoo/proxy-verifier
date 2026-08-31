@@ -647,9 +647,14 @@ public:
 
   /** How long to wait after writing the headers before writing the body.
    *
-   * This is honored by the HTTP/1.x write path only. HTTP/2 messages express
-   * the same behavior via a per-frame @c delay on a @c DATA frame, and HTTP/3
-   * has no support for it.
+   * This is honored by the HTTP/1.x, HTTP/2, and HTTP/3 write paths. For
+   * HTTP/2 and HTTP/3 the headers are put on the wire, the body is withheld
+   * from the protocol library for the duration of the delay, and the stream is
+   * then resumed so that the body follows in its own DATA frame.
+   *
+   * An HTTP/2 message with an explicit @c frames sequence expresses the same
+   * behavior via a per-frame @c delay on its @c DATA frame, so the two are
+   * rejected in combination at parse time.
    */
   std::chrono::microseconds _content_delay{0};
 

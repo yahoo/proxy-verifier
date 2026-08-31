@@ -106,16 +106,14 @@ server = case.add_server("server_content_delay", "content-delay.yaml")
 proxy = case.add_proxy("proxy_http_content_delay", listen_port=client.http_port,
                        server_port=server.http_port)
 
-server.stdout.contains("Ready with 1 transaction.",
-                       "The server should have parsed 1 transaction.")
+server.stdout.contains("Ready with 1 transaction.", "The server should have parsed 1 transaction.")
 
 server.stdout.contains(
     "Delaying the body for key content-length-request per the content delay specification: 700",
     "The server should delay the body of the response.")
 
-client.stdout.contains(
-    "1 transaction in 1 session .* in .* milliseconds",
-    "The client should have reported running the transaction with timing data.")
+client.stdout.contains("1 transaction in 1 session .* in .* milliseconds",
+                       "The client should have reported running the transaction with timing data.")
 
 client.stdout.excludes("Violation:",
                        "There should be no verification errors because there are none added.")
@@ -134,6 +132,100 @@ client_output = client.stdout.path
 expected_min_delay_ms = "700"
 process = case.add_process(
     "verify-content-delay",
+    ["python3", verifier_script, client_output, expected_min_delay_ms],
+    copies=[verifier_script],
+)
+process.stdout.contains('Good', 'The verifier script should report success.')
+
+#
+# Test 7: Run HTTP/2 transactions with a content delay, one delaying the
+# response body and one delaying the request body.
+#
+case = suite.case("Verify the handling of the content delay specification over HTTP/2.")
+client = case.add_client("client_content_delay_http2", "content-delay-http2.yaml")
+server = case.add_server("server_content_delay_http2", "content-delay-http2.yaml")
+
+proxy = case.add_proxy("proxy_http2_content_delay", listen_port=client.https_port,
+                       server_port=server.https_port, use_ssl=True, use_http2_to_2=True)
+
+server.stdout.contains("Ready with 2 transactions.",
+                       "The server should have parsed 2 transactions.")
+
+server.stdout.contains(
+    "Delaying the body for key http2-delayed-response-body of stream id [0-9]+ per the content "
+    "delay specification: 700", "The server should delay the body of the response.")
+
+client.stdout.contains(
+    "Delaying the body for key http2-delayed-request-body of stream id [0-9]+ per the content "
+    "delay specification: 700", "The client should delay the body of the request.")
+
+# The bodies have to actually arrive after their delay, not be dropped by the
+# deferral.
+client.stdout.contains("Received an HTTP/2 body of 3432 bytes for key http2-delayed-response-body",
+                       "The client should receive the delayed response body.")
+
+server.stdout.contains("Received an HTTP/2 body of 399 bytes for key http2-delayed-request-body",
+                       "The server should receive the delayed request body.")
+
+client.stdout.excludes("Violation:",
+                       "There should be no verification errors because there are none added.")
+
+server.stdout.excludes("Violation:",
+                       "There should be no verification errors because there are none added.")
+
+#
+# Test 8: Verify that the timing data indicates that the HTTP/2 content delays
+# took place.
+#
+case = suite.case("Verify the HTTP/2 content delay replay took an expected amount of time to run.")
+client_output = client.stdout.path
+# The two 700 ms delays overlap, so only one of them is guaranteed to show up in
+# the total run time.
+expected_min_delay_ms = "700"
+process = case.add_process(
+    "verify-http2-content-delay",
+    ["python3", verifier_script, client_output, expected_min_delay_ms],
+    copies=[verifier_script],
+)
+process.stdout.contains('Good', 'The verifier script should report success.')
+
+#
+# Test 9: Run an HTTP/3 transaction with a content delay on the request body.
+#
+case = suite.case("Verify the handling of the content delay specification over HTTP/3.")
+http3_args = "--poll-timeout 10000"
+client = case.add_client("client_content_delay_http3", "content-delay-http3.yaml",
+                         other_args=http3_args)
+server = case.add_server("server_content_delay_http3", "content-delay-http3.yaml",
+                         other_args=http3_args)
+
+proxy = case.add_proxy("proxy_http3_content_delay", listen_port=client.http3_port,
+                       server_port=server.http_port, use_ssl=True, use_http3_to_1=True)
+
+server.stdout.contains("Ready with 1 transaction.", "The server should have parsed 1 transaction.")
+
+client.stdout.contains(
+    "Delaying the body for key http3-delayed-request-body of stream id [0-9]+ per the content "
+    "delay specification: 700", "The client should delay the body of the request.")
+
+client.stdout.contains("Sent an HTTP/3 body of 399 bytes for key http3-delayed-request-body",
+                       "The client should send the delayed request body.")
+
+client.stdout.excludes("Violation:",
+                       "There should be no verification errors because there are none added.")
+
+server.stdout.excludes("Violation:",
+                       "There should be no verification errors because there are none added.")
+
+#
+# Test 10: Verify that the timing data indicates that the HTTP/3 content delay
+# took place.
+#
+case = suite.case("Verify the HTTP/3 content delay replay took an expected amount of time to run.")
+client_output = client.stdout.path
+expected_min_delay_ms = "700"
+process = case.add_process(
+    "verify-http3-content-delay",
     ["python3", verifier_script, client_output, expected_min_delay_ms],
     copies=[verifier_script],
 )
