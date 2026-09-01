@@ -78,6 +78,14 @@ public:
    */
   std::chrono::microseconds _content_delay{0};
 
+  /** How long this stream has spent waiting out a @c content @c delay.
+   *
+   * The wait was asked for by the replay file, so it is subtracted from the
+   * measured stream duration before that duration is compared against
+   * @c Transaction_Delay_Cutoff.
+   */
+  std::chrono::microseconds _content_delay_served{0};
+
   std::string _key;
 
   nghttp2_nv *_trailer_to_send = nullptr;

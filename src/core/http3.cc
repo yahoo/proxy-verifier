@@ -122,7 +122,9 @@ finalize_h3_stream(int64_t stream_id, H3StreamState &stream_state)
     errata.note(S_DIAG, R"(Body content did not match expected value.)");
   }
 
-  auto const elapsed_ms = duration_cast<milliseconds>(ClockType::now() - stream_state.stream_start);
+  auto const elapsed_ms =
+      duration_cast<milliseconds>(ClockType::now() - stream_state.stream_start) -
+      duration_cast<milliseconds>(stream_state.content_delay_served);
   if (elapsed_ms > Transaction_Delay_Cutoff) {
     errata.note(
         S_ERROR,
@@ -714,6 +716,22 @@ progress_http3_ingress(H3Session &session)
   return zret;
 }
 
+/** Return whether the QUIC connection has been closed.
+ *
+ * @param[in] session The session whose connection to inspect.
+ * @return Whether the connection is closed, by either peer.
+ */
+bool
+quic_connection_is_closed(H3Session const &session)
+{
+  auto *connection = session.quic_socket.connection;
+  if (connection == nullptr) {
+    return true;
+  }
+  SSL_CONN_CLOSE_INFO close_info{};
+  return SSL_get_conn_close_info(connection, &close_info, sizeof(close_info)) == 1;
+}
+
 swoc::Rv<bool>
 progress_http3(H3Session &session, milliseconds timeout)
 {
@@ -1001,14 +1019,24 @@ H3Session::content_delay(H3StreamState &stream_state)
        remaining = duration_cast<chrono::microseconds>(deadline - ClockType::now()))
   {
     // Service the connection in bounded slices so its timers keep running and
-    // shutdown requests stay responsive. The body itself stays withheld: the
-    // data reader reports NGHTTP3_ERR_WOULDBLOCK while content_delay is set.
+    // shutdown requests stay responsive, and so a sub-millisecond remainder
+    // does not spin. The body itself stays withheld: the data reader reports
+    // NGHTTP3_ERR_WOULDBLOCK while content_delay is set.
     auto const slice =
-        std::min(duration_cast<milliseconds>(remaining), Content_Delay_Service_Interval);
+        std::clamp(duration_cast<milliseconds>(remaining), 1ms, Content_Delay_Service_Interval);
     auto &&[progressed, progress_errata] = progress_http3(*this, slice);
     static_cast<void>(progressed);
     errata.note(std::move(progress_errata));
     if (!errata.is_ok()) {
+      if (!quic_connection_is_closed(*this)) {
+        // A protocol or TLS failure is a genuine replay failure and has to keep
+        // its severity.
+        errata.note(
+            S_ERROR,
+            "Failed to service the HTTP/3 connection during the content delay for key {}.",
+            stream_state.key);
+        break;
+      }
       // A peer which gives up during the delay is the expected outcome for some
       // replay files, so make the connection between the two explicit rather
       // than reporting a bare I/O failure.
@@ -1029,6 +1057,9 @@ H3Session::content_delay(H3StreamState &stream_state)
       break;
     }
   }
+  // This wait was asked for by the replay file, so it does not count against
+  // Transaction_Delay_Cutoff.
+  stream_state.content_delay_served += content_delay;
 
   // Let the body flow again regardless of how the delay ended. If the peer is
   // gone the write simply fails and is reported by the caller.

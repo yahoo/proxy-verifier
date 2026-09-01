@@ -1111,6 +1111,14 @@ protected:
   /** The number of bytes read across all sockets. */
   static std::atomic<uint64_t> _num_total_bytes_read;
 
+  /** How long @c write has spent waiting out @c content @c delay nodes.
+   *
+   * The wait was asked for by the replay file, so it is subtracted from the
+   * measured transaction duration before that duration is compared against
+   * @c Transaction_Delay_Cutoff.
+   */
+  std::chrono::microseconds _content_delay_served{0};
+
 private:
   virtual swoc::Rv<size_t>
   drain_body_internal(HttpHeader &hdr, Txn const &json_txn, swoc::TextView initial);

@@ -33,6 +33,13 @@ constexpr bool IS_TRAILER = true;
 size_t constexpr Default_H2_InFlight_Stream_Cap = 32;
 size_t constexpr H2NoProgressTimeoutBudget = 3;
 
+/** The longest single wait taken while serving a @c content @c delay.
+ *
+ * Bounding the wait keeps shutdown requests honored while the body is being
+ * held back.
+ */
+constexpr auto Content_Delay_Service_Interval = 20ms;
+
 static ssize_t receive_nghttp2_data(
     nghttp2_session *session,
     uint8_t *buf,
@@ -1274,7 +1281,8 @@ finalize_stream(H2Session *session_data, int32_t stream_id)
 
   auto const &message_start = stream_state._stream_start;
   auto const message_end = ClockType::now();
-  auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start);
+  auto const elapsed_ms = duration_cast<chrono::milliseconds>(message_end - message_start) -
+                          duration_cast<chrono::milliseconds>(stream_state._content_delay_served);
 
   auto const specified_response = stream_state._specified_response;
   if (specified_response && specified_response->_trailer_fields_rules->_rules.size()) {
@@ -1602,11 +1610,25 @@ H2Session::content_delay(H2StreamState &stream_state)
   std::chrono::duration<double, std::micro> delay_time = content_delay;
   auto const next_time = ClockType::now() + delay_time;
   while (delay_time > 0ms) {
-    // Make use of our delay time to process any incoming frames.
-    auto &&[progress, progress_errata] =
-        drain_h2_receive_window(*this, duration_cast<milliseconds>(delay_time), "content delay");
+    // Service the session in bounded slices so that shutdown requests stay
+    // responsive and a sub-millisecond remainder does not spin. Incoming frames
+    // are processed as they arrive; the body itself stays withheld because the
+    // data source read callback defers the DATA frame while the content delay
+    // is set.
+    auto const slice =
+        std::clamp(duration_cast<milliseconds>(delay_time), 1ms, Content_Delay_Service_Interval);
+    auto &&[progress, progress_errata] = drain_h2_receive_window(*this, slice, "content delay");
     errata.note(std::move(progress_errata));
     if (!errata.is_ok()) {
+      if (!this->is_closed()) {
+        // A protocol or TLS failure is a genuine replay failure and has to keep
+        // its severity.
+        errata.note(
+            S_ERROR,
+            "Failed to service the HTTP/2 session during the content delay for key {}.",
+            stream_state._key);
+        break;
+      }
       // A peer which gives up during the delay is the expected outcome for some
       // replay files, so make the connection between the two explicit rather
       // than reporting a bare read failure.
@@ -1619,8 +1641,18 @@ H2Session::content_delay(H2StreamState &stream_state)
           stream_state._key);
       break;
     }
+    if (shutdown_requested()) {
+      errata.note(
+          S_DIAG,
+          "Shutdown was requested during the content delay for key {}.",
+          stream_state._key);
+      break;
+    }
     delay_time = next_time - ClockType::now();
   }
+  // This wait was asked for by the replay file, so it does not count against
+  // Transaction_Delay_Cutoff.
+  stream_state._content_delay_served += content_delay;
 
   // Let the body flow again regardless of how the delay ended. If the peer is
   // gone the write simply fails and is reported by the caller.
@@ -1628,10 +1660,13 @@ H2Session::content_delay(H2StreamState &stream_state)
   if (auto const rv = nghttp2_session_resume_data(this->_session, stream_state.get_stream_id());
       rv != 0)
   {
+    // NGHTTP2_ERR_INVALID_ARGUMENT means the stream is gone or nothing was
+    // deferred on it. A peer which reset the stream during the delay is the
+    // expected outcome for some replay files, and a DATA frame nghttp2 never
+    // reached is sent once flow control allows it, so neither is a failure.
     errata.note(
-        S_ERROR,
-        "Failed to resume the HTTP/2 DATA frame for key {} on stream {} after the content delay: "
-        "{}",
+        rv == NGHTTP2_ERR_INVALID_ARGUMENT ? S_DIAG : S_ERROR,
+        "Did not resume the HTTP/2 DATA frame for key {} on stream {} after the content delay: {}",
         stream_state._key,
         stream_state.get_stream_id(),
         nghttp2_strerror(rv));

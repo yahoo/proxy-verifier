@@ -1386,6 +1386,9 @@ Session::write(HttpHeader const &hdr)
               hdr.get_key());
           return zret;
         }
+        // This wait was asked for by the replay file, so it does not count
+        // against Transaction_Delay_Cutoff.
+        _content_delay_served += hdr._content_delay;
       }
       auto &&[body_bytes_written, body_write_errata] = write_body(hdr);
       auto const body_write_failed = !body_write_errata.is_ok();
@@ -2023,13 +2026,15 @@ Session::run_transactions(
       break;
     }
     auto const before = ClockType::now();
+    _content_delay_served = 0us;
     txn_errata.note(this->run_transaction(txn));
     auto const after = ClockType::now();
     if (!txn_errata.is_ok()) {
       txn_errata.note(S_ERROR, R"(Failed HTTP/1 transaction with key: {})", txn._req.get_key());
     }
 
-    auto const elapsed_ms = duration_cast<chrono::milliseconds>(after - before);
+    auto const elapsed_ms = duration_cast<chrono::milliseconds>(after - before) -
+                            duration_cast<chrono::milliseconds>(_content_delay_served);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
       txn_errata.note(
           S_ERROR,
