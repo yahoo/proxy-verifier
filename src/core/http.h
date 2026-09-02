@@ -645,6 +645,19 @@ public:
   bool _content_length_p = false;
   size_t _content_length = 0;
 
+  /** How long to wait after writing the headers before writing the body.
+   *
+   * This is honored by the HTTP/1.x, HTTP/2, and HTTP/3 write paths. For
+   * HTTP/2 and HTTP/3 the headers are put on the wire, the body is withheld
+   * from the protocol library for the duration of the delay, and the stream is
+   * then resumed so that the body follows in its own DATA frame.
+   *
+   * An HTTP/2 message with an explicit @c frames sequence expresses the same
+   * behavior via a per-frame @c delay on its @c DATA frame, so the two are
+   * rejected in combination at parse time.
+   */
+  std::chrono::microseconds _content_delay{0};
+
   /// The parsed headers contain "Connection: close" header.
   bool _contains_connection_close = false;
 
@@ -1097,6 +1110,14 @@ protected:
 
   /** The number of bytes read across all sockets. */
   static std::atomic<uint64_t> _num_total_bytes_read;
+
+  /** How long @c write has spent waiting out @c content @c delay nodes.
+   *
+   * The wait was asked for by the replay file, so it is subtracted from the
+   * measured transaction duration before that duration is compared against
+   * @c Transaction_Delay_Cutoff.
+   */
+  std::chrono::microseconds _content_delay_served{0};
 
 private:
   virtual swoc::Rv<size_t>

@@ -1372,9 +1372,38 @@ Session::write(HttpHeader const &hdr)
   if (header_bytes_written == static_cast<ssize_t>(w.size())) {
     zret.result() = header_bytes_written;
     if (!hdr.is_request_with_expect_100_continue()) {
+      if (hdr._content_delay > 0us) {
+        zret.note(
+            S_DIAG,
+            "Delaying the body for key {} per the content delay specification: {}.",
+            hdr.get_key(),
+            duration_cast<milliseconds>(hdr._content_delay));
+        if (!interruptible_sleep_for(hdr._content_delay)) {
+          zret.note(
+              S_DIAG,
+              "Shutdown was requested during the content delay for key {}. "
+              "The body will not be written.",
+              hdr.get_key());
+          return zret;
+        }
+        // This wait was asked for by the replay file, so it does not count
+        // against Transaction_Delay_Cutoff.
+        _content_delay_served += hdr._content_delay;
+      }
       auto &&[body_bytes_written, body_write_errata] = write_body(hdr);
+      auto const body_write_failed = !body_write_errata.is_ok();
       zret.note(std::move(body_write_errata));
       zret.result() += body_bytes_written;
+      if (body_write_failed && hdr._content_delay > 0us) {
+        // A peer which timed out during the delay is the expected outcome for
+        // some replay files, so make the connection between the two explicit.
+        zret.note(
+            S_DIAG,
+            "The body write for key {} failed after a content delay of {}. "
+            "The peer likely closed the connection during the delay.",
+            hdr.get_key(),
+            duration_cast<milliseconds>(hdr._content_delay));
+      }
     }
   } else {
     zret.note(
@@ -1997,13 +2026,15 @@ Session::run_transactions(
       break;
     }
     auto const before = ClockType::now();
+    _content_delay_served = 0us;
     txn_errata.note(this->run_transaction(txn));
     auto const after = ClockType::now();
     if (!txn_errata.is_ok()) {
       txn_errata.note(S_ERROR, R"(Failed HTTP/1 transaction with key: {})", txn._req.get_key());
     }
 
-    auto const elapsed_ms = duration_cast<chrono::milliseconds>(after - before);
+    auto const elapsed_ms = duration_cast<chrono::milliseconds>(after - before) -
+                            duration_cast<chrono::milliseconds>(_content_delay_served);
     if (elapsed_ms > Transaction_Delay_Cutoff) {
       txn_errata.note(
           S_ERROR,

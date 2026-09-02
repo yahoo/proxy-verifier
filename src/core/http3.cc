@@ -57,6 +57,13 @@ constexpr uint64_t H3_STREAM_CREATION_ERROR = 0x103;
 constexpr bool UNIDIRECTIONAL = true;
 constexpr unsigned char H3_ALPN[] = {2, 'h', '3'};
 
+/** The longest single wait taken while serving a @c content @c delay.
+ *
+ * Bounding the wait keeps the QUIC connection's timers serviced and shutdown
+ * requests honored while the body is being held back.
+ */
+constexpr auto Content_Delay_Service_Interval = 20ms;
+
 char const *
 nghttp3_error(int error)
 {
@@ -115,7 +122,9 @@ finalize_h3_stream(int64_t stream_id, H3StreamState &stream_state)
     errata.note(S_DIAG, R"(Body content did not match expected value.)");
   }
 
-  auto const elapsed_ms = duration_cast<milliseconds>(ClockType::now() - stream_state.stream_start);
+  auto const elapsed_ms =
+      duration_cast<milliseconds>(ClockType::now() - stream_state.stream_start) -
+      duration_cast<milliseconds>(stream_state.content_delay_served);
   if (elapsed_ms > Transaction_Delay_Cutoff) {
     errata.note(
         S_ERROR,
@@ -143,6 +152,19 @@ cb_h3_readfunction(
     errata.note(S_DIAG, R"(Not sending HTTP/3 body for "Expect: 100" request.)");
     *pflags = NGHTTP3_DATA_FLAG_EOF;
     return 0;
+  }
+  if (stream_state->content_delay > 0us) {
+    // The HEADERS frame has to reach the wire before the content delay starts,
+    // so report that the body is not available yet. H3Session::write waits out
+    // the delay and then resumes the stream, at which point this callback is
+    // called again with the delay cleared.
+    errata.note(
+        S_DIAG,
+        "Withholding the HTTP/3 body for key {} of stream id {} per the content delay "
+        "specification.",
+        stream_state->key,
+        stream_id);
+    return NGHTTP3_ERR_WOULDBLOCK;
   }
 
   vec[0].base = reinterpret_cast<uint8_t *>(const_cast<char *>(stream_state->body_to_send.data()));
@@ -399,8 +421,14 @@ cb_h3_end_stream(nghttp3_conn *, int64_t stream_id, void *conn_user_data, void *
   session->set_stream_has_ended(stream_id, key);
   if (stream_state->will_receive_response()) {
     finalize_h3_stream(stream_id, *stream_state);
-    session->stream_map.erase(stream_id);
-    session->mark_completed_response_stream(stream_id);
+    std::shared_ptr<H3StreamState> retained_state;
+    if (auto const spot = session->stream_map.find(stream_id); spot != session->stream_map.end()) {
+      retained_state = std::move(spot->second);
+      session->stream_map.erase(spot);
+    }
+    // Our half of the stream may still have a body to send, and nghttp3 will
+    // call back into this state with its raw pointer while it does.
+    session->mark_completed_response_stream(stream_id, std::move(retained_state));
   }
   return 0;
 }
@@ -688,6 +716,22 @@ progress_http3_ingress(H3Session &session)
   return zret;
 }
 
+/** Return whether the QUIC connection has been closed.
+ *
+ * @param[in] session The session whose connection to inspect.
+ * @return Whether the connection is closed, by either peer.
+ */
+bool
+quic_connection_is_closed(H3Session const &session)
+{
+  auto *connection = session.quic_socket.connection;
+  if (connection == nullptr) {
+    return true;
+  }
+  SSL_CONN_CLOSE_INFO close_info{};
+  return SSL_get_conn_close_info(connection, &close_info, sizeof(close_info)) == 1;
+}
+
 swoc::Rv<bool>
 progress_http3(H3Session &session, milliseconds timeout)
 {
@@ -901,7 +945,7 @@ H3Session::H3Session(TextView const &client_sni, int client_verify_mode)
 
 H3Session::~H3Session()
 {
-  m_last_added_stream.reset();
+  m_completed_response_streams.clear();
   quic_socket.reset();
 }
 
@@ -954,6 +998,84 @@ H3Session::pack_headers(HttpHeader const &hdr, nghttp3_nv *&nv_hdr, int &hdr_cou
   return errata;
 }
 
+Errata
+H3Session::content_delay(H3StreamState &stream_state)
+{
+  Errata errata;
+
+  auto const content_delay = stream_state.content_delay;
+  auto const stream_id = stream_state.get_stream_id();
+  errata.note(
+      S_DIAG,
+      "Delaying the body for key {} of stream id {} per the content delay specification: {}.",
+      stream_state.key,
+      stream_id,
+      duration_cast<milliseconds>(content_delay));
+  // Make sure the diagnostic for the delay is emitted before the body.
+  errata.sink();
+
+  auto const deadline = ClockType::now() + content_delay;
+  for (auto remaining = content_delay; remaining > 0us;
+       remaining = duration_cast<chrono::microseconds>(deadline - ClockType::now()))
+  {
+    // Service the connection in bounded slices so its timers keep running and
+    // shutdown requests stay responsive, and so a sub-millisecond remainder
+    // does not spin. The body itself stays withheld: the data reader reports
+    // NGHTTP3_ERR_WOULDBLOCK while content_delay is set.
+    auto const slice =
+        std::clamp(duration_cast<milliseconds>(remaining), 1ms, Content_Delay_Service_Interval);
+    auto &&[progressed, progress_errata] = progress_http3(*this, slice);
+    static_cast<void>(progressed);
+    errata.note(std::move(progress_errata));
+    if (!errata.is_ok()) {
+      if (!quic_connection_is_closed(*this)) {
+        // A protocol or TLS failure is a genuine replay failure and has to keep
+        // its severity.
+        errata.note(
+            S_ERROR,
+            "Failed to service the HTTP/3 connection during the content delay for key {}.",
+            stream_state.key);
+        break;
+      }
+      // A peer which gives up during the delay is the expected outcome for some
+      // replay files, so make the connection between the two explicit rather
+      // than reporting a bare I/O failure.
+      errata.sink();
+      errata.note(
+          S_DIAG,
+          "The peer closed the connection or stopped responding during the content delay of {} "
+          "for key {}.",
+          duration_cast<milliseconds>(content_delay),
+          stream_state.key);
+      break;
+    }
+    if (shutdown_requested()) {
+      errata.note(
+          S_DIAG,
+          "Shutdown was requested during the content delay for key {}.",
+          stream_state.key);
+      break;
+    }
+  }
+  // This wait was asked for by the replay file, so it does not count against
+  // Transaction_Delay_Cutoff.
+  stream_state.content_delay_served += content_delay;
+
+  // Let the body flow again regardless of how the delay ended. If the peer is
+  // gone the write simply fails and is reported by the caller.
+  stream_state.content_delay = 0us;
+  if (auto const rv = nghttp3_conn_resume_stream(quic_socket.h3conn, stream_id); rv != 0) {
+    errata.note(
+        S_ERROR,
+        "Failed to resume the HTTP/3 body for key {} on stream {} after the content delay: {} ({})",
+        stream_state.key,
+        stream_id,
+        nghttp3_error(rv),
+        rv);
+  }
+  return errata;
+}
+
 swoc::Rv<ssize_t>
 H3Session::write(HttpHeader const &hdr)
 {
@@ -961,6 +1083,13 @@ H3Session::write(HttpHeader const &hdr)
   auto const key = hdr.get_key();
   H3StreamState *stream_state = nullptr;
   std::shared_ptr<H3StreamState> new_stream_state;
+  /** A reference held for the duration of this write.
+   *
+   * Servicing the connection, which happens during a content delay, can retire
+   * a stream from the stream map. Holding a reference keeps @a stream_state
+   * valid until this write is finished with it.
+   */
+  std::shared_ptr<H3StreamState> stream_state_reference;
   int64_t stream_id = 0;
 
   if (hdr.is_response()) {
@@ -970,7 +1099,8 @@ H3Session::write(HttpHeader const &hdr)
       zret.note(S_ERROR, "Could not find registered stream for stream id: {}", stream_id);
       return zret;
     }
-    stream_state = spot->second.get();
+    stream_state_reference = spot->second;
+    stream_state = stream_state_reference.get();
   } else {
     auto &&[stream, stream_errata] = quic_socket.open_stream(!UNIDIRECTIONAL);
     zret.note(std::move(stream_errata));
@@ -981,6 +1111,9 @@ H3Session::write(HttpHeader const &hdr)
     stream_id = static_cast<int64_t>(SSL_get_stream_id(stream));
     new_stream_state = std::make_shared<H3StreamState>(hdr.is_request());
     stream_state = new_stream_state.get();
+    // See the comment on this member: this has to happen before any of the
+    // request is written.
+    stream_state->specified_response = m_specified_response_for_next_request;
     stream_state->set_stream_id(stream_id);
     record_stream_state(stream_id, new_stream_state);
   }
@@ -1006,6 +1139,9 @@ H3Session::write(HttpHeader const &hdr)
     nghttp3_data_reader data_reader{.read_data = cb_h3_readfunction};
     stream_state->body_to_send = content;
     stream_state->wait_for_continue = hdr.is_request_with_expect_100_continue();
+    // A request awaiting a 100 Continue has no body to write at this point, so
+    // there is nothing to hold back. This matches the HTTP/1 write path.
+    stream_state->content_delay = stream_state->wait_for_continue ? 0us : hdr._content_delay;
     if (hdr.is_response()) {
       submit_result = nghttp3_conn_submit_response(
           quic_socket.h3conn,
@@ -1059,6 +1195,18 @@ H3Session::write(HttpHeader const &hdr)
 
   if (zret.is_ok()) {
     zret.errata().sink();
+    auto &&[progressed, progress_errata] = progress_http3(*this, 0ms);
+    static_cast<void>(progressed);
+    zret.note(std::move(progress_errata));
+  }
+  if (zret.is_ok() && stream_state->content_delay > 0us) {
+    // The headers are on the wire and the body was withheld from nghttp3. Wait
+    // out the content delay and then let the body follow.
+    zret.note(content_delay(*stream_state));
+    if (zret.is_ok()) {
+      // Make sure the logging of the delay is emitted before the body.
+      zret.errata().sink();
+    }
     auto &&[progressed, progress_errata] = progress_http3(*this, 0ms);
     static_cast<void>(progressed);
     zret.note(std::move(progress_errata));
@@ -1377,14 +1525,15 @@ H3Session::get_a_stream_has_ended() const
 void
 H3Session::record_stream_state(int64_t stream_id, std::shared_ptr<H3StreamState> stream_state)
 {
-  stream_map.emplace(stream_id, stream_state);
-  m_last_added_stream = std::move(stream_state);
+  stream_map.emplace(stream_id, std::move(stream_state));
 }
 
 void
-H3Session::mark_completed_response_stream(int64_t stream_id)
+H3Session::mark_completed_response_stream(
+    int64_t stream_id,
+    std::shared_ptr<H3StreamState> stream_state)
 {
-  m_completed_response_streams.insert(stream_id);
+  m_completed_response_streams.insert_or_assign(stream_id, std::move(stream_state));
 }
 
 bool
@@ -1517,12 +1666,15 @@ Errata
 H3Session::run_transaction(Txn const &transaction)
 {
   Errata errata;
+  // Register the expected response before the request is written. write()
+  // services incoming packets while it waits out a content delay, so a response
+  // which arrives ahead of the delayed request body has to find the expected
+  // response already attached to its stream.
+  m_specified_response_for_next_request = &transaction._rsp;
   auto &&[bytes_written, write_errata] = write(transaction._req);
+  m_specified_response_for_next_request = nullptr;
   static_cast<void>(bytes_written);
   errata.note(std::move(write_errata));
-  if (m_last_added_stream != nullptr) {
-    m_last_added_stream->specified_response = &transaction._rsp;
-  }
   return errata;
 }
 

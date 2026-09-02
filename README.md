@@ -27,6 +27,7 @@ Table of Contents
       * [Protocol Specification](#protocol-specification)
          * [PROXY protocol support](#proxy-protocol-support)
       * [Session and Transaction Delay Specification](#session-and-transaction-delay-specification)
+      * [Content Delay Specification](#content-delay-specification)
       * [Keep Connection Open](#keep-connection-open)
    * [Traffic Verification Specification](#traffic-verification-specification)
       * [Request Presence Verification](#request-presence-verification)
@@ -970,6 +971,59 @@ networks anything more precise than a millisecond will not generally be useful.
 
 See also [--rate &lt;requests/second&gt;](#--rate-requestssecond) below for
 rate specification of transactions.
+
+### Content Delay Specification
+
+The `delay` node described above is applied before a message is sent. To pause
+in the middle of a message instead, a `delay` node can be placed inside a
+`content` node. The message headers are written, the delay is inserted, and
+only then is the body written. This is useful for exercising how a proxy
+handles an origin which starts a response and then stalls, such as verifying
+that the proxy's timeouts fire at the point they should.
+
+```YAML
+  server-response:
+    status: 200
+    reason: OK
+    headers:
+      fields:
+      - [ Content-Length, '3432' ]
+    content:
+      size: 3432
+      delay: 5s
+```
+
+The value uses the same unit-suffixed duration format described in [Session and
+Transaction Delay Specification](#session-and-transaction-delay-specification).
+
+This works for HTTP/1.x, HTTP/2, and HTTP/3. For HTTP/1.x and HTTP/2 it applies
+to both request and response bodies. Proxy Verifier does not implement
+server-side HTTP/3, so over HTTP/3 only a request body can carry a content
+delay. For HTTP/2 and HTTP/3 the headers are put on the wire in their `HEADERS`
+frame, the body is withheld from the protocol library for the duration of the
+delay, and the stream is then resumed so the body follows in its own `DATA`
+frame.
+
+Be aware of the following characteristics of a `content` `delay` node:
+
+* An HTTP/2 message with an explicit `frames` node expresses the same behavior
+  with a `delay` on its `DATA` frame (see [HEADERS and DATA
+  frame](#headers-and-data-frame)). Specifying a `content` `delay` in a message
+  which also has a `frames` node is therefore rejected as a replay file error.
+* A `content` `delay` composes with a transaction `delay`. A transaction which
+  specifies both waits before its headers and again before its body.
+* Incoming traffic continues to be processed during an HTTP/2 or HTTP/3 content
+  delay, so flow control and other peer-initiated frames are not stalled behind
+  it. The HTTP/1.x delay is a plain wait, since there is nothing to multiplex.
+* For HTTP/1.x, the delay is inserted whenever a body write follows the headers,
+  including when that body is empty. For HTTP/2 and HTTP/3 there is no `DATA`
+  frame to hold back when the body is empty, so the delay is not inserted.
+* The delay is not inserted for a request carrying `Expect: 100-continue`, since
+  no body is written at that point.
+* If the peer closes the connection during the delay, which is the expected
+  outcome when the delay is being used to trigger a proxy timeout, the
+  subsequent body write fails and is reported. This does not by itself cause
+  the Verifier server to exit with a non-zero status.
 
 ### Keep Connection Open
 

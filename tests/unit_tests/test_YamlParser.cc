@@ -393,6 +393,73 @@ TEST_CASE("Verify server-response validation for on_connect", "[on_connect]")
   }
 }
 
+TEST_CASE("Verify content delay parsing", "[content_delay]")
+{
+  LocalizerPhaseGuard localizer_phase;
+
+  SECTION("A content delay is parsed")
+  {
+    auto const node = YAML::Load(R"(
+status: 200
+content:
+  size: 10
+  delay: 700ms
+)");
+    HttpHeader response{true};
+    response.set_is_response();
+    CHECK(YamlParser::populate_http_message(node, response).is_ok());
+    CHECK(response._content_delay == 700ms);
+  }
+
+  SECTION("A content delay on a request is parsed")
+  {
+    auto const node = YAML::Load(R"(
+method: POST
+url: /a/path
+content:
+  size: 10
+  delay: 250ms
+)");
+    HttpHeader request{true};
+    request.set_is_request();
+    CHECK(YamlParser::populate_http_message(node, request).is_ok());
+    CHECK(request._content_delay == 250ms);
+  }
+
+  SECTION("A malformed content delay fails parsing")
+  {
+    auto const node = YAML::Load(R"(
+status: 200
+content:
+  size: 10
+  delay: 5parsecs
+)");
+    HttpHeader response{true};
+    response.set_is_response();
+    CHECK_FALSE(YamlParser::populate_http_message(node, response).is_ok());
+    CHECK(response._content_delay == 0us);
+  }
+
+  SECTION("A content delay alongside a DATA frame is rejected")
+  {
+    auto const node = YAML::Load(R"(
+status: 200
+content:
+  size: 10
+  delay: 5s
+frames:
+  - HEADERS:
+  - DATA:
+      content:
+        size: 10
+)");
+    HttpHeader response{true};
+    response.set_is_response();
+    CHECK_FALSE(YamlParser::populate_http_message(node, response).is_ok());
+    CHECK(response._content_delay == 0us);
+  }
+}
+
 TEST_CASE("Verify proxy-request expectations parse correctly", "[yaml]")
 {
   LocalizerPhaseGuard localizer_phase;

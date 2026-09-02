@@ -86,6 +86,35 @@ class Http2ConnectionManager(object):
         self.downstream_closed = True
         self.sock.close()
 
+    def _send_early_response(self, request_headers, stream_id):
+        """
+        Serve an EarlyResponse directive as soon as the request headers arrive.
+
+        The response is sent before the request body is received, which is how a
+        peer that answers ahead of a delayed request body is simulated.
+
+        Args:
+            request_headers: The received request headers, pseudo-headers included.
+            stream_id: The stream of the request.
+
+        Returns:
+            Whether an early response was sent.
+        """
+        _, regular_headers = self.split_headers(request_headers)
+        early_response = DirectiveEngine(regular_headers).get_early_response()
+        if early_response is None:
+            return False
+        status, reason = early_response
+        request_id = regular_headers.get('uuid', '<unknown>')
+        print(f"Serving early response for key {request_id} before the request body: "
+              f"{status} {reason}.")
+        self.listening_conn.send_headers(stream_id, [
+            (':status', str(status)),
+            ('content-length', '0'),
+        ], end_stream=True)
+        self.sock.sendall(self.listening_conn.data_to_send())
+        return True
+
     def run_forever(self):
         self.listening_conn.initiate_connection()
 
@@ -104,6 +133,7 @@ class Http2ConnectionManager(object):
         stream_id_list = set()
         frame_sequences = {}
         resp_from_server = {}
+        early_responded_streams = set()
         while True:
             try:
                 data = self.sock.recv(65535)
@@ -163,6 +193,8 @@ class Http2ConnectionManager(object):
                     if isinstance(event, RequestReceived):
                         frame_seq.append('HEADERS')
                         request_info._headers = event.headers
+                        if self._send_early_response(event.headers, stream_id):
+                            early_responded_streams.add(stream_id)
 
                     if isinstance(event, StreamReset):
                         frame_seq.append('RST_STREAM')
@@ -173,7 +205,8 @@ class Http2ConnectionManager(object):
                         print(
                             f'Received RST_STREAM frame with error code {err} on stream {event.stream_id}.'
                         )
-                        if stream_id not in resp_from_server.keys():
+                        if (stream_id not in resp_from_server.keys()
+                                and stream_id not in early_responded_streams):
                             ret_vals = self.request_received(request_info._headers,
                                                              request_info._body_bytes, stream_id)
                             if ret_vals is not None:
@@ -182,7 +215,8 @@ class Http2ConnectionManager(object):
                     if isinstance(event, StreamEnded):
                         print('StreamEnded')
                         stream_id_list.add(stream_id)
-                        if stream_id not in resp_from_server.keys():
+                        if (stream_id not in resp_from_server.keys()
+                                and stream_id not in early_responded_streams):
                             ret_vals = self.request_received(request_info._headers,
                                                              request_info._body_bytes, stream_id)
                             if ret_vals is not None:

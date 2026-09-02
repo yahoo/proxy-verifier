@@ -135,6 +135,25 @@ public:
   bool wait_for_continue = false;    ///< Whether the request waits for a 100 response.
   size_t num_data_bytes_written = 0; ///< Unacknowledged DATA payload bytes.
 
+  /** How long to wait after the HEADERS frame is on the wire before the DATA
+   * frame is sent.
+   *
+   * This is the @c content @c delay of the message being written. It is zero
+   * for messages which do not specify one. While it is non-zero the nghttp3
+   * data reader reports that it would block so that only the HEADERS frame is
+   * flushed. H3Session::write zeroes it and resumes the stream once the delay
+   * has elapsed.
+   */
+  std::chrono::microseconds content_delay{0};
+
+  /** How long this stream has spent waiting out a @c content @c delay.
+   *
+   * The wait was asked for by the replay file, so it is subtracted from the
+   * measured stream duration before that duration is compared against
+   * @c Transaction_Delay_Cutoff.
+   */
+  std::chrono::microseconds content_delay_served{0};
+
 private:
   bool m_will_receive_request = false;
   int64_t m_stream_id = 0;
@@ -231,9 +250,18 @@ public:
 
   /** Remember a response finalized before its close callback.
    *
+   * nghttp3 keeps a raw pointer to the stream state as its stream user data and
+   * hands it back to the data reader. The stream is dropped from @a stream_map
+   * as soon as the peer ends its half of it, which can happen while our own
+   * body is still queued behind a content delay or flow control, so ownership
+   * is parked here until nghttp3 reports the stream closed.
+   *
    * @param[in] stream_id The stream identifier.
+   * @param[in] stream_state The state to retain until the close callback.
    */
-  void mark_completed_response_stream(int64_t stream_id);
+  void mark_completed_response_stream(
+      int64_t stream_id,
+      std::shared_ptr<H3StreamState> stream_state);
 
   /** Remove a remembered finalized response stream.
    *
@@ -269,14 +297,38 @@ private:
   swoc::Errata client_ssl_session_init(SSL_CTX *client_context);
   swoc::Errata initialize_http3_connection();
   swoc::Errata receive_responses();
+
+  /** Wait out the @c content @c delay of a message whose body is withheld.
+   *
+   * The connection is serviced for the duration of the wait so that incoming
+   * packets, including a peer closing the connection, are processed rather than
+   * stalled behind the delay.
+   *
+   * @param[in,out] stream_state The stream whose body is withheld. Its
+   * @c content_delay is zeroed and the stream resumed before returning.
+   *
+   * @return Any errata from servicing the connection during the delay.
+   */
+  swoc::Errata content_delay(H3StreamState &stream_state);
+
   bool request_has_outstanding_stream_dependencies(HttpHeader const &request) const;
 
 private:
   std::deque<int64_t> m_ended_streams;
   swoc::IPEndpoint const *m_endpoint = nullptr;
-  std::shared_ptr<H3StreamState> m_last_added_stream;
   std::unordered_set<std::string> m_finished_streams;
-  std::unordered_set<int64_t> m_completed_response_streams;
+
+  /// Streams finalized on their end-stream callback, held until they are closed.
+  std::unordered_map<int64_t, std::shared_ptr<H3StreamState>> m_completed_response_streams;
+
+  /** The expected response to attach to the next request stream @c write creates.
+   *
+   * @c write services incoming packets while it holds a content delay, so the
+   * expected response has to be on the stream before the request headers go out
+   * rather than after @c write returns. Otherwise a response which arrives
+   * ahead of the delayed request body is not verified against.
+   */
+  HttpHeader const *m_specified_response_for_next_request = nullptr;
 
   static SSL_CTX *m_h3_client_context;
   static SSL_CTX *m_h3_server_context;

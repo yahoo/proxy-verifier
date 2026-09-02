@@ -8,6 +8,14 @@
 #include "catch.hpp"
 #include "core/http.h"
 
+#include <chrono>
+#include <string>
+#include <thread>
+#include <sys/socket.h>
+#include <unistd.h>
+
+using namespace std::literals;
+
 struct ParseUrlTestCase
 {
   std::string const description;
@@ -371,4 +379,124 @@ TEST_CASE(
       "Shutdown occurred");
 
   CHECK_FALSE(errata.is_ok());
+}
+
+namespace
+{
+/// The generated body size used by the content delay tests.
+constexpr size_t CONTENT_DELAY_BODY_SIZE = 16;
+
+/// The content delay used by the content delay tests. This is long enough to
+/// be distinguishable from scheduling jitter but short enough to keep the unit
+/// tests fast.
+constexpr auto CONTENT_DELAY_DURATION = std::chrono::milliseconds{300};
+
+/// The observed arrival times of the two halves of an HTTP/1 response.
+struct ResponseArrival
+{
+  /// How long after the write began the end of the headers was observed.
+  std::chrono::steady_clock::duration headers;
+  /// How long after the write began the last body byte was observed.
+  std::chrono::steady_clock::duration body;
+};
+
+/** Build a minimal HTTP/1 response with a generated body.
+ *
+ * @param[in] content_delay The delay to apply between the headers and the body.
+ * @return A response ready to be handed to @c Session::write.
+ */
+HttpHeader
+make_content_delay_response(std::chrono::microseconds content_delay)
+{
+  HttpHeader response;
+  response.set_is_http1();
+  response.set_is_response();
+  response.set_key("content-delay-key");
+  response._http_version = "1.1";
+  response._status = 200;
+  response._reason = "OK";
+  response._content_length = CONTENT_DELAY_BODY_SIZE;
+  response._content_length_p = true;
+  response._content_delay = content_delay;
+  response._fields_rules->add_field("Content-Length", "16");
+  return response;
+}
+
+/** Write a response to one end of a socket pair and time its arrival.
+ *
+ * The response is written from a separate thread so the reader can observe
+ * when the headers arrive relative to the body.
+ *
+ * @param[in] content_delay The content delay to apply to the response.
+ * @return When the headers and the body were observed by the peer.
+ */
+ResponseArrival
+time_response_arrival(std::chrono::microseconds content_delay)
+{
+  int fd_pair[2];
+  REQUIRE(::socketpair(AF_UNIX, SOCK_STREAM, 0, fd_pair) == 0);
+
+  Session session;
+  REQUIRE(session.set_fd(fd_pair[0]).is_ok());
+
+  auto const response = make_content_delay_response(content_delay);
+  auto const start_time = std::chrono::steady_clock::now();
+
+  swoc::Rv<ssize_t> write_result{0};
+  std::thread writer{
+      [&session, &response, &write_result]() { write_result = session.write(response); }};
+
+  std::string received;
+  ResponseArrival arrival{};
+  constexpr swoc::TextView HEADER_TERMINATOR = "\r\n\r\n";
+  size_t expected_total = 0;
+  while (true) {
+    char buffer[256];
+    auto const n = ::read(fd_pair[1], buffer, sizeof(buffer));
+    REQUIRE(n > 0);
+    received.append(buffer, n);
+
+    if (arrival.headers == std::chrono::steady_clock::duration::zero()) {
+      if (auto const header_end = received.find(HEADER_TERMINATOR); header_end != std::string::npos)
+      {
+        arrival.headers = std::chrono::steady_clock::now() - start_time;
+        expected_total = header_end + HEADER_TERMINATOR.size() + CONTENT_DELAY_BODY_SIZE;
+      }
+    }
+    if (expected_total != 0 && received.size() >= expected_total) {
+      arrival.body = std::chrono::steady_clock::now() - start_time;
+      break;
+    }
+  }
+
+  writer.join();
+  CHECK(write_result.is_ok());
+  CHECK(write_result.result() == static_cast<ssize_t>(expected_total));
+
+  session.close();
+  ::close(fd_pair[1]);
+  return arrival;
+}
+} // namespace
+
+TEST_CASE("Verify the HTTP/1 write path honors a content delay", "[content_delay]")
+{
+  HttpHeader::global_init();
+  HttpHeader::set_max_content_length(CONTENT_DELAY_BODY_SIZE);
+
+  SECTION("A response without a content delay sends its body immediately")
+  {
+    auto const arrival = time_response_arrival(0us);
+
+    CHECK(arrival.headers < CONTENT_DELAY_DURATION);
+    CHECK(arrival.body < CONTENT_DELAY_DURATION);
+  }
+
+  SECTION("A response with a content delay sends its headers before waiting")
+  {
+    auto const arrival = time_response_arrival(CONTENT_DELAY_DURATION);
+
+    CHECK(arrival.headers < CONTENT_DELAY_DURATION);
+    CHECK(arrival.body >= CONTENT_DELAY_DURATION);
+  }
 }

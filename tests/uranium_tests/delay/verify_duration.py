@@ -23,8 +23,10 @@ def line_has_timing_data(line):
     True
     >>> line_has_timing_data(r' [1]: 2 transactions in 2 sessions (reuse 1) in 1790 milliseconds (0.1 / millisecond).\\n')
     True
+    >>> line_has_timing_data(' [1]: 1 transaction in 1 session (reuse 1) in 732 milliseconds (0.1 / millisecond).')
+    True
     """
-    line_matcher = re.compile('.*transactions in .* sessions .* in .* milliseconds.*')
+    line_matcher = re.compile('.*transactions? in .* sessions? .* in .* milliseconds.*')
     return line_matcher.match(line) is not None
 
 

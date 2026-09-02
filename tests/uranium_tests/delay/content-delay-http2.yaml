@@ -1,0 +1,84 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+    version: '1.0'
+
+# Verify the handling of a "delay" node inside a "content" node for HTTP/2. The
+# headers are sent in their HEADERS frame, the delay is inserted, and the body
+# then follows in its DATA frame. Both directions are covered: a delayed
+# response body from the Verifier server and a delayed request body from the
+# Verifier client.
+
+sessions:
+
+- protocol:
+    stack: http2
+    tls:
+      sni: test_sni
+
+  transactions:
+
+  #
+  # A response body delayed by 700 ms behind the response headers.
+  #
+  - client-request:
+      headers:
+        fields:
+        - [ :method, GET ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ uuid, http2-delayed-response-body ]
+
+    proxy-request:
+      url:
+      - [ path, { value: flower.jpeg, as: contains } ]
+
+    server-response:
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+        - [ Content-Type, image/jpeg ]
+      content:
+        size: 3432
+        delay: 700ms
+
+    proxy-response:
+      status: 200
+
+  #
+  # A request body delayed by 700 ms behind the request headers.
+  #
+  - client-request:
+      headers:
+        fields:
+        - [ :method, POST ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/rose.jpeg ]
+        - [ Content-Type, image/jpeg ]
+        - [ uuid, http2-delayed-request-body ]
+      content:
+        size: 399
+        delay: 700ms
+
+    proxy-request:
+      url:
+      - [ path, { value: rose.jpeg, as: contains } ]
+
+    server-response:
+      headers:
+        fields:
+        - [ :status, 200 ]
+        - [ Date, "Sat, 16 Mar 2019 03:11:36 GMT" ]
+        - [ Content-Type, image/jpeg ]
+      content:
+        size: 32
+
+    proxy-response:
+      status: 200

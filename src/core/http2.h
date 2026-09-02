@@ -66,6 +66,26 @@ public:
   bool _wait_for_continue = false;
   bool _last_data_frame = false;
   bool _wait_for_response_after_100_continue = false;
+
+  /** How long to wait after the HEADERS frame is on the wire before the DATA
+   * frame is sent.
+   *
+   * This is the @c content @c delay of the message being written. It is zero
+   * for messages which do not specify one. While it is non-zero the nghttp2
+   * data source read callback defers the DATA frame so that nghttp2 flushes the
+   * HEADERS frame and stops. H2Session::write zeroes it and resumes the stream
+   * once the delay has elapsed.
+   */
+  std::chrono::microseconds _content_delay{0};
+
+  /** How long this stream has spent waiting out a @c content @c delay.
+   *
+   * The wait was asked for by the replay file, so it is subtracted from the
+   * measured stream duration before that duration is compared against
+   * @c Transaction_Delay_Cutoff.
+   */
+  std::chrono::microseconds _content_delay_served{0};
+
   std::string _key;
 
   nghttp2_nv *_trailer_to_send = nullptr;
@@ -198,6 +218,16 @@ public:
   /// A mapping from stream_id to H2StreamState.
   std::unordered_map<int32_t, std::shared_ptr<H2StreamState>> _stream_map;
 
+  /** Stream states retired from @a _stream_map which nghttp2 has not closed yet.
+   *
+   * nghttp2 keeps a raw pointer to the stream state as its stream user data and
+   * hands it back to the data source read callback. A stream is dropped from
+   * @a _stream_map as soon as the peer ends its half of it, which can happen
+   * while our own body is still queued behind a content delay or flow control,
+   * so ownership is parked here until nghttp2 reports the stream closed.
+   */
+  std::unordered_map<int32_t, std::shared_ptr<H2StreamState>> _retired_stream_map;
+
 protected:
   static swoc::Errata client_init(SSL_CTX *&client_context);
   static swoc::Errata server_init(SSL_CTX *&server_context);
@@ -226,6 +256,20 @@ private:
   bool request_has_outstanding_stream_dependencies(HttpHeader const &request) const;
 
   swoc::Errata frame_delay(HttpHeader const &hdr, H2Frame curr_frame);
+
+  /** Wait out the @c content @c delay of a message whose DATA frame is deferred.
+   *
+   * The session is serviced for the duration of the wait so that incoming
+   * frames, including a peer closing the connection, are processed rather than
+   * stalled behind the delay.
+   *
+   * @param[in,out] stream_state The stream whose DATA frame is deferred. Its
+   * @c _content_delay is zeroed and the stream resumed before returning.
+   *
+   * @return Any errata from servicing the session during the delay.
+   */
+  swoc::Errata content_delay(H2StreamState &stream_state);
+
   swoc::Errata submit_headers_frame(
       HttpHeader const &hdr,
       H2StreamState *stream_state,
@@ -249,7 +293,15 @@ private:
   bool _h2_is_negotiated = false;
 
   std::deque<int32_t> _ended_streams;
-  std::shared_ptr<H2StreamState> _last_added_stream;
+
+  /** The expected response to attach to the next request stream @c write creates.
+   *
+   * @c write services incoming frames while it holds a content delay, so the
+   * expected response has to be on the stream before the request headers go out
+   * rather than after @c write returns. Otherwise a response which arrives
+   * ahead of the delayed request body is not verified against.
+   */
+  HttpHeader const *_specified_response_for_next_request = nullptr;
 
 #ifndef OPENSSL_NO_NEXTPROTONEG
   static unsigned char next_proto_list[256];

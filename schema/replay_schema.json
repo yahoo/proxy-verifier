@@ -96,6 +96,10 @@
             "data": {
               "description": "Content data.",
               "type": "string"
+            },
+            "delay": {
+              "description": "Time to wait after writing the headers and before writing the body, such as '5s', '250ms', or '17000us'. Cannot be combined with a 'frames' node.",
+              "type": "string"
             }
           }
         },
@@ -111,6 +115,10 @@
             "size": {
               "description": "Size of the payload in bytes.",
               "type": "number"
+            },
+            "delay": {
+              "description": "Time to wait after writing the headers and before writing the body, such as '5s', '250ms', or '17000us'. Cannot be combined with a 'frames' node.",
+              "type": "string"
             }
           }
         }

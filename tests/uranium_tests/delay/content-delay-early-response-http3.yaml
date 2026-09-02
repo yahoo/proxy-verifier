@@ -1,0 +1,43 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+    version: '1.0'
+
+# The HTTP/3 counterpart of content-delay-early-response-http2.yaml: a response
+# which arrives while the Verifier client is holding a request body behind a
+# "content" "delay" has to be verified against. The Content-Length rule below
+# is what detects a skipped verification: it is reported as never processed if
+# the response is not verified against.
+
+sessions:
+
+- protocol:
+    stack: http3
+    tls:
+      sni: test_sni
+
+  transactions:
+
+  - client-request:
+      headers:
+        fields:
+        - [ :method, POST ]
+        - [ :scheme, https ]
+        - [ :authority, www.example.com ]
+        - [ :path, /pictures/flower.jpeg ]
+        - [ Content-Type, image/jpeg ]
+        - [ X-Proxy-Directive, "EarlyResponse=%<413%>" ]
+        - [ uuid, http3-early-response ]
+      content:
+        size: 399
+        delay: 700ms
+
+    proxy-response:
+      status: 413
+      headers:
+        fields:
+        - [ Content-Length, { value: '0', as: equal } ]
