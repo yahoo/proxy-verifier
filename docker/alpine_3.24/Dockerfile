@@ -24,6 +24,7 @@ RUN apk add --no-cache \
   gcompat \
   git \
   libffi-dev \
+  liburing-dev \
   linux-headers \
   nghttp2-dev \
   nghttp2-static \

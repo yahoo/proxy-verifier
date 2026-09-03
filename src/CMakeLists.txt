@@ -15,6 +15,7 @@ set(PV_CORE_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/core/Localizer.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/ProxyVerifier.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/proxy_protocol_util.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/socket_io.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/verification.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/YamlParser.cc")
 
@@ -29,7 +30,11 @@ target_compile_definitions(verifier-core
 target_include_directories(verifier-core PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(
   verifier-core PUBLIC Threads::Threads libswoc-static yaml-cpp::yaml-cpp
-                       ${PV_HTTP_DEPENDENCY_TARGETS})
+                       ${PV_HTTP_DEPENDENCY_TARGETS} ${PV_IO_URING_TARGET})
+
+if(PV_IO_URING_TARGET)
+  target_compile_definitions(verifier-core PRIVATE PV_HAVE_LIBURING=1)
+endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_link_libraries(verifier-core PUBLIC stdc++fs)

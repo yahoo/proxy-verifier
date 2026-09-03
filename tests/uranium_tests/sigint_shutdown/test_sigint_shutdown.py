@@ -16,7 +16,10 @@ verifier_script = 'verify_sigint_shutdown.py'
 case = suite.case("Verify verifier-server exits promptly on SIGINT during replay.")
 process = case.add_process(
     "server-sigint",
-    ["python3", verifier_script, "--mode", "server", "--verifier-server", "{verifier-server}"],
+    [
+        "python3", verifier_script, "--mode", "server", "--verifier-server", "{verifier-server}",
+        "--io-uring", "{verifier-io-uring}"
+    ],
     copies=[verifier_script],
 )
 process.stdout.contains(
@@ -26,7 +29,10 @@ process.stdout.contains(
 case = suite.case("Verify verifier-client exits promptly on SIGINT during replay.")
 process = case.add_process(
     "client-sigint",
-    ["python3", verifier_script, "--mode", "client", "--verifier-client", "{verifier-client}"],
+    [
+        "python3", verifier_script, "--mode", "client", "--verifier-client", "{verifier-client}",
+        "--io-uring", "{verifier-io-uring}"
+    ],
     copies=[verifier_script],
 )
 process.stdout.contains(

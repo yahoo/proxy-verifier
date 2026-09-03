@@ -38,6 +38,7 @@ apt-get install -y --no-install-recommends \
   libnghttp2-dev \
   libnghttp3-dev \
   libssl-dev \
+  liburing-dev \
   libzstd-dev \
   lbzip2 \
   pkg-config \

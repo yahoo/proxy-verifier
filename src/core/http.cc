@@ -6,6 +6,7 @@
  */
 
 #include "core/http.h"
+#include "core/socket_io.h"
 #include "core/verification.h"
 #include "core/ProxyVerifier.h"
 
@@ -1423,9 +1424,7 @@ Session::poll_for_data_on_socket(chrono::milliseconds timeout, short events)
   if (is_closed()) {
     return {-1, Errata(S_DIAG, "Poll called on a closed connection.")};
   }
-  auto const timeout_ms = std::max<chrono::milliseconds::rep>(timeout.count(), 0);
-  struct pollfd pfd = {.fd = _fd, .events = events, .revents = 0};
-  return ::poll(&pfd, 1, timeout_ms);
+  return poll_for_socket_io(_fd, timeout, events);
 }
 
 swoc::Rv<int>

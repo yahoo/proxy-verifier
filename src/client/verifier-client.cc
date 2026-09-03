@@ -12,6 +12,7 @@
 #include "core/https.h"
 #include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
+#include "core/socket_io.h"
 
 #include <atomic>
 #include <chrono>
@@ -747,6 +748,16 @@ Engine::parse_args()
   Errata errata;
   auto args{arguments.get("run")};
 
+  auto const io_uring_arg = arguments.get("io-uring");
+  auto &&[socket_io_backend, socket_io_errata] =
+      configure_socket_io(io_uring_arg ? io_uring_arg[0] : "auto");
+  static_cast<void>(socket_io_backend);
+  errata.note(std::move(socket_io_errata));
+  if (!errata.is_ok()) {
+    process_exit_code = 1;
+    return false;
+  }
+
   if (args.size() < 1) {
     errata.note(S_ERROR, R"("run" command requires a directory path as an argument.)");
     process_exit_code = 1;
@@ -1396,6 +1407,14 @@ main(int /* argc */, char const *argv[])
           "",
           1,
           "")
+      .add_option(
+          "--io-uring",
+          "",
+          "Select the socket readiness backend: auto, off, or required. "
+          "Default is auto.",
+          "",
+          1,
+          "auto")
       .add_option(
           "--keys",
           "-k",

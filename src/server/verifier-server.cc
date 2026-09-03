@@ -12,6 +12,7 @@
 #include "core/ProxyVerifier.h"
 #include "core/YamlParser.h"
 #include "core/proxy_protocol_util.h"
+#include "core/socket_io.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -814,12 +815,11 @@ void
 TF_Accept(int socket_fd, bool do_https, bool do_http3)
 {
   std::unique_ptr<Session> session;
-  struct pollfd pfd = {.fd = socket_fd, .events = POLLIN, .revents = 0};
 
   while (!Shutdown_Flag) {
     swoc::Errata errata;
     // Poll so that we can set a timeout and check whether the user requested a shutdown.
-    auto const poll_return = ::poll(&pfd, 1, Thread_Sleep_Interval.count());
+    auto const poll_return = poll_for_socket_io(socket_fd, Thread_Sleep_Interval, POLLIN);
     if (poll_return == 0) {
       // poll timed out.
       continue;
@@ -963,6 +963,16 @@ Engine::command_run()
     }
     Poll_Timeout = milliseconds(poll_timeout_arg_int);
     errata.note(S_DIAG, "Poll timeout set to {}ms.", poll_timeout_arg_int);
+
+    auto const io_uring_arg = arguments.get("io-uring");
+    auto &&[socket_io_backend, socket_io_errata] =
+        configure_socket_io(io_uring_arg ? io_uring_arg[0] : "auto");
+    static_cast<void>(socket_io_backend);
+    errata.note(std::move(socket_io_errata));
+    if (!errata.is_ok()) {
+      process_exit_code = 1;
+      return;
+    }
 
     auto server_addr_http_arg{arguments.get("listen-http")};
     auto server_addr_https_arg{arguments.get("listen-https")};
@@ -1324,6 +1334,14 @@ main(int /* argc */, char const *argv[])
           "",
           1,
           "")
+      .add_option(
+          "--io-uring",
+          "",
+          "Select the socket readiness backend: auto, off, or required. "
+          "Default is auto.",
+          "",
+          1,
+          "auto")
       .add_option(
           "--strict",
           "-s",
