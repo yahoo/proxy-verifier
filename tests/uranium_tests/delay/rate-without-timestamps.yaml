@@ -1,0 +1,143 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+#
+
+meta:
+    version: '1.0'
+
+# Five HTTP/1.1 sessions with no start-time nodes. Without session timing data,
+# --rate is honored by sleeping a uniform amount of time before each session.
+
+sessions:
+
+- transactions:
+
+  - client-request:
+      method: GET
+      url: /rate/1
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, www.example.com ]
+        - [ Content-Length, '0' ]
+        - [ uuid, rate-request-1 ]
+
+    proxy-request:
+      url:
+      - [ path, { value: /rate/1, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '16' ]
+
+    proxy-response:
+      status: 200
+
+- transactions:
+
+  - client-request:
+      method: GET
+      url: /rate/2
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, www.example.com ]
+        - [ Content-Length, '0' ]
+        - [ uuid, rate-request-2 ]
+
+    proxy-request:
+      url:
+      - [ path, { value: /rate/2, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '16' ]
+
+    proxy-response:
+      status: 200
+
+- transactions:
+
+  - client-request:
+      method: GET
+      url: /rate/3
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, www.example.com ]
+        - [ Content-Length, '0' ]
+        - [ uuid, rate-request-3 ]
+
+    proxy-request:
+      url:
+      - [ path, { value: /rate/3, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '16' ]
+
+    proxy-response:
+      status: 200
+
+- transactions:
+
+  - client-request:
+      method: GET
+      url: /rate/4
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, www.example.com ]
+        - [ Content-Length, '0' ]
+        - [ uuid, rate-request-4 ]
+
+    proxy-request:
+      url:
+      - [ path, { value: /rate/4, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '16' ]
+
+    proxy-response:
+      status: 200
+
+- transactions:
+
+  - client-request:
+      method: GET
+      url: /rate/5
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, www.example.com ]
+        - [ Content-Length, '0' ]
+        - [ uuid, rate-request-5 ]
+
+    proxy-request:
+      url:
+      - [ path, { value: /rate/5, as: equal } ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '16' ]
+
+    proxy-response:
+      status: 200

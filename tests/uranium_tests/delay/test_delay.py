@@ -284,6 +284,52 @@ client.stdout.excludes("Violation:", "The early response matches what the replay
 
 client.expect_return_codes(0)
 
+#
+# Test 13: Run timestamp-less sessions with --rate. Without session timing data
+# the client should sleep uniformly between sessions to achieve the rate.
+#
+case = suite.case("Verify --rate is honored for replays without session timing data.")
+# 5 transactions in 5 sessions at 4 transactions per second calls for a 250 ms
+# sleep before each session.
+rate_args = "--rate 4"
+client = case.add_client("client_rate_no_timestamps", "rate-without-timestamps.yaml",
+                         other_args=rate_args)
+server = case.add_server("server_rate_no_timestamps", "rate-without-timestamps.yaml")
+
+proxy = case.add_proxy("proxy_rate_no_timestamps", listen_port=client.http_port,
+                       server_port=server.http_port)
+
+server.stdout.contains("Ready with 5 transactions.",
+                       "The server should have parsed 5 transactions.")
+
+client.stdout.contains("per session sleep time: 250 ms",
+                       "The client should compute a per session sleep time from the rate.")
+
+client.stdout.contains(
+    "5 transactions in 5 sessions .* in .* milliseconds",
+    "The client should have reported running the transactions with timing data.")
+
+client.stdout.excludes("Violation:",
+                       "There should be no verification errors because there are none added.")
+
+server.stdout.excludes("Violation:",
+                       "There should be no verification errors because there are none added.")
+
+#
+# Test 14: Verify that the timing data indicates that the rate was honored.
+#
+case = suite.case("Verify the rate-limited replay took an expected amount of time to run.")
+client_output = client.stdout.path
+# Five 250 ms sleeps come to 1250 ms. Without the per session sleep the replay
+# would finish almost immediately.
+expected_min_delay_ms = "1250"
+process = case.add_process(
+    "verify-rate-no-timestamps",
+    ["python3", verifier_script, client_output, expected_min_delay_ms],
+    copies=[verifier_script],
+)
+process.stdout.contains('Good', 'The verifier script should report success.')
+
 
 def test_uranium_suite(uranium):
     uranium.run(suite)
