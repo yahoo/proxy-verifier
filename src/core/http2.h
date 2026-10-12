@@ -144,6 +144,12 @@ public:
    * an issue because bodies are explicitly framed.
    */
   swoc::Rv<int> poll_for_headers(std::chrono::milliseconds timeout) override;
+  /** @see Session::is_idle
+   *
+   * An HTTP/2 session is idle only with no open, ended, or retired streams
+   * and nothing queued for nghttp2 to write.
+   */
+  bool is_idle() const override;
   swoc::Rv<std::shared_ptr<HttpHeader>> read_and_parse_request(swoc::FixedBufferWriter &w) override;
   swoc::Rv<size_t> drain_body(
       HttpHeader const &hdr,

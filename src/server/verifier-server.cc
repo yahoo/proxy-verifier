@@ -20,9 +20,12 @@
 #include <cstring>
 #include <deque>
 #include <libgen.h>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -77,12 +80,19 @@ milliseconds Poll_Timeout{5s};
 class ServerThreadInfo : public ThreadInfo
 {
 public:
-  Session *m_session = nullptr;
   bool
   data_ready() override
   {
     return Shutdown_Flag || this->m_session;
   }
+
+public:
+  Session *m_session = nullptr;
+
+  /** Whether @a m_session is an established session returning from the
+   * IdleSessionParker, so its PROXY header and TLS handshake are already done.
+   */
+  bool m_session_is_resumed = false;
 };
 
 class ServerThreadPool : public ThreadPool
@@ -92,6 +102,208 @@ public:
 };
 
 ServerThreadPool Server_Thread_Pool;
+
+/** Hold idle keep-alive sessions without tying up a worker thread.
+ *
+ * Each worker serves one connection at a time. A proxy keeps pooled origin
+ * connections open between transactions, so without parking, idle pooled
+ * connections pin every worker and new connections wait in the listen
+ * backlog even though no work is being done. A worker hands a session to the
+ * parker once the session goes idle, and the parker hands it back to a
+ * worker when its socket becomes readable or closes.
+ *
+ * A session's round trip through the parker:
+ *
+ * 1. Parking. A worker waits for the next request in Thread_Sleep_Interval
+ *    polls. When a poll times out and Session::is_idle() holds (the socket is
+ *    open; for TLS, OpenSSL holds no decrypted bytes that poll(2) cannot see;
+ *    for HTTP/2, no streams are open or ended and nghttp2 has nothing to
+ *    write; HTTP/3 is never idle), the worker calls park() and returns to the
+ *    thread pool.
+ * 2. Watching. A single watcher thread polls every parked socket plus a
+ *    wakeup pipe. park() writes to the pipe so a newly parked socket joins
+ *    the poll set immediately rather than at the next poll timeout.
+ * 3. Waking. When the peer sends the next request on the connection, as a
+ *    proxy does when it reuses a pooled origin connection, the socket
+ *    becomes readable and the watcher dispatches the session: it takes a
+ *    worker with ThreadPool::get_worker(), the same handoff the accept
+ *    threads use, and marks the session as resumed. The worker skips the
+ *    PROXY header read and TLS handshake, which were done when the
+ *    connection was accepted, and serves the request as usual.
+ * 4. Peer close. A close or reset also makes the socket readable (or
+ *    reports POLLHUP or POLLERR), so the watcher dispatches it the same way
+ *    and the worker's read observes the close and cleans up. Parked
+ *    sessions need no separate timeout or cleanup path.
+ *
+ * Resuming costs one cross-thread handoff. If every worker is busy when a
+ * parked socket becomes readable, the watcher blocks in get_worker() until
+ * one frees up, just as the accept threads do for new connections.
+ */
+class IdleSessionParker
+{
+public:
+  /** Start the thread that watches parked sessions.
+   *
+   * @return Any errors creating the wakeup pipe.
+   */
+  swoc::Errata start();
+
+  /** Watch an idle session until it has input, then return it to a worker.
+   *
+   * @param[in] session The idle session. The parker takes ownership.
+   */
+  void park(std::unique_ptr<Session> session);
+
+  /** Stop the watcher thread and close any sessions still parked. */
+  void stop();
+
+  /** The number of currently parked sessions. */
+  size_t parked_count() const;
+
+private:
+  /** The watcher thread body. */
+  void run();
+
+  /** Interrupt the watcher's poll so it picks up newly parked sessions. */
+  void wake();
+
+  /** Hand a session that has input back to a worker thread.
+   *
+   * @param[in] session The session to resume.
+   */
+  void dispatch(std::unique_ptr<Session> session);
+
+private:
+  mutable std::mutex m_mutex;
+  /// Sessions parked since the watcher last polled. Guarded by @a m_mutex.
+  std::vector<std::unique_ptr<Session>> m_incoming;
+  /// Sessions the watcher polls. Only the watcher thread touches these.
+  std::vector<std::unique_ptr<Session>> m_parked;
+  std::atomic<size_t> m_parked_count{0};
+  int m_wake_pipe[2] = {-1, -1};
+  std::thread m_thread;
+};
+
+IdleSessionParker Idle_Session_Parker;
+
+swoc::Errata
+IdleSessionParker::start()
+{
+  swoc::Errata errata;
+  if (::pipe(m_wake_pipe) != 0) {
+    errata.note(S_ERROR, "Failed to create the idle session wakeup pipe: {}", swoc::bwf::Errno{});
+    return errata;
+  }
+  for (int const fd : m_wake_pipe) {
+    ::fcntl(fd, F_SETFL, ::fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+  }
+  m_thread = std::thread([this] { run(); });
+  return errata;
+}
+
+void
+IdleSessionParker::park(std::unique_ptr<Session> session)
+{
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_incoming.push_back(std::move(session));
+  }
+  ++m_parked_count;
+  wake();
+}
+
+void
+IdleSessionParker::stop()
+{
+  if (m_thread.joinable()) {
+    wake();
+    m_thread.join();
+  }
+  m_parked.clear();
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_incoming.clear();
+  }
+  for (int &fd : m_wake_pipe) {
+    if (fd >= 0) {
+      ::close(fd);
+      fd = -1;
+    }
+  }
+}
+
+size_t
+IdleSessionParker::parked_count() const
+{
+  return m_parked_count;
+}
+
+void
+IdleSessionParker::wake()
+{
+  char const byte = 0;
+  // A full pipe already guarantees a pending wakeup, so a failed write is fine.
+  [[maybe_unused]] auto const written = ::write(m_wake_pipe[1], &byte, sizeof(byte));
+}
+
+void
+IdleSessionParker::dispatch(std::unique_ptr<Session> session)
+{
+  --m_parked_count;
+  auto *thread_info = dynamic_cast<ServerThreadInfo *>(Server_Thread_Pool.get_worker());
+  if (thread_info == nullptr) {
+    // Shutting down: the session is closed when it goes out of scope.
+    return;
+  }
+  std::unique_lock<std::mutex> lock(thread_info->_data_ready_mutex);
+  thread_info->m_session_is_resumed = true;
+  thread_info->m_session = session.release();
+  thread_info->_data_ready_cvar.notify_one();
+}
+
+void
+IdleSessionParker::run()
+{
+  std::vector<pollfd> descriptors;
+  while (!Shutdown_Flag) {
+    {
+      std::lock_guard<std::mutex> lock(m_mutex);
+      for (auto &session : m_incoming) {
+        m_parked.push_back(std::move(session));
+      }
+      m_incoming.clear();
+    }
+    descriptors.clear();
+    descriptors.push_back(pollfd{m_wake_pipe[0], POLLIN, 0});
+    for (auto const &session : m_parked) {
+      descriptors.push_back(pollfd{session->get_fd(), POLLIN, 0});
+    }
+    auto const timeout = std::chrono::duration_cast<milliseconds>(Thread_Sleep_Interval).count();
+    auto const ready = ::poll(descriptors.data(), descriptors.size(), timeout);
+    if (ready <= 0) {
+      continue;
+    }
+    if (descriptors[0].revents != 0) {
+      char buffer[256];
+      while (::read(m_wake_pipe[0], buffer, sizeof(buffer)) > 0) {
+      }
+    }
+    // Readable, hung up, or in error: a worker reads the socket and handles
+    // whichever it is, exactly as it would have without parking.
+    size_t kept = 0;
+    for (size_t i = 0; i < m_parked.size(); ++i) {
+      if (descriptors[i + 1].revents != 0) {
+        dispatch(std::move(m_parked[i]));
+      } else {
+        if (kept != i) {
+          m_parked[kept] = std::move(m_parked[i]);
+        }
+        ++kept;
+      }
+    }
+    m_parked.resize(kept);
+  }
+}
 
 HttpHeader
 get_continue_response(int64_t stream_id, HTTP_PROTOCOL_TYPE protocol, std::string_view key)
@@ -629,12 +841,17 @@ TF_Serve_Connection(std::thread *t)
       break;
     }
 
-    // check for proxy protocol header from the socket
-    errata.note(S_DIAG, "Checking for proxy protocol header.");
-    auto pp_eratta = thread_info.m_session->read_and_parse_proxy_hdr();
-    errata.note(std::move(pp_eratta));
-    auto accept_errata = thread_info.m_session->accept();
-    errata.note(std::move(accept_errata));
+    // A resumed session returns from the parker with its PROXY header and
+    // TLS handshake long done.
+    if (!std::exchange(thread_info.m_session_is_resumed, false)) {
+      // check for proxy protocol header from the socket
+      errata.note(S_DIAG, "Checking for proxy protocol header.");
+      auto pp_eratta = thread_info.m_session->read_and_parse_proxy_hdr();
+      errata.note(std::move(pp_eratta));
+      auto accept_errata = thread_info.m_session->accept();
+      errata.note(std::move(accept_errata));
+    }
+    bool session_was_parked = false;
     while (!Shutdown_Flag && !thread_info.m_session->is_closed() && errata.is_ok()) {
       swoc::Errata thread_errata;
 
@@ -643,7 +860,16 @@ TF_Serve_Connection(std::thread *t)
           thread_info.m_session->poll_for_headers(Thread_Sleep_Interval);
       thread_errata.note(poll_errata);
       if (poll_return == 0) {
-        // Poll timed out. Loop back around.
+        // Poll timed out. An idle session, such as a proxy's pooled origin
+        // connection, waits in the parker so this thread can serve others.
+        if (thread_info.m_session->is_idle()) {
+          thread_errata.note(S_DIAG, "Parking idle session.");
+          std::unique_lock<std::mutex> lock(thread_info._data_ready_mutex);
+          Idle_Session_Parker.park(std::unique_ptr<Session>{thread_info.m_session});
+          thread_info.m_session = nullptr;
+          session_was_parked = true;
+          break;
+        }
         continue;
       } else if (!poll_errata.is_ok()) {
         thread_errata.note(S_ERROR, "Poll failed: {}", swoc::bwf::Errno{});
@@ -807,7 +1033,9 @@ TF_Serve_Connection(std::thread *t)
     }
 
     // cleanup and get ready for another session.
-    delete_thread_info_session(thread_info);
+    if (!session_was_parked) {
+      delete_thread_info_session(thread_info);
+    }
   }
 }
 
@@ -1145,6 +1373,11 @@ Engine::command_run()
         }
       }
 
+      errata.note(Idle_Session_Parker.start());
+      if (!errata.is_ok()) {
+        process_exit_code = 1;
+        return;
+      }
       errata.note(
           S_INFO,
           "Ready with {} transaction{}.",
@@ -1184,6 +1417,7 @@ Engine::command_run()
       Accept_Threads.end(),
       [](std::unique_ptr<std::thread> const &thread) { thread->join(); });
   Accept_Threads.clear();
+  Idle_Session_Parker.stop();
   Server_Thread_Pool.join_threads();
   std::vector<Txn const *> transactions;
   transactions.reserve(Transactions.size());
