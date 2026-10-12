@@ -20,6 +20,6 @@ cmake_format_sh="${parent_dir}/cmake-format.sh"
 yapf_sh="${parent_dir}/yapf.sh"
 [ -r "${yapf_sh}" ] || fail "Could not find yapf.sh"
 
-bash ${clang_format_sh}
-bash ${cmake_format_sh}
-bash ${yapf_sh}
+bash "${clang_format_sh}" || fail "clang-format.sh failed."
+bash "${cmake_format_sh}" || fail "cmake-format.sh failed."
+bash "${yapf_sh}" || fail "yapf.sh failed."
