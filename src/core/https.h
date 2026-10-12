@@ -200,6 +200,12 @@ public:
 
   /** @see Session::close */
   void close() override;
+  /** @see Session::is_idle
+   *
+   * Decrypted bytes OpenSSL already buffered are invisible to poll(2), so a
+   * session holding any is not idle.
+   */
+  bool is_idle() const override;
   /** @see Session::accept */
   swoc::Errata accept() override;
   /** @see Session::connect */

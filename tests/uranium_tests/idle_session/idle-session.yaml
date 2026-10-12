@@ -1,0 +1,102 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+
+meta:
+  version: '1.0'
+
+# The first session goes idle between its two transactions. The second session
+# starts while the first is idle. With a single server thread, the server must
+# serve the second session during the first session's idle time rather than
+# holding its only thread on the idle connection. The client runs with
+# --no-proxy, so it sends the proxy-request nodes directly to the server.
+
+sessions:
+
+- transactions:
+
+  - client-request:
+      method: GET
+      url: /first/one
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, idle-session-first-request ]
+
+    proxy-request:
+      method: GET
+      url: /first/one
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, idle-session-first-request ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '16' ]
+        - [ Connection, keep-alive ]
+
+  - client-request:
+      method: GET
+      url: /first/two
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, idle-session-second-request ]
+
+    proxy-request:
+      # Leave the connection idle long enough for the second session to run.
+      delay: 3s
+
+      method: GET
+      url: /first/two
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, idle-session-second-request ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '16' ]
+        - [ Connection, keep-alive ]
+
+- delay: 500ms
+
+  transactions:
+
+  - client-request:
+      method: GET
+      url: /second
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, idle-session-other-session-request ]
+
+    proxy-request:
+      method: GET
+      url: /second
+      version: '1.1'
+      headers:
+        fields:
+        - [ Host, example.com ]
+        - [ uuid, idle-session-other-session-request ]
+
+    server-response:
+      status: 200
+      reason: OK
+      headers:
+        fields:
+        - [ Content-Length, '16' ]
+        - [ Connection, keep-alive ]

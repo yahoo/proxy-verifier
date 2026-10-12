@@ -299,6 +299,16 @@ static ssize_t receive_nghttp2_request(
 
 int *H2Session::process_exit_code = nullptr;
 
+bool
+H2Session::is_idle() const
+{
+  if (!_h2_is_negotiated) {
+    return TLSSession::is_idle();
+  }
+  return TLSSession::is_idle() && _stream_map.empty() && _retired_stream_map.empty() &&
+         _ended_streams.empty() && nghttp2_session_want_write(_session) == 0;
+}
+
 swoc::Rv<int>
 H2Session::poll_for_headers(chrono::milliseconds timeout)
 {

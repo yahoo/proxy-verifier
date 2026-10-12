@@ -184,6 +184,16 @@ public:
   swoc::Errata pack_headers(HttpHeader const &hdr, nghttp3_nv *&nv_hdr, int &hdr_count);
 
   swoc::Rv<int> poll_for_headers(std::chrono::milliseconds timeout) override;
+  /** @see Session::is_idle
+   *
+   * QUIC connections need their timers driven even without input, so an
+   * HTTP/3 session is never idle.
+   */
+  bool
+  is_idle() const override
+  {
+    return false;
+  }
   swoc::Rv<std::shared_ptr<HttpHeader>> read_and_parse_request(swoc::FixedBufferWriter &w) override;
   swoc::Rv<size_t> drain_body(
       HttpHeader const &hdr,

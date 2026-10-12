@@ -491,6 +491,12 @@ TLSSession::connect(SSL_CTX *client_context)
   return errata;
 }
 
+bool
+TLSSession::is_idle() const
+{
+  return Session::is_idle() && (_ssl == nullptr || SSL_pending(_ssl) == 0);
+}
+
 void
 TLSSession::close()
 {

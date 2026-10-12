@@ -2384,6 +2384,14 @@ these connections to 2,000. This limit can be changed via the `--thread-limit`
 option. Setting a value of 1 on the client will effectively cause sessions
 to be replayed in serial.
 
+On the server, a thread is needed only while a connection has work to do. An
+idle keep-alive HTTP/1 or HTTP/2 connection, such as a proxy's pooled origin
+connection waiting for its next request, is set aside without holding a thread
+and is handed back to one as soon as more data arrives. The server's
+`--thread-limit` therefore bounds the number of connections being actively
+served, not the number of open connections. HTTP/3 connections keep their
+thread for their whole lifetime.
+
 #### --qlog-dir \<directory\>
 
 The `--qlog-dir` option remains accepted and Proxy Verifier creates the

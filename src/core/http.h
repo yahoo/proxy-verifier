@@ -962,6 +962,16 @@ public:
    */
   virtual swoc::Rv<int> poll_for_headers(std::chrono::milliseconds timeout);
 
+  /** Whether the session is open with no buffered input or unfinished work.
+   *
+   * An idle session makes progress only when its socket becomes readable, so
+   * a server can wait for that readability elsewhere instead of dedicating a
+   * thread to the connection between transactions.
+   *
+   * @return True if only new socket data can advance this session.
+   */
+  virtual bool is_idle() const;
+
   /** Poll until there is data on the socket.
    *
    * @param[in] timeout The timeout, in milliseconds, for the poll.
@@ -1140,6 +1150,12 @@ inline bool
 Session::is_closed() const
 {
   return _fd < 0;
+}
+
+inline bool
+Session::is_idle() const
+{
+  return !is_closed();
 }
 
 inline Session::CloseReason
