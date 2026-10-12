@@ -11,7 +11,9 @@ PKGDATE="20200514"
 
 function main() {
   set -e # exit on error
-  ROOT=${ROOT:-$(cd $(dirname $0) && git rev-parse --show-toplevel)/.git/fmt/${PKGDATE}}
+  # The common git directory is the .git directory of a regular clone and the
+  # main repository's .git directory from a worktree, where .git is a file.
+  ROOT=${ROOT:-$(cd $(dirname $0) && git rev-parse --path-format=absolute --git-common-dir)/fmt/${PKGDATE}}
 
   TOP_LEVEL=`cd $(dirname $0) && git rev-parse --show-toplevel`
   DIR=${@:-"${TOP_LEVEL}/src ${TOP_LEVEL}/tests"}
@@ -86,5 +88,5 @@ EOF
 if [[ "$(basename -- "$0")" == 'clang-format.sh' ]]; then
   main "$@"
 else
-  ROOT=${ROOT:-$(git rev-parse --show-toplevel)/.git/fmt/${PKGDATE}}
+  ROOT=${ROOT:-$(git rev-parse --path-format=absolute --git-common-dir)/fmt/${PKGDATE}}
 fi
