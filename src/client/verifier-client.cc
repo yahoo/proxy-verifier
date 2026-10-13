@@ -1090,8 +1090,7 @@ Engine::replay_traffic()
         // the m_session_count, i.e, 1 microsecond for each session.
         auto const sleep_time_raw =
             static_cast<int>((m_transaction_count * 1'000'000.0) / (target_rate * m_session_count));
-        auto sleep_time = microseconds(sleep_time_raw);
-        sleep_time = std::min(sleep_time, sleep_limit);
+        sleep_time = std::min(microseconds(sleep_time_raw), sleep_limit);
         use_sleep_time = true;
       } else {
         rate_multiplier = (m_transaction_count * 1'000'000.0) /
