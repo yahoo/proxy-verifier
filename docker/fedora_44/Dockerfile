@@ -27,6 +27,7 @@ dnf install -y \
   gcc-c++ \
   git \
   java-25-openjdk-headless \
+  jemalloc-devel \
   libffi-devel \
   libnghttp2-devel \
   libnghttp3-devel \

@@ -12,7 +12,7 @@ Proxy Verifier provides Dockerfiles for Alpine 3.24, Fedora 44, and Ubuntu
 and Fedora Dockerfiles are available for users who prefer those distributions
 for their local build environment. Alpine is also the portable Linux release
 environment. Each Dockerfile installs its distribution's OpenSSL, nghttp2,
-nghttp3, and liburing development packages, along with compilers, CMake, Ninja,
+nghttp3, liburing, and jemalloc development packages, along with compilers, CMake, Ninja,
 `uv`, formatting tools, and a checksum-verified Apache RAT JAR. The Ubuntu
 image includes both GCC and Clang for the CI test jobs.
 
@@ -81,7 +81,7 @@ docker run --rm --platform "${platform}" \
     java -version
     test -r "${RAT_JAR}"
     java -jar "${RAT_JAR}" --help >/dev/null
-    pkg-config --modversion openssl libnghttp2 libnghttp3 liburing
+    pkg-config --modversion openssl libnghttp2 libnghttp3 liburing jemalloc
   '
 ```
 

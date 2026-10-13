@@ -1888,6 +1888,7 @@ presets. The build requires:
 * nghttp2 1.60 or newer development files
 * nghttp3 0.8 or newer development files
 * liburing 2.0 or newer development files on Linux (optional)
+* jemalloc development files on Linux (optional, recommended)
 
 CMake fetches pinned `libswoc` and `yaml-cpp` sources during configure. HTTP/3
 uses OpenSSL 3.5 or newer for the native QUIC transport and nghttp3 for HTTP/3
@@ -1899,6 +1900,14 @@ liburing, non-Linux builds, and kernels that cannot initialize io_uring retain
 the existing `poll(2)` behavior. Dynamic Linux builds that enable io_uring
 support require the liburing shared library at runtime; portable Linux release
 binaries link it statically.
+
+On Linux, CMake also links jemalloc as the memory allocator when pkg-config
+finds it, which cuts replay file parsing CPU by about a third: parsing builds
+and frees a yaml-cpp node for every element of every replay file, and glibc
+malloc spends much of that time contending and consolidating. Static builds
+use jemalloc only when its static archive is installed. Configure with
+`-DPV_ENABLE_JEMALLOC=OFF` to keep the system allocator. Replay files are
+parsed on one thread per hardware thread.
 
 For Mac builds, the following brew command can be helpful:
 

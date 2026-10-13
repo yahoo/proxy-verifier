@@ -58,9 +58,11 @@ struct ReplayParseThreadCounts
 /** Resolve the thread counts to use for replay file loading.
  *
  * The caller may pass explicit reader and parser counts or use values less
- * than 1 to request the defaults derived from hardware concurrency. The
- * resolved counts are always clamped to the number of files so we do not
- * spawn more parser or reader threads than useful work items.
+ * than 1 to request the defaults derived from hardware concurrency. Parsing
+ * is CPU bound in yaml-cpp while reading is not, so the default parser count
+ * is one thread per hardware thread. The resolved counts are always clamped
+ * to the number of files so we do not spawn more parser or reader threads
+ * than useful work items.
  *
  * @param[in] file_count The number of replay files that may be processed.
  * @param[in] n_reader_threads The requested reader thread count, or a value
@@ -77,7 +79,7 @@ resolve_replay_parse_thread_counts(size_t file_count, int n_reader_threads, int 
     if (hardware_threads == 0) {
       return 10;
     }
-    return std::clamp(static_cast<int>(hardware_threads), 1, 12);
+    return static_cast<int>(hardware_threads);
   }();
   auto const default_reader_threads = std::clamp(default_parser_threads / 4, 1, 4);
   auto const file_threads_cap = std::max<int>(1, static_cast<int>(file_count));
