@@ -32,4 +32,4 @@ exec uv --project "${project_directory}" run --extra fast-diff pytest \
   --sandbox "${sandbox}" \
   -o "cache_dir=${project_directory}/.pytest_cache" \
   @URTEST_OPTIONS@ \
-  "${pytest_arguments[@]}"
+  ${pytest_arguments[@]+"${pytest_arguments[@]}"}
