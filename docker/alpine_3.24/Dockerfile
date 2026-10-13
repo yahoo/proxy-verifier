@@ -23,6 +23,8 @@ RUN apk add --no-cache \
   diffutils \
   gcompat \
   git \
+  jemalloc-dev \
+  jemalloc-static \
   libffi-dev \
   liburing-dev \
   linux-headers \

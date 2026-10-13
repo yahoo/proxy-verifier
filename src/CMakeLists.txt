@@ -55,8 +55,10 @@ add_executable(verifier-client
 add_executable(verifier-server
                "${CMAKE_CURRENT_SOURCE_DIR}/server/verifier-server.cc")
 
-target_link_libraries(verifier-client PRIVATE verifier-core)
-target_link_libraries(verifier-server PRIVATE verifier-core)
+target_link_libraries(verifier-client PRIVATE verifier-core
+                                              ${PV_JEMALLOC_TARGET})
+target_link_libraries(verifier-server PRIVATE verifier-core
+                                              ${PV_JEMALLOC_TARGET})
 target_compile_options(verifier-client PRIVATE ${PV_COMMON_WARNING_FLAGS})
 target_compile_options(verifier-server PRIVATE ${PV_COMMON_WARNING_FLAGS})
 

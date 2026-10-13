@@ -39,6 +39,9 @@ option(PV_RELEASE_LAYOUT
        "Install release artifacts into a platform-specific bindir." OFF)
 option(PV_ENABLE_IO_URING
        "Use io_uring for socket readiness when liburing is available." ON)
+option(PV_ENABLE_JEMALLOC
+       "Link jemalloc as the memory allocator when it is available on Linux."
+       ON)
 option(
   BUILD_PORTABLE
   "Enable portable build settings such as conservative Linux amd64 ISA flags."
@@ -157,6 +160,9 @@ pv_find_http_dependencies(PV_HTTP_DEPENDENCY_TARGETS)
 
 include(IoUring)
 pv_find_io_uring(PV_IO_URING_TARGET)
+
+include(Jemalloc)
+pv_find_jemalloc(PV_JEMALLOC_TARGET)
 
 add_subdirectory(src)
 string(SHA256 _pv_source_hash "${CMAKE_SOURCE_DIR}")
