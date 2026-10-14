@@ -124,15 +124,28 @@ ProxyProtocolMsg::parse_pp_header_v2(swoc::TextView data)
   swoc::Rv<ssize_t> zret{-1};
   auto receivedBytes = data.size();
   auto const *hdr = reinterpret_cast<const ProxyHdr *>(data.data());
-  size_t size = 0;
+  auto const declared_len = ntohs(hdr->v2.len);
   // this size of the header
-  size = 16 + ntohs(hdr->v2.len);
+  size_t const size = PP_V2_FIXED_HDR_SIZE + declared_len;
   if (receivedBytes < size) {
     // truncated or too large header
     return zret;
   }
   switch (hdr->v2.ver_cmd & 0xF) {
   case 0x01: /* PROXY command */
+    // The declared length bounds the bytes received for this header, so it
+    // must cover the address block before any of it is read. Otherwise the
+    // addresses would be read from memory past the received header.
+    if ((hdr->v2.fam == 0x11 && declared_len < sizeof(hdr->v2.addr.ip4)) ||
+        (hdr->v2.fam == 0x21 && declared_len < sizeof(hdr->v2.addr.ip6)))
+    {
+      zret.note(
+          S_ERROR,
+          "Invalid PROXY header: length {} is too short for address family {:#x}",
+          declared_len,
+          hdr->v2.fam);
+      return zret;
+    }
     switch (hdr->v2.fam) {
     case 0x11: /* TCPv4 */
       // the ntohl() is needed because the address is stored in network byte
@@ -179,7 +192,7 @@ ProxyProtocolMsg::parse_header(swoc::TextView data)
 {
   swoc::Rv<ssize_t> zret{-1};
   auto receivedBytes = data.size();
-  if (receivedBytes >= 16 && (data.starts_with(V2SIG))) {
+  if (receivedBytes >= PP_V2_FIXED_HDR_SIZE && (data.starts_with(V2SIG))) {
     return parse_pp_header_v2(data);
   } else if (receivedBytes >= 8 && data.starts_with(V1SIG)) {
     return parse_pp_header_v1(data);

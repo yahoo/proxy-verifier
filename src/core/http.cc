@@ -1249,6 +1249,9 @@ Session::read_and_parse_proxy_hdr()
   // reading the PROXY data if any. A signle recv() should be sufficient as mentioned in the RFC
   swoc::Errata errata;
   swoc::LocalBufferWriter<MAX_PP_HDR_SIZE> w;
+  // Zero the buffer so that bytes past the peeked data never hold stale stack
+  // contents.
+  std::memset(w.aux_data(), 0, w.remaining());
   // Peek at the data to make sure it's a PROXY header
   errata.note(S_DIAG, "Peeking at the socketdata to check PROXY header");
   auto zret = peek(w.aux_span());

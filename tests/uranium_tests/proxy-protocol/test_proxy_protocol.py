@@ -213,6 +213,44 @@ server.stdout.contains(rf"Received PROXY header v1:.*\n{EXPECTED_PROXY_HEADER}",
                        "Verify that the server receives the PROXY header and parsed sucessfully.",
                        reflags=re.MULTILINE)
 
+#
+# Test 9: Verify the server rejects PROXY v2 headers whose declared length is
+# too short for the advertised address family rather than reading address
+# bytes past the received header (GHSA-q86g-vh3v-7r4q).
+#
+case = suite.case("Verify the server rejects PROXY v2 headers too short for their address family")
+server = case.add_server("short-pp-v2-server",
+                         "replay_files/single_transaction_ipv6_pp_v2.replay.yaml")
+short_header_script = 'send_short_pp_v2.py'
+sender = case.add_process(
+    "short-pp-v2-sender",
+    ["python3", short_header_script, "127.0.0.1", server.http_port],
+    copies=[short_header_script],
+)
+# The client acts as a positive control: a well-formed PROXY v2 header on the
+# same server is still parsed.
+client = case.add_client("short-pp-v2-client",
+                         "replay_files/single_transaction_ipv6_pp_v2.replay.yaml",
+                         http_ports=[server.http_port], other_args="--no-proxy")
+# The server sees the short-header connections close without an HTTP request.
+server.expect_return_codes(0, 1)
+
+sender.stdout.contains("Done sending short PROXY v2 headers",
+                       "The helper should send every short PROXY v2 header.")
+client.stdout.contains(r"Sending PROXY header",
+                       "Verify that the PROXY header is sent from the client to the server.")
+server.stdout.contains(
+    rf"Received PROXY header v2:.*\nPROXY TCP4 127\.0\.0\.1 127\.0\.0\.1 [0-9]+ {server.http_port}",
+    "The server should still parse a well-formed PROXY v2 header.", reflags=re.MULTILINE)
+server.stdout.excludes(
+    r"Received PROXY header v2:.*\nPROXY TCP6",
+    "The server should not parse a TCP6 address from a header too short to contain one.",
+    reflags=re.MULTILINE)
+server.stdout.excludes(
+    r"Received PROXY header v2:.*\nPROXY TCP4 (?!127\.0\.0\.1 127\.0\.0\.1 )",
+    "The server should not parse a TCP4 address from a header too short to contain one.",
+    reflags=re.MULTILINE)
+
 
 def test_uranium_suite(uranium):
     uranium.run(suite)
