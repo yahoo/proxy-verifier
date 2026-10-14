@@ -22,6 +22,11 @@ static constexpr swoc::TextView PROXY_V1_EOH{"\r\n"};
 /// is used to specify the data size to peek from the socket.
 static constexpr size_t MAX_PP_HDR_SIZE = 108;
 
+/// The size of the fixed PROXY header v2 portion that precedes the
+/// variable-length address block: signature, version/command, family, and
+/// length.
+static constexpr size_t PP_V2_FIXED_HDR_SIZE = 16;
+
 /// V1 and V2 header signatures
 using namespace std::literals;
 static const swoc::TextView V1SIG("PROXY");
