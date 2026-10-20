@@ -319,7 +319,10 @@ H2Session::poll_for_headers(chrono::milliseconds timeout)
     return 1;
   }
   swoc::Rv<int> zret{-1};
-  auto &&[poll_result, poll_errata] = Session::poll_for_data_on_socket(timeout);
+  // A prior receive may have stopped partway through a TLS record. Go through
+  // TLSSession so that the rest of that record, held by OpenSSL, still counts
+  // as data to read.
+  auto &&[poll_result, poll_errata] = TLSSession::poll_for_headers(timeout);
   zret.note(std::move(poll_errata));
   if (!zret.is_ok()) {
     return zret;

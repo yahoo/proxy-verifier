@@ -198,6 +198,14 @@ public:
    */
   static Session::CloseReason classify_ssl_close_reason(int ssl_error);
 
+  /** @see Session::poll_for_headers
+   *
+   * A peer may send a TLS record larger than the buffer passed to SSL_read.
+   * OpenSSL then holds the rest of the record decrypted in its own buffer,
+   * where poll(2) cannot see it. Such buffered bytes count as ready rather
+   * than waiting on a socket that may never become readable again.
+   */
+  swoc::Rv<int> poll_for_headers(std::chrono::milliseconds timeout) override;
   /** @see Session::close */
   void close() override;
   /** @see Session::is_idle

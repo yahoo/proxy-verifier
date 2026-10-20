@@ -1,0 +1,74 @@
+# @file
+#
+# Copyright 2026, Verizon Media
+# SPDX-License-Identifier: Apache-2.0
+
+meta:
+  version: '1.0'
+
+# The send_coalesced_h2_requests.py helper, not the verifier-client, sends
+# these two requests, both in one TLS record. The first request ends early in
+# the record and the second ends past the server's 10 KiB SSL_read buffer.
+
+sessions:
+
+- protocol:
+    stack: http2
+    tls:
+      sni: example.com
+
+  transactions:
+
+  - client-request:
+      method: GET
+      scheme: https
+      url: /first
+      headers:
+        fields:
+        - [ :authority, example.com ]
+        - [ uuid, first-request ]
+
+    proxy-request:
+      method: GET
+      scheme: https
+      url: /first
+      headers:
+        fields:
+        - [ :authority, example.com ]
+        - [ uuid, first-request ]
+
+    server-response:
+      status: 200
+      headers:
+        fields:
+        - [ content-length, '16' ]
+
+  - client-request:
+      method: POST
+      scheme: https
+      url: /second
+      headers:
+        fields:
+        - [ :authority, example.com ]
+        - [ uuid, second-request ]
+        - [ content-length, '12000' ]
+      content:
+        size: 12000
+
+    proxy-request:
+      method: POST
+      scheme: https
+      url: /second
+      headers:
+        fields:
+        - [ :authority, example.com ]
+        - [ uuid, second-request ]
+        - [ content-length, '12000' ]
+      content:
+        size: 12000
+
+    server-response:
+      status: 200
+      headers:
+        fields:
+        - [ content-length, '16' ]

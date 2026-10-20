@@ -491,6 +491,15 @@ TLSSession::connect(SSL_CTX *client_context)
   return errata;
 }
 
+swoc::Rv<int>
+TLSSession::poll_for_headers(chrono::milliseconds timeout)
+{
+  if (_ssl != nullptr && SSL_pending(_ssl) > 0) {
+    return 1;
+  }
+  return super_type::poll_for_headers(timeout);
+}
+
 bool
 TLSSession::is_idle() const
 {
