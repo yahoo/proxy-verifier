@@ -86,8 +86,7 @@ def build_batch() -> bytes:
     second_fields = request_fields('POST', '/second', 'second-request')
     second_fields.append(('content-length', str(SECOND_REQUEST_BODY_SIZE)))
     second = frame(FRAME_HEADERS, FLAG_END_HEADERS, SECOND_STREAM_ID, headers_block(second_fields))
-    second += frame(FRAME_DATA, FLAG_END_STREAM, SECOND_STREAM_ID,
-                    b'x' * SECOND_REQUEST_BODY_SIZE)
+    second += frame(FRAME_DATA, FLAG_END_STREAM, SECOND_STREAM_ID, b'x' * SECOND_REQUEST_BODY_SIZE)
     return first + second
 
 

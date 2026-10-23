@@ -39,8 +39,7 @@ sender.stdout.contains("Received a complete response on stream 1.",
                        "The server should answer the request that ends early in the record.")
 sender.stdout.contains("Received a complete response on stream 3.",
                        "The server should answer the request that ends past its read buffer.")
-sender.stdout.excludes("Did not receive",
-                       "The helper should receive every response it waits for.")
+sender.stdout.excludes("Did not receive", "The helper should receive every response it waits for.")
 client.stdout.contains("2 transactions in 1 session ",
                        "The client should run both transactions of the replay.")
 client.stdout.excludes("Violation:", "There should be no verification errors.")
